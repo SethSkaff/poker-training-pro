@@ -1,0 +1,396 @@
+import type {
+  GameSettings,
+  PlayerProgress,
+  PokerAction,
+  TrainingResult,
+} from "../types/poker";
+import { defaultProgress, defaultSettings } from "./storage";
+
+export const SAVE_FORMAT = "poker-training-pro-save";
+export const CURRENT_SAVE_VERSION = 1;
+export const LAST_KNOWN_GOOD_KEY =
+  "poker-training-pro:last-known-good-save";
+
+export interface SaveDataV1 {
+  settings: GameSettings;
+  progress: PlayerProgress;
+}
+
+export interface SaveEnvelopeV1 {
+  format: typeof SAVE_FORMAT;
+  version: 1;
+  data: SaveDataV1;
+}
+
+export type SaveRestoreErrorCode =
+  | "invalid-json"
+  | "invalid-payload"
+  | "unknown-format"
+  | "unsupported-version"
+  | "storage-unavailable";
+
+export type SaveRestoreResult =
+  | {
+      ok: true;
+      save: SaveEnvelopeV1;
+      migratedFromVersion: 0 | 1;
+    }
+  | {
+      ok: false;
+      error: {
+        code: SaveRestoreErrorCode;
+        message: string;
+      };
+    };
+
+export interface KeyValueStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+const actions = new Set<PokerAction>([
+  "fold",
+  "check",
+  "call",
+  "raise",
+  "all-in",
+]);
+
+/**
+ * Builds a validated current-version save without mutating either source object.
+ * Invalid leaf values are replaced with safe defaults so one damaged preference
+ * cannot make otherwise recoverable progress unusable.
+ */
+export function createSaveEnvelope(
+  settings: unknown,
+  progress: unknown,
+): SaveEnvelopeV1 {
+  return {
+    format: SAVE_FORMAT,
+    version: CURRENT_SAVE_VERSION,
+    data: {
+      settings: normalizeSettings(settings),
+      progress: normalizeProgress(progress),
+    },
+  };
+}
+
+/**
+ * Canonical JSON makes equal saves byte-for-byte equal regardless of object key
+ * insertion order. This is useful for comparing and de-duplicating backups.
+ */
+export function serializeSaveBackup(
+  settingsOrEnvelope: unknown,
+  progress?: unknown,
+): string {
+  const envelope =
+    isCurrentEnvelope(settingsOrEnvelope) && progress === undefined
+      ? createSaveEnvelope(
+          settingsOrEnvelope.data.settings,
+          settingsOrEnvelope.data.progress,
+        )
+      : createSaveEnvelope(settingsOrEnvelope, progress);
+  return stableStringify(envelope);
+}
+
+/**
+ * Restores a current save or migrates the original unversioned
+ * `{ settings, progress }` shape. Unsupported future versions are rejected
+ * rather than being rewritten and potentially losing fields.
+ */
+export function restoreSaveBackup(serialized: string): SaveRestoreResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch {
+    return failure("invalid-json", "The backup is not valid JSON.");
+  }
+  return migrateSavePayload(parsed);
+}
+
+export function migrateSavePayload(payload: unknown): SaveRestoreResult {
+  if (!isRecord(payload)) {
+    return failure("invalid-payload", "The backup must contain an object.");
+  }
+
+  if ("format" in payload && payload.format !== SAVE_FORMAT) {
+    return failure(
+      "unknown-format",
+      "The backup belongs to an unknown application or save format.",
+    );
+  }
+
+  if ("version" in payload && payload.version !== 0 && payload.version !== 1) {
+    return failure(
+      "unsupported-version",
+      "This backup was created by an unsupported save version.",
+    );
+  }
+
+  if (payload.version === 1 || payload.format === SAVE_FORMAT) {
+    if (
+      payload.version !== 1 ||
+      !isRecord(payload.data) ||
+      !isRecord(payload.data.settings) ||
+      !isRecord(payload.data.progress)
+    ) {
+      return failure(
+        "invalid-payload",
+        "The versioned backup is missing settings or player progress.",
+      );
+    }
+    return {
+      ok: true,
+      save: createSaveEnvelope(
+        payload.data.settings,
+        payload.data.progress,
+      ),
+      migratedFromVersion: 1,
+    };
+  }
+
+  const legacyData =
+    payload.version === 0 && isRecord(payload.data) ? payload.data : payload;
+  if (!("settings" in legacyData) && !("progress" in legacyData)) {
+    return failure(
+      "invalid-payload",
+      "The legacy backup does not contain settings or player progress.",
+    );
+  }
+
+  return {
+    ok: true,
+    save: createSaveEnvelope(legacyData.settings, legacyData.progress),
+    migratedFromVersion: 0,
+  };
+}
+
+export function writeLastKnownGoodBackup(
+  storage: KeyValueStorage,
+  settings: unknown,
+  progress: unknown,
+): SaveRestoreResult {
+  const serialized = serializeSaveBackup(settings, progress);
+  try {
+    storage.setItem(LAST_KNOWN_GOOD_KEY, serialized);
+  } catch {
+    return failure(
+      "storage-unavailable",
+      "The last-known-good backup could not be written.",
+    );
+  }
+  return restoreSaveBackup(serialized);
+}
+
+export function readLastKnownGoodBackup(
+  storage: KeyValueStorage,
+): SaveRestoreResult {
+  let serialized: string | null;
+  try {
+    serialized = storage.getItem(LAST_KNOWN_GOOD_KEY);
+  } catch {
+    return failure(
+      "storage-unavailable",
+      "The last-known-good backup could not be read.",
+    );
+  }
+  if (serialized === null) {
+    return failure(
+      "invalid-payload",
+      "No last-known-good backup is available.",
+    );
+  }
+  return restoreSaveBackup(serialized);
+}
+
+function normalizeSettings(value: unknown): GameSettings {
+  const source = isRecord(value) ? value : {};
+  return {
+    masterVolume: boundedNumber(
+      source.masterVolume,
+      0,
+      100,
+      defaultSettings.masterVolume,
+    ),
+    muted: booleanOr(
+      source.muted,
+      defaultSettings.muted,
+    ),
+    musicVolume: boundedNumber(
+      source.musicVolume,
+      0,
+      100,
+      defaultSettings.musicVolume,
+    ),
+    effectsVolume: boundedNumber(
+      source.effectsVolume,
+      0,
+      100,
+      defaultSettings.effectsVolume,
+    ),
+    fullscreen: booleanOr(source.fullscreen, defaultSettings.fullscreen),
+    reducedMotion: booleanOr(
+      source.reducedMotion,
+      defaultSettings.reducedMotion,
+    ),
+    dealSpeed:
+      source.dealSpeed === "cinematic" ||
+      source.dealSpeed === "standard" ||
+      source.dealSpeed === "quick"
+        ? source.dealSpeed
+        : defaultSettings.dealSpeed,
+    colorAssist: booleanOr(source.colorAssist, defaultSettings.colorAssist),
+  };
+}
+
+function normalizeProgress(value: unknown): PlayerProgress {
+  const source = isRecord(value) ? value : {};
+  const results = Array.isArray(source.results)
+    ? source.results
+        .map(normalizeTrainingResult)
+        .filter((result): result is TrainingResult => result !== undefined)
+        .slice(-250)
+    : [];
+
+  const currentStreak = nonNegativeInteger(
+    source.currentStreak,
+    defaultProgress.currentStreak,
+  );
+  const bestStreak = Math.max(
+    currentStreak,
+    nonNegativeInteger(source.bestStreak, defaultProgress.bestStreak),
+  );
+
+  return {
+    onboardingCompleted: booleanOr(
+      source.onboardingCompleted,
+      defaultProgress.onboardingCompleted,
+    ),
+    playerName:
+      typeof source.playerName === "string" &&
+      source.playerName.trim().length > 0
+        ? source.playerName.slice(0, 48)
+        : defaultProgress.playerName,
+    decisionElo: finiteNumber(
+      source.decisionElo,
+      defaultProgress.decisionElo,
+    ),
+    mathElo: finiteNumber(source.mathElo, defaultProgress.mathElo),
+    tournamentElo: finiteNumber(
+      source.tournamentElo,
+      defaultProgress.tournamentElo,
+    ),
+    trainingCompleted: nonNegativeInteger(
+      source.trainingCompleted,
+      defaultProgress.trainingCompleted,
+    ),
+    currentStreak,
+    bestStreak,
+    totalDecisionMs: Math.max(
+      0,
+      finiteNumber(source.totalDecisionMs, defaultProgress.totalDecisionMs),
+    ),
+    results,
+    unlockedCircuit: Math.max(
+      1,
+      nonNegativeInteger(
+        source.unlockedCircuit,
+        defaultProgress.unlockedCircuit,
+      ),
+    ),
+  };
+}
+
+function normalizeTrainingResult(value: unknown): TrainingResult | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    typeof value.scenarioId !== "string" ||
+    value.scenarioId.length === 0 ||
+    typeof value.completedAt !== "string" ||
+    !actions.has(value.action as PokerAction) ||
+    typeof value.actionCorrect !== "boolean" ||
+    typeof value.mathCorrect !== "boolean"
+  ) {
+    return undefined;
+  }
+
+  const elapsedMs = finiteNumber(value.elapsedMs, Number.NaN);
+  const eloDelta = finiteNumber(value.eloDelta, Number.NaN);
+  if (elapsedMs < 0 || !Number.isFinite(elapsedMs) || !Number.isFinite(eloDelta)) {
+    return undefined;
+  }
+  if (
+    value.mathAnswer !== undefined &&
+    !Number.isFinite(value.mathAnswer)
+  ) {
+    return undefined;
+  }
+
+  return {
+    scenarioId: value.scenarioId,
+    completedAt: value.completedAt,
+    action: value.action as PokerAction,
+    actionCorrect: value.actionCorrect,
+    ...(value.mathAnswer === undefined
+      ? {}
+      : { mathAnswer: value.mathAnswer as number }),
+    mathCorrect: value.mathCorrect,
+    elapsedMs,
+    eloDelta,
+  };
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, sortJsonValue(value[key])]),
+  );
+}
+
+function isCurrentEnvelope(value: unknown): value is SaveEnvelopeV1 {
+  return (
+    isRecord(value) &&
+    value.format === SAVE_FORMAT &&
+    value.version === CURRENT_SAVE_VERSION &&
+    isRecord(value.data)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function booleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function nonNegativeInteger(value: unknown, fallback: number): number {
+  return Math.max(0, Math.trunc(finiteNumber(value, fallback)));
+}
+
+function boundedNumber(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  fallback: number,
+): number {
+  return Math.min(maximum, Math.max(minimum, finiteNumber(value, fallback)));
+}
+
+function failure(
+  code: SaveRestoreErrorCode,
+  message: string,
+): SaveRestoreResult {
+  return { ok: false, error: { code, message } };
+}

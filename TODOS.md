@@ -1,0 +1,534 @@
+# Poker Training Pro — Running TODOs
+
+This is the canonical backlog. Keep it current as work is completed or new
+requirements are added.
+
+## Now — desktop first
+
+- [x] Build deterministic deck, hand evaluator, legal betting, side pots, blind
+      structures, table balancing, and information-set redaction.
+- [x] Build the researched Training Mode scenario bank and EV-regret grading.
+- [x] Persist separate Decision Elo, Math Elo, response timing, and progress.
+- [x] Accept table-style quiz answers such as `33%`, `0.33`, `1/3`, `2:1`,
+      and `3:5` where the question unit makes the interpretation clear.
+- [x] Implement Rational AI without hidden-card access.
+- [x] Implement bounded, personality-driven Normal AI without random blunders.
+- [x] Finish the shared compressed tournament/career session controller.
+- [x] Integrate Normal and Rational policies into playable tournament sessions.
+- [x] Replace “Career” navigation with a Grand Prix-like mode flow:
+      event select → tournament → placement/qualification/Elo/unlock results.
+- [x] Replace the dashboard/tab shell with a game-first title and menu scene.
+- [x] Match the *interaction hierarchy* of a premium console-game start flow:
+      the initial Play/Settings menu should feel like Mario Kart World’s compact
+      start menu without copying its art, type, icons, colors, wording, or exact
+      geometry.
+- [x] Use the user-supplied poker artwork as the desktop start-menu background
+      with the same oversized Play/Settings chip-button hierarchy. Yellow text
+      must indicate the button currently under the cursor or keyboard/controller
+      focus.
+- [ ] Add a subtle seamless two-second ambient background loop, preserving the
+      supplied still as the loading/failure/reduced-motion fallback. Higgsfield
+      video generation is waiting on `higgsfield auth login`.
+- [x] Make the four-mode choice—Normal, Rational, Training, Timed Table—a
+      distinct
+      game-mode selection scene with the clarity and immediacy of choosing among
+      Grand Prix/Knockout Tour/Time Trial, while using original poker-native
+      presentation and names.
+- [x] Add a fourth **Timed Table** mode. Ask for 5–180 minutes before play,
+      run one table with Normal opponents and no career progression, and award
+      tournament Elo from the final placement.
+- [x] Build a deterministic timed blind director that keeps blinds monotonic,
+      preserves a normal opening phase, then adjusts pressure from elapsed time,
+      remaining players, and live stack distribution. At and after the deadline,
+      the big blind must cover the second-largest live stack so every player
+      except the chip leader is forced all-in; finishing early is valid.
+- [x] Add a short loading transition followed by an authored camera fly-through
+      of the **Poker Training Pro Championship** room that travels past the
+      venue, tables, dealer area, players, and stacks before settling into the
+      hero’s seated first-person view.
+- [x] Between tournament rounds/table moves, keep the transition inside the
+      room: move the camera toward the next seat while a slim, slightly faded
+      horizontal progress bar overlays the top of the view. Show completed
+      rounds/checkpoints, current progress, and the next stop; fade it before
+      control returns. Do not make this bar a separate screen.
+- [x] Reserve the full placement/qualification/Elo/unlock results ceremony for
+      the end of an event, not for ordinary between-round transitions.
+- [ ] Build stylized cartoony table characters with physical action animations:
+      receive/peek/hold/muck cards, gather/count/push chips, check the felt, react,
+      go all-in, win a pot, and leave after elimination.
+- [x] Study VR/card-table presentation for presence, seated scale, readable
+      stacks, physical card/chip motion, limited-look camera behavior, comfort,
+      and augmented statistics; record the original desktop translation and
+      protected-expression boundary.
+- [ ] Complete the remaining original non-VR physical character/hand/chip
+      assets and animations identified by that research.
+- [x] Let the player pan/look left and right from their seat like a traditional
+      game, with a center-view command and a fixed/reduced-motion alternative.
+- [x] Add expert hotkeys for Fold, Check/Call, Raise 2×, Raise 2.5×, Raise 3×,
+      Pot, All-in, Custom Raise, Peek/Hide Cards, camera left/right, center view,
+      speed up/down, hand history, and pause. Disable shortcuts while typing.
+- [x] Add an always-reachable top-table speed slider/presets controlling AI
+      presentation speed without changing the mathematical policy.
+- [x] Model AI decision delays from decision closeness/uncertainty, street,
+      action complexity, and opponent tempo, plus substantial seeded jitter and
+      anti-tell noise. Cap correlations so timing cannot reliably reveal hand
+      strength or action.
+- [ ] Apply the same timing model and user speed preference to mobile, with
+      shorter animation budgets and background/inactive pausing.
+- [x] Apply the reference research at the level of task flow and affordance,
+      document the originality boundary, and prohibit copied Nintendo, Balatro,
+      Discord, Vegas Infinite, or other protected expression/assets.
+- [x] Use an original palette that bridges premium casino materials and a
+      colorful console game: deep emerald felt, ivory card stock, black lacquer,
+      and brass as the base; vivid cyan, coral, warm yellow, sky blue, and
+      clay-chip red for mode identity, selection, progress, and motion. Avoid
+      Nintendo’s exact combinations, racing motifs, and rainbow-for-everything
+      clutter.
+- [x] Rename all user-facing and packaged references to **Poker Training Pro**.
+- [x] Integrate the original Poker Training Pro brand mark and app icon.
+- [ ] Remove unnecessary badges, filler copy, decorative cards, and generic
+      dashboard patterns identified by the anti-“AI slop” audit.
+- [ ] Re-run visual QA at 1280×720, 1366×768, 1920×1080, ultrawide, and the
+      minimum supported desktop window.
+- [ ] Verify mouse, keyboard, card peek, drag-to-fold, bet sizing, settings,
+      local save recovery, reduced motion, and high-contrast behavior.
+- [x] Eliminate all gameplay layout collisions at every supported size: no card
+      may cover another card's rank or suit, opponent bet chips/amounts must
+      remain visually separate from total stack balances, and labels, controls,
+      cards, chips, and status overlays must never obscure one another. A live
+      six-seat Normal Tour geometry audit reports zero intersections at
+      1100×720, 1280×720, 1366×768, 1920×1080, and 2560×1080.
+- [x] Package distinct Windows x64 NSIS installer and portable preview
+      artifacts; verify the unpacked application launches, stays offline at
+      idle, has the intended Electron fuses, and rejects tampered ASAR content.
+- [x] Add a fail-closed packaged-render smoke gate that launches an isolated
+      Windows profile, reloads the bundled custom-protocol document under CDP,
+      requires a non-empty recognized app screen, rejects renderer/network/
+      console errors, and cleans up the exact process tree and temp profile.
+- [x] Open the packaged Windows preview for the user and visually verify the
+      first-run setup, supplied-art start menu, four-mode selector, career
+      event screen, and animated championship-room arrival.
+- [x] Complete a hands-on packaged settings/Training smoke: mute and reduced
+      motion toggles, `1/3` quiz submission and grading, a legal decision,
+      feedback/Elo, pause menu, and return to the supplied-art start menu.
+- [ ] Complete every remaining packaged input path (mouse, keyboard,
+      controller, peek, drag-fold, raise sizing, history, resume/recovery,
+      Normal/Rational/Timed completion) before calling the whole desktop build
+      previewed.
+
+## Audio — after the desktop gameplay loop
+
+- [x] Mute the temporary synthesized background loop.
+- [x] Research a substantial candidate playlist of thematically appropriate,
+      instrumental, royalty-free tracks from reputable libraries.
+- [ ] Verify every license permits redistribution inside a commercial desktop
+      and mobile game; reject “free to stream only” or unclear licenses.
+- [ ] Save source URL, author, track title, license text/version, attribution
+      requirement, and downloaded master for every accepted track.
+- [x] Prefer several calm focus/table tracks plus restrained tournament-intensity
+      tracks; avoid vocals, casino jingles, slot-machine music, and distracting
+      drops.
+- [ ] Implement shuffled playlist playback, no immediate repeats, crossfades,
+      pause/focus behavior, music ducking under feedback, and separate Music/SFX
+      volume controls.
+- [ ] Add a Credits/Licenses screen and ship required attribution files.
+- [ ] Loudness-normalize tracks and test looping, memory usage, and package size.
+
+## iOS / iPadOS — begin after desktop is previewable
+
+- [x] Finish current official App Store approval and device-support research.
+- [x] Select an implementation path that reuses the local TypeScript poker
+      engine and requires no dedicated game server.
+- [x] Create the simplified mobile information architecture:
+      logo/name → large Play and Settings actions → mode/event select → table.
+- [x] Build a flat green table with names, balances, compact blue live cards,
+      no dealer, no free camera, and tap-to-flip hero cards.
+- [ ] Preserve every backend feature: Training, Rational, Normal, math checks,
+      Elo, tournaments, career results, local settings, and local progress.
+- [ ] Study card readability/motion from Balatro and compact table clarity from
+      Discord Activities, then design original assets and animation timings.
+- [ ] Keep all bot equity/range work on-device; benchmark and cap expensive
+      simulations to avoid frame drops, thermal spikes, and battery drain.
+- [ ] Support iPhone and iPad safe areas, Dynamic Type, landscape/portrait policy,
+      split view/window resizing where required, and accessibility settings.
+- [ ] Validate every supported iPhone/iPad layout required by the chosen
+      deployment target—without inventing obsolete devices.
+- [ ] Add privacy manifest/labels, age rating, simulated-gambling disclosures,
+      review notes, screenshots, TestFlight plan, and submission checklist.
+- [x] Determine the legitimate preview path from Windows. Do not install a fake
+      iOS simulator; official Apple Simulator requires macOS/Xcode.
+- [ ] Open the final mobile preview for the user before any handoff/submission.
+
+## Desktop production necessities — audit added 2026-07-23
+
+### Complete player journey and teaching
+
+- [x] Write one canonical game-state diagram covering cold start, first run,
+      menu, mode setup, loading, seated play, pause, results, retry, quit, and
+      recovery; make every Back/Cancel path explicit.
+- [x] Define the desktop v1 exit criteria and a playable vertical-slice gate:
+      every mode can start, finish, save, recover, and return to the start menu
+      without a dead end or placeholder.
+- [x] Add a first-run flow that offers accessibility and control setup before
+      animation or timed interactions begin, then lets the player skip it.
+- [ ] Build a short playable tutorial that teaches card peeking, legal actions,
+      bet sizing, hand flow, showdown, and the difference between chips, pot
+      odds, equity, and expected value.
+- [ ] Add optional contextual prompts for the first occurrence of an all-in,
+      side pot, minimum raise, blind increase, elimination, qualification, and
+      Elo change; keep them manually dismissible and replayable.
+- [x] Add an always-available poker reference with hand rankings, betting terms,
+      common probability shortcuts, tournament terms, and worked examples.
+- [x] Explain what Normal, Rational, Training, and Timed Table actually optimize
+      before selection, including that Rational opponents use only information
+      legally available to their seat.
+- [x] Add a safe “restart hand/scenario” path only where it cannot alter career
+      results, and clearly distinguish practice retries from scored play.
+- [x] Make every event-end result screen explain placement, qualification,
+      unlocks, Elo change, and the next available action without requiring prior
+      poker knowledge.
+
+### Input, focus, pause, and window lifecycle
+
+- [ ] Create a single action map shared by mouse, keyboard, and controller so
+      menus and every gameplay action have equivalent non-pointer operation.
+- [ ] Add controller navigation and prompts for the complete desktop flow,
+      including settings, dialogs, sliders, card peek, betting, pause, and Back.
+- [ ] Add in-game remapping for all gameplay and menu controls, conflict
+      detection, reserved-key warnings, per-device defaults, and Reset to
+      Defaults.
+- [x] Ensure drag-to-fold and chip dragging always have one-press alternatives;
+      no required action may depend on dragging, holding, double-clicking, or
+      rapid repeated input.
+- [x] Add an initial-focus and wraparound focus trap to the pause dialog, plus a
+      visible global keyboard-focus indicator over animated backgrounds.
+- [x] Restore the exact pre-pause focus reliably while pause subpages move
+      their initial focus without replacing the original restoration target.
+- [ ] Apply and test the same initial-focus/trap/restoration contract for every
+      other modal dialog.
+- [x] Disable global poker hotkeys while a text field, slider, remapping dialog,
+      or system dialog owns input.
+- [x] Add a real pause menu with Resume, Controls, Settings, Hand Reference,
+      Restart/Leave where valid, and Quit to Menu; never hide destructive
+      consequences behind ambiguous wording.
+- [x] On table blur/document hiding, enter the explicit pause menu, stop the
+      Training decision/math stopwatch, mute table audio, pause the arrival
+      timeout, and block tournament action delivery until Resume.
+- [ ] Wire minimize/screen-lock/Windows suspend through Electron lifecycle,
+      freeze the exact remaining AI-presentation and animation delays rather
+      than merely blocking/restarting them, and apply the same policy outside
+      the table.
+- [x] Shift Timed Table's authoritative start clock by the inactive duration on
+      explicit Resume and checkpoint the adjusted deterministic replay.
+- [ ] On resume, restore the exact decision state and camera position, show a
+      brief readable recap, and do not count inactive time against Training or
+      Timed Table play.
+- [ ] Save at safe boundaries before close, Windows session end, suspend, and
+      update installation; confirm before abandoning unsaved scored progress.
+- [x] Handle renderer “unresponsive” and “render-process-gone” events with
+      recovery choices instead of a blank or permanently frozen window.
+- [ ] Test windowed, maximized, fullscreen, Alt+Tab, Win+D, display disconnect,
+      DPI change, and moving between monitors without losing focus or layout.
+
+### Accessibility baseline
+
+- [ ] Make all controls expose correct accessible names, roles, values, state,
+      and order to Windows Narrator/NVDA; announce cards, actions, pot changes,
+      errors, timers, and results without reading decorative scenery.
+- [ ] Add UI/text scale controls and verify critical table information remains
+      readable without clipping at the minimum window size and 200% Windows
+      display scaling.
+- [ ] Meet at least WCAG 2.2 AA contrast for text and meaningful non-text
+      controls; use a 24-by-24 CSS-pixel minimum target or equivalent spacing,
+      with larger targets for primary poker actions.
+- [ ] Never encode selection, card state, action type, stack danger, math
+      correctness, or tournament progress by color alone; pair color with
+      shape, label, icon, pattern, or motion-independent state.
+- [ ] Expand Reduced Motion into independent controls for animated menu
+      backgrounds, room fly-through, camera sway/shake, card/chip flourish, and
+      transition intensity, with static fallbacks available before Play.
+- [ ] Add camera sensitivity, recenter behavior, field-of-view/zoom choice, and
+      an option to disable automatic camera movement.
+- [x] Inventory motion/flash sources, document conservative safe limits, and
+      hard-gate mechanically detectable strobe/rapid-toggle signatures plus
+      missing operating-system or in-app reduced-motion coverage.
+- [ ] Analyze rendered luminance, saturated-red flashes, visual angle, and loop
+      boundaries with a recognized tool; verify reduced motion on the packaged
+      release candidate and remove any sequence that fails.
+- [ ] Keep tutorials, math explanations, errors, and non-gameplay notifications
+      on screen until dismissed, or provide adjustable display duration.
+- [ ] Provide visual equivalents for meaningful audio cues and optional audio
+      equivalents for critical visual-only state changes.
+- [ ] Run an accessibility acceptance pass with keyboard only, mouse only,
+      controller only, Windows Narrator, NVDA, 200% scaling, high contrast,
+      reduced motion, color assist, and muted audio.
+
+### Durable saves, recovery, and deterministic diagnosis
+
+- [x] Move authoritative progress out of renderer `localStorage` into a
+      versioned file below Electron’s per-user `userData` directory; keep
+      browser storage only as a one-time import source.
+- [x] Wire the existing save-envelope migration and last-known-good utilities
+      into startup and every write path instead of leaving them test-only.
+- [x] Write saves atomically through a temporary file plus replace/rotation,
+      checksum them, keep at least one previous valid generation, and never
+      overwrite the only valid save with corrupt data.
+- [x] Add a recovery screen that explains which save failed, offers restore from
+      last-known-good, export diagnostics, start fresh, or cancel, and never
+      silently discards progress.
+- [x] Implement narrow desktop Export Save plus two-phase Import Save and Reset
+      Progress backends with validation, redacted preview, one-use confirmation,
+      TOCTOU protection, atomic commit, and retained valid generations.
+- [ ] Add player-visible Export Save, Import Save, and Reset Progress actions,
+      wire the preview/confirmation UI, reload committed state, and keep
+      settings reset visibly separate from progress deletion.
+- [x] Persist and deterministically restore the exact active tournament runner,
+      current hero decision, timed-table start clock, and career event results
+      from an ordinary checkpoint without storing opponents’ hidden cards.
+- [ ] Persist and restore the exact active Training scenario plus camera,
+      transition, and pause/inactivity timing state; tournament reconstruction
+      currently resumes at the table rather than the interrupted presentation
+      frame.
+- [x] Store the engine/content version, PRNG seed, public action log, full blind
+      schedule, policy version/simulation count, and public entrant data needed
+      to reproduce each scored tournament without retaining opponents’ hidden
+      cards in ordinary hand history.
+- [ ] Retain completed-event replay metadata after leaving the result screen and
+      expose player-visible event-end export; the current checkpoint is cleared
+      on explicit leave after the result commit.
+- [x] Add bounded native replay-export backends: a strict-allowlist redacted
+      public bug-report artifact and a privileged deterministic developer replay
+      that fails closed unless explicitly enabled in an unpackaged
+      non-production build.
+- [ ] Add player-visible public replay export controls and review a generated
+      artifact from a completed event.
+- [x] Define forward- and backward-compatibility policy for saves, including
+      update rollback, unsupported future versions, partial writes, disk-full,
+      permission-denied, and quota failures.
+
+### Privacy, diagnostics, and player trust
+
+- [x] Keep v1 fully playable offline with no account, analytics, ads, remote
+      fonts, CDN assets, bot server, or mandatory update check.
+- [x] Add static runtime/CSP checks plus a packaged launch-and-idle deny-proxy
+      audit; bundle fonts and every required runtime asset.
+- [ ] Extend the packaged deny-proxy audit through representative ordinary
+      offline play in every mode, failing if any endpoint is contacted.
+- [x] Write a plain-language privacy policy for the actual desktop behavior,
+      including local saves, optional diagnostics, retention, deletion, and
+      third parties.
+- [ ] Publish the privacy policy at a stable HTTPS URL and wire the final
+      publisher support contact before store submission.
+- [x] Keep telemetry absent by default; if it is later added, define a minimal
+      event/data inventory, ask separate opt-in consent, provide an in-game
+      opt-out/delete path, and never collect hole cards or free-form answers.
+- [ ] Make remote crash upload opt-in and off by default; disclose the crash
+      provider, fields, retention, and upload timing, and allow local crash
+      reports to be viewed and deleted.
+- [x] Add rotating local logs with secrets/path/user-content redaction, bounded
+      disk use, timestamps, build/engine versions, and a one-click redacted
+      diagnostic export.
+- [x] Add bounded atomic crash-loop tracking and pre-ready Electron safe-mode
+      activation after repeated startup/renderer failures; disable hardware
+      acceleration and expose only a redacted read-only recovery state.
+- [ ] Consume safe mode in the renderer to ignore imported settings, disable
+      animated backgrounds and nonessential audio, show status/exit controls,
+      preserve progress, and pass packaged crash-loop recovery tests.
+- [ ] Add visible in-app links for Privacy, Support, Licenses/Credits, version,
+      build identifier, save location, log location, and diagnostic export.
+
+### Performance, assets, and offline robustness
+
+- [x] Set measurable budgets before optimization: cold start to interactive,
+      mode-to-table load time, action-to-feedback latency, frame pacing/FPS,
+      idle CPU, peak memory, installer size, and save-write duration.
+- [ ] Benchmark those budgets on a low-spec supported Windows machine, a typical
+      laptop with integrated graphics, and a discrete-GPU desktop; record power
+      and thermal behavior during a 60-minute tournament soak.
+- [x] Profile Rational Monte Carlo/equity work, add exact work instrumentation,
+      deterministic count-sliced execution, and fail-closed
+      per-decision/per-slice caps while preserving fixed-seed decisions and the
+      frozen bot baseline.
+- [ ] Integrate the asynchronous sliced equity boundary into live tournament
+      progression (or a worker) with cancellation and stale-result rejection;
+      the current synchronous caller remains deterministically capped but can
+      still block the UI for a large decision.
+- [ ] Lazy-load mode-specific code and heavy room/avatar/audio assets, preload
+      only the next likely scene, and provide progress plus a cancel/back path
+      for loads that exceed the target.
+- [x] Define texture, image, animation, and audio memory/size budgets; compress
+      masters into shipping formats while retaining source masters outside the
+      runtime package.
+- [x] Provide static or low-cost fallbacks for artwork, the optional menu video,
+      room presentation, local font stacks, and audio; no runtime shader is
+      currently shipped.
+- [ ] Fault-inject missing/corrupt assets inside a packaged ASAR, slow disk,
+      unsupported video codecs, Windows font failures, and audio-device loss.
+- [ ] Pause expensive rendering and simulations while hidden/minimized and
+      verify no runaway timers, detached audio nodes, object URLs, or retained
+      hand histories grow memory across long sessions.
+- [x] Measure deterministic initial bundle composition and reachable direct
+      dependency usage; hard-gate Electron main/preload against renderer or
+      poker-engine imports.
+- [x] Add a bounded one-host Windows packaged-runtime profiler for cold launch,
+      navigation timing, allowlisted CDP main-thread metrics, process-tree CPU/
+      working set, exact build/host identity, cleanup, and canonical JSON/Markdown
+      evidence; retain the explicit limitation that this is not the required
+      low-spec/typical/discrete-GPU hardware matrix.
+- [x] Review and retain `start-menu-room.png` as the animated championship-room
+      arrival background; the production composition audit now proves every
+      built runtime asset has a static reference.
+- [ ] Instrument dependency evaluation, startup/main-thread blocking, decode,
+      memory, and first-paint cost on supported hardware.
+
+### Audio behavior beyond the soundtrack
+
+- [x] Keep persisted volume application from constructing or playing an audio
+      graph before the browser records the player’s first input.
+- [x] Add persisted Master/Mute alongside Music and SFX.
+- [x] Add explicit keyboard-accessible Master and Table-effects previews with
+      one polite status region; keep slider changes silent/graph-free and keep
+      Music preview visibly unavailable until approved licensed masters exist.
+- [x] Define deterministic audio-focus rules for pause, blur, device
+      disconnect/change, headphones removal where exactly detectable,
+      suspend/resume, explicit Ready, and simultaneous system audio.
+- [ ] Wire the audio-focus controller to DOM and Electron `powerMonitor`
+      lifecycle events, connect the Ready recap, optionally track a selected
+      output, and pass the packaged Windows device/focus matrix.
+- [x] Ensure current card, chip, fold, feedback, and deal sounds do not create hidden
+      information or timing tells that the visual interface does not disclose.
+- [x] Provide a silent fallback when audio initialization or graph creation
+      fails so supplementary sound never blocks a poker action.
+- [ ] Test long playlist sessions for leaks, clipping, drift, and abrupt cuts
+      after licensed masters and playback are integrated.
+
+### Localization and content operations
+
+- [ ] Extract every player-facing string, poker term, shortcut label, error,
+      tutorial, and explanation from components into versioned locale resources;
+      ship English as an explicit complete locale.
+- [x] Add a versioned English numeric locale surface for number, percentage,
+      ratio, chip, and duration formatting, and keep quiz parsing unambiguous
+      for decimal comma, decimal point, fraction, and colon-ratio input.
+- [ ] Route every remaining player-facing numeric/date surface through the
+      locale layer and add an explicit date resource before claiming complete
+      application-wide locale-aware formatting.
+- [ ] Add pseudo-localization, 30–50% text-expansion, long-name, and right-to-left
+      layout tests before claiming support for another language.
+- [x] Define a versioned scenario schema and validator for legal cards, stacks,
+      actions, units, tolerances, explanations, tags, difficulty, source/reviewer,
+      and duplicate detection.
+- [x] Build a developer-only deterministic Training-bank validation/export CLI;
+      production packages exclude authoring and hidden-answer tooling.
+- [x] Extend the developer scenario tooling with an interactive preview/editor
+      or generator, deterministic seed controls, and bulk simulation.
+- [x] Create an automated bot league/regression harness that compares policy
+      versions by position, stack depth, street, action distribution, EV loss,
+      timing leakage, and tournament finish distribution before balance changes.
+- [x] Gate Training difficulty/Elo and historical-score compatibility against a
+      versioned frozen synthetic benchmark; fail silent content, evaluator,
+      selection, classification, and calibration drift.
+- [ ] Obtain qualified poker-math review and consented human pilot/item/
+      near-transfer evidence before claiming real-player difficulty or learning
+      calibration; keep the current baseline labeled synthetic-only.
+
+### Security and dependency hygiene
+
+- [x] Add a restrictive packaged Content Security Policy and remove runtime
+      third-party script/font/style loads.
+- [x] Explicitly enable renderer sandboxing; deny unexpected permission requests,
+      block unapproved navigation/new windows/downloads, validate IPC senders
+      and arguments, and expose only narrow typed preload methods.
+- [x] Enable appropriate Electron fuses and ASAR integrity during packaging,
+      then verify the packaged unpacked build refuses tampered application
+      resources.
+- [ ] Repeat fuse and ASAR-integrity verification on the installed, signed
+      release candidate in the clean-machine matrix.
+- [x] Track supported Electron/Chromium/Node versions and establish a regular
+      security-update cadence instead of freezing the current runtime.
+- [x] Add dependency vulnerability, lockfile-integrity, secret,
+      registry-origin, and reviewed install-lifecycle-script checks to release
+      builds; generate a deterministic CycloneDX SBOM for each shipped version.
+- [x] Resolve and hard-gate every locked npm package license declaration with
+      exact-version evidence, a reviewed allowlist, negative tests, and a
+      deterministic package notices inventory.
+- [x] Assemble a deterministic, fail-closed upstream-license-text artifact for
+      the seven npm identities selected as shipped runtime content, with exact
+      manifest/text hashes, duplicate-path preservation, tamper/staleness/size
+      tests, and explicit separation from Electron/Chromium and non-npm asset
+      obligations.
+- [ ] Assemble and ship the required upstream copyright/license/NOTICE texts,
+      and resolve all font, image, audio, and other asset provenance blockers.
+- [x] Ensure developer tools, source maps containing source, test hooks, hidden
+      cards, debug IPC, and authoring tools are absent or securely disabled in
+      production packages.
+
+### Windows packaging, updates, and release materials
+
+- [x] Choose and document the technical Windows distribution path: a signed
+      direct x64 NSIS installer, user-initiated full-installer update channel,
+      retained signed rollback build, and private-only portable preview.
+- [ ] Assign the legal publisher, named release/support owners, signing service,
+      HTTPS host, and current fee budget before public distribution.
+- [x] Declare the intended v1 support matrix as x64 editions of
+      Microsoft-supported Windows 11; do not claim Windows 10, ia32, or Arm64.
+- [ ] Build and clean-machine test every Windows 11 feature release still
+      supported at release freeze rather than relying on one host or emulation.
+- [ ] Produce complete Windows identity assets and metadata: executable/installer
+      icons, publisher/product/version fields, Start menu identity, uninstall
+      entry, install size, and accessible window title.
+- [ ] Authenticode-sign and timestamp every public EXE/installer and relevant
+      binary with a production-trusted certificate; keep certificate material
+      in protected CI secrets and verify signatures after upload.
+- [ ] Choose one signed update mechanism, validate HTTPS metadata and packages,
+      prevent downgrade/tampering, support staged rollout and rollback, preserve
+      saves, and show readable release notes with Restart Now/Later.
+- [ ] Test clean install, non-admin install, upgrade, interrupted update,
+      rollback, reinstall, side-by-side prevention, uninstall, and preservation
+      or explicit removal of player data in clean Windows virtual machines.
+- [x] Add a release CI pipeline that runs typecheck, unit/property/soak tests,
+      production build, offline/CSP/static-budget checks, lockfile and obvious
+      secret checks, third-party inventory generation, production debug/source
+      hygiene checks, and deterministic archived artifact manifests.
+- [ ] Extend release CI with Windows installer packaging, Authenticode signature
+      verification, installed-app launch/recovery smoke tests, and rollback
+      artifact verification once signing and clean-machine runners exist.
+- [ ] Prepare accurate store/press materials from the shipping build: icon,
+      capsule/hero art, gameplay-only screenshots, short trailer, description,
+      feature list, supported inputs, languages, accessibility features, offline
+      statement, system requirements, privacy URL, and support URL.
+- [ ] Complete the IARC/store age-rating questionnaire accurately for simulated
+      poker/gambling content and keep play-chip-only/no-cash language consistent
+      in the game, metadata, screenshots, privacy policy, and review notes.
+- [ ] Record provenance and commercial redistribution rights for the supplied
+      start-menu background and every generated/third-party asset before it
+      enters a release candidate; replace anything with unclear rights.
+- [x] Establish version-gated CHANGELOG, known-issues register, save
+      compatibility matrix, release-operations index, support-response
+      procedure, and end-of-support policy without inventing owners or SLAs.
+- [ ] Finalize complete upstream notices and approved asset/audio credits, then
+      maintain every release-operations document for each public version.
+- [ ] Freeze a release candidate, test it from a clean machine with networking
+      disabled, collect final hashes and a rollback build, and require a signed
+      go/no-go checklist before publishing.
+
+## Release quality
+
+- [x] Keep tournament, Training, Normal AI, and Rational AI tests passing in
+      the current 0.1.0 automated release snapshot (38 files / 278 tests).
+- [x] Add property/soak tests for card uniqueness, chip conservation, legal
+      actions, hidden-information invariance, and deterministic replay.
+- [x] Audit generated scenarios and AI explanations for mathematically false
+      certainty or outcome bias.
+- [x] Add a fail-closed static source/build/package audit confirming no
+      recognized payment, purchase, cash-out, transfer-for-value, payment SDK,
+      billing IPC, or real-money wagering path.
+- [x] Add visible “Play chips only” and “No real-money wagering” copy to the
+      active start menu and pass the source plus production-renderer audit.
+- [x] Repackage the disclosure and pass the packaged-ASAR boundary audit.
+- [ ] Complete interactive play-chip disclosure and store-metadata review.
+- [x] Create versioned save migrations and a last-known-good local backup.
+- [x] Add crash-safe autosave at action/hand boundaries for tournaments,
+      retaining the deterministic checkpoint on settings and lifecycle writes.
+- [ ] Review all third-party code, art, fonts, music, and reference licenses.
+- [ ] Update this file whenever a requirement is completed, changed, or added.

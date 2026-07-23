@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "rendererEntrypoints": [
+    "src/main.tsx"
+  ],
+  "electronEntrypoints": [
+    "electron/main.cjs",
+    "electron/preload.cjs"
+  ],
+  "allowedElectronExternalDependencies": [
+    "electron"
+  ],
+  "rendererOnlyProductionDependencies": [
+    "@fontsource/barlow-condensed",
+    "@fontsource/inter",
+    "lucide-react",
+    "react",
+    "react-dom"
+  ],
+  "forbiddenPokerComputationPathPatterns": [
+    "(^|/)(engine|modes)(/|$)",
+    "(^|/)(betting|bot-league|deck|evaluator|normal|pots|rational|timed-blind|tournament|training-engine)([.-]|$)"
+  ]
+}

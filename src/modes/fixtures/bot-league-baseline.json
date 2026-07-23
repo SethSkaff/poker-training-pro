@@ -1,0 +1,400 @@
+{
+  "schemaVersion": 1,
+  "harnessVersion": "bot-league-v1",
+  "baselineId": "policy-baseline-2026-07-23",
+  "frozenInputs": {
+    "matrixFixtures": 36,
+    "matrixSeedsPerProfile": 12,
+    "equitySimulations": 60,
+    "tournamentEquitySimulations": 50,
+    "tournamentSeeds": [
+      "league-tournament-01",
+      "league-tournament-02",
+      "league-tournament-03",
+      "league-tournament-04",
+      "league-tournament-05",
+      "league-tournament-06"
+    ]
+  },
+  "policies": {
+    "rationalPolicyVersion": "rational-v1",
+    "normalPolicyVersion": "normal-policy-v1",
+    "rational": {
+      "overall": {
+        "decisions": 36,
+        "meanEquity": 0.351157,
+        "meanRequiredEquity": 0.133333,
+        "meanPositionScore": 0.5,
+        "meanEffectiveStackBigBlinds": 46,
+        "meanStackToPotRatio": 7.1875,
+        "chosenActions": {
+          "fold": 0.111111,
+          "check": 0,
+          "call": 0.305556,
+          "raise": 0.583333,
+          "all-in": 0
+        },
+        "expectedActions": {
+          "fold": 0.091411,
+          "check": 0,
+          "call": 0.286777,
+          "raise": 0.621812,
+          "all-in": 0
+        }
+      },
+      "byPosition": {
+        "early": {
+          "decisions": 12,
+          "meanEquity": 0.37963,
+          "meanRequiredEquity": 0.133333,
+          "meanPositionScore": 0,
+          "meanEffectiveStackBigBlinds": 46,
+          "meanStackToPotRatio": 7.1875,
+          "chosenActions": {
+            "fold": 0.166667,
+            "check": 0,
+            "call": 0.333333,
+            "raise": 0.5,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.12077,
+            "check": 0,
+            "call": 0.28751,
+            "raise": 0.59172,
+            "all-in": 0
+          }
+        },
+        "middle": {
+          "decisions": 12,
+          "meanEquity": 0.331944,
+          "meanRequiredEquity": 0.133333,
+          "meanPositionScore": 0.5,
+          "meanEffectiveStackBigBlinds": 46,
+          "meanStackToPotRatio": 7.1875,
+          "chosenActions": {
+            "fold": 0,
+            "check": 0,
+            "call": 0.333333,
+            "raise": 0.666667,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.063574,
+            "check": 0,
+            "call": 0.344878,
+            "raise": 0.591548,
+            "all-in": 0
+          }
+        },
+        "late": {
+          "decisions": 12,
+          "meanEquity": 0.341898,
+          "meanRequiredEquity": 0.133333,
+          "meanPositionScore": 1,
+          "meanEffectiveStackBigBlinds": 46,
+          "meanStackToPotRatio": 7.1875,
+          "chosenActions": {
+            "fold": 0.166667,
+            "check": 0,
+            "call": 0.25,
+            "raise": 0.583333,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.089889,
+            "check": 0,
+            "call": 0.227943,
+            "raise": 0.682168,
+            "all-in": 0
+          }
+        }
+      },
+      "byStack": {
+        "short": {
+          "decisions": 12,
+          "meanEquity": 0.35463,
+          "meanRequiredEquity": 0.133333,
+          "meanPositionScore": 0.5,
+          "meanEffectiveStackBigBlinds": 8,
+          "meanStackToPotRatio": 1.25,
+          "chosenActions": {
+            "fold": 0.083333,
+            "check": 0,
+            "call": 0.25,
+            "raise": 0.666667,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.105915,
+            "check": 0,
+            "call": 0.27572,
+            "raise": 0.618365,
+            "all-in": 0
+          }
+        },
+        "medium": {
+          "decisions": 12,
+          "meanEquity": 0.345602,
+          "meanRequiredEquity": 0.133333,
+          "meanPositionScore": 0.5,
+          "meanEffectiveStackBigBlinds": 30,
+          "meanStackToPotRatio": 4.6875,
+          "chosenActions": {
+            "fold": 0.083333,
+            "check": 0,
+            "call": 0.416667,
+            "raise": 0.5,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.081256,
+            "check": 0,
+            "call": 0.285511,
+            "raise": 0.633233,
+            "all-in": 0
+          }
+        },
+        "deep": {
+          "decisions": 12,
+          "meanEquity": 0.353241,
+          "meanRequiredEquity": 0.133333,
+          "meanPositionScore": 0.5,
+          "meanEffectiveStackBigBlinds": 100,
+          "meanStackToPotRatio": 15.625,
+          "chosenActions": {
+            "fold": 0.166667,
+            "check": 0,
+            "call": 0.25,
+            "raise": 0.583333,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.087062,
+            "check": 0,
+            "call": 0.2991,
+            "raise": 0.613838,
+            "all-in": 0
+          }
+        }
+      },
+      "byStreet": {
+        "preflop": {
+          "decisions": 9,
+          "meanEquity": 0.509259,
+          "meanRequiredEquity": 0.2,
+          "meanPositionScore": 0.5,
+          "meanEffectiveStackBigBlinds": 46,
+          "meanStackToPotRatio": 11.5,
+          "chosenActions": {
+            "fold": 0,
+            "check": 0,
+            "call": 0.222222,
+            "raise": 0.777778,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.005179,
+            "check": 0,
+            "call": 0.123141,
+            "raise": 0.87168,
+            "all-in": 0
+          }
+        },
+        "flop": {
+          "decisions": 9,
+          "meanEquity": 0.467593,
+          "meanRequiredEquity": 0.111111,
+          "meanPositionScore": 0.5,
+          "meanEffectiveStackBigBlinds": 46,
+          "meanStackToPotRatio": 5.75,
+          "chosenActions": {
+            "fold": 0,
+            "check": 0,
+            "call": 0.111111,
+            "raise": 0.888889,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.000352,
+            "check": 0,
+            "call": 0.177365,
+            "raise": 0.822282,
+            "all-in": 0
+          }
+        },
+        "turn": {
+          "decisions": 9,
+          "meanEquity": 0.305556,
+          "meanRequiredEquity": 0.111111,
+          "meanPositionScore": 0.5,
+          "meanEffectiveStackBigBlinds": 46,
+          "meanStackToPotRatio": 5.75,
+          "chosenActions": {
+            "fold": 0,
+            "check": 0,
+            "call": 0.666667,
+            "raise": 0.333333,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.009325,
+            "check": 0,
+            "call": 0.409363,
+            "raise": 0.581312,
+            "all-in": 0
+          }
+        },
+        "river": {
+          "decisions": 9,
+          "meanEquity": 0.122222,
+          "meanRequiredEquity": 0.111111,
+          "meanPositionScore": 0.5,
+          "meanEffectiveStackBigBlinds": 46,
+          "meanStackToPotRatio": 5.75,
+          "chosenActions": {
+            "fold": 0.444444,
+            "check": 0,
+            "call": 0.222222,
+            "raise": 0.333333,
+            "all-in": 0
+          },
+          "expectedActions": {
+            "fold": 0.350787,
+            "check": 0,
+            "call": 0.437239,
+            "raise": 0.211974,
+            "all-in": 0
+          }
+        }
+      }
+    },
+    "normalProfiles": {
+      "anchor": {
+        "profileId": "anchor",
+        "decisions": 432,
+        "selectedBestRate": 0.960648,
+        "deviationRate": 0.039352,
+        "meanEvLossBigBlinds": 0.002022,
+        "maxEvLossBigBlinds": 0.096667,
+        "evBudgetBreaches": 0,
+        "chosenActions": {
+          "fold": 0.060185,
+          "check": 0,
+          "call": 0.407407,
+          "raise": 0.532407,
+          "all-in": 0
+        }
+      },
+      "tempo": {
+        "profileId": "tempo",
+        "decisions": 432,
+        "selectedBestRate": 0.965278,
+        "deviationRate": 0.034722,
+        "meanEvLossBigBlinds": 0.002471,
+        "maxEvLossBigBlinds": 0.128878,
+        "evBudgetBreaches": 0,
+        "chosenActions": {
+          "fold": 0.064815,
+          "check": 0,
+          "call": 0.405093,
+          "raise": 0.530093,
+          "all-in": 0
+        }
+      },
+      "pressure": {
+        "profileId": "pressure",
+        "decisions": 432,
+        "selectedBestRate": 0.94213,
+        "deviationRate": 0.05787,
+        "meanEvLossBigBlinds": 0.006826,
+        "maxEvLossBigBlinds": 0.247172,
+        "evBudgetBreaches": 0,
+        "chosenActions": {
+          "fold": 0.05787,
+          "check": 0,
+          "call": 0.398148,
+          "raise": 0.543981,
+          "all-in": 0
+        }
+      },
+      "mirror": {
+        "profileId": "mirror",
+        "decisions": 432,
+        "selectedBestRate": 0.905093,
+        "deviationRate": 0.094907,
+        "meanEvLossBigBlinds": 0.014056,
+        "maxEvLossBigBlinds": 0.29601,
+        "evBudgetBreaches": 0,
+        "chosenActions": {
+          "fold": 0.069444,
+          "check": 0,
+          "call": 0.381944,
+          "raise": 0.548611,
+          "all-in": 0
+        }
+      },
+      "wideLens": {
+        "profileId": "wide-lens",
+        "decisions": 432,
+        "selectedBestRate": 0.921296,
+        "deviationRate": 0.078704,
+        "meanEvLossBigBlinds": 0.011642,
+        "maxEvLossBigBlinds": 0.29601,
+        "evBudgetBreaches": 0,
+        "chosenActions": {
+          "fold": 0.0625,
+          "check": 0,
+          "call": 0.398148,
+          "raise": 0.539352,
+          "all-in": 0
+        }
+      }
+    }
+  },
+  "timingLeakage": {
+    "samples": 1200,
+    "cutoffDelayCorrelation": 0.107373,
+    "uncertaintyDelayCorrelation": 0.092745,
+    "actionClassDelayCorrelation": 0.13073,
+    "minDelayMs": 824,
+    "maxDelayMs": 3564
+  },
+  "tournaments": {
+    "rational": {
+      "completed": 6,
+      "meanFinish": 3.666667,
+      "finishDistribution": {
+        "1": 0,
+        "2": 1,
+        "3": 2,
+        "4": 1,
+        "5": 2,
+        "6": 0
+      },
+      "meanHands": 3.166667,
+      "meanDecisions": 27.166667,
+      "maxDecisions": 48
+    },
+    "normal": {
+      "completed": 6,
+      "meanFinish": 3,
+      "finishDistribution": {
+        "1": 0,
+        "2": 3,
+        "3": 0,
+        "4": 3,
+        "5": 0,
+        "6": 0
+      },
+      "meanHands": 8.666667,
+      "meanDecisions": 67.666667,
+      "maxDecisions": 150
+    }
+  },
+  "runtimeBounds": {
+    "matrixPolicyCalls": 2196,
+    "tournamentCount": 12,
+    "tournamentDecisionCap": 2500
+  }
+}

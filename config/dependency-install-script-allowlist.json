@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "packagePath": "node_modules/electron-winstaller",
+      "version": "5.4.0",
+      "reason": "Selects the bundled 7-Zip binary for the current CPU architecture."
+    },
+    {
+      "packagePath": "node_modules/esbuild",
+      "version": "0.28.1",
+      "reason": "Installs and verifies esbuild's platform-specific executable."
+    },
+    {
+      "packagePath": "node_modules/fsevents",
+      "version": "2.3.3",
+      "reason": "Optional macOS filesystem watcher native package; absent on Windows."
+    },
+    {
+      "packagePath": "node_modules/vite-node/node_modules/esbuild",
+      "version": "0.25.12",
+      "reason": "Installs and verifies the esbuild executable used by vite-node."
+    },
+    {
+      "packagePath": "node_modules/vitest/node_modules/esbuild",
+      "version": "0.25.12",
+      "reason": "Installs and verifies the esbuild executable used by Vitest."
+    }
+  ]
+}

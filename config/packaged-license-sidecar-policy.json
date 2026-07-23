@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "packageRoot": "outputs/desktop/win-unpacked",
+  "maximumTotalBytes": 67108864,
+  "electronPackage": {
+    "name": "electron",
+    "version": "43.2.0"
+  },
+  "files": [
+    {
+      "id": "runtime-npm-notices",
+      "kind": "generated-runtime-notices",
+      "sourcePath": "THIRD-PARTY-NOTICES.runtime.txt",
+      "targetPath": "resources/THIRD-PARTY-NOTICES.runtime.txt",
+      "minimumBytes": 1024,
+      "maximumBytes": 41943040
+    },
+    {
+      "id": "electron-license",
+      "kind": "pinned-electron-sidecar",
+      "sourcePath": "node_modules/electron/dist/LICENSE",
+      "targetPath": "LICENSE.electron.txt",
+      "minimumBytes": 512,
+      "maximumBytes": 1048576,
+      "bytes": 1096,
+      "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+    },
+    {
+      "id": "chromium-licenses",
+      "kind": "pinned-electron-sidecar",
+      "sourcePath": "node_modules/electron/dist/LICENSES.chromium.html",
+      "targetPath": "LICENSES.chromium.html",
+      "minimumBytes": 1048576,
+      "maximumBytes": 33554432,
+      "bytes": 20313957,
+      "sha256": "b911161e6594ec76b872498b423c54406168f2974e0d407a847f7de1e5ff94dd"
+    }
+  ]
+}

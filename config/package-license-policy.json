@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "allowedDeclaredLicenses": [
+    "(MIT OR CC0-1.0)",
+    "(WTFPL OR MIT)",
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BlueOak-1.0.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "OFL-1.1",
+    "Python-2.0",
+    "WTFPL",
+    "WTFPL OR ISC"
+  ],
+  "policyNotes": [
+    "Allowlisting means the declared license is compatible with commercial redistribution under its terms; it is not legal advice or a substitute for reviewing those terms.",
+    "Copyright notices, license texts, attribution, source-availability obligations, modification notices, and other conditions still apply where required.",
+    "Unknown, malformed, LicenseRef, SEE LICENSE IN, proprietary, unlicensed, or any new declaration fails until reviewed and explicitly added."
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "formatVersion": "runtime-package-notices-v1",
+  "lockfileVersion": 3,
+  "entries": [
+    {
+      "name": "@fontsource/barlow-condensed",
+      "version": "5.3.0",
+      "declaredLicense": "OFL-1.1",
+      "declarationEvidence": [
+        "node_modules/@fontsource/barlow-condensed/package.json#license"
+      ],
+      "packagePaths": [
+        "node_modules/@fontsource/barlow-condensed"
+      ],
+      "manifests": [
+        {
+          "path": "node_modules/@fontsource/barlow-condensed/package.json",
+          "bytes": 1512,
+          "sha256": "55021a1242c8f618b5f5dc1ad9341bea8972c4d6626bc403878b30a11e4c759e"
+        }
+      ],
+      "texts": [
+        {
+          "kind": "license",
+          "path": "node_modules/@fontsource/barlow-condensed/LICENSE",
+          "bytes": 6167,
+          "sha256": "046ee27d8bddc6b6ee08eee53c96dbf3ec1f6df561644e018507dd8ffcb11d31"
+        }
+      ]
+    },
+    {
+      "name": "@fontsource/inter",
+      "version": "5.3.0",
+      "declaredLicense": "OFL-1.1",
+      "declarationEvidence": [
+        "node_modules/@fontsource/inter/package.json#license"
+      ],
+      "packagePaths": [
+        "node_modules/@fontsource/inter"
+      ],
+      "manifests": [
+        {
+          "path": "node_modules/@fontsource/inter/package.json",
+          "bytes": 1446,
+          "sha256": "05d03ec21754e37cf7da007c840e2f0a893c8161a53ee782d7c810e8a99c7cc5"
+        }
+      ],
+      "texts": [
+        {
+          "kind": "license",
+          "path": "node_modules/@fontsource/inter/LICENSE",
+          "bytes": 4477,
+          "sha256": "3b0a5fca3d17942cde889069889dedbbbd075e9b599968c82a95f4d944e9b345"
+        }
+      ]
+    },
+    {
+      "name": "electron",
+      "version": "43.2.0",
+      "declaredLicense": "MIT",
+      "declarationEvidence": [
+        "node_modules/electron/package.json#license"
+      ],
+      "packagePaths": [
+        "node_modules/electron"
+      ],
+      "manifests": [
+        {
+          "path": "node_modules/electron/package.json",
+          "bytes": 744,
+          "sha256": "02d60dd9473e05f9e5c3d23d3397e24c77cf283f086bb20be283e4536aaf1923"
+        }
+      ],
+      "texts": [
+        {
+          "kind": "license",
+          "path": "node_modules/electron/LICENSE",
+          "bytes": 1096,
+          "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+        }
+      ]
+    },
+    {
+      "name": "lucide-react",
+      "version": "0.468.0",
+      "declaredLicense": "ISC",
+      "declarationEvidence": [
+        "node_modules/lucide-react/package.json#license"
+      ],
+      "packagePaths": [
+        "node_modules/lucide-react"
+      ],
+      "manifests": [
+        {
+          "path": "node_modules/lucide-react/package.json",
+          "bytes": 2306,
+          "sha256": "609e78dffe97aab720c105246eca516f0aaac1de60725e53c0f5abb908b08320"
+        }
+      ],
+      "texts": [
+        {
+          "kind": "license",
+          "path": "node_modules/lucide-react/LICENSE",
+          "bytes": 880,
+          "sha256": "1e7290b35280a048667bbf0ebabac1c7fd52a75300e8b2946ac165715997f2bc"
+        }
+      ]
+    },
+    {
+      "name": "react",
+      "version": "19.2.6",
+      "declaredLicense": "MIT",
+      "declarationEvidence": [
+        "node_modules/react/package.json#license"
+      ],
+      "packagePaths": [
+        "node_modules/react"
+      ],
+      "manifests": [
+        {
+          "path": "node_modules/react/package.json",
+          "bytes": 1248,
+          "sha256": "e631b6ac066fa758d9b36f226d96e8fc05425d1e8993ffcc99c6de2d6aa7268c"
+        }
+      ],
+      "texts": [
+        {
+          "kind": "license",
+          "path": "node_modules/react/LICENSE",
+          "bytes": 1088,
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.6",
+      "declaredLicense": "MIT",
+      "declarationEvidence": [
+        "node_modules/react-dom/package.json#license"
+      ],
+      "packagePaths": [
+        "node_modules/react-dom"
+      ],
+      "manifests": [
+        {
+          "path": "node_modules/react-dom/package.json",
+          "bytes": 3063,
+          "sha256": "2c195b9bfa1b4f7dee5dd6f955c0fbb716e83c3e9c2e7a80b5e19c5a18507718"
+        }
+      ],
+      "texts": [
+        {
+          "kind": "license",
+          "path": "node_modules/react-dom/LICENSE",
+          "bytes": 1088,
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    },
+    {
+      "name": "scheduler",
+      "version": "0.27.0",
+      "declaredLicense": "MIT",
+      "declarationEvidence": [
+        "node_modules/scheduler/package.json#license"
+      ],
+      "packagePaths": [
+        "node_modules/scheduler"
+      ],
+      "manifests": [
+        {
+          "path": "node_modules/scheduler/package.json",
+          "bytes": 564,
+          "sha256": "393bb96b7e481bf50189a1a02c7e0e7f4d01acba5abc6fbe7d214638624462fc"
+        }
+      ],
+      "texts": [
+        {
+          "kind": "license",
+          "path": "node_modules/scheduler/LICENSE",
+          "bytes": 1088,
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+        }
+      ]
+    }
+  ]
+}

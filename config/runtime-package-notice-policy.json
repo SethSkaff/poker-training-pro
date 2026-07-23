@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "additionalShippedPackages": [
+    {
+      "name": "electron",
+      "reason": "The locked Electron runtime is copied into desktop packages even though npm records the package as a development dependency."
+    }
+  ]
+}

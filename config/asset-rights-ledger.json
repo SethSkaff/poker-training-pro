@@ -1,0 +1,586 @@
+{
+  "schemaVersion": 1,
+  "project": "Poker Training Pro",
+  "generatedAtPolicy": "deterministic-no-timestamp",
+  "inventoryRoots": [
+    "build",
+    "ios",
+    "public",
+    "src"
+  ],
+  "runtimeAssetExtensions": [
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".otf",
+    ".png",
+    ".svg",
+    ".ttf",
+    ".webp",
+    ".woff",
+    ".woff2"
+  ],
+  "releaseRules": {
+    "approvedRightsStatus": "approved-commercial-redistribution",
+    "requireSourceEvidence": true,
+    "requireMasterEvidence": true,
+    "requireLicenseEvidence": true,
+    "requireDistributedLicenseTextWhenLicenseRequiresIt": true,
+    "blockDerivedAssetWhenParentIsBlocked": true,
+    "c2paIsProvenanceEvidenceNotRightsEvidence": true
+  },
+  "visualAssets": [
+    {
+      "path": "build/icon.ico",
+      "shippingRole": "windows-executable-and-installer-icon-input",
+      "format": "ICO",
+      "bytes": 132293,
+      "sha256": "02e95e3460a6e2e4588c0868ceb33cad99f5b7914de4861c3aea541e2d826518",
+      "dimensions": "16x16,24x24,32x32,48x48,64x64,128x128,256x256",
+      "embeddedMetadata": {
+        "inspection": "ICO directory parsed; seven 32-bit frames; no ownership claim inferred"
+      },
+      "provenanceStatus": "derived-blocked",
+      "rightsStatus": "derived-blocked",
+      "derivedFrom": "public/poker-training-pro-mark.png",
+      "derivationEvidence": {
+        "status": "locally-verified-but-recipe-not-archived",
+        "detail": "The 16x16, 32x32, and 48x48 encoded frames are byte-identical to the same frames in public/favicon.ico; coordinating-agent handoff states the icon suite was generated from the mark. The exact generation script/tool version is not checked in."
+      },
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Blocked by parent source and missing archived derivation recipe."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Current binary exists, but an approved parent master and reproducible derivation record do not."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "No commercial redistribution rights record for the parent generated mark."
+      },
+      "publisherMustProvide": [
+        "Clear the parent mark for commercial Windows and mobile distribution.",
+        "Archive the deterministic icon-generation recipe and tool version."
+      ]
+    },
+    {
+      "path": "build/icon.png",
+      "shippingRole": "packaging-identity-master-candidate-not-currently-copied-by-build-files",
+      "format": "PNG",
+      "bytes": 319712,
+      "sha256": "a31c9ec97a3bf034d305779451ecce9c4df894ef6c8f8aad14eee2860c1c5aee",
+      "dimensions": "512x512",
+      "embeddedMetadata": {
+        "pngMetadataChunks": [],
+        "inspection": "No tEXt, zTXt, iTXt, eXIf, or caBX chunks."
+      },
+      "provenanceStatus": "derived-blocked",
+      "rightsStatus": "derived-blocked",
+      "derivedFrom": "public/poker-training-pro-mark.png",
+      "derivationEvidence": {
+        "status": "pixel-equivalence-verified",
+        "detail": "Pixel comparison is identical to the parent converted to RGBA and resized to 512x512 with Lanczos resampling; the producing script/tool version is not archived."
+      },
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Blocked by parent source."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Current binary exists, but an approved parent master and archived derivation record do not."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "No commercial redistribution rights record for the parent generated mark."
+      },
+      "publisherMustProvide": [
+        "Clear the parent mark for commercial Windows and mobile distribution.",
+        "Archive the deterministic resize recipe and tool version."
+      ]
+    },
+    {
+      "path": "public/favicon.ico",
+      "shippingRole": "renderer-favicon",
+      "format": "ICO",
+      "bytes": 8149,
+      "sha256": "78952f73220a3bca511fa48edff354b4effc54ec47a5a10f769bece5576f79c5",
+      "dimensions": "16x16,32x32,48x48",
+      "embeddedMetadata": {
+        "inspection": "ICO directory parsed; three 32-bit frames; each encoded frame is byte-identical to its corresponding frame in build/icon.ico."
+      },
+      "provenanceStatus": "derived-blocked",
+      "rightsStatus": "derived-blocked",
+      "derivedFrom": "public/poker-training-pro-mark.png",
+      "derivationEvidence": {
+        "status": "locally-verified-but-recipe-not-archived",
+        "detail": "All three frames occur byte-for-byte in build/icon.ico; coordinating-agent handoff states the icon suite was generated from the mark."
+      },
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Blocked by parent source."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Current binary exists, but an approved parent master and archived derivation record do not."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "No commercial redistribution rights record for the parent generated mark."
+      },
+      "publisherMustProvide": [
+        "Clear the parent mark and archive the icon derivation recipe."
+      ]
+    },
+    {
+      "path": "public/favicon.png",
+      "shippingRole": "renderer-favicon",
+      "format": "PNG",
+      "bytes": 7437,
+      "sha256": "43fff5cf22dddf3a4a08161ed3c1ffe63a6bdd476a75bf446c5fc31d82cf58c5",
+      "dimensions": "64x64",
+      "embeddedMetadata": {
+        "pngMetadataChunks": [],
+        "inspection": "No tEXt, zTXt, iTXt, eXIf, or caBX chunks."
+      },
+      "provenanceStatus": "derived-blocked",
+      "rightsStatus": "derived-blocked",
+      "derivedFrom": "public/poker-training-pro-mark.png",
+      "derivationEvidence": {
+        "status": "pixel-equivalence-verified",
+        "detail": "Pixel comparison is identical to the parent converted to RGBA and resized to 64x64 with Lanczos resampling; the producing script/tool version is not archived."
+      },
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Blocked by parent source."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Current binary exists, but an approved parent master and archived derivation record do not."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "No commercial redistribution rights record for the parent generated mark."
+      },
+      "publisherMustProvide": [
+        "Clear the parent mark and archive the resize recipe."
+      ]
+    },
+    {
+      "path": "public/opponent-avatar-sheet-v1.png",
+      "shippingRole": "renderer-runtime-image-copied-to-dist",
+      "format": "PNG",
+      "bytes": 2042994,
+      "sha256": "755579af72b73aca035a051cd9584b4828ae439787102cd8659ef6e9c30b2949",
+      "dimensions": "1536x1024",
+      "embeddedMetadata": {
+        "pngMetadataChunks": [
+          {
+            "type": "caBX",
+            "bytes": 29083,
+            "sha256": "da7b59c2cd21e8b236f1d8176e39f68fa99d553d46dc7bcf4bcdc9d287daddd5"
+          }
+        ],
+        "c2paSignal": {
+          "verificationStatus": "payload-inspected-not-cryptographically-verified",
+          "claimGenerator": "OpenAI Media Service API",
+          "softwareAgent": "gpt-image 2.0",
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+          "instanceId": "urn:c2pa:a59f724f-3002-4c2b-82f1-9c18cc41f8a9"
+        }
+      },
+      "provenanceStatus": "generated-provenance-unverified",
+      "rightsStatus": "generated-provenance-unverified",
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Embedded C2PA/JUMBF text identifies generative creation, but the claim was not independently validated and no prompt/request record is archived."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Only the runtime PNG is present; no receipt/export manifest or designated archival master is recorded."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "No archived terms/version, output-rights record, or third-party likeness/trademark clearance."
+      },
+      "publisherMustProvide": [
+        "Archive the original generation request, exact output, account/receipt context, and applicable service terms version.",
+        "Document human review for third-party likeness, trademark, and character/IP conflicts.",
+        "Record a publisher approval naming desktop and mobile commercial redistribution."
+      ]
+    },
+    {
+      "path": "public/poker-training-pro-mark.png",
+      "shippingRole": "renderer-runtime-brand-mark-and-parent-of-package-icons",
+      "format": "PNG",
+      "bytes": 1525226,
+      "sha256": "29677ce1512bbedb33b658f818c091e42bd404bd3c7541757b1dae8b729aa540",
+      "dimensions": "1254x1254",
+      "embeddedMetadata": {
+        "pngMetadataChunks": [
+          {
+            "type": "caBX",
+            "bytes": 29087,
+            "sha256": "ab228ecf1d6a1939a1e8dfebc763ea4c8e9ccfe507c0999d29d7f306106d73a4"
+          }
+        ],
+        "c2paSignal": {
+          "verificationStatus": "payload-inspected-not-cryptographically-verified",
+          "claimGenerator": "OpenAI Media Service API",
+          "softwareAgent": "gpt-image 2.0",
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+          "instanceId": "urn:c2pa:4c86d460-0a3f-4f1e-9cb8-eeeeb6f6d823"
+        }
+      },
+      "provenanceStatus": "generated-provenance-unverified",
+      "rightsStatus": "generated-provenance-unverified",
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Embedded C2PA/JUMBF text identifies generative creation, but the claim was not independently validated and no prompt/request record is archived."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Only the runtime PNG is present; no receipt/export manifest or designated archival master is recorded."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "No archived terms/version, output-rights record, trademark search, or publisher brand approval."
+      },
+      "publisherMustProvide": [
+        "Archive the original generation request, exact output, account/receipt context, and applicable service terms version.",
+        "Complete trademark and confusing-similarity review for the product mark.",
+        "Record publisher approval for desktop/mobile commercial use and all derived icons."
+      ]
+    },
+    {
+      "path": "public/start-menu-reference.png",
+      "shippingRole": "renderer-runtime-start-menu-background",
+      "format": "PNG",
+      "bytes": 2512816,
+      "sha256": "a10109e3552f0d13a4974b63390087a37f5d5fe8b5f9abdaa981ef30fb8a1d76",
+      "dimensions": "1672x941",
+      "embeddedMetadata": {
+        "pngMetadataChunks": [],
+        "inspection": "No tEXt, zTXt, iTXt, eXIf, or caBX chunks."
+      },
+      "provenanceStatus": "user-supplied-unverified",
+      "rightsStatus": "user-supplied-unverified",
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Conversation history and TODOS.md call this user-supplied artwork, but repository evidence does not identify its creator, original source, or delivery receipt."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Current resized/runtime file exists; original supplied master and transformation record are not archived."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "User delivery alone does not establish ownership or commercial redistribution/derivative rights."
+      },
+      "publisherMustProvide": [
+        "Identify the creator and original source/master.",
+        "Provide a signed ownership statement or license covering commercial desktop/mobile redistribution, adaptation, and marketing.",
+        "Clear all depicted characters, logos, cards, artwork, and other third-party elements."
+      ]
+    },
+    {
+      "path": "public/start-menu-room.png",
+      "shippingRole": "renderer-runtime-image-copied-to-dist-currently-not-referenced-by-code",
+      "format": "PNG",
+      "bytes": 1709386,
+      "sha256": "8cbeedb96b20954582f1105bcaca1c27a631ec1b98d76c2c13b4be237bd5bdb5",
+      "dimensions": "1672x941",
+      "embeddedMetadata": {
+        "pngMetadataChunks": [
+          {
+            "type": "caBX",
+            "bytes": 24922,
+            "sha256": "d53ee33cfb3c0929d4bde844b1c0396d2d6b2849eee22748a77f3b5d5d64ceb0"
+          }
+        ],
+        "c2paSignal": {
+          "verificationStatus": "payload-inspected-not-cryptographically-verified",
+          "claimGenerator": "OpenAI Media Service API",
+          "softwareAgent": "gpt-image 2.0",
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+          "instanceId": "urn:c2pa:dc13d74b-b645-4aaa-bcbc-0048c3c1afa0"
+        }
+      },
+      "provenanceStatus": "generated-provenance-unverified",
+      "rightsStatus": "generated-provenance-unverified",
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Embedded C2PA/JUMBF text identifies generative creation, but the claim was not independently validated and no prompt/request record is archived."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Only the shipped PNG is present; no receipt/export manifest or designated archival master is recorded."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "No archived terms/version, output-rights record, or third-party IP clearance."
+      },
+      "publisherMustProvide": [
+        "Archive generation request, output receipt, terms version, and designated master.",
+        "Complete third-party IP review and record publisher commercial-use approval."
+      ]
+    },
+    {
+      "path": "public/start-menu-settings.png",
+      "shippingRole": "renderer-runtime-settings-hover-background",
+      "format": "PNG",
+      "bytes": 2106202,
+      "sha256": "42dd5dd81d7d809680496f8636f57aae93b930d00d426ef3dc8db090acc6818e",
+      "dimensions": "1672x941",
+      "embeddedMetadata": {
+        "pngMetadataChunks": [
+          {
+            "type": "caBX",
+            "bytes": 24922,
+            "sha256": "535ece8e43444a751dd8eceec01bde1090c741da4808c2d89d16b2a7abfe92a5"
+          }
+        ],
+        "c2paSignal": {
+          "verificationStatus": "payload-inspected-not-cryptographically-verified",
+          "claimGenerator": "OpenAI Media Service API",
+          "softwareAgent": "gpt-image 2.0",
+          "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+          "instanceId": "urn:c2pa:b8f6eb3b-e49c-4ce2-873b-77e073926996"
+        }
+      },
+      "provenanceStatus": "generated-provenance-unverified",
+      "rightsStatus": "generated-provenance-unverified",
+      "sourceEvidence": {
+        "releaseSufficient": false,
+        "detail": "Embedded C2PA/JUMBF text identifies generative creation, but the claim was not independently validated and no prompt/request record is archived."
+      },
+      "masterEvidence": {
+        "releaseSufficient": false,
+        "detail": "Only the shipped PNG is present; no receipt/export manifest or designated archival master is recorded."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": false,
+        "detail": "No archived terms/version, output-rights record, or third-party IP clearance."
+      },
+      "publisherMustProvide": [
+        "Archive generation request, output receipt, terms version, and designated master.",
+        "Complete third-party IP review and record publisher commercial-use approval."
+      ]
+    }
+  ],
+  "fontPackages": [
+    {
+      "package": "@fontsource/barlow-condensed",
+      "version": "5.3.0",
+      "family": "Barlow Condensed",
+      "license": "OFL-1.1",
+      "rightsStatus": "approved-commercial-redistribution",
+      "packageIntegrity": "sha512-RA7MmIx0v3eQ6Gcf74qLVLOwLB0GpPOzx+eU9iG/AmCnSJGcIWYeU8y6CEMGZ210MGwGg5CZhzLkkvyZdTTk1g==",
+      "sourceEvidence": {
+        "releaseSufficient": true,
+        "packageManifest": "node_modules/@fontsource/barlow-condensed/package.json",
+        "metadata": "node_modules/@fontsource/barlow-condensed/metadata.json",
+        "officialFontsourceSource": "https://github.com/Fontsource/font-files/tree/main/fonts/google/barlow-condensed",
+        "officialGoogleFontsLicense": "https://github.com/google/fonts/blob/main/ofl/barlowcondensed/OFL.txt"
+      },
+      "masterEvidence": {
+        "releaseSufficient": true,
+        "detail": "Every imported package binary is pinned below by path, byte length, and SHA-256; npm tarball integrity is pinned by package-lock.json."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": true,
+        "path": "node_modules/@fontsource/barlow-condensed/LICENSE",
+        "bytes": 6167,
+        "sha256": "046ee27d8bddc6b6ee08eee53c96dbf3ec1f6df561644e018507dd8ffcb11d31",
+        "copyright": "Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)"
+      },
+      "distributedLicenseEvidence": {
+        "required": true,
+        "path": "licenses/fonts/barlow-condensed-OFL-1.1.txt",
+        "expectedSha256": "046ee27d8bddc6b6ee08eee53c96dbf3ec1f6df561644e018507dd8ffcb11d31",
+        "status": "present-verified"
+      },
+      "files": [
+        {
+          "path": "node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-600-normal.woff",
+          "format": "WOFF",
+          "weight": 600,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 18892,
+          "sha256": "02e9d2ca2e9af5d8dbdfd30c4a5aa59632205901e9045140b559a44d361d8a46"
+        },
+        {
+          "path": "node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-600-normal.woff2",
+          "format": "WOFF2",
+          "weight": 600,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 22308,
+          "sha256": "215a93c696f442034a46fbb382958f753fda60e30490683aeea6b235fcbb2b66"
+        },
+        {
+          "path": "node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-700-normal.woff",
+          "format": "WOFF",
+          "weight": 700,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 18824,
+          "sha256": "bd414ee6698edb13ec58b3084b68c1804eeb55acb6b65f628822320dcd1e5431"
+        },
+        {
+          "path": "node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-700-normal.woff2",
+          "format": "WOFF2",
+          "weight": 700,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 22444,
+          "sha256": "3787a5a419171630e6890cfa47c4da067474d005cd0ff8dc11ec090fdc3ee2b8"
+        },
+        {
+          "path": "node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-800-normal.woff",
+          "format": "WOFF",
+          "weight": 800,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 18724,
+          "sha256": "8ac1acb3ce8849a2fb0160f778099fc48a440d4f50b6121cd66e628816c2fb2b"
+        },
+        {
+          "path": "node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-800-normal.woff2",
+          "format": "WOFF2",
+          "weight": 800,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 22464,
+          "sha256": "2515494e8cc2ca07c86ea78766cfa104b796aa6ed5d66821c01d51dbb0b52bce"
+        }
+      ]
+    },
+    {
+      "package": "@fontsource/inter",
+      "version": "5.3.0",
+      "family": "Inter",
+      "license": "OFL-1.1",
+      "rightsStatus": "approved-commercial-redistribution",
+      "packageIntegrity": "sha512-RofMylZmjlJEfELXeNHFWBRcSs75rGU/6bV2S2jfnvv/3rPXPGe0LgUJTklcHZ9lM4OZmAVFhcJPnACfb91A3g==",
+      "sourceEvidence": {
+        "releaseSufficient": true,
+        "packageManifest": "node_modules/@fontsource/inter/package.json",
+        "metadata": "node_modules/@fontsource/inter/metadata.json",
+        "officialFontsourceSource": "https://github.com/Fontsource/font-files/tree/main/fonts/google/inter",
+        "officialGoogleFontsLicense": "https://github.com/google/fonts/blob/main/ofl/inter/OFL.txt"
+      },
+      "masterEvidence": {
+        "releaseSufficient": true,
+        "detail": "Every imported package binary is pinned below by path, byte length, and SHA-256; npm tarball integrity is pinned by package-lock.json."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": true,
+        "path": "node_modules/@fontsource/inter/LICENSE",
+        "bytes": 4477,
+        "sha256": "3b0a5fca3d17942cde889069889dedbbbd075e9b599968c82a95f4d944e9b345",
+        "copyright": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      },
+      "distributedLicenseEvidence": {
+        "required": true,
+        "path": "licenses/fonts/inter-OFL-1.1.txt",
+        "expectedSha256": "3b0a5fca3d17942cde889069889dedbbbd075e9b599968c82a95f4d944e9b345",
+        "status": "present-verified"
+      },
+      "files": [
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-400-normal.woff",
+          "format": "WOFF",
+          "weight": 400,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 30696,
+          "sha256": "e20fa0b4fd2dd26e4d14b3ac3cc922509c3a63fa5e910e90c614544aa042dd45"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2",
+          "format": "WOFF2",
+          "weight": 400,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 23664,
+          "sha256": "8909904ab6c872eb994093482a88a28eca2cd95912d7b6fecd72103b0dc07edc"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-500-normal.woff",
+          "format": "WOFF",
+          "weight": 500,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 31284,
+          "sha256": "9b42c108da48b5ed55a3072e815ffee2d271562e6c0dd6998910e8f9c09e0a3d"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-500-normal.woff2",
+          "format": "WOFF2",
+          "weight": 500,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 24272,
+          "sha256": "f3779f1efccc4bdcdf9c0a02ab95bf6bd092ed09c48c08cedc725889edd1d19f"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-600-normal.woff",
+          "format": "WOFF",
+          "weight": 600,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 31260,
+          "sha256": "6a9cb3a509b4eeaf12b7dda6c4aacac3e85d07f4201bf4dd716e332e692b87bd"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-600-normal.woff2",
+          "format": "WOFF2",
+          "weight": 600,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 24452,
+          "sha256": "f9a06e79cd3a2a20951c0f0e28f66dd0e6d3fda73911d640a2125c8fcb78f21a"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-700-normal.woff",
+          "format": "WOFF",
+          "weight": 700,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 31320,
+          "sha256": "7c5ed5655730de337704d3fc94628515cd7e3d8d32368871709bf56ac0397e7a"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-700-normal.woff2",
+          "format": "WOFF2",
+          "weight": 700,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 24356,
+          "sha256": "6f56409fd3d64bb85f7d070bce20749db2d66b6d63cec586cc22d1c761be2491"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-800-normal.woff",
+          "format": "WOFF",
+          "weight": 800,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 31296,
+          "sha256": "a2fdc5be8acd75fe8f3fd9de8179828d04fd884c155cd6b63fec23b33651ec88"
+        },
+        {
+          "path": "node_modules/@fontsource/inter/files/inter-latin-800-normal.woff2",
+          "format": "WOFF2",
+          "weight": 800,
+          "style": "normal",
+          "subset": "latin",
+          "bytes": 24400,
+          "sha256": "a7d0a50f15d389cad679238466bdb5fc9787aa0715719064ce25abaff042820d"
+        }
+      ]
+    }
+  ]
+}

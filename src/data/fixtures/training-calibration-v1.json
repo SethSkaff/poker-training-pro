@@ -1,0 +1,1646 @@
+{
+  "calibrationVersion": "training-calibration-1.0.0",
+  "scenarioSchemaVersion": "1.0.0",
+  "scenarioContentVersion": "2026.07.23.1",
+  "evidenceKind": "synthetic-regression-only",
+  "reviewStatus": "pending-human-review",
+  "scenarioContracts": [
+    {
+      "id": "flop-defense-frequency",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 3,
+      "street": "flop",
+      "tags": [
+        "bet-sizing",
+        "bluff-catcher",
+        "flop",
+        "minimum-defense-frequency",
+        "range"
+      ],
+      "transferGroup": "aggression-threshold",
+      "decisionDifficulty": 1320,
+      "decisionBand": "advanced",
+      "mathDifficulty": 1230,
+      "mathBand": "intermediate",
+      "actionEvs": [
+        [
+          "call",
+          -0.48
+        ],
+        [
+          "fold",
+          0
+        ],
+        [
+          "raise",
+          -0.92
+        ]
+      ],
+      "actionEpsilon": 0.05,
+      "partialCreditRegret": 0.5,
+      "mathTopic": "minimum-defense-frequency",
+      "mathUnit": "%",
+      "mathCorrectValue": 60,
+      "mathTolerance": 1.5
+    },
+    {
+      "id": "flop-dirty-straight-outs",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 3,
+      "street": "flop",
+      "tags": [
+        "dirty-outs",
+        "flop",
+        "overbet",
+        "straight-draw",
+        "two-tone"
+      ],
+      "transferGroup": "draw-quality",
+      "decisionDifficulty": 1290,
+      "decisionBand": "intermediate",
+      "mathDifficulty": 1240,
+      "mathBand": "intermediate",
+      "actionEvs": [
+        [
+          "all-in",
+          -2.1
+        ],
+        [
+          "call",
+          -0.58
+        ],
+        [
+          "fold",
+          0
+        ],
+        [
+          "raise",
+          -1.42
+        ]
+      ],
+      "actionEpsilon": 0.05,
+      "partialCreditRegret": 0.65,
+      "mathTopic": "outs",
+      "mathUnit": "outs",
+      "mathCorrectValue": 7,
+      "mathTolerance": 0
+    },
+    {
+      "id": "flop-flush-draw-all-in",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 2,
+      "street": "flop",
+      "tags": [
+        "all-in",
+        "flop",
+        "flush-draw",
+        "pot-odds",
+        "rule-of-four"
+      ],
+      "transferGroup": "price-versus-equity",
+      "decisionDifficulty": 1020,
+      "decisionBand": "foundation",
+      "mathDifficulty": 1060,
+      "mathBand": "foundation",
+      "actionEvs": [
+        [
+          "call",
+          2.49
+        ],
+        [
+          "fold",
+          0
+        ]
+      ],
+      "actionEpsilon": 0.05,
+      "partialCreditRegret": 0.45,
+      "mathTopic": "equity",
+      "mathUnit": "%",
+      "mathCorrectValue": 34.97,
+      "mathTolerance": 2
+    },
+    {
+      "id": "preflop-button-shove-fold-equity",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 3,
+      "street": "preflop",
+      "tags": [
+        "blocker",
+        "button",
+        "fold-equity",
+        "preflop",
+        "short-stack"
+      ],
+      "transferGroup": "aggression-threshold",
+      "decisionDifficulty": 1210,
+      "decisionBand": "intermediate",
+      "mathDifficulty": 1180,
+      "mathBand": "intermediate",
+      "actionEvs": [
+        [
+          "all-in",
+          0.62
+        ],
+        [
+          "fold",
+          0
+        ],
+        [
+          "raise",
+          0.18
+        ]
+      ],
+      "actionEpsilon": 0.06,
+      "partialCreditRegret": 0.5,
+      "mathTopic": "expected-value",
+      "mathUnit": "%",
+      "mathCorrectValue": 80.73,
+      "mathTolerance": 1.5
+    },
+    {
+      "id": "preflop-implied-odds-pair",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 3,
+      "street": "preflop",
+      "tags": [
+        "big-blind",
+        "deep-stack",
+        "implied-odds",
+        "pair",
+        "preflop"
+      ],
+      "transferGroup": "stack-leverage",
+      "decisionDifficulty": 1260,
+      "decisionBand": "intermediate",
+      "mathDifficulty": 1300,
+      "mathBand": "advanced",
+      "actionEvs": [
+        [
+          "call",
+          0.34
+        ],
+        [
+          "fold",
+          0
+        ],
+        [
+          "raise",
+          -0.22
+        ]
+      ],
+      "actionEpsilon": 0.05,
+      "partialCreditRegret": 0.4,
+      "mathTopic": "implied-odds",
+      "mathUnit": "chips",
+      "mathCorrectValue": 5500,
+      "mathTolerance": 300
+    },
+    {
+      "id": "preflop-pot-odds-ak",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 2,
+      "street": "preflop",
+      "tags": [
+        "all-in",
+        "effective-stack",
+        "pot-odds",
+        "preflop",
+        "range-equity"
+      ],
+      "transferGroup": "price-versus-equity",
+      "decisionDifficulty": 1040,
+      "decisionBand": "foundation",
+      "mathDifficulty": 980,
+      "mathBand": "foundation",
+      "actionEvs": [
+        [
+          "call",
+          1.35
+        ],
+        [
+          "fold",
+          0
+        ]
+      ],
+      "actionEpsilon": 0.05,
+      "partialCreditRegret": 0.4,
+      "mathTopic": "pot-odds",
+      "mathUnit": "%",
+      "mathCorrectValue": 40,
+      "mathTolerance": 1.5
+    },
+    {
+      "id": "river-blocker-bluff",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 4,
+      "street": "river",
+      "tags": [
+        "bet-sizing",
+        "blocker",
+        "bluff",
+        "fold-equity",
+        "river"
+      ],
+      "transferGroup": "aggression-threshold",
+      "decisionDifficulty": 1480,
+      "decisionBand": "advanced",
+      "mathDifficulty": 1320,
+      "mathBand": "advanced",
+      "actionEvs": [
+        [
+          "all-in",
+          -0.36
+        ],
+        [
+          "check",
+          0
+        ],
+        [
+          "raise",
+          0.72
+        ]
+      ],
+      "actionEpsilon": 0.08,
+      "partialCreditRegret": 0.8,
+      "mathTopic": "expected-value",
+      "mathUnit": "%",
+      "mathCorrectValue": 33.33,
+      "mathTolerance": 1.5
+    },
+    {
+      "id": "river-bluff-catch-price",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 3,
+      "street": "river",
+      "tags": [
+        "bluff-catcher",
+        "pot-odds",
+        "range-frequency",
+        "river",
+        "thin-call"
+      ],
+      "transferGroup": "price-versus-equity",
+      "decisionDifficulty": 1280,
+      "decisionBand": "intermediate",
+      "mathDifficulty": 1060,
+      "mathBand": "foundation",
+      "actionEvs": [
+        [
+          "call",
+          0.25
+        ],
+        [
+          "fold",
+          0
+        ],
+        [
+          "raise",
+          -0.82
+        ]
+      ],
+      "actionEpsilon": 0.05,
+      "partialCreditRegret": 0.3,
+      "mathTopic": "pot-odds",
+      "mathUnit": "%",
+      "mathCorrectValue": 25,
+      "mathTolerance": 1.5
+    },
+    {
+      "id": "river-icm-bubble-call",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 5,
+      "street": "river",
+      "tags": [
+        "bubble",
+        "icm",
+        "risk-premium",
+        "river",
+        "satellite",
+        "tournament"
+      ],
+      "transferGroup": "price-versus-equity",
+      "decisionDifficulty": 1660,
+      "decisionBand": "expert",
+      "mathDifficulty": 1510,
+      "mathBand": "expert",
+      "actionEvs": [
+        [
+          "call",
+          -2.4
+        ],
+        [
+          "fold",
+          0
+        ]
+      ],
+      "actionEpsilon": 0.05,
+      "partialCreditRegret": 0.6,
+      "mathTopic": "tournament-pressure",
+      "mathUnit": "%",
+      "mathCorrectValue": 9.11,
+      "mathTolerance": 1
+    },
+    {
+      "id": "turn-close-flush-price",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 3,
+      "street": "turn",
+      "tags": [
+        "close-decision",
+        "flush-draw",
+        "mixed-action",
+        "rule-of-two",
+        "turn"
+      ],
+      "transferGroup": "price-versus-equity",
+      "decisionDifficulty": 1340,
+      "decisionBand": "advanced",
+      "mathDifficulty": 1160,
+      "mathBand": "intermediate",
+      "actionEvs": [
+        [
+          "all-in",
+          -0.65
+        ],
+        [
+          "call",
+          0.03
+        ],
+        [
+          "fold",
+          0
+        ],
+        [
+          "raise",
+          -0.31
+        ]
+      ],
+      "actionEpsilon": 0.05,
+      "partialCreditRegret": 0.35,
+      "mathTopic": "equity",
+      "mathUnit": "%",
+      "mathCorrectValue": 19.57,
+      "mathTolerance": 2
+    },
+    {
+      "id": "turn-semi-bluff-ev",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 4,
+      "street": "turn",
+      "tags": [
+        "expected-value",
+        "flush-draw",
+        "fold-equity",
+        "semi-bluff",
+        "turn"
+      ],
+      "transferGroup": "aggression-threshold",
+      "decisionDifficulty": 1450,
+      "decisionBand": "advanced",
+      "mathDifficulty": 1420,
+      "mathBand": "advanced",
+      "actionEvs": [
+        [
+          "all-in",
+          0.74
+        ],
+        [
+          "check",
+          1.1
+        ],
+        [
+          "raise",
+          1.78
+        ]
+      ],
+      "actionEpsilon": 0.08,
+      "partialCreditRegret": 0.75,
+      "mathTopic": "expected-value",
+      "mathUnit": "chips",
+      "mathCorrectValue": 300,
+      "mathTolerance": 150
+    },
+    {
+      "id": "turn-spr-commitment",
+      "contentVersion": "2026.07.23.1",
+      "evaluatorVersion": "trainer-1.0",
+      "authoredDifficulty": 2,
+      "street": "turn",
+      "tags": [
+        "effective-stack",
+        "overpair",
+        "stack-to-pot-ratio",
+        "turn",
+        "value"
+      ],
+      "transferGroup": "stack-leverage",
+      "decisionDifficulty": 1110,
+      "decisionBand": "intermediate",
+      "mathDifficulty": 990,
+      "mathBand": "foundation",
+      "actionEvs": [
+        [
+          "all-in",
+          4.35
+        ],
+        [
+          "check",
+          3.1
+        ],
+        [
+          "raise",
+          3.82
+        ]
+      ],
+      "actionEpsilon": 0.08,
+      "partialCreditRegret": 0.6,
+      "mathTopic": "stack-to-pot-ratio",
+      "mathUnit": "ratio",
+      "mathCorrectValue": 0.6,
+      "mathTolerance": 0.05
+    }
+  ],
+  "coverage": {
+    "streets": [
+      {
+        "value": "flop",
+        "count": 3
+      },
+      {
+        "value": "preflop",
+        "count": 3
+      },
+      {
+        "value": "river",
+        "count": 3
+      },
+      {
+        "value": "turn",
+        "count": 3
+      }
+    ],
+    "authoredDifficulties": [
+      {
+        "value": 2,
+        "count": 3
+      },
+      {
+        "value": 3,
+        "count": 6
+      },
+      {
+        "value": 4,
+        "count": 2
+      },
+      {
+        "value": 5,
+        "count": 1
+      }
+    ],
+    "decisionBands": [
+      {
+        "value": "advanced",
+        "count": 4
+      },
+      {
+        "value": "expert",
+        "count": 1
+      },
+      {
+        "value": "foundation",
+        "count": 2
+      },
+      {
+        "value": "intermediate",
+        "count": 5
+      }
+    ],
+    "mathBands": [
+      {
+        "value": "advanced",
+        "count": 3
+      },
+      {
+        "value": "expert",
+        "count": 1
+      },
+      {
+        "value": "foundation",
+        "count": 4
+      },
+      {
+        "value": "intermediate",
+        "count": 4
+      }
+    ],
+    "tags": [
+      {
+        "value": "all-in",
+        "count": 2
+      },
+      {
+        "value": "bet-sizing",
+        "count": 2
+      },
+      {
+        "value": "big-blind",
+        "count": 1
+      },
+      {
+        "value": "blocker",
+        "count": 2
+      },
+      {
+        "value": "bluff",
+        "count": 1
+      },
+      {
+        "value": "bluff-catcher",
+        "count": 2
+      },
+      {
+        "value": "bubble",
+        "count": 1
+      },
+      {
+        "value": "button",
+        "count": 1
+      },
+      {
+        "value": "close-decision",
+        "count": 1
+      },
+      {
+        "value": "deep-stack",
+        "count": 1
+      },
+      {
+        "value": "dirty-outs",
+        "count": 1
+      },
+      {
+        "value": "effective-stack",
+        "count": 2
+      },
+      {
+        "value": "expected-value",
+        "count": 1
+      },
+      {
+        "value": "flop",
+        "count": 3
+      },
+      {
+        "value": "flush-draw",
+        "count": 3
+      },
+      {
+        "value": "fold-equity",
+        "count": 3
+      },
+      {
+        "value": "icm",
+        "count": 1
+      },
+      {
+        "value": "implied-odds",
+        "count": 1
+      },
+      {
+        "value": "minimum-defense-frequency",
+        "count": 1
+      },
+      {
+        "value": "mixed-action",
+        "count": 1
+      },
+      {
+        "value": "overbet",
+        "count": 1
+      },
+      {
+        "value": "overpair",
+        "count": 1
+      },
+      {
+        "value": "pair",
+        "count": 1
+      },
+      {
+        "value": "pot-odds",
+        "count": 3
+      },
+      {
+        "value": "preflop",
+        "count": 3
+      },
+      {
+        "value": "range",
+        "count": 1
+      },
+      {
+        "value": "range-equity",
+        "count": 1
+      },
+      {
+        "value": "range-frequency",
+        "count": 1
+      },
+      {
+        "value": "risk-premium",
+        "count": 1
+      },
+      {
+        "value": "river",
+        "count": 3
+      },
+      {
+        "value": "rule-of-four",
+        "count": 1
+      },
+      {
+        "value": "rule-of-two",
+        "count": 1
+      },
+      {
+        "value": "satellite",
+        "count": 1
+      },
+      {
+        "value": "semi-bluff",
+        "count": 1
+      },
+      {
+        "value": "short-stack",
+        "count": 1
+      },
+      {
+        "value": "stack-to-pot-ratio",
+        "count": 1
+      },
+      {
+        "value": "straight-draw",
+        "count": 1
+      },
+      {
+        "value": "thin-call",
+        "count": 1
+      },
+      {
+        "value": "tournament",
+        "count": 1
+      },
+      {
+        "value": "turn",
+        "count": 3
+      },
+      {
+        "value": "two-tone",
+        "count": 1
+      },
+      {
+        "value": "value",
+        "count": 1
+      }
+    ]
+  },
+  "nearTransferPairs": [
+    {
+      "from": "flop-defense-frequency",
+      "to": "preflop-button-shove-fold-equity"
+    },
+    {
+      "from": "flop-dirty-straight-outs",
+      "to": "preflop-button-shove-fold-equity"
+    },
+    {
+      "from": "flop-flush-draw-all-in",
+      "to": "turn-close-flush-price"
+    },
+    {
+      "from": "preflop-button-shove-fold-equity",
+      "to": "river-blocker-bluff"
+    },
+    {
+      "from": "preflop-implied-odds-pair",
+      "to": "turn-spr-commitment"
+    },
+    {
+      "from": "preflop-pot-odds-ak",
+      "to": "river-bluff-catch-price"
+    },
+    {
+      "from": "river-blocker-bluff",
+      "to": "turn-semi-bluff-ev"
+    },
+    {
+      "from": "river-bluff-catch-price",
+      "to": "preflop-pot-odds-ak"
+    },
+    {
+      "from": "river-icm-bubble-call",
+      "to": "turn-close-flush-price"
+    },
+    {
+      "from": "turn-close-flush-price",
+      "to": "flop-flush-draw-all-in"
+    },
+    {
+      "from": "turn-semi-bluff-ev",
+      "to": "river-blocker-bluff"
+    },
+    {
+      "from": "turn-spr-commitment",
+      "to": "preflop-implied-odds-pair"
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "reference",
+      "assumption": "Synthetic ceiling trace: chooses the highest modeled action EV and supplies the authored exact math answer.",
+      "initialDecisionElo": 1200,
+      "initialMathElo": 1200,
+      "finalDecisionElo": 1305,
+      "finalMathElo": 1289,
+      "action": {
+        "score": 12,
+        "possible": 12,
+        "rate": 1
+      },
+      "math": {
+        "score": 12,
+        "possible": 12,
+        "rate": 1
+      },
+      "attempts": [
+        {
+          "scenarioId": "flop-defense-frequency",
+          "street": "flop",
+          "authoredDifficulty": 3,
+          "decisionBand": "advanced",
+          "mathBand": "intermediate",
+          "action": "fold",
+          "mathAnswer": 60,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 11,
+          "mathEloDelta": 9,
+          "legacyResult": {
+            "scenarioId": "flop-defense-frequency",
+            "completedAt": "2000-01-01T00:00:00.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathAnswer": 60,
+            "mathCorrect": true,
+            "elapsedMs": 36800,
+            "eloDelta": 20
+          }
+        },
+        {
+          "scenarioId": "flop-dirty-straight-outs",
+          "street": "flop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "intermediate",
+          "action": "fold",
+          "mathAnswer": 7,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 10,
+          "mathEloDelta": 9,
+          "legacyResult": {
+            "scenarioId": "flop-dirty-straight-outs",
+            "completedAt": "2000-01-01T00:00:01.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathAnswer": 7,
+            "mathCorrect": true,
+            "elapsedMs": 35200,
+            "eloDelta": 19
+          }
+        },
+        {
+          "scenarioId": "flop-flush-draw-all-in",
+          "street": "flop",
+          "authoredDifficulty": 2,
+          "decisionBand": "foundation",
+          "mathBand": "foundation",
+          "action": "call",
+          "mathAnswer": 34.97,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 4,
+          "mathEloDelta": 5,
+          "legacyResult": {
+            "scenarioId": "flop-flush-draw-all-in",
+            "completedAt": "2000-01-01T00:00:02.000Z",
+            "action": "call",
+            "actionCorrect": true,
+            "mathAnswer": 34.97,
+            "mathCorrect": true,
+            "elapsedMs": 30400,
+            "eloDelta": 9
+          }
+        },
+        {
+          "scenarioId": "preflop-button-shove-fold-equity",
+          "street": "preflop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "intermediate",
+          "action": "all-in",
+          "mathAnswer": 80.73,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 8,
+          "mathEloDelta": 7,
+          "legacyResult": {
+            "scenarioId": "preflop-button-shove-fold-equity",
+            "completedAt": "2000-01-01T00:00:03.000Z",
+            "action": "all-in",
+            "actionCorrect": true,
+            "mathAnswer": 80.73,
+            "mathCorrect": true,
+            "elapsedMs": 35200,
+            "eloDelta": 15
+          }
+        },
+        {
+          "scenarioId": "preflop-implied-odds-pair",
+          "street": "preflop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "advanced",
+          "action": "call",
+          "mathAnswer": 5500,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 9,
+          "mathEloDelta": 10,
+          "legacyResult": {
+            "scenarioId": "preflop-implied-odds-pair",
+            "completedAt": "2000-01-01T00:00:04.000Z",
+            "action": "call",
+            "actionCorrect": true,
+            "mathAnswer": 5500,
+            "mathCorrect": true,
+            "elapsedMs": 43200,
+            "eloDelta": 19
+          }
+        },
+        {
+          "scenarioId": "preflop-pot-odds-ak",
+          "street": "preflop",
+          "authoredDifficulty": 2,
+          "decisionBand": "foundation",
+          "mathBand": "foundation",
+          "action": "call",
+          "mathAnswer": 40,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 4,
+          "mathEloDelta": 3,
+          "legacyResult": {
+            "scenarioId": "preflop-pot-odds-ak",
+            "completedAt": "2000-01-01T00:00:05.000Z",
+            "action": "call",
+            "actionCorrect": true,
+            "mathAnswer": 40,
+            "mathCorrect": true,
+            "elapsedMs": 30400,
+            "eloDelta": 7
+          }
+        },
+        {
+          "scenarioId": "river-blocker-bluff",
+          "street": "river",
+          "authoredDifficulty": 4,
+          "decisionBand": "advanced",
+          "mathBand": "advanced",
+          "action": "raise",
+          "mathAnswer": 33.33,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 13,
+          "mathEloDelta": 10,
+          "legacyResult": {
+            "scenarioId": "river-blocker-bluff",
+            "completedAt": "2000-01-01T00:00:06.000Z",
+            "action": "raise",
+            "actionCorrect": true,
+            "mathAnswer": 33.33,
+            "mathCorrect": true,
+            "elapsedMs": 41600,
+            "eloDelta": 23
+          }
+        },
+        {
+          "scenarioId": "river-bluff-catch-price",
+          "street": "river",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "foundation",
+          "action": "call",
+          "mathAnswer": 25,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 8,
+          "mathEloDelta": 4,
+          "legacyResult": {
+            "scenarioId": "river-bluff-catch-price",
+            "completedAt": "2000-01-01T00:00:07.000Z",
+            "action": "call",
+            "actionCorrect": true,
+            "mathAnswer": 25,
+            "mathCorrect": true,
+            "elapsedMs": 32000,
+            "eloDelta": 12
+          }
+        },
+        {
+          "scenarioId": "river-icm-bubble-call",
+          "street": "river",
+          "authoredDifficulty": 5,
+          "decisionBand": "expert",
+          "mathBand": "expert",
+          "action": "fold",
+          "mathAnswer": 9.11,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 14,
+          "mathEloDelta": 13,
+          "legacyResult": {
+            "scenarioId": "river-icm-bubble-call",
+            "completedAt": "2000-01-01T00:00:08.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathAnswer": 9.11,
+            "mathCorrect": true,
+            "elapsedMs": 50400,
+            "eloDelta": 27
+          }
+        },
+        {
+          "scenarioId": "turn-close-flush-price",
+          "street": "turn",
+          "authoredDifficulty": 3,
+          "decisionBand": "advanced",
+          "mathBand": "intermediate",
+          "action": "call",
+          "mathAnswer": 19.57,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 9,
+          "mathEloDelta": 6,
+          "legacyResult": {
+            "scenarioId": "turn-close-flush-price",
+            "completedAt": "2000-01-01T00:00:09.000Z",
+            "action": "call",
+            "actionCorrect": true,
+            "mathAnswer": 19.57,
+            "mathCorrect": true,
+            "elapsedMs": 34400,
+            "eloDelta": 15
+          }
+        },
+        {
+          "scenarioId": "turn-semi-bluff-ev",
+          "street": "turn",
+          "authoredDifficulty": 4,
+          "decisionBand": "advanced",
+          "mathBand": "advanced",
+          "action": "raise",
+          "mathAnswer": 300,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 11,
+          "mathEloDelta": 11,
+          "legacyResult": {
+            "scenarioId": "turn-semi-bluff-ev",
+            "completedAt": "2000-01-01T00:00:10.000Z",
+            "action": "raise",
+            "actionCorrect": true,
+            "mathAnswer": 300,
+            "mathCorrect": true,
+            "elapsedMs": 50400,
+            "eloDelta": 22
+          }
+        },
+        {
+          "scenarioId": "turn-spr-commitment",
+          "street": "turn",
+          "authoredDifficulty": 2,
+          "decisionBand": "intermediate",
+          "mathBand": "foundation",
+          "action": "all-in",
+          "mathAnswer": 0.6,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 4,
+          "mathEloDelta": 2,
+          "legacyResult": {
+            "scenarioId": "turn-spr-commitment",
+            "completedAt": "2000-01-01T00:00:11.000Z",
+            "action": "all-in",
+            "actionCorrect": true,
+            "mathAnswer": 0.6,
+            "mathCorrect": true,
+            "elapsedMs": 27200,
+            "eloDelta": 6
+          }
+        }
+      ]
+    },
+    {
+      "id": "developing",
+      "assumption": "Synthetic mixed trace: alternates best and second-best modeled actions, and alternates exact and deterministic near-miss math answers.",
+      "initialDecisionElo": 1200,
+      "initialMathElo": 1200,
+      "finalDecisionElo": 1262,
+      "finalMathElo": 1243,
+      "action": {
+        "score": 9,
+        "possible": 12,
+        "rate": 0.75
+      },
+      "math": {
+        "score": 9,
+        "possible": 12,
+        "rate": 0.75
+      },
+      "attempts": [
+        {
+          "scenarioId": "flop-defense-frequency",
+          "street": "flop",
+          "authoredDifficulty": 3,
+          "decisionBand": "advanced",
+          "mathBand": "intermediate",
+          "action": "fold",
+          "mathAnswer": 60,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 11,
+          "mathEloDelta": 9,
+          "legacyResult": {
+            "scenarioId": "flop-defense-frequency",
+            "completedAt": "2000-01-01T00:00:00.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathAnswer": 60,
+            "mathCorrect": true,
+            "elapsedMs": 46000,
+            "eloDelta": 20
+          }
+        },
+        {
+          "scenarioId": "flop-dirty-straight-outs",
+          "street": "flop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "intermediate",
+          "action": "call",
+          "mathAnswer": 8,
+          "actionScore": 0.5,
+          "mathScore": 0.5,
+          "decisionEloDelta": 2,
+          "mathEloDelta": 1,
+          "legacyResult": {
+            "scenarioId": "flop-dirty-straight-outs",
+            "completedAt": "2000-01-01T00:00:01.000Z",
+            "action": "call",
+            "actionCorrect": false,
+            "mathAnswer": 8,
+            "mathCorrect": false,
+            "elapsedMs": 44000,
+            "eloDelta": 3
+          }
+        },
+        {
+          "scenarioId": "flop-flush-draw-all-in",
+          "street": "flop",
+          "authoredDifficulty": 2,
+          "decisionBand": "foundation",
+          "mathBand": "foundation",
+          "action": "call",
+          "mathAnswer": 34.97,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 4,
+          "mathEloDelta": 5,
+          "legacyResult": {
+            "scenarioId": "flop-flush-draw-all-in",
+            "completedAt": "2000-01-01T00:00:02.000Z",
+            "action": "call",
+            "actionCorrect": true,
+            "mathAnswer": 34.97,
+            "mathCorrect": true,
+            "elapsedMs": 38000,
+            "eloDelta": 9
+          }
+        },
+        {
+          "scenarioId": "preflop-button-shove-fold-equity",
+          "street": "preflop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "intermediate",
+          "action": "raise",
+          "mathAnswer": 82.98,
+          "actionScore": 0.5,
+          "mathScore": 0.5,
+          "decisionEloDelta": 0,
+          "mathEloDelta": -1,
+          "legacyResult": {
+            "scenarioId": "preflop-button-shove-fold-equity",
+            "completedAt": "2000-01-01T00:00:03.000Z",
+            "action": "raise",
+            "actionCorrect": false,
+            "mathAnswer": 82.98,
+            "mathCorrect": false,
+            "elapsedMs": 44000,
+            "eloDelta": -1
+          }
+        },
+        {
+          "scenarioId": "preflop-implied-odds-pair",
+          "street": "preflop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "advanced",
+          "action": "call",
+          "mathAnswer": 5500,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 9,
+          "mathEloDelta": 10,
+          "legacyResult": {
+            "scenarioId": "preflop-implied-odds-pair",
+            "completedAt": "2000-01-01T00:00:04.000Z",
+            "action": "call",
+            "actionCorrect": true,
+            "mathAnswer": 5500,
+            "mathCorrect": true,
+            "elapsedMs": 54000,
+            "eloDelta": 19
+          }
+        },
+        {
+          "scenarioId": "preflop-pot-odds-ak",
+          "street": "preflop",
+          "authoredDifficulty": 2,
+          "decisionBand": "foundation",
+          "mathBand": "foundation",
+          "action": "fold",
+          "mathAnswer": 42.25,
+          "actionScore": 0,
+          "mathScore": 0.5,
+          "decisionEloDelta": -12,
+          "mathEloDelta": -5,
+          "legacyResult": {
+            "scenarioId": "preflop-pot-odds-ak",
+            "completedAt": "2000-01-01T00:00:05.000Z",
+            "action": "fold",
+            "actionCorrect": false,
+            "mathAnswer": 42.25,
+            "mathCorrect": false,
+            "elapsedMs": 38000,
+            "eloDelta": -17
+          }
+        },
+        {
+          "scenarioId": "river-blocker-bluff",
+          "street": "river",
+          "authoredDifficulty": 4,
+          "decisionBand": "advanced",
+          "mathBand": "advanced",
+          "action": "raise",
+          "mathAnswer": 33.33,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 13,
+          "mathEloDelta": 10,
+          "legacyResult": {
+            "scenarioId": "river-blocker-bluff",
+            "completedAt": "2000-01-01T00:00:06.000Z",
+            "action": "raise",
+            "actionCorrect": true,
+            "mathAnswer": 33.33,
+            "mathCorrect": true,
+            "elapsedMs": 52000,
+            "eloDelta": 23
+          }
+        },
+        {
+          "scenarioId": "river-bluff-catch-price",
+          "street": "river",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "foundation",
+          "action": "fold",
+          "mathAnswer": 27.25,
+          "actionScore": 0.5,
+          "mathScore": 0.5,
+          "decisionEloDelta": 1,
+          "mathEloDelta": -4,
+          "legacyResult": {
+            "scenarioId": "river-bluff-catch-price",
+            "completedAt": "2000-01-01T00:00:07.000Z",
+            "action": "fold",
+            "actionCorrect": false,
+            "mathAnswer": 27.25,
+            "mathCorrect": false,
+            "elapsedMs": 40000,
+            "eloDelta": -3
+          }
+        },
+        {
+          "scenarioId": "river-icm-bubble-call",
+          "street": "river",
+          "authoredDifficulty": 5,
+          "decisionBand": "expert",
+          "mathBand": "expert",
+          "action": "fold",
+          "mathAnswer": 9.11,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 15,
+          "mathEloDelta": 13,
+          "legacyResult": {
+            "scenarioId": "river-icm-bubble-call",
+            "completedAt": "2000-01-01T00:00:08.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathAnswer": 9.11,
+            "mathCorrect": true,
+            "elapsedMs": 63000,
+            "eloDelta": 28
+          }
+        },
+        {
+          "scenarioId": "turn-close-flush-price",
+          "street": "turn",
+          "authoredDifficulty": 3,
+          "decisionBand": "advanced",
+          "mathBand": "intermediate",
+          "action": "fold",
+          "mathAnswer": 22.57,
+          "actionScore": 1,
+          "mathScore": 0.5,
+          "decisionEloDelta": 10,
+          "mathEloDelta": -2,
+          "legacyResult": {
+            "scenarioId": "turn-close-flush-price",
+            "completedAt": "2000-01-01T00:00:09.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathAnswer": 22.57,
+            "mathCorrect": false,
+            "elapsedMs": 43000,
+            "eloDelta": 8
+          }
+        },
+        {
+          "scenarioId": "turn-semi-bluff-ev",
+          "street": "turn",
+          "authoredDifficulty": 4,
+          "decisionBand": "advanced",
+          "mathBand": "advanced",
+          "action": "raise",
+          "mathAnswer": 300,
+          "actionScore": 1,
+          "mathScore": 1,
+          "decisionEloDelta": 12,
+          "mathEloDelta": 12,
+          "legacyResult": {
+            "scenarioId": "turn-semi-bluff-ev",
+            "completedAt": "2000-01-01T00:00:10.000Z",
+            "action": "raise",
+            "actionCorrect": true,
+            "mathAnswer": 300,
+            "mathCorrect": true,
+            "elapsedMs": 63000,
+            "eloDelta": 24
+          }
+        },
+        {
+          "scenarioId": "turn-spr-commitment",
+          "street": "turn",
+          "authoredDifficulty": 2,
+          "decisionBand": "intermediate",
+          "mathBand": "foundation",
+          "action": "raise",
+          "mathAnswer": 0.675,
+          "actionScore": 0.5,
+          "mathScore": 0.5,
+          "decisionEloDelta": -3,
+          "mathEloDelta": -5,
+          "legacyResult": {
+            "scenarioId": "turn-spr-commitment",
+            "completedAt": "2000-01-01T00:00:11.000Z",
+            "action": "raise",
+            "actionCorrect": false,
+            "mathAnswer": 0.675,
+            "mathCorrect": false,
+            "elapsedMs": 34000,
+            "eloDelta": -8
+          }
+        }
+      ]
+    },
+    {
+      "id": "nonresponse",
+      "assumption": "Synthetic floor trace: folds when that action is modeled (otherwise chooses the alphabetically first modeled action) and omits every math answer.",
+      "initialDecisionElo": 1200,
+      "initialMathElo": 1200,
+      "finalDecisionElo": 1219,
+      "finalMathElo": 1114,
+      "action": {
+        "score": 6,
+        "possible": 12,
+        "rate": 0.5
+      },
+      "math": {
+        "score": 0,
+        "possible": 12,
+        "rate": 0
+      },
+      "attempts": [
+        {
+          "scenarioId": "flop-defense-frequency",
+          "street": "flop",
+          "authoredDifficulty": 3,
+          "decisionBand": "advanced",
+          "mathBand": "intermediate",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 1,
+          "mathScore": 0,
+          "decisionEloDelta": 11,
+          "mathEloDelta": -7,
+          "legacyResult": {
+            "scenarioId": "flop-defense-frequency",
+            "completedAt": "2000-01-01T00:00:00.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathCorrect": false,
+            "elapsedMs": 82800,
+            "eloDelta": 4
+          }
+        },
+        {
+          "scenarioId": "flop-dirty-straight-outs",
+          "street": "flop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "intermediate",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 1,
+          "mathScore": 0,
+          "decisionEloDelta": 10,
+          "mathEloDelta": -7,
+          "legacyResult": {
+            "scenarioId": "flop-dirty-straight-outs",
+            "completedAt": "2000-01-01T00:00:01.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathCorrect": false,
+            "elapsedMs": 79200,
+            "eloDelta": 3
+          }
+        },
+        {
+          "scenarioId": "flop-flush-draw-all-in",
+          "street": "flop",
+          "authoredDifficulty": 2,
+          "decisionBand": "foundation",
+          "mathBand": "foundation",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 0,
+          "mathScore": 0,
+          "decisionEloDelta": -12,
+          "mathEloDelta": -11,
+          "legacyResult": {
+            "scenarioId": "flop-flush-draw-all-in",
+            "completedAt": "2000-01-01T00:00:02.000Z",
+            "action": "fold",
+            "actionCorrect": false,
+            "mathCorrect": false,
+            "elapsedMs": 68400,
+            "eloDelta": -23
+          }
+        },
+        {
+          "scenarioId": "preflop-button-shove-fold-equity",
+          "street": "preflop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "intermediate",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 0,
+          "mathScore": 0,
+          "decisionEloDelta": -8,
+          "mathEloDelta": -8,
+          "legacyResult": {
+            "scenarioId": "preflop-button-shove-fold-equity",
+            "completedAt": "2000-01-01T00:00:03.000Z",
+            "action": "fold",
+            "actionCorrect": false,
+            "mathCorrect": false,
+            "elapsedMs": 79200,
+            "eloDelta": -16
+          }
+        },
+        {
+          "scenarioId": "preflop-implied-odds-pair",
+          "street": "preflop",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "advanced",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 0.5,
+          "mathScore": 0,
+          "decisionEloDelta": 1,
+          "mathEloDelta": -5,
+          "legacyResult": {
+            "scenarioId": "preflop-implied-odds-pair",
+            "completedAt": "2000-01-01T00:00:04.000Z",
+            "action": "fold",
+            "actionCorrect": false,
+            "mathCorrect": false,
+            "elapsedMs": 97200,
+            "eloDelta": -4
+          }
+        },
+        {
+          "scenarioId": "preflop-pot-odds-ak",
+          "street": "preflop",
+          "authoredDifficulty": 2,
+          "decisionBand": "foundation",
+          "mathBand": "foundation",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 0,
+          "mathScore": 0,
+          "decisionEloDelta": -11,
+          "mathEloDelta": -12,
+          "legacyResult": {
+            "scenarioId": "preflop-pot-odds-ak",
+            "completedAt": "2000-01-01T00:00:05.000Z",
+            "action": "fold",
+            "actionCorrect": false,
+            "mathCorrect": false,
+            "elapsedMs": 68400,
+            "eloDelta": -23
+          }
+        },
+        {
+          "scenarioId": "river-blocker-bluff",
+          "street": "river",
+          "authoredDifficulty": 4,
+          "decisionBand": "advanced",
+          "mathBand": "advanced",
+          "action": "all-in",
+          "mathAnswer": null,
+          "actionScore": 0,
+          "mathScore": 0,
+          "decisionEloDelta": -3,
+          "mathEloDelta": -4,
+          "legacyResult": {
+            "scenarioId": "river-blocker-bluff",
+            "completedAt": "2000-01-01T00:00:06.000Z",
+            "action": "all-in",
+            "actionCorrect": false,
+            "mathCorrect": false,
+            "elapsedMs": 93600,
+            "eloDelta": -7
+          }
+        },
+        {
+          "scenarioId": "river-bluff-catch-price",
+          "street": "river",
+          "authoredDifficulty": 3,
+          "decisionBand": "intermediate",
+          "mathBand": "foundation",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 0.5,
+          "mathScore": 0,
+          "decisionEloDelta": 2,
+          "mathEloDelta": -10,
+          "legacyResult": {
+            "scenarioId": "river-bluff-catch-price",
+            "completedAt": "2000-01-01T00:00:07.000Z",
+            "action": "fold",
+            "actionCorrect": false,
+            "mathCorrect": false,
+            "elapsedMs": 72000,
+            "eloDelta": -8
+          }
+        },
+        {
+          "scenarioId": "river-icm-bubble-call",
+          "street": "river",
+          "authoredDifficulty": 5,
+          "decisionBand": "expert",
+          "mathBand": "expert",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 1,
+          "mathScore": 0,
+          "decisionEloDelta": 15,
+          "mathEloDelta": -2,
+          "legacyResult": {
+            "scenarioId": "river-icm-bubble-call",
+            "completedAt": "2000-01-01T00:00:08.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathCorrect": false,
+            "elapsedMs": 113400,
+            "eloDelta": 13
+          }
+        },
+        {
+          "scenarioId": "turn-close-flush-price",
+          "street": "turn",
+          "authoredDifficulty": 3,
+          "decisionBand": "advanced",
+          "mathBand": "intermediate",
+          "action": "fold",
+          "mathAnswer": null,
+          "actionScore": 1,
+          "mathScore": 0,
+          "decisionEloDelta": 11,
+          "mathEloDelta": -7,
+          "legacyResult": {
+            "scenarioId": "turn-close-flush-price",
+            "completedAt": "2000-01-01T00:00:09.000Z",
+            "action": "fold",
+            "actionCorrect": true,
+            "mathCorrect": false,
+            "elapsedMs": 77400,
+            "eloDelta": 4
+          }
+        },
+        {
+          "scenarioId": "turn-semi-bluff-ev",
+          "street": "turn",
+          "authoredDifficulty": 4,
+          "decisionBand": "advanced",
+          "mathBand": "advanced",
+          "action": "all-in",
+          "mathAnswer": null,
+          "actionScore": 0,
+          "mathScore": 0,
+          "decisionEloDelta": -3,
+          "mathEloDelta": -2,
+          "legacyResult": {
+            "scenarioId": "turn-semi-bluff-ev",
+            "completedAt": "2000-01-01T00:00:10.000Z",
+            "action": "all-in",
+            "actionCorrect": false,
+            "mathCorrect": false,
+            "elapsedMs": 113400,
+            "eloDelta": -5
+          }
+        },
+        {
+          "scenarioId": "turn-spr-commitment",
+          "street": "turn",
+          "authoredDifficulty": 2,
+          "decisionBand": "intermediate",
+          "mathBand": "foundation",
+          "action": "all-in",
+          "mathAnswer": null,
+          "actionScore": 1,
+          "mathScore": 0,
+          "decisionEloDelta": 6,
+          "mathEloDelta": -11,
+          "legacyResult": {
+            "scenarioId": "turn-spr-commitment",
+            "completedAt": "2000-01-01T00:00:11.000Z",
+            "action": "all-in",
+            "actionCorrect": true,
+            "mathCorrect": false,
+            "elapsedMs": 61200,
+            "eloDelta": -5
+          }
+        }
+      ]
+    }
+  ]
+}
