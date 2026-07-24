@@ -160,6 +160,86 @@ export const SHELL_MESSAGES = Object.freeze({
   "saveData.confirm.importAction": "Import this save",
   "saveData.confirm.resetAction": "Archive and reset progress",
 
+  // Durable save failures (src/lib/durablePersistence.ts) — surfaced as
+  // DurableFailure.message in RecoveryScreen and SaveDataControls. Distinct
+  // from the saveData.error.* keys above: those describe a save-backup
+  // format validation/migration failure raised directly by
+  // src/lib/saveMigration.ts with its own specific wording; these describe
+  // the durable-journal read/write/IPC failure paths (disk/quota/permission,
+  // stale confirmations, replay export, "operation unavailable in this
+  // build"), which intentionally use their own, sometimes-similar English
+  // copy rather than reusing the saveMigration wording.
+  "durable.error.noPendingRetry": "There is no pending save to retry.",
+  "durable.error.restoreUnavailable":
+    "Restore is not available in this desktop build.",
+  "durable.error.startFreshUnavailable":
+    "Start Fresh is not available in this desktop build.",
+  "durable.error.exportUnavailable":
+    "Save export is not available in this desktop build.",
+  "durable.error.diagnosticsUnavailable":
+    "Diagnostic export is not available in this desktop build.",
+  "durable.error.importUnavailable":
+    "Save import is not available in this desktop build.",
+  "durable.error.resetUnavailable":
+    "Progress reset is not available in this desktop build.",
+  "durable.error.replayExportUnavailable":
+    "Replay export is not available in this desktop build.",
+  "durable.error.createdByNewerVersion":
+    "This save was created by a newer version of the app.",
+  "durable.error.unknownApplicationOrFormat":
+    "This save belongs to an unknown application or format.",
+  "durable.error.progressNotValidated":
+    "The saved progress could not be validated.",
+  "durable.error.diskFull":
+    "The save could not be written because the device is full.",
+  "durable.error.quotaExceeded": "The storage quota was exceeded.",
+  "durable.error.permissionDenied":
+    "The save location is unavailable or read-only.",
+  "durable.error.readFailed": "The saved progress could not be read.",
+  "durable.error.generationInvalidJson":
+    "A save generation contains incomplete or invalid data.",
+  "durable.error.generationInvalidRecord":
+    "A save generation has an invalid format.",
+  "durable.error.generationChecksumMismatch":
+    "A save generation failed its integrity check.",
+  "durable.error.noValidGeneration":
+    "No valid save generation could be loaded.",
+  "durable.error.foreignSave":
+    "The selected file belongs to another application.",
+  "durable.error.cyclicSave": "The selected save contains cyclic data.",
+  "durable.error.importTooLarge":
+    "The selected save is too large to import.",
+  "durable.error.importChanged":
+    "The selected save changed after preview. Choose it again.",
+  "durable.error.saveChanged":
+    "Progress changed after preview. Review the reset again.",
+  "durable.error.invalidConfirmation":
+    "The confirmation expired or was already used.",
+  "durable.error.invalidCurrentSave":
+    "Current settings could not be validated safely.",
+  "durable.error.invalidReplay": "The replay could not be validated.",
+  "durable.error.replayTooLarge": "The replay is too large to export.",
+  "durable.error.developerExportDisabled":
+    "Developer replay export is unavailable in this build.",
+  "durable.error.pickerFailed":
+    "The replay destination could not be selected.",
+  "durable.error.cancelled": "The operation was cancelled.",
+  "durable.error.writeFallback":
+    "Progress could not be saved. It remains ready to retry.",
+  "durable.error.genericFallback":
+    "The save operation could not be completed.",
+  "durable.error.recoveryCopyAvailable":
+    "The latest save could not be used. A recovery copy is available.",
+  "durable.error.previousSaveRestorable":
+    "The latest save could not be used. The previous save can be restored.",
+  "durable.error.browserImportDamaged":
+    "Existing browser progress is damaged and was not imported or replaced.",
+  "durable.error.browserQuotaExceeded":
+    "Browser storage quota prevented the legacy import.",
+  "durable.error.browserAccessUnavailable":
+    "Browser storage access is unavailable.",
+  "durable.error.browserReadFailed": "Browser storage could not be read.",
+
   // Save recovery (src/components/RecoveryScreen.tsx)
   "recovery.eyebrow": "Save recovery",
   "recovery.title": "Your progress is still protected",
@@ -183,11 +263,41 @@ export const SHELL_MESSAGES = Object.freeze({
   "recovery.confirm.keepProgress": "Keep my progress",
 
   // Credits (src/components/CreditsScreen.tsx) — UI chrome only; bundled
-  // license/notice text itself stays verbatim from its source files.
+  // license/notice text itself stays verbatim from its source files. Section
+  // titles/notes and version-row/document labels assembled by
+  // src/lib/creditsData.ts (assembleCredits) also live here. Font labels
+  // that pair a font's proper name with its license name (e.g. "Inter —
+  // SIL Open Font License 1.1") are intentionally NOT migrated — they are
+  // proper nouns/license identifiers, not composed UI prose.
   "credits.eyebrow": "About",
   "credits.title": "Credits & licenses",
   "credits.document.unavailable":
     "This notice is bundled with the installed app and is unavailable in this preview.",
+  "credits.section.application.title": "Application",
+  "credits.section.application.note":
+    "Version and runtime identifiers for this build.",
+  "credits.versionRow.buildId": "Build identifier",
+  "credits.versionRow.electron": "Electron",
+  "credits.versionRow.chromium": "Chromium",
+  "credits.versionRow.nodeJs": "Node.js",
+  "credits.section.fonts.title": "Fonts",
+  "credits.section.fonts.note":
+    "Bundled local fonts under the SIL Open Font License 1.1.",
+  "credits.document.label.thirdPartyPackages": "npm package notices",
+  "credits.document.label.thirdPartyRuntime": "Bundled runtime notices",
+  "credits.section.packages.title": "Open-source software",
+  "credits.section.packages.note":
+    "Notices for the npm packages compiled into this build. These are " +
+    "bundled copies, shown offline; nothing is fetched.",
+  "credits.section.music.title": "Music",
+  "credits.section.music.note":
+    "No instrumental soundtrack is included yet. When licensed tracks " +
+    "ship, each track's title, author, source, and license will appear " +
+    "here.",
+  "credits.musicStatus":
+    "No licensed music ships in this build. Background music stays disabled " +
+    "until instrumental masters are licensed, loudness-normalised, and " +
+    "attributed here.",
 
   // About & support (src/components/AboutSupport.tsx) — UI chrome only.
   "about.heading": "About & support",

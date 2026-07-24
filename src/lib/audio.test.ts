@@ -165,6 +165,55 @@ describe("supplementary game audio", () => {
     audio.resumeAfterExplicitReady();
     expect(graph.resume).toHaveBeenCalledTimes(1);
   });
+
+  it("notifies focus-mute observers immediately and only on real transitions", () => {
+    const audio = new GameAudio();
+    const seen: boolean[] = [];
+    const unsubscribe = audio.observeFocusMuted((muted) => seen.push(muted));
+
+    // Subscribing fires immediately with the current (unmuted) value.
+    expect(seen).toEqual([false]);
+
+    audio.setFocusMuted(true);
+    expect(seen).toEqual([false, true]);
+
+    // No duplicate notification when the value does not actually change.
+    audio.setFocusMuted(true);
+    expect(seen).toEqual([false, true]);
+
+    audio.setFocusMuted(false);
+    expect(seen).toEqual([false, true, false]);
+
+    unsubscribe();
+    audio.setFocusMuted(true);
+    expect(seen).toEqual([false, true, false]);
+  });
+
+  it("notifies focus-mute observers via suspendForLifecycle even without an active graph", () => {
+    const audio = new GameAudio();
+    const seen: boolean[] = [];
+    audio.observeFocusMuted((muted) => seen.push(muted));
+    expect(seen).toEqual([false]);
+
+    audio.suspendForLifecycle();
+    expect(seen).toEqual([false, true]);
+
+    // A second suspend call while already muted must not re-notify.
+    audio.suspendForLifecycle();
+    expect(seen).toEqual([false, true]);
+  });
+
+  it("keeps a faulty focus-mute observer from blocking other observers or the caller", () => {
+    const audio = new GameAudio();
+    const seen: boolean[] = [];
+    audio.observeFocusMuted(() => {
+      throw new Error("boom");
+    });
+    audio.observeFocusMuted((muted) => seen.push(muted));
+
+    expect(() => audio.setFocusMuted(true)).not.toThrow();
+    expect(seen).toEqual([false, true]);
+  });
 });
 
 function audioGraph() {

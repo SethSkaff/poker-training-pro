@@ -5,7 +5,16 @@
  * the model can be assembled and asserted deterministically in tests without a
  * real Electron bridge. The React screen simply fetches the inputs and renders
  * whatever this function returns.
+ *
+ * Section titles/notes, version-row labels, and most document labels are UI
+ * chrome and resolve through the message catalog (`credits.*` keys in
+ * src/locales/en-US.messages.shell.ts). The bundled license/notice TEXT
+ * itself (`documents[].text`, injected via `CreditsInput.documents`) and the
+ * font document labels that pair a font's proper name with its license name
+ * ("Inter — SIL Open Font License 1.1") stay verbatim, untranslated literals
+ * — they are proper nouns and third-party legal text, not composed prose.
  */
+import { formatMessage } from "./localeMessages";
 
 export type BundledDocumentId =
   | "privacy-policy"
@@ -59,12 +68,20 @@ export interface CreditsModel {
   readonly musicStatus: string;
 }
 
-const UNKNOWN = "Unavailable";
+const UNKNOWN = formatMessage("about.unavailable");
 
 export const CREDITS_DOCUMENT_LABELS: Record<BundledDocumentId, string> = {
-  "privacy-policy": "Privacy policy",
-  "third-party-packages": "npm package notices",
-  "third-party-runtime": "Bundled runtime notices",
+  // Reuses AboutSupport's existing "Privacy policy" label (byte-identical
+  // text, same UI chrome concept) rather than duplicating a second key.
+  "privacy-policy": formatMessage("about.privacyPolicySummary"),
+  "third-party-packages": formatMessage(
+    "credits.document.label.thirdPartyPackages",
+  ),
+  "third-party-runtime": formatMessage(
+    "credits.document.label.thirdPartyRuntime",
+  ),
+  // NOT migrated: these pair a font's proper name with its license name and
+  // are proper nouns/license identifiers, not composed UI prose.
   "font-inter": "Inter — SIL Open Font License 1.1",
   "font-barlow": "Barlow Condensed — SIL Open Font License 1.1",
 };
@@ -90,30 +107,42 @@ function document(
 export function assembleCredits(input: CreditsInput = {}): CreditsModel {
   const info = input.appInfo;
   const versions: CreditsVersionRow[] = [
-    { label: "Poker Training Pro", value: info?.appVersion ?? UNKNOWN },
-    { label: "Build identifier", value: info?.buildId ?? UNKNOWN },
-    { label: "Electron", value: info?.versions.electron ?? UNKNOWN },
-    { label: "Chromium", value: info?.versions.chromium ?? UNKNOWN },
-    { label: "Node.js", value: info?.versions.node ?? UNKNOWN },
+    {
+      label: formatMessage("shell.productName"),
+      value: info?.appVersion ?? UNKNOWN,
+    },
+    {
+      label: formatMessage("credits.versionRow.buildId"),
+      value: info?.buildId ?? UNKNOWN,
+    },
+    {
+      label: formatMessage("credits.versionRow.electron"),
+      value: info?.versions.electron ?? UNKNOWN,
+    },
+    {
+      label: formatMessage("credits.versionRow.chromium"),
+      value: info?.versions.chromium ?? UNKNOWN,
+    },
+    {
+      label: formatMessage("credits.versionRow.nodeJs"),
+      value: info?.versions.node ?? UNKNOWN,
+    },
   ];
 
   return {
-    appName: "Poker Training Pro",
-    musicStatus:
-      "No licensed music ships in this build. Background music stays disabled " +
-      "until instrumental masters are licensed, loudness-normalised, and " +
-      "attributed here.",
+    appName: formatMessage("shell.productName"),
+    musicStatus: formatMessage("credits.musicStatus"),
     sections: [
       {
         id: "application",
-        title: "Application",
-        note: "Version and runtime identifiers for this build.",
+        title: formatMessage("credits.section.application.title"),
+        note: formatMessage("credits.section.application.note"),
         versions,
       },
       {
         id: "fonts",
-        title: "Fonts",
-        note: "Bundled local fonts under the SIL Open Font License 1.1.",
+        title: formatMessage("credits.section.fonts.title"),
+        note: formatMessage("credits.section.fonts.note"),
         documents: [
           document("font-inter", input.documents),
           document("font-barlow", input.documents),
@@ -121,10 +150,8 @@ export function assembleCredits(input: CreditsInput = {}): CreditsModel {
       },
       {
         id: "packages",
-        title: "Open-source software",
-        note:
-          "Notices for the npm packages compiled into this build. These are " +
-          "bundled copies, shown offline; nothing is fetched.",
+        title: formatMessage("credits.section.packages.title"),
+        note: formatMessage("credits.section.packages.note"),
         documents: [
           document("third-party-packages", input.documents),
           document("third-party-runtime", input.documents),
@@ -132,11 +159,8 @@ export function assembleCredits(input: CreditsInput = {}): CreditsModel {
       },
       {
         id: "music",
-        title: "Music",
-        note:
-          "No instrumental soundtrack is included yet. When licensed tracks " +
-          "ship, each track's title, author, source, and license will appear " +
-          "here.",
+        title: formatMessage("credits.section.music.title"),
+        note: formatMessage("credits.section.music.note"),
       },
     ],
   };

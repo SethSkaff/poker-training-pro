@@ -19,6 +19,7 @@ export class GameAudio {
   private focusMuted = false;
   private initializationFailed = false;
   private readonly feedbackListeners = new Set<(sound: SoundName) => void>();
+  private readonly focusMutedListeners = new Set<(muted: boolean) => void>();
 
   setMusicVolume(volume: number): void {
     this.musicVolume = percent(volume) * 0.12;
@@ -47,8 +48,37 @@ export class GameAudio {
    * the player's saved mute/volume preference.
    */
   setFocusMuted(muted: boolean): void {
+    if (this.focusMuted === muted) return;
     this.focusMuted = muted;
     this.applyVolumes();
+    this.notifyFocusMuted();
+  }
+
+  /**
+   * Observe focus-mute transitions so the (dormant) music playlist can freeze
+   * or resume its own timeline in lockstep with whichever surface currently
+   * owns focus muting (the desktop lifecycle hook off the table, or the table's
+   * own pause effect while it is mounted). The listener fires immediately with
+   * the current value so subscribing late never misses the state.
+   */
+  observeFocusMuted(listener: (muted: boolean) => void): () => void {
+    this.focusMutedListeners.add(listener);
+    try {
+      listener(this.focusMuted);
+    } catch {
+      // Observers are supplementary; a faulty one must never block a sound.
+    }
+    return () => this.focusMutedListeners.delete(listener);
+  }
+
+  private notifyFocusMuted(): void {
+    for (const listener of this.focusMutedListeners) {
+      try {
+        listener(this.focusMuted);
+      } catch {
+        // Observers are supplementary; a faulty one must never block a sound.
+      }
+    }
   }
 
   /**
@@ -56,8 +86,10 @@ export class GameAudio {
    * creates an AudioContext and never changes the player's saved settings.
    */
   suspendForLifecycle(): void {
+    const wasMuted = this.focusMuted;
     this.focusMuted = true;
     this.applyVolumes();
+    if (!wasMuted) this.notifyFocusMuted();
     if (this.context?.state === "running") {
       void this.context.suspend().catch(() => this.disableAudio());
     }

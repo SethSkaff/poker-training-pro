@@ -1300,7 +1300,10 @@ export function createPokerTableSnapshot(
 
   return {
     id: hand.handId,
-    title: `${session.event.name} · Hand ${tableForSession(session).handNumber}`,
+    title: formatMessage("tournamentSession.title", {
+      eventName: session.event.name,
+      handNumber: tableForSession(session).handNumber,
+    }),
     difficulty:
       session.event.tier === "local"
         ? 2
@@ -1324,11 +1327,12 @@ export function createPokerTableSnapshot(
     board: hand.board.map((card) => ({ ...card })),
     players,
     prompt: actingId
-      ? `${actor?.name ?? actingId} is deciding.`
-      : "Betting is complete. Continue the hand.",
+      ? formatMessage("tournamentSession.prompt.actorDeciding", {
+          actorName: actor?.name ?? actingId,
+        })
+      : formatMessage("tournamentSession.prompt.bettingComplete"),
     recommendedAction,
-    actionReason:
-      "Tournament decisions are supplied by the selected information-set policy.",
+    actionReason: formatMessage("tournamentSession.actionReason"),
     mathQuestion: {
       topic: "pot-odds",
       prompt: "Compatibility field; hidden outside Training mode.",

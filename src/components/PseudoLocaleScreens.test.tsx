@@ -45,7 +45,11 @@ vi.mock("../lib/localeMessages", async (importOriginal) => {
 });
 
 import { trainingScenarios } from "../data/trainingScenarios";
-import type { DurablePersistence } from "../lib/durablePersistence";
+import {
+  DurablePersistence as DurablePersistenceCtor,
+  type DesktopPersistenceBridge,
+  type DurablePersistence,
+} from "../lib/durablePersistence";
 import { formatChips, formatFixedDecimal } from "../lib/format";
 import { formatMessage } from "../lib/localeMessages";
 import { defaultProgress, defaultSettings } from "../lib/storage";
@@ -228,34 +232,15 @@ describe("pseudo-locale completeness sweep", () => {
 
   it("credits screen", () => {
     const markup = renderToStaticMarkup(<CreditsScreen onBack={() => undefined} />);
-    // KNOWN GAP (not fixed this pass, out of this session's assigned scope):
-    // src/lib/creditsData.ts (assembleCredits) builds every section title,
-    // version-row label, and document label as a raw literal, not through
-    // the message catalog. creditsData.ts backs both this screen and the
-    // About/Support panel; its own doc comment only ever intended to keep
-    // *bundled* third-party license/notice *text* out of the catalog, not
-    // this chrome, so the chrome half is a real, traceable gap left for a
-    // future pass rather than silently ignored.
+    // src/lib/creditsData.ts (assembleCredits) now resolves every section
+    // title, note, version-row label, and non-font document label through
+    // the message catalog. The only remaining raw literals are the two font
+    // document labels, which pair a font's proper name with its license name
+    // ("Inter — SIL Open Font License 1.1") -- proper nouns/license
+    // identifiers, not composed UI prose, deliberately left untranslated.
     expectScreenIsPseudoLocalized(markup, [
-      "Application",
-      "Version and runtime identifiers for this build.",
-      "Poker Training Pro",
-      "Unavailable",
-      "Build identifier",
-      "Electron",
-      "Chromium",
-      "Node.js",
-      "Fonts",
-      "Bundled local fonts under the SIL Open Font License 1.1.",
       "Inter — SIL Open Font License 1.1",
       "Barlow Condensed — SIL Open Font License 1.1",
-      "Open-source software",
-      "Notices for the npm packages compiled into this build. These are bundled copies, shown offline; nothing is fetched.",
-      "npm package notices",
-      "Bundled runtime notices",
-      "Music",
-      "No instrumental soundtrack is included yet. When licensed tracks ship, each track&#x27;s title, author, source, and license will appear here.",
-      "No licensed music ships in this build. Background music stays disabled until instrumental masters are licensed, loudness-normalised, and attributed here.",
     ]);
   });
 
@@ -370,14 +355,35 @@ describe("pseudo-locale completeness sweep", () => {
         onAuthoritativeDataChanged={() => undefined}
       />,
     );
-    // KNOWN GAP (not fixed this pass, out of this session's assigned scope):
-    // src/lib/durablePersistence.ts never calls formatMessage -- every
-    // DurableFailure.message it can produce is a raw English literal. This
-    // test only exercises the component's default (no error, no pending
-    // confirmation) state, where every visible string is catalog-driven, so
-    // it passes with zero exemptions; it does NOT cover the error/status
-    // text surfaced once a real persistence failure occurs, which remains a
-    // real, traceable gap for a future pass.
+    // src/lib/durablePersistence.ts now resolves every DurableFailure.message
+    // through the catalog too (see the "save recovery screen with a real
+    // durable failure message" test below for a rendered failure path).
+    // This test only exercises the component's default (no error, no
+    // pending confirmation) state; SaveDataControls keeps its error text in
+    // internal React state set from an async action, which this
+    // server-render environment (no jsdom, no event simulation) cannot
+    // trigger, so its error-state markup is exercised indirectly through
+    // RecoveryScreen instead, which accepts its failure message as a prop.
+    expectScreenIsPseudoLocalized(markup, []);
+  });
+
+  it("save recovery screen with a real durable failure message", async () => {
+    // Exercises an actual DurablePersistence failure path (not a hand-picked
+    // literal): the bridge omits restoreAutosave, so `.restore()` returns the
+    // "durable.error.restoreUnavailable" catalog message exactly as
+    // RecoveryScreen would receive it from src/App.tsx in production.
+    const persistence = new DurablePersistenceCtor(
+      {} as DesktopPersistenceBridge,
+    );
+    const result = await persistence.restore("previous");
+    if (result.ok) throw new Error("expected restore() to fail");
+    const markup = renderToStaticMarkup(
+      <RecoveryScreen
+        message={result.error.message}
+        actions={unusedRecoveryActions}
+        onRecovered={() => undefined}
+      />,
+    );
     expectScreenIsPseudoLocalized(markup, []);
   });
 

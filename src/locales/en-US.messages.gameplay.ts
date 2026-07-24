@@ -461,6 +461,19 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "prompts.decisionMistake.message":
     "A mistake is useful evidence. Compare the legal choices and their expected value, then retry the unscored scenario.",
 
+  // --- tournamentSession.ts (synthesized in-play scenario text) -------------
+  // Per-hand title/prompt/action-reason strings synthesized for Normal/
+  // Rational tournament hands, interpolated with the acting player's name
+  // and the event/hand numbers. Distinct from the versioned, calibration-
+  // gated src/data/trainingScenarios.ts content, which is Training-mode DATA
+  // outside this catalog (see PseudoLocaleScreens.test.tsx).
+  "tournamentSession.title": "{eventName} · Hand {handNumber}",
+  "tournamentSession.prompt.actorDeciding": "{actorName} is deciding.",
+  "tournamentSession.prompt.bettingComplete":
+    "Betting is complete. Continue the hand.",
+  "tournamentSession.actionReason":
+    "Tournament decisions are supplied by the selected information-set policy.",
+
   // --- lifecyclePause.ts (PokerTable's resume-recap panel) ------------------
   "resumeRecap.reasonLabel.manual": "Paused",
   "resumeRecap.reasonLabel.windowBlurred": "Window inactive",

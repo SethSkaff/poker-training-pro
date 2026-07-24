@@ -172,9 +172,22 @@ requirements are added.
 - [x] Prefer several calm focus/table tracks plus restrained tournament-intensity
       tracks; avoid vocals, casino jingles, slot-machine music, and distracting
       drops.
-- [ ] Implement shuffled playlist playback, no immediate repeats, crossfades,
+- [x] Implement shuffled playlist playback, no immediate repeats, crossfades,
       pause/focus behavior, music ducking under feedback, and separate Music/SFX
-      volume controls.
+      volume controls. All six behaviors are implemented, unit-tested against
+      injected fake clock/sink, and genuinely wired end-to-end in `App.tsx`;
+      this pass closed two real wiring gaps (engine pause/resume never received
+      focus/blur/minimize/suspend transitions — now via a new
+      `GameAudio.observeFocusMuted()`; and Music-volume/Mute never reached the
+      engine — now via `musicVolumeFromSettings()`). Ducking was verified to
+      fire through real `gameAudio.play()` cues, not an isolated utility. The
+      engine stays **dormant**: `src/lib/musicPlaylistWiring.test.ts`
+      reproduces the exact app composition against the empty production
+      manifest and proves zero audio-graph construction, no playback attempt,
+      and no throw across focus churn/volume changes/500s of simulated time.
+      **Pending licensed masters** for actual audible playback — see the
+      license/master/loudness/attribution items in this section, all still
+      blocked on rights that do not yet exist.
 - [x] Add a Credits/Licenses screen and ship required attribution files. The
       offline screen exposes font and package/runtime notices; the fresh
       Windows package audit verifies the sidecars. Music remains absent until
@@ -547,20 +560,24 @@ requirements are added.
 
 ### Localization and content operations
 
-- [ ] Extract every player-facing string, poker term, shortcut label, error,
+- [x] Extract every player-facing string, poker term, shortcut label, error,
       tutorial, and explanation from components into versioned locale resources;
       ship English as an explicit complete locale. A strict versioned English
-      message catalog, interpolation helper, and direction-safe message component
-      now exist; nearly all component UI strings are migrated (PokerTable,
-      Dashboard, tutorial, settings, credits/about, save controls, recovery,
-      tournament event names/tiers/qualification/placement labels). Training
-      scenario prompt/explanation content in `src/data/trainingScenarios.ts` is
-      deliberately exempt: it is governed by its own versioned
-      schema/review/authoring pipeline (`trainingScenarioSchema.ts`), not UI
-      chrome. Real residual gaps, not yet migrated: `src/lib/durablePersistence.ts`
-      failure messages (shown in Recovery/Save screens), `src/lib/creditsData.ts`
-      section labels, and tournament-mode's synthesized scenario
-      title/prompt/actionReason strings in `tournamentSession.ts`.
+      message catalog, interpolation helper, and direction-safe message
+      component exist, and all player-facing UI strings are now migrated:
+      PokerTable, Dashboard, tutorial, settings, credits/about, save controls,
+      recovery, tournament event names/tiers/qualification/placement labels,
+      the 39 `durablePersistence` save/restore failure messages, credits
+      chrome, and tournament-mode synthesized scenario title/prompt/
+      actionReason (with real interpolation, not concatenation).
+      **Permanent documented exemptions** (verified, not gaps): Training
+      scenario prompt/explanation content in `src/data/trainingScenarios.ts`
+      (governed by its own versioned schema/review/authoring pipeline — it is
+      calibrated poker content, not UI chrome); verbatim bundled third-party
+      license/notice text and font proper-noun+license labels in
+      `creditsData.ts` (must stay byte-exact, never pseudo-localized); and two
+      dead fields in `tournamentSession.ts` (`disclosure`, `mathQuestion.*`)
+      confirmed never rendered in tournament modes.
 - [x] Add a versioned English numeric locale surface for number, percentage,
       ratio, chip, and duration formatting, and keep quiz parsing unambiguous
       for decimal comma, decimal point, fraction, and colon-ratio input.

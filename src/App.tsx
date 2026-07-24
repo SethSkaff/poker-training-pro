@@ -18,7 +18,11 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { trainingScenarios } from "./data/trainingScenarios";
 import { gameAudio } from "./lib/audio";
 import { productionMusicManifest } from "./data/musicPlaylistManifest";
-import { createMusicPlaylist } from "./lib/musicPlaylist";
+import {
+  createMusicPlaylist,
+  musicVolumeFromSettings,
+  type MusicPlaylistController,
+} from "./lib/musicPlaylist";
 import { connectFeedbackDucking } from "./lib/musicDucking";
 import {
   acknowledgePlayChips,
@@ -471,9 +475,11 @@ export default function App() {
 
   // Background music playlist engine. DORMANT: the production manifest ships no
   // licensed masters, so `createMusicPlaylist` builds no audio graph and makes
-  // no sound. The duck-under-feedback bridge is wired here but a dormant
-  // controller ignores it. When a licensed manifest exists, this is where a real
-  // Web Audio sink is supplied and `playlist.start()` runs.
+  // no sound. The duck-under-feedback bridge and focus/volume wiring below are
+  // connected eagerly (a dormant controller's methods all no-op), so the very
+  // moment a licensed manifest lands, playback, ducking, pause/focus, and the
+  // player's saved Music volume are already correct with no further wiring.
+  const playlistRef = useRef<MusicPlaylistController | null>(null);
   useEffect(() => {
     const playlist = createMusicPlaylist(productionMusicManifest, {
       sink: { createVoice: () => null },
@@ -481,13 +487,34 @@ export default function App() {
       now: () =>
         typeof performance !== "undefined" ? performance.now() : Date.now(),
     });
+    playlistRef.current = playlist;
     const disconnectDucking = connectFeedbackDucking(gameAudio, playlist);
-    if (!playlist.dormant) {
-      playlist.start();
-    }
+    // The table (while mounted) and the desktop lifecycle hook (elsewhere) both
+    // funnel through `gameAudio`'s focus-mute state, so subscribing here keeps
+    // the music bed's pause/resume in lockstep with whichever surface currently
+    // owns focus muting, without the playlist needing its own listeners. The
+    // very first playback start is gated on this too (deferred until the audio
+    // focus policy reports non-muted), matching the "no audio before the
+    // player's first input/Ready gesture" rule that already governs `gameAudio`
+    // — belt-and-suspenders on top of whatever real Web Audio sink eventually
+    // replaces the null stub below.
+    let started = false;
+    const unsubscribeFocus = gameAudio.observeFocusMuted((muted) => {
+      if (playlist.dormant) return;
+      if (muted) {
+        playlist.pause();
+      } else if (!started) {
+        started = true;
+        playlist.start();
+      } else {
+        playlist.resume();
+      }
+    });
     return () => {
+      unsubscribeFocus();
       disconnectDucking();
       playlist.stop();
+      playlistRef.current = null;
     };
   }, []);
 
@@ -541,6 +568,12 @@ export default function App() {
     gameAudio.setMuted(effectiveSettings.muted);
     gameAudio.setMusicVolume(effectiveSettings.musicVolume);
     gameAudio.setEffectsVolume(effectiveSettings.effectsVolume);
+    // Mirror the same Master x Music (and Mute) computation into the playlist
+    // engine's own [0, 1] gain, so the player's saved Music slider and mute
+    // toggle already apply the instant a licensed manifest makes it non-dormant.
+    playlistRef.current?.setMusicVolume(
+      musicVolumeFromSettings(effectiveSettings),
+    );
   }, [
     effectiveSettings.colorAssist,
     effectiveSettings.effectsVolume,

@@ -54,6 +54,24 @@ export interface PlaylistRandom {
 const DUCK_LEVEL = 0.32;
 
 /**
+ * Derives the playlist engine's [0, 1] music gain from the player's saved
+ * Settings — the same Master x Music multiplication `GameAudio` applies
+ * internally, with Mute All silencing it entirely. Exported so the app-shell
+ * wiring and its tests share one definition instead of duplicating the
+ * arithmetic.
+ */
+export function musicVolumeFromSettings(settings: {
+  readonly masterVolume: number;
+  readonly musicVolume: number;
+  readonly muted: boolean;
+}): number {
+  if (settings.muted) return 0;
+  const master = Math.max(0, Math.min(100, settings.masterVolume)) / 100;
+  const music = Math.max(0, Math.min(100, settings.musicVolume)) / 100;
+  return master * music;
+}
+
+/**
  * Fisher-Yates shuffle driven by an injected RNG. Pure and non-mutating.
  */
 export function shuffleTrackIds(

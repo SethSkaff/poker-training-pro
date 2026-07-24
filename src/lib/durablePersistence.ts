@@ -1,4 +1,5 @@
 import type { GameSettings, PlayerProgress } from "../types/poker";
+import { formatMessage } from "./localeMessages";
 import {
   createSaveEnvelope,
   migrateSavePayload,
@@ -369,7 +370,7 @@ export class DurablePersistence {
         error: {
           code: "write-failed",
           operation: "write",
-          message: "There is no pending save to retry.",
+          message: formatMessage("durable.error.noPendingRetry"),
           retryable: false,
         },
       };
@@ -412,7 +413,7 @@ export class DurablePersistence {
     source: "previous" | "last-known-good",
   ): Promise<DurableResult<DurableSaveReceipt>> {
     if (!this.desktop.restoreAutosave) {
-      return unavailable("Restore is not available in this desktop build.");
+      return unavailable(formatMessage("durable.error.restoreUnavailable"));
     }
     try {
       const result = await this.desktop.restoreAutosave(source);
@@ -428,7 +429,9 @@ export class DurablePersistence {
     progress: PlayerProgress,
   ): Promise<DurableResult<DurableSaveReceipt>> {
     if (!this.desktop.startFreshAutosave) {
-      return unavailable("Start Fresh is not available in this desktop build.");
+      return unavailable(
+        formatMessage("durable.error.startFreshUnavailable"),
+      );
     }
     const serializedSave = serializeSaveBackup(settings, progress);
     try {
@@ -446,7 +449,7 @@ export class DurablePersistence {
     return this.runExport(
       this.desktop.exportSave?.bind(this.desktop),
       source,
-      "Save export is not available in this desktop build.",
+      formatMessage("durable.error.exportUnavailable"),
     );
   }
 
@@ -454,7 +457,7 @@ export class DurablePersistence {
     return this.runExport(
       this.desktop.exportSaveDiagnostics?.bind(this.desktop),
       undefined,
-      "Diagnostic export is not available in this desktop build.",
+      formatMessage("durable.error.diagnosticsUnavailable"),
     );
   }
 
@@ -482,7 +485,7 @@ export class DurablePersistence {
     if (!this.desktop.prepareSaveImport) {
       return unavailableFor(
         "import",
-        "Save import is not available in this desktop build.",
+        formatMessage("durable.error.importUnavailable"),
       );
     }
     try {
@@ -501,7 +504,7 @@ export class DurablePersistence {
     if (!this.desktop.confirmSaveImport) {
       return unavailableFor(
         "import",
-        "Save import is not available in this desktop build.",
+        formatMessage("durable.error.importUnavailable"),
       );
     }
     try {
@@ -521,7 +524,7 @@ export class DurablePersistence {
     if (!this.desktop.prepareProgressReset) {
       return unavailableFor(
         "reset",
-        "Progress reset is not available in this desktop build.",
+        formatMessage("durable.error.resetUnavailable"),
       );
     }
     try {
@@ -540,7 +543,7 @@ export class DurablePersistence {
     if (!this.desktop.confirmProgressReset) {
       return unavailableFor(
         "reset",
-        "Progress reset is not available in this desktop build.",
+        formatMessage("durable.error.resetUnavailable"),
       );
     }
     try {
@@ -581,7 +584,7 @@ export class DurablePersistence {
     if (!operation) {
       return unavailableFor(
         "replay-export",
-        "Replay export is not available in this desktop build.",
+        formatMessage("durable.error.replayExportUnavailable"),
       );
     }
     try {
@@ -710,8 +713,8 @@ export class DurablePersistence {
         code: previousCandidate ? "no-valid-generation" : "no-valid-generation",
         operation: "read",
         message: previousCandidate
-          ? "The latest save could not be used. A recovery copy is available."
-          : "No valid save generation could be loaded.",
+          ? formatMessage("durable.error.recoveryCopyAvailable")
+          : formatMessage("durable.error.noValidGeneration"),
         retryable: attempts.some((attempt) => attempt.retryable),
       };
       return {
@@ -746,8 +749,7 @@ export class DurablePersistence {
             failure: {
               code: "no-valid-generation",
               operation: "read",
-              message:
-                "The latest save could not be used. The previous save can be restored.",
+              message: formatMessage("durable.error.previousSaveRestorable"),
               retryable: attempts.some((attempt) => attempt.retryable),
             },
             attempts,
@@ -821,8 +823,7 @@ export class DurablePersistence {
       const failure: DurableFailure = {
         code: "invalid-json",
         operation: "migrate",
-        message:
-          "Existing browser progress is damaged and was not imported or replaced.",
+        message: formatMessage("durable.error.browserImportDamaged"),
         retryable: false,
         source: "browser-import",
       };
@@ -951,10 +952,10 @@ function migrationFailure(
     operation: "migrate",
     message:
       mappedCode === "unsupported-save-version"
-        ? "This save was created by a newer version of the app."
+        ? formatMessage("durable.error.createdByNewerVersion")
         : mappedCode === "unknown-format"
-          ? "This save belongs to an unknown application or format."
-          : "The saved progress could not be validated.",
+          ? formatMessage("durable.error.unknownApplicationOrFormat")
+          : formatMessage("durable.error.progressNotValidated"),
     retryable: mappedCode === "storage-unavailable",
     source,
   };
@@ -966,7 +967,7 @@ function browserStorageFailure(error: unknown): DurableFailure {
     return {
       code: "quota-exceeded",
       operation: "read",
-      message: "Browser storage quota prevented the legacy import.",
+      message: formatMessage("durable.error.browserQuotaExceeded"),
       retryable: true,
       source: "browser-import",
     };
@@ -975,7 +976,7 @@ function browserStorageFailure(error: unknown): DurableFailure {
     return {
       code: "permission-denied",
       operation: "read",
-      message: "Browser storage access is unavailable.",
+      message: formatMessage("durable.error.browserAccessUnavailable"),
       retryable: true,
       source: "browser-import",
     };
@@ -983,7 +984,7 @@ function browserStorageFailure(error: unknown): DurableFailure {
   return {
     code: "storage-unavailable",
     operation: "read",
-    message: "Browser storage could not be read.",
+    message: formatMessage("durable.error.browserReadFailed"),
     retryable: true,
     source: "browser-import",
   };
@@ -1030,36 +1031,38 @@ function failureForCode(
 ): DurableFailure {
   const stableCode = mapFailureCode(code, allowSystemCode(code), operation);
   const messages: Partial<Record<DurableFailureCode, string>> = {
-    "disk-full": "The save could not be written because the device is full.",
-    "quota-exceeded": "The storage quota was exceeded.",
-    "permission-denied":
-      "The save location is unavailable or read-only.",
-    "read-failed": "The saved progress could not be read.",
-    "invalid-json": "A save generation contains incomplete or invalid data.",
-    "invalid-record": "A save generation has an invalid format.",
-    "checksum-mismatch": "A save generation failed its integrity check.",
-    "unsupported-save-version":
-      "This save was created by a newer version of the app.",
-    "no-valid-generation": "No valid save generation could be loaded.",
-    "foreign-save": "The selected file belongs to another application.",
-    "future-save":
-      "This save was created by a newer version of the app.",
-    "cyclic-save": "The selected save contains cyclic data.",
-    "import-too-large": "The selected save is too large to import.",
-    "import-changed":
-      "The selected save changed after preview. Choose it again.",
-    "save-changed":
-      "Progress changed after preview. Review the reset again.",
-    "invalid-confirmation":
-      "The confirmation expired or was already used.",
-    "invalid-current-save":
-      "Current settings could not be validated safely.",
-    "invalid-replay": "The replay could not be validated.",
-    "replay-too-large": "The replay is too large to export.",
-    "developer-export-disabled":
-      "Developer replay export is unavailable in this build.",
-    "picker-failed": "The replay destination could not be selected.",
-    cancelled: "The operation was cancelled.",
+    "disk-full": formatMessage("durable.error.diskFull"),
+    "quota-exceeded": formatMessage("durable.error.quotaExceeded"),
+    "permission-denied": formatMessage("durable.error.permissionDenied"),
+    "read-failed": formatMessage("durable.error.readFailed"),
+    "invalid-json": formatMessage("durable.error.generationInvalidJson"),
+    "invalid-record": formatMessage("durable.error.generationInvalidRecord"),
+    "checksum-mismatch": formatMessage(
+      "durable.error.generationChecksumMismatch",
+    ),
+    "unsupported-save-version": formatMessage(
+      "durable.error.createdByNewerVersion",
+    ),
+    "no-valid-generation": formatMessage("durable.error.noValidGeneration"),
+    "foreign-save": formatMessage("durable.error.foreignSave"),
+    "future-save": formatMessage("durable.error.createdByNewerVersion"),
+    "cyclic-save": formatMessage("durable.error.cyclicSave"),
+    "import-too-large": formatMessage("durable.error.importTooLarge"),
+    "import-changed": formatMessage("durable.error.importChanged"),
+    "save-changed": formatMessage("durable.error.saveChanged"),
+    "invalid-confirmation": formatMessage(
+      "durable.error.invalidConfirmation",
+    ),
+    "invalid-current-save": formatMessage(
+      "durable.error.invalidCurrentSave",
+    ),
+    "invalid-replay": formatMessage("durable.error.invalidReplay"),
+    "replay-too-large": formatMessage("durable.error.replayTooLarge"),
+    "developer-export-disabled": formatMessage(
+      "durable.error.developerExportDisabled",
+    ),
+    "picker-failed": formatMessage("durable.error.pickerFailed"),
+    cancelled: formatMessage("durable.error.cancelled"),
   };
   return {
     code: stableCode,
@@ -1067,8 +1070,8 @@ function failureForCode(
     message:
       messages[stableCode] ??
       (operation === "write"
-        ? "Progress could not be saved. It remains ready to retry."
-        : "The save operation could not be completed."),
+        ? formatMessage("durable.error.writeFallback")
+        : formatMessage("durable.error.genericFallback")),
     retryable: new Set<DurableFailureCode>([
       "disk-full",
       "quota-exceeded",

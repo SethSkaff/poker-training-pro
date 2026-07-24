@@ -25,7 +25,15 @@ const appPath = resolve(
   argumentValue("--app") ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
 );
 const reportPath = resolve(projectRoot, "work", "packaged-input-smoke.json");
-const timeoutMs = 35_000;
+// This is the overall CDP session budget (also bounds every individual CDP
+// command's timeout via CdpClient.send's `Math.min(5_000, deadline - now)`).
+// 35s left effectively no slack once per-check polls were widened below to
+// tolerate legitimate opponent-presentation/animation variance, and the
+// raise-legality poll can take several hands to reach a decision where
+// raising is legal. 90s keeps a full run comfortable without masking a
+// genuinely hung packaged app (the process-exit and devtools-port waits below
+// still fail fast on a real crash).
+const timeoutMs = 90_000;
 
 if (process.platform !== "win32") {
   throw new Error("Packaged input smoke requires a Windows Electron executable.");
@@ -65,7 +73,23 @@ try {
   await client.send("Page.enable");
   await client.send("Runtime.enable");
   await client.send("Input.setIgnoreInputEvents", { ignore: false });
+  // The packaged app auto-pauses on a native window-blur lifecycle event
+  // (electron/main.cjs `window.on("blur")` -> `window-focus` IPC ->
+  // PokerTable's `requestPause("window-blurred")`). That is correct product
+  // behavior, not a smoke defect, but if the spawned window never receives OS
+  // foreground focus while this script drives it, the table can already be
+  // auto-paused before a scripted step ever runs. Bring the window forward
+  // once up front so the rest of the run measures real input handling instead
+  // of a window-manager focus race.
+  await client.send("Page.bringToFront");
   await delay(350);
+  if (process.env.PTP_SMOKE_DEBUG === "1") {
+    const focusState = await evaluateValue(
+      client,
+      "({ hasFocus: document.hasFocus(), visibilityState: document.visibilityState, hidden: document.hidden })",
+    );
+    console.error("DEBUG focus state after bringToFront", JSON.stringify(focusState));
+  }
 
   await expectMouseClick(
     client,
@@ -137,7 +161,40 @@ try {
     "document.querySelector('.hand-history-popover') === null",
     "hand history closes cleanly",
   );
+  // Raising is only sometimes legal on the very first live decision: opponent
+  // stacks/actions vary with the wall-clock-derived tournament seed
+  // (`career:${eventId}:${Date.now()}` in src/App.tsx), so hero may face a
+  // covering all-in (call/fold only) or already be all-in themselves. That is
+  // correct poker-legality logic in `canRaise`/`.action-button--raise`'s
+  // `disabled` prop (src/components/PokerTable.tsx), not a bug, and forcing a
+  // click on a disabled control is not a meaningful proof of raise-sizing
+  // input. Instead, poll for a decision where raising truly is legal, taking
+  // whatever legal non-raise action the dock currently offers to advance past
+  // any decision where it is not -- deterministic seeding is not available (no
+  // production-safe seed override exists; see report), so this waits for a
+  // real, code-verified legal state rather than assuming one.
+  await ensureRaiseIsLegalThenAdvance(client);
   await expectMouseClick(client, ".action-button--raise", undefined, "raise mouse input");
+  if (process.env.PTP_SMOKE_DEBUG === "1") {
+    for (let i = 0; i < 6; i += 1) {
+      const sample = await evaluateValue(
+        client,
+        `(() => {
+          const btn = document.querySelector('.action-button--raise');
+          return {
+            t: Date.now(),
+            raiseButtonActive: btn ? btn.classList.contains('is-active') : null,
+            raiseButtonDisabled: btn ? btn.disabled : null,
+            betComposer: document.querySelector('.bet-composer') !== null,
+            actionDock: document.querySelector('.action-dock') !== null,
+            spectatorDock: document.querySelector('.spectator-dock') !== null,
+          };
+        })()`,
+      );
+      console.error("DEBUG raise sample", i, JSON.stringify(sample));
+      await delay(150);
+    }
+  }
   await expectSelector(client, ".bet-composer", "raise composer");
   await clickRangeAtFraction(client, ".bet-slider-row input[type=range]", 0.72);
   await expectBoolean(
@@ -157,12 +214,33 @@ try {
     undefined,
     "fast-forward mouse input",
   );
-  await expectSelector(client, ".action-dock", "table advances after fast-forward");
+  // A fixed 4s poll here raced legitimate opponent-presentation/animation
+  // length on at least one verification run (the remaining seats still act
+  // and animate after the hero's own fast-forward click before the next
+  // decision is ready). `.ceremony-board` (tournament placement, Dashboard.tsx)
+  // and `.room-flight` (inter-level flythrough, RoomFlythrough.tsx) are
+  // distinct full-screen navigations away from PokerTable entirely -- Escape
+  // is handled by App.tsx's own back-navigation there, not PokerTable's pause
+  // menu -- so accepting them here would let the script march on assuming
+  // table context that no longer exists. Widen only the timeout; the very
+  // next hero decision must still be a real `.action-dock`.
+  await expectSelector(client, ".action-dock", "table advances after fast-forward", 8_000);
 
   // Keyboard uses the same running package: Escape opens the pause menu, then
   // mouse toggles audio settings inside its accessible labelled control.
-  await sendKey(client, "Escape", "Escape", 27);
-  await expectSelector(client, ".pause-menu", "keyboard pause input");
+  //
+  // Escape is a *toggle* in PokerTable.tsx's keydown handler: if `paused` is
+  // already true it closes the menu instead of opening it. The app can already
+  // be paused here for a legitimate reason -- a native window-blur event (see
+  // the `Page.bringToFront` note above) auto-pauses the table -- and if that
+  // race lands right before this step, sending Escape would close an
+  // already-open menu, which reads identically to "the pause menu was not
+  // present" even though keyboard routing worked correctly both times. Bring
+  // the window forward again and resume from a known, unpaused baseline
+  // before measuring the keyboard open.
+  await client.send("Page.bringToFront");
+  await delay(200);
+  await pressEscapeUntilPauseMenuOpens(client);
   await expectMouseClick(client, ".pause-menu__actions button:nth-of-type(3)", undefined, "pause settings mouse input");
   await expectBoolean(
     client,
@@ -221,16 +299,17 @@ await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 if (failure) throw new Error(`Packaged input smoke failed: ${failure}`);
 console.log(JSON.stringify({ ok: true, ...report }, null, 2));
 
-async function expectSelector(cdp, selector, label) {
+async function expectSelector(cdp, selector, label, timeout = 8_000) {
   const found = await waitForBoolean(
     cdp,
     `document.querySelector(${JSON.stringify(selector)}) !== null`,
+    timeout,
   );
   record(label, found);
   if (!found) throw new Error(`${label}: ${selector} was not present.`);
 }
 
-async function expectAnySelector(cdp, selectors, label, timeout = 4_000) {
+async function expectAnySelector(cdp, selectors, label, timeout = 8_000) {
   const found = await waitForBoolean(
     cdp,
     selectors
@@ -316,6 +395,165 @@ async function expectMinimizePausesAndRestores(cdp) {
     "document.querySelector('.pause-menu') === null",
     "native restore resumes only after player confirmation",
   );
+}
+
+/**
+ * Poll for a decision at which `.action-button--raise` is genuinely enabled,
+ * advancing past any decision where it is legitimately disabled instead of
+ * forcing a click on it. Legal-action state is not seedable in this build (no
+ * production-safe deterministic-seed hook exists -- see the audit report), so
+ * this proves the raise control's enabled/disabled wiring is correct *and*
+ * still exercises real raise-sizing input, rather than weakening the check
+ * into a skip.
+ */
+async function ensureRaiseIsLegalThenAdvance(cdp) {
+  const maxAdvances = 12;
+  // Each advance can legitimately cost several seconds (opponent presentation
+  // + the next hand's dealing), so this is bounded by wall-clock time as well
+  // as iteration count -- 30 iterations at worst-case per-step cost could
+  // otherwise dwarf the whole script's CDP session budget.
+  const overallDeadline = Date.now() + 45_000;
+  for (let attempt = 0; attempt <= maxAdvances; attempt += 1) {
+    const raiseIsLegal = await waitForBoolean(
+      cdp,
+      `(() => {
+        const button = document.querySelector(".action-button--raise");
+        return button instanceof HTMLButtonElement && !button.disabled &&
+          button.getBoundingClientRect().width > 2;
+      })()`,
+      attempt === 0 ? 1_500 : 6_000,
+    );
+    if (raiseIsLegal) {
+      record(
+        attempt === 0
+          ? "raise was legal on the first live decision"
+          : `raise became legal after advancing past ${attempt} illegal-to-raise decision(s)`,
+        true,
+      );
+      return;
+    }
+    if (attempt === maxAdvances || Date.now() >= overallDeadline) {
+      throw new Error(
+        `raise mouse input: raise never became a legal action across ${attempt + 1} decision(s) ` +
+          "(hero may be perpetually short-stacked/all-in-covered in this run); this is either a " +
+          "real legality-gate defect or the bound needs to grow, not something to click through.",
+      );
+    }
+    await advanceOneDecisionWithoutRaising(cdp);
+  }
+}
+
+/**
+ * Take whichever legal, non-raise action `.action-dock` currently offers
+ * (call/check first, fold as a fallback), then fast-forward through the
+ * opponent presentation back to the next decision. Whenever `.action-dock` is
+ * rendered at all, the product guarantees at least one of fold/call/check is
+ * legal, so this never has to guess.
+ */
+async function advanceOneDecisionWithoutRaising(cdp) {
+  const callPoint = await selectorPoint(cdp, ".action-button--call");
+  if (callPoint) {
+    await mouseClick(cdp, callPoint.x, callPoint.y);
+    record("advance past non-raise decision: call/check mouse input", true);
+  } else {
+    const foldPoint = await selectorPoint(cdp, ".action-button--fold");
+    if (!foldPoint) {
+      throw new Error(
+        "Neither call/check nor fold was an enabled target while advancing past a non-raise decision.",
+      );
+    }
+    await mouseClick(cdp, foldPoint.x, foldPoint.y);
+    record("advance past non-raise decision: fold mouse input", true);
+  }
+  await delay(200);
+
+  const fastForwardSelector =
+    'button[aria-label="Skip opponent presentation and continue the hand"]';
+  const fastForwardAppeared = await waitForBoolean(
+    cdp,
+    `document.querySelector(${JSON.stringify(fastForwardSelector)}) !== null`,
+    6_000,
+  );
+  if (fastForwardAppeared) {
+    const fastForwardPoint = await selectorPoint(cdp, fastForwardSelector);
+    if (fastForwardPoint) {
+      await mouseClick(cdp, fastForwardPoint.x, fastForwardPoint.y);
+      await delay(150);
+    }
+  }
+
+  const dockReturned = await waitForBoolean(
+    cdp,
+    "document.querySelector('.action-dock') !== null",
+    8_000,
+  );
+  if (!dockReturned) {
+    throw new Error(
+      "The table did not return to a new decision after advancing past a non-raise decision " +
+        "(the tournament may have ended, e.g. hero busted); the raise-legality poll cannot continue.",
+    );
+  }
+}
+
+/**
+ * Resume from a known, unpaused baseline before a keyboard step that depends
+ * on Escape's toggle semantics. The table can already be paused for a
+ * legitimate reason (see the `Page.bringToFront` notes above), and resuming
+ * first makes the following Escape press unambiguous.
+ */
+async function ensureNotPaused(cdp) {
+  const alreadyPaused = await waitForBoolean(
+    cdp,
+    "document.querySelector('.pause-menu') !== null",
+    400,
+  );
+  if (!alreadyPaused) return;
+  record("pre-existing auto-pause observed before keyboard check (native window-blur pause)", true);
+  await expectMouseClick(
+    cdp,
+    ".pause-menu .primary-button",
+    "Resume table",
+    "dismiss pre-existing auto-pause before keyboard check",
+  );
+  await expectBoolean(
+    cdp,
+    "document.querySelector('.pause-menu') === null",
+    "auto-pause dismissed to a known baseline before keyboard check",
+  );
+}
+
+/**
+ * Send Escape and confirm `.pause-menu` opens, retrying a bounded number of
+ * times against a known, resumed baseline. Escape toggles pause state, so a
+ * native window-blur auto-pause that lands in the split second between the
+ * baseline check and the keypress can still close a menu that just opened
+ * from the blur itself, reading as "no pause menu" once. Retrying from a
+ * freshly-resumed baseline resolves that race without weakening what is
+ * checked: the final assertion is still a real Escape press producing a real
+ * `.pause-menu`.
+ */
+async function pressEscapeUntilPauseMenuOpens(cdp) {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await ensureNotPaused(cdp);
+    await sendKey(cdp, "Escape", "Escape", 27);
+    const opened = await waitForBoolean(
+      cdp,
+      "document.querySelector('.pause-menu') !== null",
+      attempt === maxAttempts ? 8_000 : 3_000,
+    );
+    if (opened) {
+      record("keyboard pause input", true);
+      return;
+    }
+    if (attempt === maxAttempts) {
+      record("keyboard pause input", false);
+      throw new Error(
+        `keyboard pause input: .pause-menu was not present after ${maxAttempts} Escape attempts.`,
+      );
+    }
+    record(`keyboard pause input attempt ${attempt} did not land (possible auto-pause race); retrying`, true);
+  }
 }
 
 async function expectMouseClick(cdp, selector, exactText, label) {
@@ -464,7 +702,7 @@ async function evaluateValue(cdp, expression) {
   return result.result?.value;
 }
 
-async function waitForBoolean(cdp, expression, timeout = 4_000) {
+async function waitForBoolean(cdp, expression, timeout = 8_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (await evaluateBoolean(cdp, expression)) return true;

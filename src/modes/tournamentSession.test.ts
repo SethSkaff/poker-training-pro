@@ -5,6 +5,7 @@ import {
   nextToAct,
 } from "../engine";
 import type { BettingActionCommand } from "../engine";
+import { formatMessage } from "../lib/localeMessages";
 import {
   SESSION_FORMAT,
   SESSION_TABLE_SIZE,
@@ -253,6 +254,62 @@ describe("six-seat tournament session", () => {
     ).toBe(true);
     expect(snapshot.pot).toBeGreaterThan(0);
     expect(snapshot.tags).toContain(SESSION_FORMAT);
+  });
+
+  it("synthesizes title/prompt/actionReason through the message catalog with correct interpolation", () => {
+    const session = beginTournamentSessionHand(createSession());
+    const snapshot = createPokerTableSnapshot(session);
+    const actingId = nextToAct(session.activeHand!.betting);
+    const actor = session.entrants.find((entrant) => entrant.id === actingId);
+    if (!actor) throw new Error("Expected an acting entrant");
+
+    // The title interpolates the real event name and current hand number --
+    // not a hardcoded literal -- proving the {eventName}/{handNumber} tokens
+    // actually carry the session's live values.
+    expect(snapshot.title).toBe(
+      formatMessage("tournamentSession.title", {
+        eventName: session.event.name,
+        handNumber: session.tournament.tables[0].handNumber,
+      }),
+    );
+    expect(snapshot.title).toContain(session.event.name);
+
+    // The prompt interpolates the acting entrant's real display name.
+    expect(snapshot.prompt).toBe(
+      formatMessage("tournamentSession.prompt.actorDeciding", {
+        actorName: actor.name,
+      }),
+    );
+    expect(snapshot.prompt).toBe(`${actor.name} is deciding.`);
+
+    expect(snapshot.actionReason).toBe(
+      formatMessage("tournamentSession.actionReason"),
+    );
+  });
+
+  it("synthesizes the betting-complete prompt once the betting round finishes", () => {
+    let session = beginTournamentSessionHand(
+      createSession("normal", "prompt-betting-complete"),
+    );
+    while (session.activeHand && !session.activeHand.betting.complete) {
+      const actor = nextToAct(session.activeHand.betting);
+      if (!actor) throw new Error("Expected an actor");
+      const legal = getLegalActions(session.activeHand.betting, actor);
+      const command: BettingActionCommand = legal.check
+        ? { type: "check" }
+        : { type: "call" };
+      session = applyTournamentSessionAction(session, actor, command);
+    }
+    if (!session.activeHand) {
+      throw new Error("Expected the hand to still be pending settlement");
+    }
+    expect(nextToAct(session.activeHand.betting)).toBeFalsy();
+
+    const snapshot = createPokerTableSnapshot(session);
+    expect(snapshot.prompt).toBe(
+      formatMessage("tournamentSession.prompt.bettingComplete"),
+    );
+    expect(snapshot.prompt).toBe("Betting is complete. Continue the hand.");
   });
 });
 

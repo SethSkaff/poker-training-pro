@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createMusicPlaylist,
   createPlaylistOrder,
+  musicVolumeFromSettings,
   shuffleTrackIds,
   type PlaylistAudioSink,
   type PlaylistManifest,
@@ -232,6 +233,52 @@ describe("pause and resume", () => {
     // Advancing to real-time 126s == 96s of playback opens the crossfade.
     env.controller.tick(126_000);
     expect(env.sink.voices).toHaveLength(2);
+  });
+});
+
+describe("musicVolumeFromSettings", () => {
+  it("multiplies master and music percentages into a [0, 1] gain", () => {
+    expect(
+      musicVolumeFromSettings({
+        masterVolume: 100,
+        musicVolume: 35,
+        muted: false,
+      }),
+    ).toBeCloseTo(0.35, 5);
+    expect(
+      musicVolumeFromSettings({
+        masterVolume: 50,
+        musicVolume: 50,
+        muted: false,
+      }),
+    ).toBeCloseTo(0.25, 5);
+  });
+
+  it("is silent whenever Mute All is on, regardless of the sliders", () => {
+    expect(
+      musicVolumeFromSettings({
+        masterVolume: 100,
+        musicVolume: 100,
+        muted: true,
+      }),
+    ).toBe(0);
+  });
+
+  it("clamps out-of-range percentages defensively", () => {
+    expect(
+      musicVolumeFromSettings({
+        masterVolume: 150,
+        musicVolume: -10,
+        muted: false,
+      }),
+    ).toBe(0);
+    expect(
+      musicVolumeFromSettings({
+        masterVolume: 150,
+        musicVolume: 150,
+        muted: false,
+      }),
+    ).toBe(1);
   });
 });
 

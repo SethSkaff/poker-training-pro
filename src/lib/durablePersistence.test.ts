@@ -5,6 +5,7 @@ import {
   type DurableSaveReceipt,
   type RawGeneration,
 } from "./durablePersistence";
+import { formatMessage } from "./localeMessages";
 import {
   SAVE_FORMAT,
   serializeSaveBackup,
@@ -496,6 +497,241 @@ describe("narrow replay export facade", () => {
         code: "developer-export-disabled",
         operation: "replay-export",
         retryable: false,
+      },
+    });
+  });
+});
+
+/**
+ * Proves every DurableFailure.message this module can produce now resolves
+ * through the versioned message catalog (`durable.error.*` keys in
+ * src/locales/en-US.messages.shell.ts) instead of a raw English literal, and
+ * that RecoveryScreen/SaveDataControls therefore receive catalog-backed
+ * text. Each assertion compares against `formatMessage(key)` rather than a
+ * hardcoded literal so these tests stay honest about *which* key produced
+ * the text, not just that the English happens to match.
+ */
+describe("durable failure messages resolve through the message catalog", () => {
+  it("reports the retry-pending message from the catalog", async () => {
+    const persistence = new DurablePersistence(bridge());
+    await expect(persistence.retryPendingCommit()).resolves.toMatchObject({
+      ok: false,
+      error: { message: formatMessage("durable.error.noPendingRetry") },
+    });
+  });
+
+  it("reports desktop-capability-unavailable messages from the catalog", async () => {
+    const persistence = new DurablePersistence({} as DesktopPersistenceBridge);
+
+    await expect(persistence.restore("previous")).resolves.toMatchObject({
+      ok: false,
+      error: { message: formatMessage("durable.error.restoreUnavailable") },
+    });
+    await expect(
+      persistence.startFresh(defaultSettings, defaultProgress),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        message: formatMessage("durable.error.startFreshUnavailable"),
+      },
+    });
+    await expect(persistence.exportSave()).resolves.toMatchObject({
+      ok: false,
+      error: { message: formatMessage("durable.error.exportUnavailable") },
+    });
+    await expect(persistence.exportDiagnostics()).resolves.toMatchObject({
+      ok: false,
+      error: {
+        message: formatMessage("durable.error.diagnosticsUnavailable"),
+      },
+    });
+    await expect(persistence.prepareSaveImport()).resolves.toMatchObject({
+      ok: false,
+      error: { message: formatMessage("durable.error.importUnavailable") },
+    });
+    await expect(
+      persistence.confirmSaveImport("token"),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { message: formatMessage("durable.error.importUnavailable") },
+    });
+    await expect(persistence.prepareProgressReset()).resolves.toMatchObject({
+      ok: false,
+      error: { message: formatMessage("durable.error.resetUnavailable") },
+    });
+    await expect(
+      persistence.confirmProgressReset("token"),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { message: formatMessage("durable.error.resetUnavailable") },
+    });
+    await expect(persistence.exportPublicReplay({})).resolves.toMatchObject({
+      ok: false,
+      error: {
+        message: formatMessage("durable.error.replayExportUnavailable"),
+      },
+    });
+    await expect(
+      persistence.exportDeveloperReplay({}),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        message: formatMessage("durable.error.replayExportUnavailable"),
+      },
+    });
+  });
+
+  it("maps a disk-full IPC error to the catalog message", async () => {
+    const persistence = new DurablePersistence(
+      bridge({
+        commitAutosave: vi.fn(async () => ({
+          ok: false as const,
+          error: { code: "ENOSPC", systemCode: "ENOSPC" },
+        })),
+      }),
+    );
+    await expect(
+      persistence.commitAction(defaultSettings, defaultProgress),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "disk-full",
+        message: formatMessage("durable.error.diskFull"),
+      },
+    });
+  });
+
+  it("maps a future save-version generation to the catalog's newer-version message", async () => {
+    const future = JSON.stringify({
+      format: SAVE_FORMAT,
+      version: 99,
+      data: { settings: defaultSettings, progress: defaultProgress },
+    });
+    const persistence = new DurablePersistence(
+      bridge({
+        probeAutosaves: async () => ({
+          generations: [generation("current", future)],
+        }),
+      }),
+    );
+    await expect(persistence.loadStartup()).resolves.toMatchObject({
+      kind: "recovery",
+      attempts: [
+        {
+          code: "unsupported-save-version",
+          message: formatMessage("durable.error.createdByNewerVersion"),
+        },
+      ],
+    });
+  });
+
+  it("prefers the recovery-copy message when a previous generation is usable", async () => {
+    const persistence = new DurablePersistence(
+      bridge({
+        probeAutosaves: async () => ({
+          generations: [
+            {
+              source: "current",
+              exists: true,
+              error: { code: "checksum-mismatch" },
+            },
+            generation("previous", save("Previous Player")),
+          ],
+        }),
+      }),
+    );
+    await expect(persistence.loadStartup()).resolves.toMatchObject({
+      kind: "recovery",
+      failure: {
+        message: formatMessage("durable.error.recoveryCopyAvailable"),
+      },
+    });
+  });
+
+  it("uses the no-valid-generation message when nothing is recoverable", async () => {
+    const persistence = new DurablePersistence(
+      bridge({
+        probeAutosaves: async () => ({
+          generations: [
+            { source: "current", exists: false },
+            { source: "previous", exists: false },
+            { source: "last-known-good", exists: false },
+          ],
+          hasAuthoritativeEvidence: true,
+        }),
+      }),
+    );
+    await expect(persistence.loadStartup()).resolves.toMatchObject({
+      kind: "recovery",
+      failure: { message: formatMessage("durable.error.noValidGeneration") },
+    });
+  });
+
+  it("uses the legacy previous-save-restorable message on the legacy probe path", async () => {
+    const persistence = new DurablePersistence({
+      loadAutosave: vi.fn(async () => ({
+        ok: true as const,
+        source: "previous" as const,
+        record: {
+          boundary: "hand" as const,
+          savedAt: "2026-07-23T11:00:00.000Z",
+          payload: save("Previous Player"),
+        },
+        errors: [],
+      })),
+      commitAutosave: vi.fn(async (_serialized, boundary) => ({
+        ok: true as const,
+        receipt: { ...receipt, boundary },
+      })),
+    });
+    await expect(persistence.loadStartup()).resolves.toMatchObject({
+      kind: "recovery",
+      failure: {
+        message: formatMessage("durable.error.previousSaveRestorable"),
+      },
+    });
+  });
+
+  it("uses the browser-import-damaged message for unparsable legacy browser data", async () => {
+    const persistence = new DurablePersistence(
+      bridge(),
+      storage({ "poker-training-pro:progress": "{not json" }),
+    );
+    await expect(persistence.loadStartup()).resolves.toMatchObject({
+      kind: "recovery",
+      failure: {
+        message: formatMessage("durable.error.browserImportDamaged"),
+      },
+    });
+  });
+
+  it("maps browser storage access errors to their catalog messages", async () => {
+    const quotaStorage = {
+      getItem: vi.fn(() => {
+        throw new DOMException("quota", "QuotaExceededError");
+      }),
+    };
+    const quotaPersistence = new DurablePersistence(bridge(), quotaStorage);
+    await expect(quotaPersistence.loadStartup()).resolves.toMatchObject({
+      kind: "recovery",
+      failure: {
+        message: formatMessage("durable.error.browserQuotaExceeded"),
+      },
+    });
+
+    const securityStorage = {
+      getItem: vi.fn(() => {
+        throw new DOMException("blocked", "SecurityError");
+      }),
+    };
+    const securityPersistence = new DurablePersistence(
+      bridge(),
+      securityStorage,
+    );
+    await expect(securityPersistence.loadStartup()).resolves.toMatchObject({
+      kind: "recovery",
+      failure: {
+        message: formatMessage("durable.error.browserAccessUnavailable"),
       },
     });
   });
