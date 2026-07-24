@@ -1,6 +1,6 @@
 import { ArrowRight, FastForward, Spade } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import { useResilientAsset } from "../lib/useResilientAsset";
 import {
   FreezableDelay,
@@ -74,6 +74,7 @@ export function RoomFlythrough({
       data-background-status={backgroundArt.status}
       aria-labelledby="room-flight-title"
       aria-describedby="room-flight-mode"
+      {...localeTextAttributes()}
     >
       <img
         className="room-flight__background-art"

@@ -293,7 +293,15 @@ requirements are added.
 
 - [ ] Make all controls expose correct accessible names, roles, values, state,
       and order to Windows Narrator/NVDA; announce cards, actions, pot changes,
-      errors, timers, and results without reading decorative scenery.
+      errors, timers, and results without reading decorative scenery. The table
+      now has static SR semantics (named seat/card groups, decorative children
+      hidden) plus live `aria-live` regions for the running status line, action
+      errors, blind-level increases, hand results/side pots, and an assertive
+      all-in escalation — sourced from the locale catalog, unit-tested for
+      no-spam/no-hidden-info via a pure `deriveTableAnnouncements` diff
+      (`src/lib/tableAnnouncer.ts`). Real Windows Narrator/NVDA speech
+      acceptance on hardware is still unverified and remains before this can
+      be checked.
 - [x] Add UI/text scale controls. The persisted Compact, Standard, Large, and
       Extra large choices scale the whole desktop interface (including table
       labels and action targets), not prose alone; older saves use Standard.
@@ -522,7 +530,16 @@ requirements are added.
       tutorial, and explanation from components into versioned locale resources;
       ship English as an explicit complete locale. A strict versioned English
       message catalog, interpolation helper, and direction-safe message component
-      now exist; the remaining work is migrating the distributed UI strings.
+      now exist; nearly all component UI strings are migrated (PokerTable,
+      Dashboard, tutorial, settings, credits/about, save controls, recovery,
+      tournament event names/tiers/qualification/placement labels). Training
+      scenario prompt/explanation content in `src/data/trainingScenarios.ts` is
+      deliberately exempt: it is governed by its own versioned
+      schema/review/authoring pipeline (`trainingScenarioSchema.ts`), not UI
+      chrome. Real residual gaps, not yet migrated: `src/lib/durablePersistence.ts`
+      failure messages (shown in Recovery/Save screens), `src/lib/creditsData.ts`
+      section labels, and tournament-mode's synthesized scenario
+      title/prompt/actionReason strings in `tournamentSession.ts`.
 - [x] Add a versioned English numeric locale surface for number, percentage,
       ratio, chip, and duration formatting, and keep quiz parsing unambiguous
       for decimal comma, decimal point, fraction, and colon-ratio input.
@@ -535,8 +552,11 @@ requirements are added.
 - [ ] Add pseudo-localization, 30–50% text-expansion, long-name, and right-to-left
       layout tests before claiming support for another language. The locale
       foundation now has deterministic 35% pseudo expansion, token preservation,
-      long-name, and RTL direction/layout regression tests; full-screen visual
-      acceptance remains before advertising another locale.
+      long-name, and RTL direction/layout regression tests across 16 major
+      screens (component-render level, no unmigrated-English-leak sweep plus
+      `dir`/`lang` root-attribute propagation); full-screen visual acceptance
+      (real rendered layout, clipping, mirrored icon/flex direction under an
+      actual browser window) remains before advertising another locale.
 - [x] Define a versioned scenario schema and validator for legal cards, stacks,
       actions, units, tolerances, explanations, tags, difficulty, source/reviewer,
       and duplicate detection.

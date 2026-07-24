@@ -192,6 +192,19 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.announce.mayCheckOrBet": "You may check or bet.",
   "table.announce.latestPublicAction": "Latest public action: {action}.",
 
+  // --- src/lib/tableAnnouncer.ts (live event announcements) -----------------
+  // These are distinct from the "table.announce.*" keys above: the ones
+  // above describe the CURRENT state every render; these describe a single
+  // EVENT (a blind level changing, a hand resolving, an all-in), each fired
+  // exactly once per real transition. See tableAnnouncer.test.ts.
+  "table.announce.blindsIncreased": "Blinds increased to {smallBlind}/{bigBlind}.",
+  "table.announce.handWinner": "{names} won the pot of {amount}.",
+  "table.announce.handWinnerSplit": "{names} split the pot of {amount}.",
+  "table.announce.namesJoiner": " and ",
+  "table.announce.sidePotFormed": "A side pot was contested this hand.",
+  "table.announce.heroAllIn": "You are all-in for {amount}.",
+  "table.announce.publicAllIn": "{action}.",
+
   "table.seat.you": "You",
   "table.seat.folded": "Folded",
   "table.seat.allIn": "All-in",

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { formatDateTime } from "../lib/format";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import type {
   DurableResult,
   DurableSaveReceipt,
@@ -82,7 +82,11 @@ export function RecoveryScreen({
             : "";
 
   return (
-    <main className={styles.shell} aria-labelledby="recovery-title">
+    <main
+      className={styles.shell}
+      aria-labelledby="recovery-title"
+      {...localeTextAttributes()}
+    >
       <section className={styles.panel}>
         <p className={styles.eyebrow}>{formatMessage("recovery.eyebrow")}</p>
         <h1 id="recovery-title">{formatMessage("recovery.title")}</h1>

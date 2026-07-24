@@ -40,6 +40,7 @@ import type {
   Street,
   TrainingScenario,
 } from "../types/poker";
+import { formatMessage } from "../lib/localeMessages";
 import {
   NORMAL_OPPONENT_PROFILES,
   decideNormalAction,
@@ -257,8 +258,13 @@ function qualificationLabel(
   event: CareerEventDefinition,
   qualifyingPlaces: number,
 ): string {
-  if (event.qualification.type === "win") return "Win the six-seat final";
-  return `Finish in the top ${qualifyingPlaces} of ${SESSION_TABLE_SIZE}`;
+  if (event.qualification.type === "win") {
+    return formatMessage("career.qualification.winFinal");
+  }
+  return formatMessage("career.qualification.topFinish", {
+    places: qualifyingPlaces,
+    total: SESSION_TABLE_SIZE,
+  });
 }
 
 function qualifiedEventIds(
@@ -282,7 +288,7 @@ export function listTournamentSessionEvents(
     const qualifyingPlaces = compressedQualifyingPlaces(event);
     return {
       id: event.id,
-      name: event.name,
+      name: formatMessage(`career.event.${event.id}`),
       tier: event.tier,
       sourceFieldSize: event.fieldSize,
       sessionFieldSize: SESSION_TABLE_SIZE,
@@ -882,11 +888,14 @@ function createSessionResult(
     eventName: session.event.name,
     handNumber: tableForSession(session).handNumber,
     elo,
-    placementLabel: `${finishPlace}${ordinalSuffix(finishPlace)} of ${SESSION_TABLE_SIZE}`,
+    placementLabel: formatMessage("career.result.placement", {
+      place: `${finishPlace}${ordinalSuffix(finishPlace)}`,
+      total: SESSION_TABLE_SIZE,
+    }),
     qualificationLabel:
       finishPlace <= qualifyingPlaces
-        ? "Qualified for the next Grand Prix event"
-        : `Needed top ${qualifyingPlaces} to qualify`,
+        ? formatMessage("career.result.qualified")
+        : formatMessage("career.result.notQualified", { qualifyingPlaces }),
     unlockedEventIds,
     newlyUnlockedEventIds,
     ...(nextEventId ? { nextEventId } : {}),

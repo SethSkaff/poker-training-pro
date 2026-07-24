@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import type {
   DurablePersistence,
   ProgressResetPreview,
@@ -135,7 +135,10 @@ export function SaveDataControls({
   };
 
   return (
-    <div className="night-settings__group save-data-controls">
+    <div
+      className="night-settings__group save-data-controls"
+      {...localeTextAttributes()}
+    >
       <h2>{formatMessage("saveData.heading")}</h2>
       <p>{formatMessage("saveData.intro")}</p>
       <div className="save-data-controls__buttons">

@@ -1,9 +1,12 @@
 /**
  * Namespaced English copy for shell/menu/settings surfaces: the title screen,
  * Settings, save data & diagnostics controls, save recovery, credits, about &
- * support, control remapping, the play-chip acknowledgment, and App-level
+ * support, control remapping, the play-chip acknowledgment, App-level
  * startup/loading gates (loading, safe mode, save-failure, import, resume,
- * first-run setup, scene-loading labels).
+ * first-run setup, scene-loading labels), and the tournament career-ladder
+ * chrome (event names, tier labels, qualification requirement copy — the
+ * naming/categorization labels around the tournament data in
+ * src/engine/tournament.ts, NOT the poker situation data itself).
  *
  * Kept in its own module so it can be authored independently of gameplay-
  * surface catalog additions; `en-US.messages.ts` merges this record into the
@@ -306,6 +309,27 @@ export const SHELL_MESSAGES = Object.freeze({
     "{scenarioTitle} is ready at the table. Your answer and score have not been submitted yet.",
   "shell.resumeTraining.resumeButton": "Resume Training",
   "shell.resumeTraining.abandonButton": "Abandon scenario and go to menu",
+
+  // Tournament career ladder (src/engine/tournament.ts CAREER_EVENTS,
+  // consumed by src/modes/tournamentSession.ts and rendered by
+  // src/components/Dashboard.tsx's career-tour event list/detail board).
+  // These are naming/categorization labels, not calibrated poker content —
+  // see TODOS.md string-extraction verdict for the reasoning.
+  "career.event.local-qualifier": "Local Qualifier",
+  "career.event.regional-open": "Regional Open",
+  "career.event.circuit-main": "Circuit Main Event",
+  "career.event.national-championship": "National Championship",
+  "career.event.world-championship": "World Championship",
+  "career.tier.local": "Local",
+  "career.tier.regional": "Regional",
+  "career.tier.circuit": "Circuit",
+  "career.tier.championship": "Championship",
+  "career.tier.world": "World",
+  "career.qualification.winFinal": "Win the six-seat final",
+  "career.qualification.topFinish": "Finish in the top {places} of {total}",
+  "career.result.placement": "{place} of {total}",
+  "career.result.qualified": "Qualified for the next Grand Prix event",
+  "career.result.notQualified": "Needed top {qualifyingPlaces} to qualify",
 } as const);
 
 export type ShellMessageKey = keyof typeof SHELL_MESSAGES;

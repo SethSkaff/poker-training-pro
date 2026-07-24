@@ -1265,10 +1265,10 @@ export default function App() {
           eventName={runner.session.event.name}
           modeLabel={
             runner.kind === "timed"
-              ? "Timed Table"
+              ? formatMessage("modes.timed.name")
               : runner.session.mode === "rational"
-                ? "Rational Circuit"
-                : "Normal Tour"
+                ? formatMessage("table.modeTitle.rational")
+                : formatMessage("modes.normalTour")
           }
           settings={effectiveSettings}
           onComplete={() => {
@@ -1365,6 +1365,12 @@ export default function App() {
                 (award) => award.playerId,
               ),
             ),
+          ),
+          lastPotAwards: (runner.session.lastHand?.awards ?? []).map(
+            (award) => ({ playerId: award.playerId, amount: award.amount }),
+          ),
+          lastHandHadSidePot: Boolean(
+            runner.session.lastHand?.pots.some((pot) => pot.kind === "side"),
           ),
           ...(lastPublicAction
             ? {

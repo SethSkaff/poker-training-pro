@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ExternalLink, FolderOpen } from "lucide-react";
 import { useCreditsResources } from "../lib/useCreditsResources";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 
 interface AboutSupportProps {
   onOpenCredits: () => void;
@@ -33,7 +33,7 @@ export function AboutSupport({
   const privacyText = documents["privacy-policy"];
 
   return (
-    <div className="night-settings__group about-support">
+    <div className="night-settings__group about-support" {...localeTextAttributes()}>
       <h2>{formatMessage("about.heading")}</h2>
 
       <dl className="credits-versions">

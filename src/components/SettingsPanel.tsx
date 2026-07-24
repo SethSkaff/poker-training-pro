@@ -2,7 +2,7 @@ import { type ReactNode, useState } from "react";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import { previewSettingsEffect } from "../lib/audioPreview";
 import { defaultSettings } from "../lib/storage";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import type { GameSettings } from "../types/poker";
 import { NightCircuitScene } from "./Dashboard";
 import { ControlsRemapPanel } from "./ControlsRemapPanel";
@@ -163,7 +163,7 @@ export function SettingsPanel({
   };
 
   return (
-    <main className="night-shell night-shell--overlay">
+    <main className="night-shell night-shell--overlay" {...localeTextAttributes()}>
       <NightCircuitScene quiet />
       <section className="night-settings">
         <header>

@@ -42,6 +42,10 @@ import {
 import { gameAudio } from "../lib/audio";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import {
+  useTableAnnouncer,
+  type TableAnnouncerSnapshot,
+} from "../lib/tableAnnouncer";
+import {
   detectContextualPromptOccurrences,
   loadContextualPromptState,
   markContextualPromptSeen,
@@ -114,6 +118,19 @@ interface TournamentTableControls {
   qualifyingPlaces?: number;
   /** Actual prior-hand pot award recipients, never inferred from stack size. */
   lastPotWinnerIds?: readonly string[];
+  /**
+   * Real per-player amounts from the engine's own pot-award resolution for
+   * the most recently finished hand, used only to announce the public
+   * result once the next hand begins. Never inferred from a stack-size
+   * delta.
+   */
+  lastPotAwards?: readonly { playerId: string; amount: number }[];
+  /**
+   * True when the most recently finished hand's award set spanned more than
+   * one contestable pot (a genuine side pot), sourced from the engine's own
+   * pot-building result.
+   */
+  lastHandHadSidePot?: boolean;
   /** The latest public table action, for a brief, truthful character gesture. */
   lastPublicAction?: {
     playerId: string;
@@ -1634,6 +1651,42 @@ export function PokerTable({
     scenario,
   });
 
+  // Public result of the hand that just finished, resolved from the same
+  // engine pot-award data the "Won pot" seat badge already uses -- never
+  // guessed from a stack-size delta. Undefined until a hand has resolved.
+  const potResultSnapshot: TableAnnouncerSnapshot["potResult"] =
+    tournament?.lastPotAwards?.length
+      ? {
+          winnerNames: Array.from(
+            new Set(tournament.lastPotAwards.map((award) => award.playerId)),
+          ).map((playerId) => {
+            const winner = scenario.players.find(
+              (player) => player.id === playerId,
+            );
+            if (!winner) return playerId;
+            return winner.seat === scenario.heroSeat
+              ? formatMessage("table.seat.you")
+              : winner.name;
+          }),
+          amount: tournament.lastPotAwards.reduce(
+            (sum, award) => sum + award.amount,
+            0,
+          ),
+          hadSidePot: Boolean(tournament.lastHandHadSidePot),
+        }
+      : undefined;
+
+  const { politeMessage: liveEventPolite, assertiveMessage: liveEventAssertive } =
+    useTableAnnouncer({
+      bigBlind: scenario.blinds[1],
+      smallBlind: scenario.blinds[0],
+      handNumber: tournament?.handNumber,
+      heroAction: action,
+      heroAllInAmount: allInAmount,
+      latestPublicAction: tournament?.actionHistory.at(-1),
+      potResult: potResultSnapshot,
+    });
+
   return (
     <div
       className="table-screen"
@@ -1645,6 +1698,29 @@ export function PokerTable({
     >
       <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {tableAnnouncement}
+      </p>
+      {/*
+        Discrete LIVE event announcements (timers/blind changes, hand
+        results, all-in) layered on top of the per-render summary above --
+        see src/lib/tableAnnouncer.ts for the transition logic. Errors are
+        deliberately not duplicated here; they already speak through the
+        `role="alert"` elements below (table-action-alert / math-input-error).
+      */}
+      <p
+        className="visually-hidden live-event-announcer live-event-announcer--polite"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {liveEventPolite}
+      </p>
+      <p
+        className="visually-hidden live-event-announcer live-event-announcer--assertive"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        {liveEventAssertive}
       </p>
       <header className="table-topbar">
         <button className="table-exit" type="button" onClick={onExit}>

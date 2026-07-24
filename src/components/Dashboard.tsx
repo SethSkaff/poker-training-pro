@@ -355,7 +355,7 @@ export function TimedSetup({
     Number.isInteger(minutes) && minutes >= 5 && minutes <= 180;
 
   return (
-    <main className="night-shell night-shell--timed">
+    <main className="night-shell night-shell--timed" {...localeTextAttributes()}>
       <NightCircuitScene quiet />
       <section className="timed-setup">
         <button className="night-back" type="button" onClick={onBack}>
@@ -450,7 +450,7 @@ export function TourLobby({
   const openingLevel = selected.structure.levels[0];
 
   return (
-    <main className="night-shell night-shell--tour">
+    <main className="night-shell night-shell--tour" {...localeTextAttributes()}>
       <NightCircuitScene quiet />
       <section className="tour-lobby">
         <header className="tour-lobby__header">
@@ -506,7 +506,7 @@ export function TourLobby({
         </ol>
 
         <aside className="event-board">
-          <p>{selected.tier}</p>
+          <p>{formatMessage(`career.tier.${selected.tier}`)}</p>
           <h2>{selected.name}</h2>
           <dl>
             <div>
@@ -578,7 +578,7 @@ export function PlayerRecord({ progress, onBack }: PlayerRecordProps) {
       : 0;
 
   return (
-    <main className="night-shell night-shell--overlay">
+    <main className="night-shell night-shell--overlay" {...localeTextAttributes()}>
       <NightCircuitScene quiet />
       <section className="record-sheet">
         <button className="night-back" type="button" onClick={onBack}>
@@ -643,7 +643,7 @@ export function TournamentCeremony({
   );
 
   return (
-    <main className="night-shell night-shell--ceremony">
+    <main className="night-shell night-shell--ceremony" {...localeTextAttributes()}>
       <NightCircuitScene quiet />
       <section className="ceremony-board">
         <Trophy size={36} strokeWidth={1.5} />

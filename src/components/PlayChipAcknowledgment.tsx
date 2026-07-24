@@ -1,4 +1,4 @@
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 
 interface PlayChipAcknowledgmentProps {
   onAcknowledge: () => void;
@@ -16,7 +16,11 @@ export function PlayChipAcknowledgment({
   onBack,
 }: PlayChipAcknowledgmentProps) {
   return (
-    <main className="startup-gate" aria-labelledby="play-chip-ack-title">
+    <main
+      className="startup-gate"
+      aria-labelledby="play-chip-ack-title"
+      {...localeTextAttributes()}
+    >
       <section className="startup-gate__panel">
         <p className="startup-gate__eyebrow">{formatMessage("playChipAck.eyebrow")}</p>
         <h1 id="play-chip-ack-title">{formatMessage("playChipAck.title")}</h1>
