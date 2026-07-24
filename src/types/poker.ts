@@ -120,6 +120,12 @@ export interface GameSettings {
   effectsVolume: number;
   fullscreen: boolean;
   reducedMotion: boolean;
+  /** True once the player has explicitly chosen a reduced-motion preference
+   * (first-run setup's Save action, or the Settings toggle). While false,
+   * `reducedMotion` is treated as unset and the renderer instead follows the
+   * operating system's live `prefers-reduced-motion` preference; see
+   * `src/lib/motionPreference.ts`. Safe Mode still overrides both. */
+  reducedMotionExplicit: boolean;
   dealSpeed: "cinematic" | "standard" | "quick";
   colorAssist: boolean;
   /** How far one look-left/right command moves the seated table camera. */

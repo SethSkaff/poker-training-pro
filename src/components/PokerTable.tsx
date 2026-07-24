@@ -40,7 +40,7 @@ import {
   formatFixedDecimal,
 } from "../lib/format";
 import { gameAudio } from "../lib/audio";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import {
   detectContextualPromptOccurrences,
   loadContextualPromptState,
@@ -199,6 +199,13 @@ export function buildPokerTableAnnouncement({
     .join(" ");
 }
 
+/** The decision clock's accessible name, exported for direct assertion. */
+export function decisionClockAriaLabel(elapsedMs: number): string {
+  return formatMessage("table.decisionClock.ariaLabel", {
+    seconds: formatFixedDecimal(elapsedMs / 1000, 1),
+  });
+}
+
 function PlayingCard({
   card,
   hidden = false,
@@ -255,6 +262,49 @@ interface PlayerSeatProps {
   recentAction?: BettingActionType;
 }
 
+const SEAT_STATUS_FRAGMENT_KEYS: Record<SeatPlayer["status"], string> = {
+  active: "table.seat.statusFragment.active",
+  folded: "table.seat.statusFragment.folded",
+  "all-in": "table.seat.statusFragment.allIn",
+  out: "table.seat.statusFragment.out",
+};
+
+/**
+ * Builds the seat's accessible name from the versioned catalog. Exported so
+ * tests can verify the exact string a screen reader receives without
+ * re-scanning PokerTable.tsx's source for literal copy.
+ */
+export function playerSeatAriaLabel({
+  isHero,
+  name,
+  stack,
+  status,
+  showingCards,
+  bet,
+  dealer,
+}: {
+  isHero: boolean;
+  name: string;
+  stack: number;
+  status: SeatPlayer["status"];
+  showingCards: boolean;
+  bet: number;
+  dealer: boolean;
+}): string {
+  return [
+    formatMessage("table.seat.ariaBase", {
+      name: isHero ? formatMessage("table.seat.you") : name,
+      chips: formatChips(stack),
+      status: formatMessage(SEAT_STATUS_FRAGMENT_KEYS[status]),
+    }),
+    showingCards ? formatMessage("table.seat.holdingCardsFragment") : "",
+    bet > 0
+      ? formatMessage("table.seat.betFragment", { amount: formatChips(bet) })
+      : "",
+    dealer ? formatMessage("table.seat.dealerFragment") : "",
+  ].join("");
+}
+
 function PlayerSeat({
   dealer,
   isHero,
@@ -292,7 +342,15 @@ function PlayerSeat({
         isOut ? "is-out" : ""
       } ${wonPot ? "is-winner" : ""}`}
       role="group"
-      aria-label={`${isHero ? "You" : player.name}, ${formatChips(player.stack)} chips, ${player.status}${isShowingCards ? ", holding cards" : ""}${player.bet > 0 ? `, bet ${formatChips(player.bet)}` : ""}${dealer ? ", dealer button" : ""}`}
+      aria-label={playerSeatAriaLabel({
+        isHero,
+        name: player.name,
+        stack: player.stack,
+        status: player.status,
+        showingCards: isShowingCards,
+        bet: player.bet,
+        dealer,
+      })}
     >
       {dealer && <span className="dealer-button" aria-hidden="true">D</span>}
       {isShowingCards && (
@@ -493,7 +551,7 @@ function MathPanel({
   );
 }
 
-interface FeedbackPanelProps {
+export interface FeedbackPanelProps {
   action: PokerAction;
   graded: GradedTrainingAttempt;
   mathAttempted: boolean;
@@ -502,7 +560,8 @@ interface FeedbackPanelProps {
   onReview: () => void;
 }
 
-function FeedbackPanel({
+/** Exported so its rendered markup (not raw source copy) can be asserted directly. */
+export function FeedbackPanel({
   action,
   graded,
   mathAttempted,
@@ -593,10 +652,10 @@ function FeedbackPanel({
 
       <div className="feedback-actions">
         <button className="secondary-button" type="button" onClick={onReview}>
-          <RotateCcw size={16} /> Review
+          <RotateCcw size={16} /> {formatMessage("table.feedback.reviewButton")}
         </button>
         <button className="primary-button" type="button" onClick={onNext}>
-          Next hand <ChevronRight size={16} />
+          {formatMessage("table.feedback.nextHandButton")} <ChevronRight size={16} />
         </button>
       </div>
     </aside>
@@ -679,6 +738,44 @@ function ModeSidePanel({
           <strong>{formatMessage("table.modePreview.infoSetTitle")}</strong>
           {formatMessage("table.modePreview.infoSetMessage")}
         </span>
+      </div>
+    </aside>
+  );
+}
+
+export interface ContextCoachPanelProps {
+  prompt: ContextualPrompt;
+  onGotIt: () => void;
+  onTurnOff: () => void;
+}
+
+/**
+ * The contextual-tip dialog shown after certain table events (all-in, side
+ * pot, blind increase, ...). Exported so its rendered markup can be asserted
+ * directly instead of scanning PokerTable.tsx's source for literal copy.
+ */
+export function ContextCoachPanel({
+  prompt,
+  onGotIt,
+  onTurnOff,
+}: ContextCoachPanelProps) {
+  return (
+    <aside
+      className="context-coach"
+      role="dialog"
+      aria-labelledby="context-coach-title"
+      aria-describedby="context-coach-message"
+    >
+      <span className="context-coach__badge">{formatMessage("table.coach.badge")}</span>
+      <h2 id="context-coach-title">{prompt.title}</h2>
+      <p id="context-coach-message">{prompt.message}</p>
+      <div>
+        <button type="button" onClick={onGotIt}>
+          {formatMessage("table.coach.gotIt")}
+        </button>
+        <button type="button" onClick={onTurnOff}>
+          {formatMessage("table.coach.turnOff")}
+        </button>
       </div>
     </aside>
   );
@@ -1544,6 +1641,7 @@ export function PokerTable({
       data-table-motion={settings.tableMotion}
       data-transition-motion={settings.transitionMotion}
       style={tableStyle}
+      {...localeTextAttributes()}
     >
       <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {tableAnnouncement}
@@ -1572,10 +1670,12 @@ export function PokerTable({
           <span
             className="decision-clock"
             role="timer"
-            aria-label={`Decision time ${formatFixedDecimal(elapsedMs / 1000, 1)} seconds`}
+            aria-label={decisionClockAriaLabel(elapsedMs)}
           >
             <Clock3 size={15} />
-            {formatFixedDecimal(elapsedMs / 1000, 1)}s
+            {formatMessage("table.decisionClock.visibleLabel", {
+              seconds: formatFixedDecimal(elapsedMs / 1000, 1),
+            })}
           </span>
           {tournament && (
             <label className="table-speed-control">
@@ -1925,7 +2025,7 @@ export function PokerTable({
                 <button
                   type="button"
                   onClick={() => pendingTournamentAction.current?.finish()}
-                  aria-label="Skip opponent presentation and continue the hand"
+                  aria-label={formatMessage("table.spectator.skipAriaLabel")}
                 >
                   {formatMessage("table.spectator.skipToResult")}
                 </button>
@@ -2044,39 +2144,20 @@ export function PokerTable({
       </div>
 
       {activePrompt && !paused ? (
-        <aside
-          className="context-coach"
-          role="dialog"
-          aria-labelledby="context-coach-title"
-          aria-describedby="context-coach-message"
-        >
-          <span className="context-coach__badge">{formatMessage("table.coach.badge")}</span>
-          <h2 id="context-coach-title">{activePrompt.title}</h2>
-          <p id="context-coach-message">{activePrompt.message}</p>
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                const next = markContextualPromptSeen(
-                  coachState,
-                  activePrompt.id,
-                );
-                updateCoachState(next);
-                setActivePrompt(null);
-              }}
-            >
-              Got it
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                updateCoachState({ ...coachState, enabled: false })
-              }
-            >
-              {formatMessage("table.coach.turnOff")}
-            </button>
-          </div>
-        </aside>
+        <ContextCoachPanel
+          prompt={activePrompt}
+          onGotIt={() => {
+            const next = markContextualPromptSeen(
+              coachState,
+              activePrompt.id,
+            );
+            updateCoachState(next);
+            setActivePrompt(null);
+          }}
+          onTurnOff={() =>
+            updateCoachState({ ...coachState, enabled: false })
+          }
+        />
       ) : null}
 
       {resumeRecap && !paused ? (

@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, LockKeyhole, Trophy } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatClock, formatChips } from "../lib/format";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import { useResilientAsset } from "../lib/useResilientAsset";
 import {
   listTournamentSessionEvents,
@@ -115,6 +115,7 @@ export function HomeView({
     <main
       className="night-shell home-reference"
       aria-labelledby="main-menu-title"
+      {...localeTextAttributes()}
     >
       <h1 id="main-menu-title" className="visually-hidden">
         {formatMessage("dashboard.home.title")}
@@ -230,6 +231,7 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
     <main
       className="night-shell night-shell--mode-select"
       aria-labelledby="mode-select-title"
+      {...localeTextAttributes()}
     >
       <NightCircuitScene />
       <section className="mode-stage">

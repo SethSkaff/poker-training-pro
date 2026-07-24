@@ -3,7 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { trainingScenarios } from "../data/trainingScenarios";
-import { buildPokerTableAnnouncement } from "./PokerTable";
+import { formatChips, formatFixedDecimal } from "../lib/format";
+import { formatMessage } from "../lib/localeMessages";
+import {
+  buildPokerTableAnnouncement,
+  decisionClockAriaLabel,
+  playerSeatAriaLabel,
+} from "./PokerTable";
 
 describe("poker table live announcements", () => {
   it("keeps the elapsed decision clock semantic and the table-audio button actionable", () => {
@@ -13,7 +19,21 @@ describe("poker table live announcements", () => {
     );
 
     expect(source).toContain('role="timer"');
-    expect(source).toContain("Decision time ${formatFixedDecimal(elapsedMs / 1000, 1)} seconds");
+    // The clock's accessible name is exported as a pure function so its
+    // resolved, catalog-backed value can be asserted directly instead of
+    // scanning the source for literal copy.
+    expect(source).toContain("aria-label={decisionClockAriaLabel(elapsedMs)}");
+    expect(decisionClockAriaLabel(0)).toBe(
+      formatMessage("table.decisionClock.ariaLabel", {
+        seconds: formatFixedDecimal(0, 1),
+      }),
+    );
+    expect(decisionClockAriaLabel(0)).toBe("Decision time 0.0 seconds");
+    expect(decisionClockAriaLabel(12_345)).toBe(
+      formatMessage("table.decisionClock.ariaLabel", {
+        seconds: formatFixedDecimal(12.345, 1),
+      }),
+    );
     expect(source).toContain('aria-pressed={settings.muted}');
     expect(source).toContain('onSettingsChange({ ...settings, muted: !settings.muted })');
     expect(source).toContain("elapsedStartedAt.current = performance.now() - elapsedMs");
@@ -40,8 +60,14 @@ describe("poker table live announcements", () => {
     );
 
     expect(source).toContain("pendingTournamentAction.current?.finish()");
+    // The skip control's accessible name now resolves through the versioned
+    // catalog; verify the wiring (key usage) and the resolved value
+    // separately instead of scanning for the literal English copy.
     expect(source).toContain(
-      'aria-label="Skip opponent presentation and continue the hand"',
+      'aria-label={formatMessage("table.spectator.skipAriaLabel")}',
+    );
+    expect(formatMessage("table.spectator.skipAriaLabel")).toBe(
+      "Skip opponent presentation and continue the hand",
     );
   });
 
@@ -99,9 +125,76 @@ describe("poker table live announcements", () => {
     expect(source).toContain('role="img"');
     expect(source).toContain('className="community-cards"');
     expect(source).toContain('role="group"');
-    expect(source).toContain('isShowingCards ? ", holding cards" : ""');
-    expect(source).toContain('player.bet > 0 ? `, bet ${formatChips(player.bet)}` : ""');
     expect(source).toContain('className="opponent-cards" aria-hidden="true"');
     expect(source).toContain('className="seat-label" aria-hidden="true"');
+
+    // The seat's accessible name is built by an exported pure function
+    // (`playerSeatAriaLabel`) rather than inline source string concatenation.
+    // Verify its actual rendered output for the cases the removed literal
+    // source-scan used to cover: an opponent's held cards and an active bet.
+    expect(source).toContain("aria-label={playerSeatAriaLabel({");
+
+    const holdingCardsLabel = playerSeatAriaLabel({
+      isHero: false,
+      name: "Maya",
+      stack: 3_600,
+      status: "active",
+      showingCards: true,
+      bet: 0,
+      dealer: false,
+    });
+    expect(holdingCardsLabel).toBe(
+      `${formatMessage("table.seat.ariaBase", {
+        name: "Maya",
+        chips: formatChips(3_600),
+        status: formatMessage("table.seat.statusFragment.active"),
+      })}${formatMessage("table.seat.holdingCardsFragment")}`,
+    );
+    expect(holdingCardsLabel).toContain(", holding cards");
+
+    const noCardsLabel = playerSeatAriaLabel({
+      isHero: false,
+      name: "Maya",
+      stack: 3_600,
+      status: "active",
+      showingCards: false,
+      bet: 0,
+      dealer: false,
+    });
+    expect(noCardsLabel).not.toContain(", holding cards");
+
+    const betLabel = playerSeatAriaLabel({
+      isHero: true,
+      name: "You",
+      stack: 3_600,
+      status: "active",
+      showingCards: false,
+      bet: 200,
+      dealer: true,
+    });
+    expect(betLabel).toBe(
+      `${formatMessage("table.seat.ariaBase", {
+        name: formatMessage("table.seat.you"),
+        chips: formatChips(3_600),
+        status: formatMessage("table.seat.statusFragment.active"),
+      })}${formatMessage("table.seat.betFragment", {
+        amount: formatChips(200),
+      })}${formatMessage("table.seat.dealerFragment")}`,
+    );
+    expect(betLabel).toContain(", bet 200");
+    expect(betLabel).toContain(", dealer button");
+    expect(betLabel.startsWith("You,")).toBe(true);
+
+    const noBetLabel = playerSeatAriaLabel({
+      isHero: false,
+      name: "Jules",
+      stack: 5_400,
+      status: "folded",
+      showingCards: true,
+      bet: 0,
+      dealer: false,
+    });
+    expect(noBetLabel).not.toContain(", bet ");
+    expect(noBetLabel).toContain(formatMessage("table.seat.statusFragment.folded"));
   });
 });

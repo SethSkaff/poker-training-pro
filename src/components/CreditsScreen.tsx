@@ -1,7 +1,7 @@
 import { ArrowLeft } from "lucide-react";
 import { assembleCredits, type CreditsDocument } from "../lib/creditsData";
 import { useCreditsResources } from "../lib/useCreditsResources";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import { NightCircuitScene } from "./Dashboard";
 
 interface CreditsScreenProps {
@@ -28,7 +28,11 @@ export function CreditsScreen({ onBack }: CreditsScreenProps) {
   const model = assembleCredits(resources);
 
   return (
-    <main className="night-shell night-shell--overlay" aria-labelledby="credits-title">
+    <main
+      className="night-shell night-shell--overlay"
+      aria-labelledby="credits-title"
+      {...localeTextAttributes()}
+    >
       <NightCircuitScene quiet />
       <section className="night-settings credits-screen">
         <header>

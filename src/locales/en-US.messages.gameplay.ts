@@ -153,6 +153,7 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "tutorial.header.label": "Playable tutorial",
   "tutorial.header.stepProgress": "Step {step} of 6",
   "tutorial.header.restart": "Restart",
+  "tutorial.table.ariaLabel": "Guided poker hand",
   "tutorial.pot.blinds": "Blinds {small} / {big}",
   "tutorial.villain.name": "Patient Pat",
   "tutorial.villain.chips": "2,800 chips",
@@ -197,6 +198,16 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.seat.out": "Out",
   "table.seat.wonPot": "Won pot",
 
+  // Composed into the seat's accessible name (PlayerSeat aria-label).
+  "table.seat.ariaBase": "{name}, {chips} chips, {status}",
+  "table.seat.statusFragment.active": "active",
+  "table.seat.statusFragment.folded": "folded",
+  "table.seat.statusFragment.allIn": "all-in",
+  "table.seat.statusFragment.out": "out",
+  "table.seat.holdingCardsFragment": ", holding cards",
+  "table.seat.betFragment": ", bet {amount}",
+  "table.seat.dealerFragment": ", dealer button",
+
   "table.math.ariaLabel": "Training math question",
   "table.math.eyebrow": "Show your work · Optional",
   "table.math.eloChip": "Math Elo {mathElo}",
@@ -228,6 +239,8 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.feedback.math.correct": "correct",
   "table.feedback.math.nearMiss": "near miss",
   "table.feedback.math.incorrect": "incorrect",
+  "table.feedback.reviewButton": "Review",
+  "table.feedback.nextHandButton": "Next hand",
 
   "table.modeTitle.training": "Training Lab",
   "table.modeTitle.rational": "Rational Circuit",
@@ -257,6 +270,8 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.pauseButton.ariaLabel": "Pause table",
   "table.audio.unmute": "Unmute table audio",
   "table.audio.mute": "Mute table audio",
+  "table.decisionClock.ariaLabel": "Decision time {seconds} seconds",
+  "table.decisionClock.visibleLabel": "{seconds}s",
 
   "table.error.actionUnavailable":
     "That action is not available in this practice scenario.",
@@ -305,6 +320,8 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.spectator.returnTo1x": "Return to 1×",
   "table.spectator.speed2x": "2×",
   "table.spectator.skipToResult": "Skip to result",
+  "table.spectator.skipAriaLabel":
+    "Skip opponent presentation and continue the hand",
 
   "table.raise.heading": "Build your raise",
   "table.raise.close": "Close raise controls",
@@ -317,6 +334,7 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.raise.raiseToAmount": "Raise to {amount}",
 
   "table.coach.badge": "Table tip",
+  "table.coach.gotIt": "Got it",
   "table.coach.turnOff": "Turn off tips",
 
   "table.pause.eyebrow": "Table paused",
@@ -429,6 +447,86 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "prompts.decisionMistake.title": "Review the decision",
   "prompts.decisionMistake.message":
     "A mistake is useful evidence. Compare the legal choices and their expected value, then retry the unscored scenario.",
+
+  // --- lifecyclePause.ts (PokerTable's resume-recap panel) ------------------
+  "resumeRecap.reasonLabel.manual": "Paused",
+  "resumeRecap.reasonLabel.windowBlurred": "Window inactive",
+  "resumeRecap.reasonLabel.documentHidden": "Window hidden",
+  "resumeRecap.reasonLabel.windowMinimized": "Minimized",
+  "resumeRecap.reasonLabel.systemSuspended": "System sleep",
+  "resumeRecap.reasonLabel.screenLocked": "Screen locked",
+  "resumeRecap.title.withReason": "Resumed from {reason}",
+  "resumeRecap.title.plain": "Resumed",
+  "resumeRecap.line.hand": "Hand {handNumber}",
+  "resumeRecap.line.handStreet": "Hand {handNumber} · {street}",
+  "resumeRecap.line.lastAction": "Last action: {action}",
+  "resumeRecap.line.pot": "Pot: {chips} chips",
+  "resumeRecap.line.potPlayers":
+    "Pot: {chips} chips · {playersRemaining} players left",
+  "resumeRecap.line.decision": "Your decision: {decision}",
+  "resumeRecap.line.awayCounts": "Away for {duration}.",
+  "resumeRecap.line.awayExcluded":
+    "Away for {duration}; that time was not counted against your play.",
+  "resumeRecap.duration.secondSingular": "{count} second",
+  "resumeRecap.duration.secondPlural": "{count} seconds",
+  "resumeRecap.duration.minuteSingular": "{count} minute",
+  "resumeRecap.duration.minutePlural": "{count} minutes",
+  "resumeRecap.duration.minutesSeconds": "{minutes} min {seconds} s",
+
+  // --- actionMap.ts (ControlsRemapPanel + the pause-menu remap page) --------
+  // Action labels/pointer hints are shared between the Settings controls
+  // remap surface and PokerTable's in-hand pause-menu remap page.
+  "actionMap.menu.up.label": "Move focus up",
+  "actionMap.menu.up.pointerHint": "Move the cursor to the control above",
+  "actionMap.menu.down.label": "Move focus down",
+  "actionMap.menu.down.pointerHint": "Move the cursor to the control below",
+  "actionMap.menu.left.label": "Move focus left / decrease",
+  "actionMap.menu.left.pointerHint":
+    "Drag a slider left or move to the previous control",
+  "actionMap.menu.right.label": "Move focus right / increase",
+  "actionMap.menu.right.pointerHint":
+    "Drag a slider right or move to the next control",
+  "actionMap.menu.activate.label": "Activate",
+  "actionMap.menu.activate.pointerHint": "Click the focused control",
+  "actionMap.menu.back.label": "Back / close",
+  "actionMap.menu.back.pointerHint": "Click Back or the close control",
+  "actionMap.game.fold.label": "Fold",
+  "actionMap.game.fold.pointerHint":
+    "Click Fold, or drag the hole cards toward the dealer",
+  "actionMap.game.checkCall.label": "Check / Call",
+  "actionMap.game.checkCall.pointerHint": "Click Check / Call",
+  "actionMap.game.raiseCustom.label": "Custom raise",
+  "actionMap.game.raiseCustom.pointerHint":
+    "Click Raise to open the bet composer",
+  "actionMap.game.raiseDouble.label": "Raise 2× big blind",
+  "actionMap.game.raiseDouble.pointerHint":
+    "Choose the 2× preset in the bet composer",
+  "actionMap.game.raiseTwoFive.label": "Raise 2.5× big blind",
+  "actionMap.game.raiseTwoFive.pointerHint":
+    "Choose the 2.5× preset in the bet composer",
+  "actionMap.game.raiseTriple.label": "Raise 3× big blind",
+  "actionMap.game.raiseTriple.pointerHint":
+    "Choose the 3× preset in the bet composer",
+  "actionMap.game.pot.label": "Pot-sized raise",
+  "actionMap.game.pot.pointerHint": "Choose the pot preset in the bet composer",
+  "actionMap.game.allIn.label": "All-in",
+  "actionMap.game.allIn.pointerHint": "Choose All-in in the bet composer",
+  "actionMap.game.peek.label": "Peek / hide cards",
+  "actionMap.game.peek.pointerHint": "Click the hole cards to peek or hide",
+  "actionMap.game.history.label": "Hand history",
+  "actionMap.game.history.pointerHint": "Click Prior action",
+  "actionMap.game.pause.label": "Pause",
+  "actionMap.game.pause.pointerHint": "Click the pause control",
+  "actionMap.camera.left.label": "Look left",
+  "actionMap.camera.left.pointerHint": "Click the look-left control",
+  "actionMap.camera.right.label": "Look right",
+  "actionMap.camera.right.pointerHint": "Click the look-right control",
+  "actionMap.camera.center.label": "Recenter view",
+  "actionMap.camera.center.pointerHint": "Click Table view to recenter",
+  "actionMap.speed.down.label": "Slow opponents down",
+  "actionMap.speed.down.pointerHint": "Lower the speed slider",
+  "actionMap.speed.up.label": "Speed opponents up",
+  "actionMap.speed.up.pointerHint": "Raise the speed slider",
 } as const satisfies Readonly<Record<string, string>>);
 
 export type GameplayMessageKey = keyof typeof EN_US_GAMEPLAY_MESSAGES;

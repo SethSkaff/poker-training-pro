@@ -1,267 +1,184 @@
-# Claude Code session log — 2026-07-23 (Claude-to-Codex handoff)
+# Claude Code session log — 2026-07-24 (Claude-to-Codex handoff)
 
-Multi-agent session: a Claude Fable 5 coordinator planned and delegated all coding
-to Claude Opus 4.8 subagents working in this tree. Session was wrapped up early at
-the user's request with two Wave 3 agents stopped mid-task (details below). This
-file is the authoritative record of what happened; read it together with
-`TODOS.md` (kept current) and `CLAUDE_HANDOFF.md` (original Codex-to-Claude brief,
-unchanged).
+Second Claude multi-agent session. A Claude Fable 5 coordinator planned and
+delegated all coding to Claude Sonnet 4.5-class subagents; the coordinator wrote
+no feature code (one disclosed one-line triage fix, noted below). The session
+ended when the account hit its **monthly spend limit** mid-Wave B; one agent was
+cut off writing its final test file, which the coordinator repaired and
+verified. The previous session's log (2026-07-23, Opus-agent waves) is in git
+history at commit `48421df` if needed.
 
-## Environment — read this first
+Read together with `TODOS.md` (canonical backlog, kept current) and
+`CLAUDE_HANDOFF.md` (your own 2026-07-24 brief — unchanged).
 
-- **System Node is v20.9.0, which is below the repo's `engines >=22.12`.**
-  Vitest/Vite cannot even start on it (`node:util` has no `styleText`).
-  This session used a portable Node 22.14.0 extracted to a session-temp
-  directory that **will not survive cleanup**:
-  `C:\Users\19496\AppData\Local\Temp\claude\C--Users-19496-Downloads-Poker\bfbbd379-6d66-4e07-93b4-598cdd414f37\scratchpad\node-v22.14.0-win-x64`
-  **Action for next session: install/use Node >= 22.12 before running anything.**
-  `tsc --noEmit` works on either Node.
-- All verification commands below were run with that Node 22.14.0.
+## Environment
 
-## Git history created this session
+- All commands were run with your bundled runtime, exactly as your handoff
+  prescribed:
+  `C:\Users\19496\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`
+  (v24.14.0). System Node remains 20.9.0 (too old for the repo).
+- The packaged artifacts you built on 2026-07-24 in `outputs\desktop\` were
+  reused for instrumentation runs (renderer/runtime source was NOT changed
+  before those runs; renderer source HAS changed since — see "Package
+  freshness" below).
 
-The repo had **zero commits** at session start (everything untracked). Three
-commits now exist on `main`:
+## Git history this session (all on `main`)
 
 | Commit | Contents |
 |---|---|
-| `6054879` | Baseline snapshot of the tree exactly as Codex left it |
-| `3960ece` | Waves 1–2 (verified: tsc clean, 52 files / 366 tests green) |
-| HEAD | Wave 3 (one agent complete+verified, one near-complete, one stopped mid-fix) + this log |
+| `7ee5017` | Snapshot of YOUR uncommitted 2026-07-24 pass, exactly as handed off |
+| `5adfaa2` | Wave A (4 agents): string-catalog migration, contrast-audit fix+extension, perf/flash instrumentation |
+| HEAD | Wave B (2 agents): OS reduced-motion, About/Support verification, string-extraction completion, pseudo/RTL sweeps + this log |
 
-Use `git diff 6054879..3960ece` / `git diff 3960ece..HEAD` to review each wave.
+`git diff 7ee5017..HEAD` shows everything Claude changed this session.
 
-## Current tree state (verified immediately before final commit)
+## Verified state at final commit
 
-- `npx tsc --noEmit`: **clean**.
-- `npx vitest run`: **64 files, 454/455 tests passing — 1 known failure**, fully
-  root-caused (see "Known failing test" below; it is a ~2-line fix).
+- `tsc --noEmit`: clean.
+- Full Vitest: **77 files / 524 tests, all passing** (baseline at `7ee5017`
+  was 73/488 with 1 failure).
+- No TODOS items were checked without evidence; one item was checked (in-app
+  links — see below).
 
-## Wave 1 — completed and verified
+## What was done
 
-### 1a. Stabilization + interrupted tutorial/contextual-prompt work (complete)
-Codex's interrupted tutorial agent work was inspected and finished:
-- `src/lib/contextualPrompts.ts` rewritten: it only had 4 prompt events; added the
-  missing **minimum-raise, blind-increase, elimination, qualification, elo-change**
-  (7 required events total), a pure `detectContextualPromptOccurrences()` detector,
-  stable priority order, and `resetContextualPromptState()` for replay.
-- Signal wiring: `openingBigBlind` + `qualifyingPlaces` threaded from `App.tsx`
-  through `TournamentTableControls`; Elo-baseline ref in `PokerTable` detects the
-  first Elo change; pause menu "Replay contextual tips" wired to the reset helper.
-- The tutorial/prompt UI had **zero CSS** — full palette-consistent styling added
-  to `src/styles.css` (`.playable-tutorial`, `.context-coach`), plus the mode grid
-  fixed from 4 to 5 columns for the tutorial entry.
-- `src/lib/playableTutorial.ts` / `PlayableTutorial.tsx` logic was already complete
-  (peek → legal-action → bet-sizing → showdown → math → speed → complete) and was
-  left intact.
-- New tests: `src/lib/playableTutorial.test.ts` (8), `src/lib/contextualPrompts.test.ts` (14).
-- TODOS checked: playable tutorial; contextual prompts.
+### Wave A
 
-### 1b. iOS feature parity (advanced; Swift unbuilt — no Xcode on Windows)
-- `ios/PokerTrainingPro/Resources/Engine/poker-engine.js` rewritten from 2 ops to
-  **11 ops**: `evaluateHand`, `compareHands`, `parseMathAnswer`, `gradeTraining`,
-  `eloDelta`, `decisionTiming`, `timedBlinds`, `estimateEquity`, `botDecision`, +
-  the original `health`/`dealPreview`. **Parity-verified against the desktop TS
-  source of truth** via `src/modes/mobileEngineBridge.test.ts` (14 tests: seeded
-  7-card hand byte-comparison, quiz-answer forms, training grading field-by-field,
-  timing model 100+ cases, timed blinds across phases).
-- New Swift: `Engine/EngineModels.swift`, `Engine/EngineOperations.swift`,
-  `Models/MobileScenario.swift`, `DesignSystem/CardViews.swift`,
-  `Views/TableTimingModel.swift`, `Views/TrainingQuizView.swift`. Modified:
-  `LocalProgressStore` (v1→v2 migration; Elo/streaks/careerResults),
-  `SettingsView` (speed slider 0.5–3x), `PokerTableView` (bot play + timing +
-  scenePhase freeze of exact remaining delay), `RootView`, `ModeSelectionView`,
-  `AppDestination`, `JSONValue`, both test files.
-- Mobile equity cap: 600 sims ceiling (desktop 1200), Swift-configurable lower;
-  benchmark: `scripts/benchmark-mobile-engine.mjs` (worst case ~0.29 s, 8-way, at cap).
-- Docs: `docs/ios/privacy-and-store-submission.md` (new; drafts only, explicitly
-  pending Apple/human steps), engine-bridge-contract.md, architecture.md, README.
-- **Needs macOS**: compiling Swift, running the Swift tests, simulator/device QA,
-  Instruments profiling, all submission steps. iOS TODOS intentionally left unchecked.
+1. **String-catalog migration (~480 keys, two agents in parallel)**
+   - `src/locales/en-US.messages.gameplay.ts` (NEW, 332 keys): PokerTable
+     (~150), Dashboard (~85), PlayableTutorial (~45), RoomFlythrough,
+     all 9 contextualPrompts.
+   - `src/locales/en-US.messages.shell.ts` (NEW, ~150 keys): TitleScreen,
+     SettingsPanel, SaveDataControls, RecoveryScreen, CreditsScreen,
+     AboutSupport, ControlsRemapPanel, PlayChipAcknowledgment, shell-level
+     App.tsx screens.
+   - Both merged into `EN_US_MESSAGES` in `src/locales/en-US.messages.ts`.
+     Copy is byte-identical; every key verified through the 35% pseudo locale
+     with token preservation.
+   - Deliberate non-migrations (correct calls): raw data-value labels
+     ("standard"/"high"/"wide" deal-speed/camera buttons — visible text IS the
+     data value), keyboard glyphs (F/C/R/Space…), bundled license text,
+     a preserved pre-existing remap-panel label inconsistency.
 
-## Wave 2 — completed and verified (both agents were killed once by an
-account session-limit at ~6:50pm PT and successfully resumed from transcript)
+2. **Contrast/target-size audit** (`src/components/DesktopContrastTargetAudit.test.ts`)
+   - Fixed the failing size check you left: now parses declared px and asserts
+     `>= minimum` (`.action-button`'s 66px correctly passes a 44px floor), with
+     CRLF-tolerant selector matching (styles.css has mixed line endings:
+     ~7,349 CRLF vs 488 LF).
+   - Extended coverage: pause menu, play-chip acknowledgment, recovery screen
+     (its CSS module too), remap controls, context-coach, resume recap,
+     credits/about, tutorial controls; 44px primary-action tier + 24px utility
+     tier; `--gold-soft` resolved from `:root` instead of hardcoded.
+   - Real fixes in `src/styles.css`: tutorial Fold/Check/Raise and
+     bet/showdown/continue/finish buttons had no explicit sizing (now
+     `min-height: 44px`); About/Support buttons had NO styling at all (native
+     browser defaults, under 24px) — now styled within the palette.
+   - Still source-level only; not rendered/AT/high-contrast acceptance.
 
-### 2a. Electron lifecycle + saves (all 9 assigned items addressed)
-- **Exact delay freezing**: new `src/lib/freezableDelay.ts` (`FreezableDelay`
-  stores remaining ms on freeze, re-arms with exactly that remainder) +
-  `DelayFreezeGroup` in `src/lib/lifecyclePause.ts`. Previously the AI-presentation
-  timeout drained in real time during pause and the arrival timeout restarted.
-- `electron/main.cjs`: `powerMonitor` suspend/resume/lock/unlock + window
-  minimize/restore/blur/focus broadcast as `lifecycle:event`; `preload.cjs`
-  exposes narrow `onLifecycleEvent`. Applied to PokerTable, RoomFlythrough
-  (`useAwayFreezeGroup`), and audio focus.
-- **Resume recap**: `buildResumeRecap` (hand/street, last action, pot, current
-  decision, "time not counted" note) rendered as `role="status"` banner; exact
-  inactive spans measured by `LifecyclePauseCoordinator` and excluded from
-  Training/Timed timing.
-- **Safe-boundary saves**: `main.cjs` close interception with renderer handshake
-  (`lifecycle:prepare-close`), save-first, confirm dialog only when scored progress
-  is unsaved, 1.5 s fail-open. `session-end`/`before-quit`/suspend covered.
-  `useDesktopSaveHandshake` in `src/lib/desktopLifecycle.ts`.
-- **Save UI verified end-to-end** (Codex's SaveDataControls + two-phase
-  save-transfer backend) with new `SaveDataControls.test.tsx`.
-- **Replay retention**: completed-event replay metadata retained in memory after
-  leaving ceremony; "Export event replay" button added to `TournamentCeremony`;
-  `publicReplayFromCompletedEvent.test.ts` drives a real event to completion and
-  asserts seed/hole cards/deck/timestamps absent from the redacted artifact.
-- **Safe mode**: `src/lib/safeMode.ts` (`deriveSafeModeSettings` forces muted,
-  reduced motion, quick dealing, no fullscreen; preserves progress) wired into
-  App's `effectiveSettings`. Button labels kept exactly as
-  `scripts/audit-packaged-safe-mode.mjs` pins them.
-- **Audio focus**: `src/lib/desktopAudioFocus.ts` maps DOM + powerMonitor events
-  into the deterministic `AudioFocusController`; Ready is gesture-based.
-- New tests (+6 files/+29): freezableDelay, lifecyclePause, desktopAudioFocus,
-  safeMode, publicReplayFromCompletedEvent, SaveDataControls.
-- **Documented gaps** (left unchecked in TODOS): durable cross-restart persistence
-  of active Training scenario/camera and completed-event replay needs a
-  **save-envelope schema extension** (validated across saveMigration /
-  save-transfer.cjs / replay-export.cjs — was deferred to avoid destabilizing);
-  "update installation" boundary needs the not-yet-existing updater; packaged
-  device/focus matrix and packaged safe-mode/crash-loop tests need a package build.
+3. **Local instrumentation** (scripts/ + docs/ + work/ only)
+   - Packaged-runtime profiler extended (long-task observer, JS heap
+     classification, first-paint budgets, decode/evaluate proxies).
+     Host measurements (this dev host, cold launch): 743.7 ms to recognized
+     renderer, 340.5 MiB peak working set, 0 startup long tasks, 2.5 MiB JS
+     heap. Finding: the custom `poker-training-pro://` protocol does not
+     populate paint/resource-timing entries — profiler degrades gracefully.
+   - NEW rendered flash/luminance analysis
+     (`scripts/audit-packaged-flash-capture.mjs`,
+     `scripts/release/flash-luminance-analysis-lib.mjs`,
+     `scripts/release/png-decode-lib.mjs` — dependency-free PNG decoder,
+     `docs/rendered-flash-luminance-analysis.md`): WCAG 2.3.1 threshold
+     implementation (documented formulas; not a certified tool). Ran against
+     your packaged build: **8/8 sequences pass (0 general, 0 red flashes)**
+     across full-motion and reduced-motion passes.
+     **Caveat recorded in the evidence**: achieved capture rate was as slow as
+     ~611 ms/frame on some sequences, so the pass is weak evidence for
+     fast-motion sequences — needs denser sampling or a recognized tool before
+     release-blocking use. Evidence: `work/packaged-flash-luminance-analysis.*`.
 
-### 2b. Performance (all 5 assigned items implemented)
-- **Equity worker**: `decideRationalAction` split into `prepareRationalDecision` /
-  `assembleRationalDecision` (`src/modes/rational.ts`); versioned worker protocol
-  `src/modes/rationalEquityProtocol.ts` (cancellation honored **between** slices,
-  never altering the sample stream); `src/modes/rationalEquityService.ts`
-  (single-in-flight, supersede→stale rejection, in-thread fallback when `Worker`
-  undefined); `src/workers/equityWorker.ts` (Vite module worker, CSP
-  `worker-src 'self' blob:`). Async paths added to tournamentSession/tournamentRunner
-  (`...Async`, `TournamentAdvanceAborted`); `App.actInTournament` offloads with
-  re-entrancy + abort guards and deterministic sync fail-safe. **Bit-for-bit
-  parity with sync proven by tests**; frozen bot baseline and replay tests unchanged.
-- **Lazy scenes**: `src/components/SceneLoader.tsx` (`lazyWithPreload`,
-  budget-aware fallback with cancel/back past `SCENE_LOAD_BUDGET_MS`);
-  PokerTable/PlayableTutorial/RoomFlythrough code-split (13.09/2.75/1.24 kB gz
-  chunks + 10.55 kB worker); next-scene preload on navigation.
-  `audit-static-budgets.mjs` ok (130 kB gz < 314 kB budget);
-  `audit-production-composition.mjs` ok, no baseline update needed.
-- **Visibility primitives**: `src/lib/visibilityWorkGate.ts` (`createVisibilityGate`,
-  `createVisibilityAwareAnimationLoop`). Audit found no object URLs; histories
-  already bounded (decisions slice(-79), results slice(-250)); rAF/timers clean.
-  Long-session soak: `src/modes/longSessionMemory.test.ts`.
-- **Asset-fault matrix extended**: `scripts/release/packaged-asset-fault-smoke-lib.mjs`
-  gained `FAULT_MATRIX`, slow-disk/video/font/audio-device-loss classification and
-  validators; `scripts/test-packaged-asset-fault-smoke.mjs` now 13 tests.
-- **Deny-proxy through play**: new `scripts/release/packaged-network-play-lib.mjs`
-  (play plan: menu → every mode incl. tutorial → actions; pass/fail evaluation) +
-  `scripts/test-packaged-network-play.mjs`; `scripts/audit-packaged-network.mjs`
-  rewritten to drive representative play over CDP under the deny proxy.
-  **Runs against a built package — selectors must be reconfirmed during release
-  verification.**
+### Wave B
 
-## Wave 3 — partially complete (session wrapped early by user request)
+4. **OS `prefers-reduced-motion` support** (this session's most important
+   product fix — the flash audit found the app NEVER consulted the OS setting)
+   - New `reducedMotionExplicit` boolean in `GameSettings` distinguishes
+     "never chose" from "chose off". Unset → follow live OS media query
+     (`src/lib/motionPreference.ts`: read/subscribe/apply, legacy-listener
+     fallback); explicit first-run or Settings choice always wins; safe mode
+     still forces reduced motion on top.
+   - First-run setup pre-selects from the OS; Save marks explicit, Skip keeps
+     following the OS.
+   - The new field was added to **both** normalization allowlists (TS:
+     storage.ts/saveMigration.ts; CJS: electron/save-transfer.cjs
+     DEFAULT_SETTINGS/validateCurrentSettings/normalizeLegacySettings) with
+     round-trip tests — the field-dropped-by-CJS-normalizer bug class is
+     covered this time.
+   - Remaining manual step: verify real Windows Settings > Accessibility >
+     Animation-effects toggling inside the packaged app (OS-level acceptance —
+     do not claim without doing it).
 
-### 3a. Engine bet-legality bug — COMPLETE and verified
-Pre-existing scored-play correctness bug (found by the Wave 2 soak): career
-events use `scaledStructure` (blinds snapped to multiples of 25), so
-`bigBlind/4` chip units become fractional (12.5, 37.5); `roundChips` in
-`src/modes/rational.ts` then proposed half-chip targets (e.g. `to: 187.5`) that
-`requireTarget`/`assertChipAmount` (`src/engine/betting.ts:78`) correctly
-rejected — **aborting the tournament event**. Reproduced deterministically
-(seeds `sweep-normal-6/9/12/18/23`, `sweep-rational-3/4/5/7/9`).
-**Fix**: `roundChips` now rounds its snapped result to a whole chip — a no-op for
-all integer units, so only previously-crashing states change. Engine validation
-left strict. Frozen bot-league baseline **byte-identical** (it uses bigBlind 100 →
-unit 25; exact-equality test passes unchanged); replay determinism green.
-New regression test `src/modes/betTargetLegality.test.ts` (10 formerly-aborting
-seeds now complete); `longSessionMemory.test.ts` abort-tolerance removed —
-asserts `abortedEvents === 0`.
+5. **About/Support panel** — audited element-by-element against the in-app
+   links TODOS item: all eight elements present, wired to real preload/IPC
+   values, and visible. Only gap was zero test coverage →
+   `src/components/AboutSupport.test.tsx` (NEW). **The TODOS item was checked
+   off** with an annotation.
 
-### 3b. Input systems agent — STOPPED just before its final full-suite run
-Its last status: typecheck clean, starting the full suite. Work on disk (appears
-complete but **final verification was not run by that agent**; the coordinator's
-final suite run passed everything except the known saveTransfer failure below,
-which is not this agent's):
-- `src/lib/actionMap.ts` + test — versioned shared action map (stable action ids,
-  per-device bindings), existing hotkeys preserved.
-- `src/lib/gamepad.ts`, `src/lib/inputDevice.ts`, `src/lib/focusNavigation.ts`,
-  `src/lib/inputCaptureGate.ts` (+tests) — Gamepad API polling, last-input-device
-  awareness for contextual prompts, focus navigation, capture gating.
-- `src/components/GamepadNavigationProvider.tsx`, `src/components/ControlsRemapPanel.tsx`
-  (+test), `src/components/DialogFocusContract.test.tsx`, new `src/hooks/`.
-- `src/lib/controlBindingsPersistence.test.ts` — remap persistence.
-- Integration edits in App.tsx / PokerTable.tsx / SettingsPanel.tsx / styles.css.
-**Next session: review this work against its four TODOS items (action map,
-controller navigation/prompts, remapping with conflict/reserved detection +
-per-device defaults + reset, focus contract on every modal), then check off
-whichever are genuinely complete.**
+6. **String-extraction completion** (agent cut off at the very end by the
+   spend limit; work verified complete by the coordinator afterward)
+   - PokerTable literals formerly pinned by `readFileSync` source-scan tests
+     (decision-clock aria-label, skip-presentation label, seat accessible
+     names, "Got it"/"Next hand"/"Review") migrated;
+     `notificationPersistence.test.ts` was REWRITTEN as
+     `notificationPersistence.test.tsx` (render-based assertions);
+     `PokerTable.accessibility.test.ts` updated similarly.
+   - `src/lib/lifecyclePause.ts` resume-recap copy migrated.
+   - NEW `src/components/PseudoLocaleScreens.test.tsx`: renders major screens
+     under the pseudo locale and asserts no unmigrated English leaks
+     (documented exemptions: numbers, key glyphs, data values).
+   - NEW `src/components/RtlDirectionScreens.test.tsx`: asserts `dir="rtl"`/
+     `lang` actually propagate to each major screen's root.
+     **Coordinator triage fix (disclosed)**: the agent died mid-write leaving a
+     wrong import; fixed by importing `EN_US_MESSAGES` from
+     `../locales/en-US.messages` inside the mock factory. That one line is the
+     only code the coordinator wrote all session.
 
-### 3c. Audio + trust surfaces agent — STOPPED MID-FIX (source of the one failing test)
-Work on disk: `src/lib/musicPlaylist.ts` + `musicDucking.ts` (+tests) — dormant
-playlist engine (deterministic shuffle/no-repeat/crossfade/ducking);
-`src/data/musicPlaylistManifest.ts`; `src/components/CreditsScreen.tsx`,
-`AboutSupport.tsx`, `PlayChipAcknowledgment.tsx`; `src/lib/creditsData.ts` (+test),
-`useCreditsResources.ts`, `playChipDisclosure.ts` (+test); edits to audio.ts,
-saveMigration.ts, storage.ts, types/poker.ts, SettingsPanel, Dashboard, App,
-main.cjs/preload.cjs (~93 lines, likely open-folder/links), package.json.
-Status of its 5 items: playlist engine/credits/about/disclosure code exists with
-tests, but the agent was killed while tracing a save-layer issue and **its work is
-unreviewed and unverified as a whole** — treat 3b/3c as needing review + completion.
+## Known gaps for Codex to pick up (specific, in priority order)
 
-## KNOWN FAILING TEST — root-caused, small fix
+1. **RTL/locale attributes not wired on two screens**: `SettingsPanel.tsx` and
+   `AboutSupport.tsx` do not spread `localeTextAttributes()` on their roots —
+   documented inside `RtlDirectionScreens.test.tsx` (last test is a
+   placeholder). Wire them and convert that placeholder into real assertions.
+   These files were excluded from the string agent's scope due to a concurrent
+   agent owning them; their UI strings ARE migrated.
+2. **String-extraction TODOS item**: near-complete but left unchecked. Before
+   checking: confirm the data-module decision (tournament event names/tiers
+   and Training scenario prompt/explanation content — the cut-off agent never
+   reported its keep/migrate verdict; scenario content is schema-governed in
+   `src/data/trainingScenarios.ts` and is arguably already a versioned
+   resource, but verify and document), then check the item with the
+   full-screen-visual-acceptance caveat kept in the pseudo/RTL item.
+3. **Pseudo/RTL TODOS item**: component-level completeness/direction tests now
+   exist; full-screen VISUAL acceptance (real layout, clipping, mirrored
+   rendering) remains before claiming another-language support.
+4. **Screen-reader announcements** (planned Wave C, never launched): extend
+   your table SR semantics to live announcements — actions, pot changes,
+   errors, timers, results — app-wide, without reading decorative scenery.
+   PokerTable is now quiet; strings for announcements should come from the
+   catalog.
+5. **Package freshness**: renderer source has changed substantially since your
+   2026-07-24 `outputs\desktop\` artifacts (catalog migration touched most
+   components; styles.css sizing fixes; OS reduced-motion in App). The
+   packaged artifacts are STALE for any renderer-behavior claims. Rebuild and
+   re-run your gate battery (input smoke, render smoke, offline, safe-mode,
+   collision geometry) before asserting anything about the packaged app. The
+   flash/profiler evidence above was captured against your still-fresh build
+   BEFORE these renderer changes landed in dist — treat it as
+   pre-migration evidence.
+6. **Flash-analysis sampling**: consider a denser-sampling mode (or an
+   accepted recognized tool) for the fast-motion sequences before using the
+   8/8 pass as release evidence.
 
-`src/lib/saveTransfer.test.ts > two-phase save import > requires a one-use
-confirmation and keeps a valid prior generation`
+## Unchanged blocked list
 
-The audio/trust agent added a new progress field **`playChipsAcknowledged`**
-(interactive play-chip disclosure) to the TS types/defaults and to this test's
-expected imported payload — but the **Electron CJS save layer re-normalizes
-progress and drops unknown fields**, so the persisted payload lacks the field and
-the `toMatchObject` on the serialized payload fails. The agent's literal last
-words before being stopped: "The Electron CJS save layer re-normalizes progress
-and drops the unknown field. Let me find where."
-**Fix**: add `playChipsAcknowledged` (boolean, default false) to the progress
-normalization allowlist in the Electron save layer — look in
-`electron/save-transfer.cjs` and/or `electron/save-store.cjs` (whichever
-normalizes progress keys) and mirror however `onboardingCompleted` is handled.
-Then confirm the full suite is green (expected 64 files / 455 tests).
-
-## TODOS.md items checked off this session (all with test evidence)
-
-1. Playable tutorial (Wave 1a)
-2. Contextual prompts ×7 events (Wave 1a)
-3. Minimize/lock/suspend lifecycle with exact delay freezing (2a)
-4. Resume recap + inactive-time exclusion (2a)
-5. Player-visible Export/Import/Reset with preview/confirm (2a — verified + tested)
-6. Completed-event replay retention + player-visible event-end export (2a; durable
-   cross-restart retention still needs the save-envelope extension — noted inline)
-7. Public replay export controls + artifact review (2a)
-8. Async sliced equity boundary into live progression (2b)
-9. Lazy-loading with progress + cancel/back (2b)
-
-## Remaining roadmap (planned waves not yet run)
-
-- **Wave 3 completion**: review/finish 3b + 3c, fix the saveTransfer test, then
-  check off their TODOS items as earned.
-- **Wave 4**: (a) Accessibility baseline — ARIA names/roles/announcements for
-  Narrator/NVDA, text-scale controls + 200% verification, WCAG 2.2 AA contrast +
-  24px targets, no color-only encoding, granular reduced-motion controls, camera
-  sensitivity/FOV/auto-move options, motion-flash analysis via
-  `scripts/audit-motion-flash.mjs`, persistent-until-dismissed notices, visual↔audio
-  equivalents. (b) Save-envelope schema extension — durable active-Training-
-  scenario/camera/transition state + completed-replay retention (unblocks the two
-  gaps from 2a). These two touch disjoint areas and can run in parallel.
-- **Wave 5 (solo — touches every component)**: string extraction into versioned
-  English locale resources, route remaining numeric/date surfaces through the
-  locale layer, pseudo-localization/expansion/RTL tests.
-- **Wave 6**: rebuild package from frozen source and run every gate (freshness,
-  typecheck, tests, packaged-render smoke, offline deny-proxy THROUGH PLAY in all
-  modes — new audit from 2b, asset-fault, fuses, ASAR integrity, safe-mode,
-  motion-flash on packaged RC, visual smoke at 1100×720/1280×720/1366×768/
-  1920×1080/2560×1080), packaged input-path verification, Windows identity
-  metadata. Only then update the "packaged/previewed" TODOS.
-
-## Blocked items — need things no agent can supply (do NOT mark complete)
-
-- Higgsfield ambient menu video: waiting on `higgsfield auth login` by the user.
-- Music: license verification, licensed masters, loudness normalization, long-
-  session playback tests (playlist engine is built and dormant).
-- Authenticode signing, publisher identity, signing service, fee budget.
-- Clean-machine Windows 11 matrix; low-spec/typical/discrete-GPU benchmarks.
-- Privacy policy HTTPS hosting + publisher support contact.
-- IARC/store questionnaires, store metadata review, press materials approval.
-- Qualified poker-math human review + consented pilot evidence.
-- Supplied start-menu artwork provenance/redistribution rights.
-- Apple: everything requiring macOS/Xcode/App Store Connect.
+Same as your handoff: physical controller/AT/DPI/clean-machine validation,
+macOS/Xcode/Simulator/TestFlight, publisher/signing/HTTPS/IARC, licensed music
+masters + provenance, qualified poker-math and human-pilot review. Nothing in
+that list was claimed.

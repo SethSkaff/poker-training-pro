@@ -315,6 +315,59 @@ describe("two-phase save import", () => {
     });
   });
 
+  it("preserves an explicit reduced-motion choice and defaults it for saves predating the field", () => {
+    const directory = tempDirectory();
+
+    // An explicit in-app choice round-trips through the electron-side
+    // allowlist unchanged — it must not be silently normalized away like the
+    // camera-controls regression this field mirrors the fix for.
+    const explicitPath = path.join(directory, "explicit-motion.json");
+    writeFileSync(
+      explicitPath,
+      save("Explicit Player", {
+        settings: { reducedMotion: true, reducedMotionExplicit: true },
+      }),
+      "utf8",
+    );
+    const explicitSubject = controller(directory);
+    const explicitPreview = explicitSubject.prepareImportFromPath(explicitPath);
+    expect(
+      explicitSubject.confirmImport(token(explicitPreview)),
+    ).toMatchObject({ ok: true });
+    const loadedExplicit = saveStore.loadAutosaveGeneration(directory);
+    if (!loadedExplicit.record) throw new Error("Expected imported save");
+    expect(
+      (
+        JSON.parse(loadedExplicit.record.payload) as {
+          data: { settings: Record<string, unknown> };
+        }
+      ).data.settings,
+    ).toMatchObject({ reducedMotion: true, reducedMotionExplicit: true });
+
+    // A save created before this field existed must migrate to "not yet
+    // chosen" so the renderer keeps following the live OS preference.
+    const legacyPath = path.join(directory, "pre-motion-explicit.json");
+    const legacyCurrent = JSON.parse(save("Legacy Player")) as {
+      data: { settings: Record<string, unknown> };
+    };
+    delete legacyCurrent.data.settings.reducedMotionExplicit;
+    writeFileSync(legacyPath, JSON.stringify(legacyCurrent), "utf8");
+    const legacySubject = controller(directory);
+    const legacyPreview = legacySubject.prepareImportFromPath(legacyPath);
+    expect(legacySubject.confirmImport(token(legacyPreview))).toMatchObject({
+      ok: true,
+    });
+    const loadedLegacy = saveStore.loadAutosaveGeneration(directory);
+    if (!loadedLegacy.record) throw new Error("Expected imported save");
+    expect(
+      (
+        JSON.parse(loadedLegacy.record.payload) as {
+          data: { settings: Record<string, unknown> };
+        }
+      ).data.settings,
+    ).toMatchObject({ reducedMotionExplicit: false });
+  });
+
   it("expires confirmation tokens without committing", () => {
     const directory = tempDirectory();
     const importPath = path.join(directory, "incoming.json");

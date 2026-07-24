@@ -426,8 +426,12 @@ requirements are added.
 - [x] Pass packaged crash-loop recovery tests against the real Windows build.
       The isolated packaged safe-mode smoke reaches the recovery screen with
       no runtime/console errors and remains reduced-motion after continuing.
-- [ ] Add visible in-app links for Privacy, Support, Licenses/Credits, version,
+- [x] Add visible in-app links for Privacy, Support, Licenses/Credits, version,
       build identifier, save location, log location, and diagnostic export.
+      All eight elements verified wired to real preload/IPC values with a
+      component test; the support contact is a clearly-labeled placeholder
+      pending publisher assignment, and the HTTPS privacy URL remains a
+      separately-blocked item.
 
 ### Performance, assets, and offline robustness
 

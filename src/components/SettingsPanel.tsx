@@ -244,7 +244,11 @@ export function SettingsPanel({
             label={formatMessage("settings.display.reduceMotion.label")}
             description={formatMessage("settings.display.reduceMotion.description")}
             checked={settings.reducedMotion}
-            onChange={(reducedMotion) => patchSettings({ reducedMotion })}
+            onChange={(reducedMotion) =>
+              // A Settings toggle is always an explicit choice: it now wins
+              // over the OS reduced-motion preference until changed again.
+              patchSettings({ reducedMotion, reducedMotionExplicit: true })
+            }
           />
           <ToggleRow
             label={formatMessage("settings.display.highContrast.label")}

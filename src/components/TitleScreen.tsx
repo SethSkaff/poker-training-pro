@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Volume2, VolumeX } from "lucide-react";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import { NightCircuitScene } from "./Dashboard";
 
 interface TitleScreenProps {
@@ -28,6 +28,7 @@ export function TitleScreen({
       className="night-title"
       aria-label={formatMessage("titleScreen.ariaLabel")}
       onClick={onEnter}
+      {...localeTextAttributes()}
     >
       <NightCircuitScene />
       <button

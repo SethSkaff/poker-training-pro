@@ -69,6 +69,32 @@ describe("versioned save migration", () => {
     expect(restored.migratedFromVersion).toBe(1);
   });
 
+  it("distinguishes an explicit reduced-motion choice from the OS-following default", () => {
+    const explicit = createSaveEnvelope(
+      { ...defaultSettings, reducedMotion: true, reducedMotionExplicit: true },
+      progressFixture(),
+    );
+    expect(explicit.data.settings).toMatchObject({
+      reducedMotion: true,
+      reducedMotionExplicit: true,
+    });
+
+    // Saves written before this field existed must migrate to "not yet
+    // chosen," never to an accidental explicit override.
+    const legacySettings: Record<string, unknown> = { ...defaultSettings };
+    delete legacySettings.reducedMotionExplicit;
+    const migrated = createSaveEnvelope(legacySettings, progressFixture());
+    expect(migrated.data.settings.reducedMotionExplicit).toBe(false);
+
+    // A corrupted flag normalizes to the safe default instead of rejecting
+    // the whole save or being coerced truthy.
+    const corrupted = createSaveEnvelope(
+      { ...defaultSettings, reducedMotionExplicit: "yes" },
+      progressFixture(),
+    );
+    expect(corrupted.data.settings.reducedMotionExplicit).toBe(false);
+  });
+
   it("migrates the original unversioned settings/progress shape", () => {
     const migrated = migrateSavePayload({
       settings: { ...defaultSettings, dealSpeed: "quick" },

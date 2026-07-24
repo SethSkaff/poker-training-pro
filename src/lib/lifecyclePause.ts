@@ -13,6 +13,7 @@
 
 import { FreezableDelay } from "./freezableDelay";
 import { formatChips, formatNumber } from "./format";
+import { formatMessage } from "./localeMessages";
 
 export type LifecyclePauseReason =
   | "manual"
@@ -31,13 +32,13 @@ const REASON_ORDER: readonly LifecyclePauseReason[] = [
   "window-blurred",
 ];
 
-const REASON_LABELS: Record<LifecyclePauseReason, string> = {
-  manual: "Paused",
-  "window-blurred": "Window inactive",
-  "document-hidden": "Window hidden",
-  "window-minimized": "Minimized",
-  "system-suspended": "System sleep",
-  "screen-locked": "Screen locked",
+const REASON_LABEL_KEYS: Record<LifecyclePauseReason, string> = {
+  manual: "resumeRecap.reasonLabel.manual",
+  "window-blurred": "resumeRecap.reasonLabel.windowBlurred",
+  "document-hidden": "resumeRecap.reasonLabel.documentHidden",
+  "window-minimized": "resumeRecap.reasonLabel.windowMinimized",
+  "system-suspended": "resumeRecap.reasonLabel.systemSuspended",
+  "screen-locked": "resumeRecap.reasonLabel.screenLocked",
 };
 
 export interface LifecyclePauseTransition {
@@ -61,7 +62,7 @@ export function primaryPauseReason(
 }
 
 export function describePauseReason(reason: LifecyclePauseReason): string {
-  return REASON_LABELS[reason];
+  return formatMessage(REASON_LABEL_KEYS[reason]);
 }
 
 export class LifecyclePauseCoordinator {
@@ -232,30 +233,55 @@ export interface ResumeRecap {
 export function buildResumeRecap(input: ResumeRecapInput): ResumeRecap {
   const lines: string[] = [];
   if (input.handNumber !== undefined) {
-    const street = input.street ? ` · ${input.street}` : "";
-    lines.push(`Hand ${input.handNumber}${street}`);
+    lines.push(
+      input.street
+        ? formatMessage("resumeRecap.line.handStreet", {
+            handNumber: input.handNumber,
+            street: input.street,
+          })
+        : formatMessage("resumeRecap.line.hand", {
+            handNumber: input.handNumber,
+          }),
+    );
   }
-  if (input.lastAction) lines.push(`Last action: ${input.lastAction}`);
+  if (input.lastAction) {
+    lines.push(
+      formatMessage("resumeRecap.line.lastAction", { action: input.lastAction }),
+    );
+  }
   if (input.potChips !== undefined) {
-    const players =
+    lines.push(
       input.playersRemaining !== undefined
-        ? ` · ${input.playersRemaining} players left`
-        : "";
-    lines.push(`Pot: ${formatChips(input.potChips)} chips${players}`);
+        ? formatMessage("resumeRecap.line.potPlayers", {
+            chips: formatChips(input.potChips),
+            playersRemaining: input.playersRemaining,
+          })
+        : formatMessage("resumeRecap.line.pot", {
+            chips: formatChips(input.potChips),
+          }),
+    );
   }
   if (input.currentDecision) {
-    lines.push(`Your decision: ${input.currentDecision}`);
+    lines.push(
+      formatMessage("resumeRecap.line.decision", {
+        decision: input.currentDecision,
+      }),
+    );
   }
   const inactiveLabel = formatInactiveDuration(input.inactiveMs);
   lines.push(
     input.countsAgainstPlay
-      ? `Away for ${inactiveLabel}.`
-      : `Away for ${inactiveLabel}; that time was not counted against your play.`,
+      ? formatMessage("resumeRecap.line.awayCounts", { duration: inactiveLabel })
+      : formatMessage("resumeRecap.line.awayExcluded", {
+          duration: inactiveLabel,
+        }),
   );
   return {
     title: input.reason
-      ? `Resumed from ${describePauseReason(input.reason).toLowerCase()}`
-      : "Resumed",
+      ? formatMessage("resumeRecap.title.withReason", {
+          reason: describePauseReason(input.reason).toLowerCase(),
+        })
+      : formatMessage("resumeRecap.title.plain"),
     lines,
     inactiveLabel,
     countsAgainstPlay: input.countsAgainstPlay,
@@ -265,10 +291,25 @@ export function buildResumeRecap(input: ResumeRecapInput): ResumeRecap {
 export function formatInactiveDuration(inactiveMs: number): string {
   const totalSeconds = Math.max(0, Math.round(inactiveMs / 1000));
   if (totalSeconds < 60) {
-    return `${formatNumber(totalSeconds)} second${totalSeconds === 1 ? "" : "s"}`;
+    return formatMessage(
+      totalSeconds === 1
+        ? "resumeRecap.duration.secondSingular"
+        : "resumeRecap.duration.secondPlural",
+      { count: formatNumber(totalSeconds) },
+    );
   }
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  if (seconds === 0) return `${formatNumber(minutes)} minute${minutes === 1 ? "" : "s"}`;
-  return `${formatNumber(minutes)} min ${formatNumber(seconds)} s`;
+  if (seconds === 0) {
+    return formatMessage(
+      minutes === 1
+        ? "resumeRecap.duration.minuteSingular"
+        : "resumeRecap.duration.minutePlural",
+      { count: formatNumber(minutes) },
+    );
+  }
+  return formatMessage("resumeRecap.duration.minutesSeconds", {
+    minutes: formatNumber(minutes),
+    seconds: formatNumber(seconds),
+  });
 }

@@ -5,6 +5,7 @@ import {
   type SoundName,
 } from "./audio";
 import type { GameSettings } from "../types/poker";
+import { formatMessage } from "./localeMessages";
 
 export type SettingsPreviewChannel = "master" | "effects";
 
@@ -44,25 +45,32 @@ export function previewSettingsEffect(
         result,
         message:
           channel === "master"
-            ? `Master preview played at ${settings.masterVolume} percent.`
-            : `Table effects preview played at ${settings.effectsVolume} percent.`,
+            ? formatMessage("audioPreview.masterPlayed", {
+                percent: settings.masterVolume,
+              })
+            : formatMessage("audioPreview.effectsPlayed", {
+                percent: settings.effectsVolume,
+              }),
       };
     }
     if (result === "silenced") {
       const reason = settings.muted
-        ? "Mute all audio is on."
+        ? formatMessage("audioPreview.reason.mutedAll")
         : settings.masterVolume <= 0
-          ? "Master volume is zero."
+          ? formatMessage("audioPreview.reason.masterZero")
           : settings.effectsVolume <= 0
-            ? "Table effects volume is zero."
-            : "Audio is temporarily paused.";
-      return { result, message: `Preview is silent. ${reason}` };
+            ? formatMessage("audioPreview.reason.effectsZero")
+            : formatMessage("audioPreview.reason.temporarilyPaused");
+      return {
+        result,
+        message: formatMessage("audioPreview.silent", { reason }),
+      };
     }
   } catch {
     // Supplementary audio must never make Settings or gameplay fail.
   }
   return {
     result: "unavailable",
-    message: "Audio preview is unavailable on this device. Your settings were kept.",
+    message: formatMessage("audioPreview.unavailable"),
   };
 }

@@ -9,7 +9,7 @@ import {
   type TutorialStep,
 } from "../lib/playableTutorial";
 import { formatFixedDecimal } from "../lib/format";
-import { formatMessage } from "../lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 
 const STEP_COPY: Record<
   TutorialStep,
@@ -109,7 +109,11 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
   ];
 
   return (
-    <main className="playable-tutorial" aria-labelledby="tutorial-title">
+    <main
+      className="playable-tutorial"
+      aria-labelledby="tutorial-title"
+      {...localeTextAttributes()}
+    >
       <header className="tutorial-topbar">
         <button type="button" onClick={onExit}>
           <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToModes")}
@@ -141,7 +145,10 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
         <span>{copy.instruction}</span>
       </section>
 
-      <section className="tutorial-table" aria-label="Guided poker hand">
+      <section
+        className="tutorial-table"
+        aria-label={formatMessage("tutorial.table.ariaLabel")}
+      >
         <div className="tutorial-pot">
           <span>{formatMessage("table.readout.potLabel")}</span>
           <strong>1,200</strong>

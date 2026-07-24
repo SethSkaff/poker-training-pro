@@ -45,6 +45,11 @@ import { createSaveEnvelope } from "./lib/saveMigration";
 import { formatChips } from "./lib/format";
 import { formatMessage } from "./lib/localeMessages";
 import { deriveSafeModeSettings } from "./lib/safeMode";
+import {
+  applyOsReducedMotionDefault,
+  readOsReducedMotionPreference,
+  subscribeOsReducedMotionPreference,
+} from "./lib/motionPreference";
 import { selectNearTransferScenario } from "./lib/trainingEngine";
 import {
   createTrainingCheckpoint,
@@ -204,10 +209,26 @@ function FirstRunSetup({
           {formatMessage("shell.firstRun.keyboardHint")}
         </p>
         <div className="startup-gate__actions">
-          <button type="button" onClick={() => onComplete(draft)}>
+          <button
+            type="button"
+            onClick={() =>
+              // Completing setup via Save is an explicit motion choice, even
+              // if the player left the OS-derived pre-selection untouched:
+              // it always wins over the OS preference from now on.
+              onComplete({ ...draft, reducedMotionExplicit: true })
+            }
+          >
             {formatMessage("shell.firstRun.saveButton")}
           </button>
-          <button type="button" onClick={() => onComplete(initialSettings)}>
+          <button
+            type="button"
+            onClick={() =>
+              // Skip makes no motion choice, so the app keeps following the
+              // live OS reduced-motion preference (initialSettings already
+              // reflects it and reducedMotionExplicit stays false).
+              onComplete(initialSettings)
+            }
+          >
             {formatMessage("shell.firstRun.skipButton")}
           </button>
         </div>
@@ -249,6 +270,11 @@ export default function App() {
   const [safeMode, setSafeMode] = useState<SafeModeState>();
   const [safeModeReady, setSafeModeReady] = useState(!window.desktop);
   const [safeModeAcknowledged, setSafeModeAcknowledged] = useState(false);
+  // The OS reduced-motion preference, used as the default whenever the
+  // player has not made an explicit in-app choice (see motionPreference.ts).
+  const [osReducedMotion, setOsReducedMotion] = useState(() =>
+    readOsReducedMotionPreference(),
+  );
   const [trainingScenario, setTrainingScenario] = useState(
     () => trainingScenarios[0],
   );
@@ -260,14 +286,22 @@ export default function App() {
   const decisionAbortRef = useRef<{ aborted: boolean } | null>(null);
   const decisionPendingRef = useRef(false);
   const runnerRef = useRef<TournamentRunner | null>(null);
-  const effectiveSettings: GameSettings = deriveSafeModeSettings(
+  // Live OS default layered under any explicit player choice; Safe Mode is
+  // applied last and always wins over both.
+  const osResolvedSettings: GameSettings = applyOsReducedMotionDefault(
     settings,
+    osReducedMotion,
+  );
+  const effectiveSettings: GameSettings = deriveSafeModeSettings(
+    osResolvedSettings,
     Boolean(safeMode?.active),
   );
 
   // Controller navigation for the entire desktop flow (menus, dialogs,
   // sliders, table). Keyboard-only operation stays complete alongside it.
   useGamepadNavigation(effectiveSettings.controlBindings);
+
+  useEffect(() => subscribeOsReducedMotionPreference(setOsReducedMotion), []);
 
   useEffect(() => {
     if (!window.desktop) return;
@@ -1465,7 +1499,7 @@ export default function App() {
   if (screen === "settings") {
     return (
       <SettingsPanel
-        settings={settings}
+        settings={osResolvedSettings}
         onBack={() => navigate("home")}
         onChange={updateSettings}
         onFullscreenChange={(fullscreen) => void setFullscreen(fullscreen)}

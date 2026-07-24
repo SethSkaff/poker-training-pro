@@ -6,6 +6,7 @@ import type {
 } from "../types/poker";
 import { defaultProgress, defaultSettings } from "./storage";
 import { normalizeControlBindingOverrides } from "./actionMap";
+import { formatMessage } from "./localeMessages";
 
 export const SAVE_FORMAT = "poker-training-pro-save";
 export const CURRENT_SAVE_VERSION = 1;
@@ -104,27 +105,30 @@ export function restoreSaveBackup(serialized: string): SaveRestoreResult {
   try {
     parsed = JSON.parse(serialized);
   } catch {
-    return failure("invalid-json", "The backup is not valid JSON.");
+    return failure("invalid-json", formatMessage("saveData.error.invalidJson"));
   }
   return migrateSavePayload(parsed);
 }
 
 export function migrateSavePayload(payload: unknown): SaveRestoreResult {
   if (!isRecord(payload)) {
-    return failure("invalid-payload", "The backup must contain an object.");
+    return failure(
+      "invalid-payload",
+      formatMessage("saveData.error.invalidPayload"),
+    );
   }
 
   if ("format" in payload && payload.format !== SAVE_FORMAT) {
     return failure(
       "unknown-format",
-      "The backup belongs to an unknown application or save format.",
+      formatMessage("saveData.error.unknownFormat"),
     );
   }
 
   if ("version" in payload && payload.version !== 0 && payload.version !== 1) {
     return failure(
       "unsupported-version",
-      "This backup was created by an unsupported save version.",
+      formatMessage("saveData.error.unsupportedVersion"),
     );
   }
 
@@ -137,7 +141,7 @@ export function migrateSavePayload(payload: unknown): SaveRestoreResult {
     ) {
       return failure(
         "invalid-payload",
-        "The versioned backup is missing settings or player progress.",
+        formatMessage("saveData.error.versionedIncomplete"),
       );
     }
     return {
@@ -155,7 +159,7 @@ export function migrateSavePayload(payload: unknown): SaveRestoreResult {
   if (!("settings" in legacyData) && !("progress" in legacyData)) {
     return failure(
       "invalid-payload",
-      "The legacy backup does not contain settings or player progress.",
+      formatMessage("saveData.error.legacyIncomplete"),
     );
   }
 
@@ -177,7 +181,7 @@ export function writeLastKnownGoodBackup(
   } catch {
     return failure(
       "storage-unavailable",
-      "The last-known-good backup could not be written.",
+      formatMessage("saveData.error.lastKnownGoodWriteFailed"),
     );
   }
   return restoreSaveBackup(serialized);
@@ -192,13 +196,13 @@ export function readLastKnownGoodBackup(
   } catch {
     return failure(
       "storage-unavailable",
-      "The last-known-good backup could not be read.",
+      formatMessage("saveData.error.lastKnownGoodReadFailed"),
     );
   }
   if (serialized === null) {
     return failure(
       "invalid-payload",
-      "No last-known-good backup is available.",
+      formatMessage("saveData.error.lastKnownGoodUnavailable"),
     );
   }
   return restoreSaveBackup(serialized);
@@ -233,6 +237,10 @@ function normalizeSettings(value: unknown): GameSettings {
     reducedMotion: booleanOr(
       source.reducedMotion,
       defaultSettings.reducedMotion,
+    ),
+    reducedMotionExplicit: booleanOr(
+      source.reducedMotionExplicit,
+      defaultSettings.reducedMotionExplicit,
     ),
     dealSpeed:
       source.dealSpeed === "cinematic" ||

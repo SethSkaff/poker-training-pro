@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   effectsVolume: 70,
   fullscreen: false,
   reducedMotion: false,
+  reducedMotionExplicit: false,
   dealSpeed: "standard",
   colorAssist: false,
   cameraSensitivity: "standard",
@@ -450,6 +451,8 @@ function validateCurrentSettings(value) {
       !["close", "standard", "wide"].includes(value.cameraView)) ||
     (value.autoCameraMovement !== undefined &&
       typeof value.autoCameraMovement !== "boolean") ||
+    (value.reducedMotionExplicit !== undefined &&
+      typeof value.reducedMotionExplicit !== "boolean") ||
     (["menuMotion", "roomMotion", "cameraMotion", "tableMotion", "transitionMotion"].some(
       (key) => value[key] !== undefined && !["full", "reduced", "off"].includes(value[key]),
     )) ||
@@ -469,6 +472,14 @@ function validateCurrentSettings(value) {
       effectsVolume: value.effectsVolume,
       fullscreen: value.fullscreen,
       reducedMotion: value.reducedMotion,
+      // Distinguishes an explicit player choice (always wins and persists)
+      // from "unset," in which case the renderer follows the live OS
+      // prefers-reduced-motion preference. Introduced after the first v1
+      // saves, so a missing value migrates safely to "not yet chosen."
+      reducedMotionExplicit:
+        typeof value.reducedMotionExplicit === "boolean"
+          ? value.reducedMotionExplicit
+          : DEFAULT_SETTINGS.reducedMotionExplicit,
       dealSpeed: value.dealSpeed,
       colorAssist: value.colorAssist,
       // Camera comfort controls were introduced after the first v1 saves.
@@ -603,6 +614,7 @@ function normalizeLegacySettings(value) {
     effectsVolume: boundedNumber(source.effectsVolume, 0, 100, 70),
     fullscreen: booleanOr(source.fullscreen, false),
     reducedMotion: booleanOr(source.reducedMotion, false),
+    reducedMotionExplicit: booleanOr(source.reducedMotionExplicit, false),
     dealSpeed: DEAL_SPEEDS.has(source.dealSpeed)
       ? source.dealSpeed
       : "standard",

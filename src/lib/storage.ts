@@ -12,6 +12,7 @@ export const defaultSettings: GameSettings = {
   effectsVolume: 70,
   fullscreen: false,
   reducedMotion: false,
+  reducedMotionExplicit: false,
   dealSpeed: "standard",
   colorAssist: false,
   cameraSensitivity: "standard",

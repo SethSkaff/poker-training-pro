@@ -51,6 +51,19 @@ export const SHELL_MESSAGES = Object.freeze({
   "settings.audio.effects.description":
     "Controls card, chip, fold, and result cues.",
   "settings.audio.effects.previewLabel": "Preview Table effects volume at {percent} percent",
+
+  // Audio preview result feedback (src/lib/audioPreview.ts)
+  "audioPreview.masterPlayed": "Master preview played at {percent} percent.",
+  "audioPreview.effectsPlayed":
+    "Table effects preview played at {percent} percent.",
+  "audioPreview.silent": "Preview is silent. {reason}",
+  "audioPreview.reason.mutedAll": "Mute all audio is on.",
+  "audioPreview.reason.masterZero": "Master volume is zero.",
+  "audioPreview.reason.effectsZero": "Table effects volume is zero.",
+  "audioPreview.reason.temporarilyPaused": "Audio is temporarily paused.",
+  "audioPreview.unavailable":
+    "Audio preview is unavailable on this device. Your settings were kept.",
+
   "settings.display.heading": "Display",
   "settings.display.fullscreen.label": "Fullscreen",
   "settings.display.fullscreen.description": "Alt + Enter also changes display mode.",
@@ -107,6 +120,23 @@ export const SHELL_MESSAGES = Object.freeze({
     "Exports are local files. Import and reset always require a preview and confirmation.",
   "saveData.status.working": "Working…",
   "saveData.error.generic": "The data operation could not be completed.",
+  // Save-backup format validation/migration failures (src/lib/saveMigration.ts)
+  "saveData.error.invalidJson": "The backup is not valid JSON.",
+  "saveData.error.invalidPayload": "The backup must contain an object.",
+  "saveData.error.unknownFormat":
+    "The backup belongs to an unknown application or save format.",
+  "saveData.error.unsupportedVersion":
+    "This backup was created by an unsupported save version.",
+  "saveData.error.versionedIncomplete":
+    "The versioned backup is missing settings or player progress.",
+  "saveData.error.legacyIncomplete":
+    "The legacy backup does not contain settings or player progress.",
+  "saveData.error.lastKnownGoodWriteFailed":
+    "The last-known-good backup could not be written.",
+  "saveData.error.lastKnownGoodReadFailed":
+    "The last-known-good backup could not be read.",
+  "saveData.error.lastKnownGoodUnavailable":
+    "No last-known-good backup is available.",
   "saveData.button.importSave": "Import save…",
   "saveData.button.resetProgress": "Reset player progress…",
   "saveData.button.exportReplay": "Export public replay",
