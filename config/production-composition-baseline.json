@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "projectVersion": "0.1.0",
+  "capture": {
+    "buildTool": "Vite 8.1.5",
+    "buildCommand": "node node_modules/vite/bin/vite.js build",
+    "scope": "production dist/ after the durable-save and local-logging integration",
+    "enforcement": "informational; config/performance-budgets.json is the release size gate"
+  },
+  "summary": {
+    "files": 26,
+    "bytes": 10763210,
+    "javascriptGzipBytes": 107712,
+    "cssGzipBytes": 20326,
+    "categories": {
+      "javascript": {
+        "files": 1,
+        "bytes": 355095,
+        "gzipBytes": 107712
+      },
+      "css": {
+        "files": 1,
+        "bytes": 94233,
+        "gzipBytes": 20326
+      },
+      "image": {
+        "files": 7,
+        "bytes": 9912210,
+        "gzipBytes": 0
+      },
+      "font": {
+        "files": 16,
+        "bytes": 400656,
+        "gzipBytes": 0
+      },
+      "html": {
+        "files": 1,
+        "bytes": 1016,
+        "gzipBytes": 0
+      },
+      "other": {
+        "files": 0,
+        "bytes": 0,
+        "gzipBytes": 0
+      }
+    }
+  }
+}

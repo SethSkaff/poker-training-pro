@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "desktop": {
+    "coldStartToInteractiveMs": {
+      "typicalLaptop": 1500,
+      "lowSpec": 3000
+    },
+    "modeSelectToTableReadyMs": {
+      "typicalLaptop": 1500,
+      "lowSpec": 3000
+    },
+    "heroActionToVisibleFeedbackMs": 100,
+    "frameTimeP95Ms": 25,
+    "frameTimeP99Ms": 50,
+    "idleCpuPercent": 3,
+    "peakWorkingSetMiB": 600,
+    "installerMiBWithoutMusic": 200,
+    "portableMiBWithoutMusic": 250,
+    "autosaveWriteP95Ms": 50
+  },
+  "bundle": {
+    "distTotalMiB": 64,
+    "initialJavaScriptGzipMiB": 0.3,
+    "initialCssGzipMiB": 0.1,
+    "singleImageMiB": 4,
+    "singleFontMiB": 0.05
+  },
+  "runtimeAssets": {
+    "decodedTexturePeakMiB": 256,
+    "singleMenuBackgroundPixels": 8294400,
+    "twoSecondLoopMiB": 12,
+    "streamedAudioBufferMiB": 16,
+    "shippingMusicMiB": 180,
+    "shippingSfxMiB": 24
+  }
+}

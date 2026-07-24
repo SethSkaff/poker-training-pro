@@ -1,0 +1,258 @@
+import { describe, expect, it } from "vitest";
+import type { SeatPlayer, TrainingScenario } from "../types/poker";
+import {
+  CONTEXTUAL_PROMPTS,
+  CONTEXTUAL_PROMPT_ORDER,
+  defaultContextualPromptState,
+  detectContextualPromptOccurrences,
+  markContextualPromptSeen,
+  nextContextualPrompt,
+  resetContextualPromptState,
+  type ContextualPromptId,
+  type ContextualPromptSignals,
+} from "./contextualPrompts";
+
+function seat(overrides: Partial<SeatPlayer> = {}): SeatPlayer {
+  return {
+    id: overrides.id ?? "p",
+    name: overrides.name ?? "Player",
+    stack: overrides.stack ?? 5_000,
+    seat: overrides.seat ?? 0,
+    status: overrides.status ?? "active",
+    bet: overrides.bet ?? 0,
+  };
+}
+
+function scenario(overrides: Partial<TrainingScenario> = {}): TrainingScenario {
+  return {
+    id: "s1",
+    title: "Practice spot",
+    difficulty: 3,
+    street: "flop",
+    blinds: [100, 200],
+    heroSeat: 0,
+    buttonSeat: 1,
+    pot: 1_200,
+    amountToCall: 0,
+    minimumRaise: 400,
+    heroCards: [
+      { rank: "A", suit: "hearts" },
+      { rank: "K", suit: "hearts" },
+    ],
+    board: [],
+    players: [seat({ id: "hero", seat: 0, stack: 5_000 })],
+    prompt: "A neutral spot.",
+    recommendedAction: "check",
+    actionReason: "Neutral.",
+    mathQuestion: {
+      topic: "pot-odds",
+      prompt: "?",
+      unit: "%",
+      correctValue: 0.25,
+      tolerance: 0.02,
+      explanation: "n/a",
+    },
+    tags: [],
+    ...overrides,
+  };
+}
+
+const baseSignals = (
+  overrides: Partial<ContextualPromptSignals> = {},
+): ContextualPromptSignals => ({
+  scenario: scenario(),
+  ...overrides,
+});
+
+describe("contextual prompt catalogue", () => {
+  it("defines every required first-occurrence event", () => {
+    const required: ContextualPromptId[] = [
+      "all-in",
+      "side-pot",
+      "minimum-raise",
+      "blind-increase",
+      "elimination",
+      "qualification",
+      "elo-change",
+    ];
+    for (const id of required) {
+      expect(CONTEXTUAL_PROMPTS[id]).toBeDefined();
+      expect(CONTEXTUAL_PROMPTS[id].title.length).toBeGreaterThan(0);
+      expect(CONTEXTUAL_PROMPTS[id].message.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("detectContextualPromptOccurrences", () => {
+  it("detects an all-in from player status", () => {
+    const signals = baseSignals({
+      scenario: scenario({
+        players: [
+          seat({ id: "hero", seat: 0 }),
+          seat({ id: "v", seat: 1, status: "all-in", bet: 3_000 }),
+        ],
+      }),
+    });
+    expect(detectContextualPromptOccurrences(signals)).toContain("all-in");
+  });
+
+  it("detects a side pot when two all-ins commit different amounts", () => {
+    const signals = baseSignals({
+      scenario: scenario({
+        players: [
+          seat({ id: "hero", seat: 0, status: "all-in", bet: 1_000 }),
+          seat({ id: "v", seat: 1, status: "all-in", bet: 3_000 }),
+        ],
+      }),
+    });
+    const occ = detectContextualPromptOccurrences(signals);
+    expect(occ).toContain("side-pot");
+    expect(occ).toContain("all-in");
+  });
+
+  it("detects a minimum raise when a raise becomes legal", () => {
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ minimumRaiseAvailable: true }),
+      ),
+    ).toContain("minimum-raise");
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ minimumRaiseAvailable: false }),
+      ),
+    ).not.toContain("minimum-raise");
+  });
+
+  it("detects a blind increase only above the opening level", () => {
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ openingBigBlind: 200, currentBigBlind: 300 }),
+      ),
+    ).toContain("blind-increase");
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ openingBigBlind: 200, currentBigBlind: 200 }),
+      ),
+    ).not.toContain("blind-increase");
+  });
+
+  it("detects an elimination when fewer players remain than entered", () => {
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ fieldSize: 6, playersRemaining: 5 }),
+      ),
+    ).toContain("elimination");
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ fieldSize: 6, playersRemaining: 6 }),
+      ),
+    ).not.toContain("elimination");
+  });
+
+  it("detects qualification when the field reaches the paying places", () => {
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ playersRemaining: 2, qualifyingPlaces: 2 }),
+      ),
+    ).toContain("qualification");
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ playersRemaining: 3, qualifyingPlaces: 2 }),
+      ),
+    ).not.toContain("qualification");
+  });
+
+  it("detects an Elo change against the captured baseline", () => {
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ eloBaseline: 2_400, eloCurrent: 2_412 }),
+      ),
+    ).toContain("elo-change");
+    expect(
+      detectContextualPromptOccurrences(
+        baseSignals({ eloBaseline: 2_400, eloCurrent: 2_400 }),
+      ),
+    ).not.toContain("elo-change");
+  });
+
+  it("returns occurrences in stable priority order", () => {
+    const signals = baseSignals({
+      scenario: scenario({
+        players: [
+          seat({ id: "hero", seat: 0, status: "all-in", bet: 1_000, stack: 0 }),
+          seat({ id: "v", seat: 1, status: "all-in", bet: 3_000 }),
+        ],
+      }),
+      minimumRaiseAvailable: true,
+      openingBigBlind: 200,
+      currentBigBlind: 400,
+      fieldSize: 6,
+      playersRemaining: 2,
+      qualifyingPlaces: 2,
+      eloBaseline: 2_400,
+      eloCurrent: 2_410,
+    });
+    const occ = detectContextualPromptOccurrences(signals);
+    const sorted = [...occ].sort(
+      (a, b) =>
+        CONTEXTUAL_PROMPT_ORDER.indexOf(a) - CONTEXTUAL_PROMPT_ORDER.indexOf(b),
+    );
+    expect(occ).toEqual(sorted);
+    expect(occ[0]).toBe("all-in");
+  });
+});
+
+describe("first-occurrence, dismiss, and replay", () => {
+  it("offers only the first unseen prompt for the current occurrences", () => {
+    const state = defaultContextualPromptState();
+    const prompt = nextContextualPrompt(state, ["all-in", "side-pot"]);
+    expect(prompt?.id).toBe("all-in");
+  });
+
+  it("does not repeat a dismissed prompt (first occurrence only)", () => {
+    let state = defaultContextualPromptState();
+    const first = nextContextualPrompt(state, ["all-in"]);
+    expect(first?.id).toBe("all-in");
+
+    // Dismiss it.
+    state = markContextualPromptSeen(state, "all-in");
+
+    // The same event no longer produces a prompt...
+    expect(nextContextualPrompt(state, ["all-in"])).toBeUndefined();
+    // ...but a different first occurrence still surfaces.
+    expect(nextContextualPrompt(state, ["all-in", "side-pot"])?.id).toBe(
+      "side-pot",
+    );
+  });
+
+  it("marks seen idempotently", () => {
+    const once = markContextualPromptSeen(
+      defaultContextualPromptState(),
+      "elimination",
+    );
+    const twice = markContextualPromptSeen(once, "elimination");
+    expect(twice.seen).toEqual(["elimination"]);
+    expect(twice).toBe(once);
+  });
+
+  it("suppresses all prompts while coaching is disabled", () => {
+    const disabled = { enabled: false, seen: [] as ContextualPromptId[] };
+    expect(nextContextualPrompt(disabled, ["all-in"])).toBeUndefined();
+  });
+
+  it("replay clears seen history and re-enables coaching", () => {
+    const exhausted = {
+      enabled: false,
+      seen: [...CONTEXTUAL_PROMPT_ORDER],
+    };
+    const replayed = resetContextualPromptState();
+    expect(replayed.enabled).toBe(true);
+    expect(replayed.seen).toEqual([]);
+    // Every prompt can appear again after a replay.
+    expect(nextContextualPrompt(replayed, ["elo-change"])?.id).toBe(
+      "elo-change",
+    );
+    // The exhausted state proves replay is what re-opens them.
+    expect(nextContextualPrompt(exhausted, ["elo-change"])).toBeUndefined();
+  });
+});

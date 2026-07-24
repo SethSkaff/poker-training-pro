@@ -1,0 +1,106 @@
+{
+  "name": "poker-training-pro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A game-like desktop poker statistics trainer and tournament simulator.",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "test": "vitest run",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis portable --x64 --config.electronDist=node_modules/electron/dist && npm run release:audit-packaged-licenses",
+    "release:verify": "node scripts/release/run-release-verification.mjs",
+    "release:asset-rights": "node scripts/validate-asset-rights.mjs",
+    "release:verify-fuses": "node scripts/verify-electron-fuses.mjs",
+    "release:test-asar-integrity": "node scripts/test-asar-tamper-rejection.mjs",
+    "release:audit-packaged-network": "node scripts/audit-packaged-network.mjs",
+    "release:audit-packaged-input": "node scripts/audit-packaged-input-smoke.mjs",
+    "release:audit-packaged-mode-completion": "node scripts/audit-packaged-mode-completion.mjs",
+    "release:audit-packaged-recovery": "node scripts/audit-packaged-save-recovery-smoke.mjs",
+    "release:audit-packaged-lifecycle-security": "node scripts/audit-packaged-lifecycle-bridge-security.mjs",
+    "release:audit-packaged-licenses": "node scripts/audit-packaged-license-sidecars.mjs",
+    "release:verify-audio-rights": "node scripts/validate-audio-rights.mjs",
+    "release:verify-runtime-video-policy": "node scripts/validate-runtime-video-policy.mjs",
+    "release:verify-ios-training-bank": "vite-node scripts/export-ios-training-bank.ts --check",
+    "release:verify-ios-tournament-engine": "node scripts/export-ios-tournament-engine.mjs --check",
+    "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "5.3.0",
+    "@fontsource/inter": "5.3.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@electron/fuses": "2.1.2",
+    "@rolldown/binding-win32-x64-msvc": "1.1.5",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "6.0.4",
+    "concurrently": "^9.2.1",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3",
+    "typescript": "^5.8.0",
+    "vite": "8.1.5",
+    "vitest": "^3.2.4",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "pro.pokertraining.desktop",
+    "productName": "Poker Training Pro",
+    "asar": true,
+    "directories": {
+      "output": "outputs/desktop",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "licenses/**/*",
+      "docs/privacy-policy.md",
+      "THIRD-PARTY-NOTICES.packages.md",
+      "THIRD-PARTY-NOTICES.runtime.txt",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "THIRD-PARTY-NOTICES.runtime.txt",
+        "to": "THIRD-PARTY-NOTICES.runtime.txt"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}",
+      "requestExecutionLevel": "user"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "loadBrowserProcessSpecificV8Snapshot": false,
+      "grantFileProtocolExtraPrivileges": false
+    }
+  }
+}
