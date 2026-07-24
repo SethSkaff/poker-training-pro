@@ -27,13 +27,14 @@ import {
   setInputCaptureActive,
 } from "../lib/inputCaptureGate";
 import { useModalFocusTrap } from "../hooks/useModalFocusTrap";
+import { formatMessage } from "../lib/localeMessages";
 
-const CATEGORY_LABELS: Record<ActionCategory, string> = {
-  menu: "Menus & dialogs",
-  gameplay: "Betting & cards",
-  camera: "Camera",
-  speed: "Opponent speed",
-  system: "System",
+const CATEGORY_LABEL_KEYS: Record<ActionCategory, string> = {
+  menu: "controls.category.menu",
+  gameplay: "controls.category.gameplay",
+  camera: "controls.category.camera",
+  speed: "controls.category.speed",
+  system: "controls.category.system",
 };
 
 const CATEGORY_ORDER: ActionCategory[] = [
@@ -96,7 +97,9 @@ function CaptureDialog({
       }
       if (isReservedKeyToken(token)) {
         setReservedNotice(
-          `${describeKeyToken(token)} is a reserved system key. Choose another key or press Esc to cancel.`,
+          formatMessage("controls.capture.reservedNotice", {
+            keyName: describeKeyToken(token),
+          }),
         );
         return;
       }
@@ -143,15 +146,23 @@ function CaptureDialog({
         ref={dialogRef}
         tabIndex={-1}
       >
-        <p className="eyebrow">Listening for input</p>
+        <p className="eyebrow">{formatMessage("controls.capture.eyebrow")}</p>
         <h2 id="remap-capture-title">
-          Press a {capture.device === "keyboard" ? "key" : "controller button"}{" "}
-          for “{definition.label}”
+          {formatMessage("controls.capture.title", {
+            inputKind: formatMessage(
+              capture.device === "keyboard"
+                ? "controls.capture.inputKind.key"
+                : "controls.capture.inputKind.controllerButton",
+            ),
+            actionLabel: definition.label,
+          })}
         </h2>
         <p>
-          {capture.device === "keyboard"
-            ? "Press any key to bind it. Press Esc to cancel."
-            : "Press any controller button to bind it."}
+          {formatMessage(
+            capture.device === "keyboard"
+              ? "controls.capture.instructionsKeyboard"
+              : "controls.capture.instructionsGamepad",
+          )}
         </p>
         {reservedNotice ? (
           <p className="remap-capture__warning" role="alert">
@@ -159,7 +170,7 @@ function CaptureDialog({
           </p>
         ) : null}
         <button type="button" ref={cancelRef} onClick={onCancel}>
-          Cancel
+          {formatMessage("common.cancel")}
         </button>
       </section>
     </div>
@@ -230,7 +241,7 @@ export function ControlsRemapPanel({
   }, []);
 
   return (
-    <section className="controls-remap" aria-label="Control remapping">
+    <section className="controls-remap" aria-label={formatMessage("controls.panel.ariaLabel")}>
       <header className="controls-remap__header">
         {onClose ? (
           <button
@@ -238,13 +249,13 @@ export function ControlsRemapPanel({
             type="button"
             onClick={onClose}
           >
-            Back
+            {formatMessage("common.back")}
           </button>
         ) : null}
         <div
           className="controls-remap__tabs"
           role="tablist"
-          aria-label="Input device"
+          aria-label={formatMessage("controls.tabs.ariaLabel")}
         >
           <button
             type="button"
@@ -253,7 +264,7 @@ export function ControlsRemapPanel({
             className={device === "keyboard" ? "is-active" : ""}
             onClick={() => setDevice("keyboard")}
           >
-            <Keyboard size={16} /> Keyboard
+            <Keyboard size={16} /> {formatMessage("controls.device.keyboard")}
           </button>
           <button
             type="button"
@@ -262,7 +273,7 @@ export function ControlsRemapPanel({
             className={device === "gamepad" ? "is-active" : ""}
             onClick={() => setDevice("gamepad")}
           >
-            <Gamepad2 size={16} /> Controller
+            <Gamepad2 size={16} /> {formatMessage("controls.device.controller")}
           </button>
         </div>
         <button
@@ -270,20 +281,21 @@ export function ControlsRemapPanel({
           type="button"
           onClick={() => onChange(resetDeviceToDefaults(overrides, device))}
         >
-          <RotateCcw size={15} /> Reset {device} to defaults
+          <RotateCcw size={15} />{" "}
+          {formatMessage("controls.reset.button", { device })}
         </button>
       </header>
 
       {conflicts.length > 0 ? (
         <p className="controls-remap__alert" role="alert">
-          <AlertTriangle size={15} /> Some {device} controls share a binding.
-          Duplicate controls are highlighted below.
+          <AlertTriangle size={15} />{" "}
+          {formatMessage("controls.conflict.alert", { device })}
         </p>
       ) : null}
 
       {grouped.map((group) => (
         <div className="controls-remap__group" key={group.category}>
-          <h3>{CATEGORY_LABELS[group.category]}</h3>
+          <h3>{formatMessage(CATEGORY_LABEL_KEYS[group.category])}</h3>
           <ul>
             {group.actions.map((definition) => {
               const tokens = resolved[definition.id][device];
@@ -309,25 +321,29 @@ export function ControlsRemapPanel({
                         </kbd>
                       ))
                     ) : (
-                      <em>Unbound</em>
+                      <em>{formatMessage("controls.action.unbound")}</em>
                     )}
                     {reservedToken ? (
                       <span
                         className="controls-remap__reserved"
-                        title="Reserved system key"
+                        title={formatMessage("controls.reserved.title")}
                       >
-                        <AlertTriangle size={13} /> reserved
+                        <AlertTriangle size={13} />{" "}
+                        {formatMessage("controls.reserved.label")}
                       </span>
                     ) : null}
                   </span>
                   <button
                     type="button"
-                    aria-label={`Rebind ${definition.label} for ${device}`}
+                    aria-label={formatMessage("controls.action.rebindAriaLabel", {
+                      actionLabel: definition.label,
+                      device,
+                    })}
                     onClick={() =>
                       setCapture({ actionId: definition.id, device })
                     }
                   >
-                    Rebind
+                    {formatMessage("controls.action.rebindButton")}
                   </button>
                 </li>
               );

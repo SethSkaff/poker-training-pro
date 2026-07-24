@@ -1,0 +1,568 @@
+#!/usr/bin/env node
+/**
+ * Rendered-side flash/luminance evidence for the packaged Windows build.
+ *
+ * docs/motion-flash-accessibility-policy.md already gates the CSS/script
+ * *source* for hazardous animation signatures. That gate explicitly cannot
+ * "calculate rendered luminance, saturated-red chromaticity, ... or
+ * browser/Electron timing behavior" — this script fills that gap by
+ * launching the packaged app under CDP, screenshotting four deterministically
+ * reachable high-motion moments, and running the WCAG-2.3.1-threshold
+ * implementation in scripts/release/flash-luminance-analysis-lib.mjs over
+ * the captured frames. It repeats the pass with the app's own Reduce Motion
+ * setting enabled to verify the static/short-path fallbacks.
+ *
+ * This is an implementation of the WCAG 2.3.1 thresholds, not a certified
+ * photosensitive-epilepsy analysis tool — see the doc comment at the top of
+ * flash-luminance-analysis-lib.mjs for the exact formulas and the
+ * simplifications this script makes versus the full standard.
+ */
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { mkdir, mkdtemp, rename, rm, stat, writeFile } from "node:fs/promises";
+import { arch, cpus, platform, release as osRelease, tmpdir, totalmem, version as osVersion } from "node:os";
+import { basename, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  CdpClient,
+  captureBoundedOutput,
+  terminateProcessTree,
+  waitForDevToolsPort,
+  waitForPageTarget,
+} from "./audit-packaged-render-smoke.mjs";
+import { assertNoFatalCdpEvents } from "./release/packaged-render-smoke-lib.mjs";
+import { decodePng } from "./release/png-decode-lib.mjs";
+import {
+  FLASH_CEILING_PER_SECOND,
+  GENERAL_FLASH_DARK_CEILING,
+  GENERAL_FLASH_LUMINANCE_DELTA,
+  RED_FLASH_COVERAGE_DELTA,
+  RED_HUE_MAX_DEGREES,
+  RED_MIN_SATURATION,
+  RED_MIN_VALUE,
+  SLIDING_WINDOW_MS,
+  evaluateFlashSequence,
+  summarizeFramePixels,
+} from "./release/flash-luminance-analysis-lib.mjs";
+import { assertValidatedTemporaryProfile, canonicalJson } from "./release/runtime-performance-profile-lib.mjs";
+import { projectRoot } from "./release/shared.mjs";
+
+const nodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
+if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
+  throw new Error(
+    `Packaged flash capture requires Node.js 22 or newer; current runtime is ${process.versions.node}.`,
+  );
+}
+
+const DEFAULT_APP = join(projectRoot, "outputs", "desktop", "win-unpacked", "Poker Training Pro.exe");
+const PROFILE_PREFIX = "poker-training-pro-flash-capture-";
+const LAUNCH_TIMEOUT_MS = 30_000;
+const NAVIGATION_TIMEOUT_MS = 8_000;
+const CAPTURE_INTERVAL_MS = 100;
+// Every-Nth-pixel sampling for the per-frame luminance/red-coverage
+// reduction (see flash-luminance-analysis-lib.mjs summarizeFramePixels).
+// Trades precision for decode/compute speed across the run's many
+// full-viewport captures; documented in the report's limitations.
+const ANALYSIS_PIXEL_STRIDE = 3;
+const JSON_OUTPUT = join(projectRoot, "work", "packaged-flash-luminance-analysis.json");
+const SUMMARY_OUTPUT = join(projectRoot, "work", "packaged-flash-luminance-analysis.md");
+
+// Each sequence is reached the same way the existing packaged input smoke
+// (scripts/audit-packaged-input-smoke.mjs) reaches it, using the same
+// production selectors that script already validates.
+const SEQUENCE_PLAN = [
+  {
+    id: "title-menu",
+    label: "Title/menu ambient loop (Play/Settings screen drift + light animation)",
+    durationMs: 3_000,
+  },
+  {
+    id: "mode-select",
+    label: "Mode selection screen",
+    durationMs: 2_000,
+  },
+  {
+    id: "room-flythrough-start",
+    label: "Room fly-through start",
+    durationMs: 1_500,
+  },
+  {
+    id: "dealt-hand",
+    label: "First dealt hand with chip/card motion",
+    durationMs: 2_000,
+  },
+];
+
+export async function runPackagedFlashCapture(options = {}) {
+  if (process.platform !== "win32") {
+    throw new Error("The packaged flash capture currently supports Windows only.");
+  }
+  const appPath = resolve(options.appPath ?? DEFAULT_APP);
+  const buildIdentity = await readBuildIdentity(appPath);
+  const hostIdentity = readHostIdentity();
+
+  const passes = [];
+  for (const passDefinition of [
+    { passId: "full-motion", reducedMotion: false },
+    { passId: "reduced-motion", reducedMotion: true },
+  ]) {
+    passes.push(await runCapturePass(appPath, passDefinition));
+  }
+
+  const overallPass = passes.every((pass) => pass.pass);
+  const allIntervals = passes
+    .flatMap((pass) => pass.sequences)
+    .map((sequence) => sequence.achievedMeanFrameIntervalMs)
+    .filter((value) => typeof value === "number");
+  const slowestAchievedIntervalMs = allIntervals.length ? Math.max(...allIntervals) : null;
+  const impliedNyquistFlashCeilingPerSecond =
+    slowestAchievedIntervalMs && slowestAchievedIntervalMs > 0
+      ? round(500 / slowestAchievedIntervalMs, 2)
+      : null;
+  const report = {
+    format: "poker-training-pro-packaged-flash-luminance-analysis",
+    version: 1,
+    capturedAt: new Date().toISOString(),
+    scope: "single-host-rendered-capture",
+    methodologyNote:
+      "This is an implementation of the WCAG 2.3.1 thresholds (see the doc comment in scripts/release/flash-luminance-analysis-lib.mjs), not a certified photosensitive-epilepsy analysis tool.",
+    build: buildIdentity,
+    host: hostIdentity,
+    captureConfig: {
+      captureIntervalMs: CAPTURE_INTERVAL_MS,
+      analysisPixelStride: ANALYSIS_PIXEL_STRIDE,
+      ceilingFlashesPerSecond: FLASH_CEILING_PER_SECOND,
+      slidingWindowMs: SLIDING_WINDOW_MS,
+    },
+    thresholds: {
+      generalFlashLuminanceDelta: GENERAL_FLASH_LUMINANCE_DELTA,
+      generalFlashDarkCeiling: GENERAL_FLASH_DARK_CEILING,
+      redFlashCoverageDelta: RED_FLASH_COVERAGE_DELTA,
+      redHueMaxDegrees: RED_HUE_MAX_DEGREES,
+      redMinSaturation: RED_MIN_SATURATION,
+      redMinValue: RED_MIN_VALUE,
+    },
+    sequencePlan: SEQUENCE_PLAN.map((sequence) => ({
+      id: sequence.id,
+      label: sequence.label,
+      plannedDurationMs: sequence.durationMs,
+    })),
+    passes,
+    overallPass,
+    limitations: [
+      "One rendered capture pass per motion setting on one host; this is not a low-spec, typical, or discrete-GPU hardware matrix, and it is not the recognized photosensitive-epilepsy analysis tool the release policy still requires before shipping a hazardous-if-wrong sequence.",
+      "Frames are captured by repeatedly calling CDP Page.captureScreenshot on a fixed interval; timestamps reflect when each screenshot command was issued from Node, not a frame-accurate compositor capture, so very short (sub-interval) transitions can be missed or their timing smeared.",
+      slowestAchievedIntervalMs !== null
+        ? `On this host the achieved screenshot interval was well above the ${CAPTURE_INTERVAL_MS}ms request on the slower sequences (worst observed mean: ${slowestAchievedIntervalMs}ms/frame, i.e. roughly ${impliedNyquistFlashCeilingPerSecond} fps). By the Nyquist rate, that sequence's run can only reliably rule out flashing up to about half that frame rate; a "pass" on a sparsely-sampled sequence is weaker evidence than on a densely-sampled one, and should not be read as confidently ruling out sub-second flashing on its own. See each sequence's achievedMeanFrameIntervalMs.`
+        : "Frame counts and achieved capture intervals are recorded per sequence; treat sparsely-sampled sequences as weaker evidence for ruling out fast flashing.",
+      "The general-flash and red-flash detectors implement the WCAG 2.3.1 glossary definitions with documented simplifications (whole-captured-region area instead of a 341x256px sub-block scan; an HSV-based saturated-red approximation instead of the CIE chromaticity polygon; a 10-percentage-point red-coverage swing standing in for WCAG's undefined red-flash transition magnitude). See scripts/release/flash-luminance-analysis-lib.mjs.",
+      `Per-frame luminance/red-coverage summaries sample every Nth pixel (stride ${ANALYSIS_PIXEL_STRIDE}, not every pixel) for decode/compute speed across the run's many full-viewport captures; this can under-count a hazard confined to a very small area.`,
+      "Sequences are limited to what is deterministically reachable without gameplay randomness: the Play/Settings menu, mode selection, the start of the room fly-through, and the first dealt hand of a live tournament table. Later hands, other modes' presentation states, hover/focus transitions, and settings-screen motion are not covered by this run.",
+      "The reduced-motion pass sets the app's own saved Reduce Motion setting (the mechanism this codebase actually reads; it does not currently read the operating-system prefers-reduced-motion media query). Testing the OS-level preference path remains a separate manual check per docs/motion-flash-accessibility-policy.md.",
+    ],
+  };
+  await writeReportArtifacts(report);
+  return report;
+}
+
+async function runCapturePass(appPath, { passId, reducedMotion }) {
+  const profile = await mkdtemp(join(tmpdir(), PROFILE_PREFIX));
+  assertValidatedTempProfile(profile);
+  const child = spawn(
+    appPath,
+    [
+      `--user-data-dir=${profile}`,
+      "--remote-debugging-port=0",
+      "--remote-allow-origins=*",
+      "--no-first-run",
+    ],
+    {
+      cwd: projectRoot,
+      detached: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false,
+    },
+  );
+  const output = captureBoundedOutput(child, 8_192);
+  const navigationBudgetMs = SEQUENCE_PLAN.reduce((sum, seq) => sum + seq.durationMs + NAVIGATION_TIMEOUT_MS, 0);
+  const deadline = Date.now() + LAUNCH_TIMEOUT_MS + navigationBudgetMs + NAVIGATION_TIMEOUT_MS * 3;
+  let cdp;
+  const sequences = [];
+
+  try {
+    const port = await waitForDevToolsPort(profile, child, deadline, output);
+    const target = await waitForPageTarget(port, child, deadline, output);
+    cdp = await CdpClient.connect(target.webSocketDebuggerUrl, deadline);
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+    await cdp.send("Network.enable");
+    await cdp.send("Log.enable");
+    assertNoFatalCdpEvents(cdp.takeFatalEvents());
+
+    // A fresh isolated profile always starts at the real first-run setup
+    // screen (the packaged app's authoritative save lives behind the
+    // `window.desktop` bridge, not localStorage — see
+    // src/lib/durablePersistence.ts). Walk it the same way the existing
+    // packaged input smoke (scripts/audit-packaged-input-smoke.mjs) does, so
+    // the reduced-motion pass exercises the app's real saved Reduce Motion
+    // setting instead of a synthetic override.
+    await waitForSelector(
+      cdp,
+      child,
+      output,
+      deadline,
+      ".first-run-options label:nth-of-type(1) input[type=checkbox]",
+      "first-run reduced-motion checkbox",
+    );
+    if (reducedMotion) {
+      await clickSelector(cdp, ".first-run-options label:nth-of-type(1) input[type=checkbox]");
+    }
+    await clickSelectorWithText(cdp, "button", "Save and continue");
+
+    // Sequence 1: title/menu ambient loop (Play/Settings screen).
+    await waitForSelector(cdp, child, output, deadline, ".home-reference", "title/menu screen");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("title-menu")));
+
+    // Sequence 2: mode selection.
+    await clickSelector(cdp, ".home-reference__hit--play");
+    await delay(250);
+    await clickIfPresent(cdp, "#play-chip-ack-title ~ .startup-gate__actions button");
+    await waitForSelector(cdp, child, output, deadline, ".mode-stage", "mode selection screen");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("mode-select")));
+
+    // Sequence 3: room fly-through start (Normal mode -> live tournament arrival).
+    await clickSelector(cdp, ".mode-stage__choice--normal");
+    await clickSelectorWithText(cdp, "button", "Enter event");
+    await waitForSelector(cdp, child, output, deadline, ".room-flight", "room fly-through");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("room-flythrough-start")));
+    // The capture burst above can outlast the flythrough's own auto-complete
+    // timer (the flythrough is not paused for screenshotting), so the skip
+    // control may already be gone by the time we get here; either path leads
+    // to the live table next, so a missing skip button is not a failure.
+    await clickIfPresent(cdp, ".room-flight__skip");
+
+    // Sequence 4: first dealt hand (live tournament table, chip/card motion).
+    await waitForSelector(cdp, child, output, deadline, ".poker-table", "live tournament table");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("dealt-hand")));
+
+    assertNoFatalCdpEvents(cdp.takeFatalEvents());
+  } finally {
+    try {
+      cdp?.close();
+    } catch {
+      // Exact process-tree termination remains authoritative.
+    }
+    let terminationError;
+    let cleanupError;
+    try {
+      await terminateProcessTree(child);
+    } catch (error) {
+      terminationError = error;
+    }
+    try {
+      await removeValidatedTempProfile(profile);
+    } catch (error) {
+      cleanupError = error;
+    }
+    if (terminationError || cleanupError) {
+      throw new AggregateError(
+        [terminationError, cleanupError].filter(Boolean),
+        `Flash-capture pass "${passId}" cleanup failed.`,
+      );
+    }
+  }
+
+  return {
+    passId,
+    reducedMotionSetting: reducedMotion,
+    sequences,
+    pass: sequences.every((sequence) => sequence.pass),
+  };
+}
+
+function sequenceById(id) {
+  const sequence = SEQUENCE_PLAN.find((candidate) => candidate.id === id);
+  if (!sequence) throw new Error(`Unknown sequence id: ${id}`);
+  return sequence;
+}
+
+async function captureAndAnalyzeSequence(cdp, sequenceDefinition) {
+  const rawFrames = await captureBurst(cdp, sequenceDefinition.durationMs);
+  const frames = rawFrames.map((rawFrame) => {
+    const decoded = decodePng(Buffer.from(rawFrame.dataBase64, "base64"));
+    const summary = summarizeFramePixels(decoded.pixels, decoded.width, decoded.height, {
+      stride: ANALYSIS_PIXEL_STRIDE,
+    });
+    return {
+      timestampMs: rawFrame.timestampMs,
+      width: decoded.width,
+      height: decoded.height,
+      meanRelativeLuminance: round(summary.meanRelativeLuminance, 6),
+      saturatedRedCoverage: round(summary.saturatedRedCoverage, 6),
+    };
+  });
+  const evaluation = evaluateFlashSequence({ sequenceId: sequenceDefinition.id, frames });
+  const achievedMeanFrameIntervalMs =
+    frames.length > 1 ? round(evaluation.durationMs / (frames.length - 1), 1) : null;
+  return {
+    id: sequenceDefinition.id,
+    label: sequenceDefinition.label,
+    plannedDurationMs: sequenceDefinition.durationMs,
+    plannedCaptureIntervalMs: CAPTURE_INTERVAL_MS,
+    frameCount: frames.length,
+    capturedDurationMs: evaluation.durationMs,
+    // Actual achieved interval between screenshots, which on this host ran
+    // well above the CAPTURE_INTERVAL_MS request (CDP round-trip + PNG
+    // encode overhead). This bounds how fast a real flash could be and
+    // still be reliably detected by this run — see the report's
+    // limitations for the Nyquist-rate implication.
+    achievedMeanFrameIntervalMs,
+    frames,
+    generalFlash: {
+      maxPerSecond: evaluation.generalFlash.maxPerSecond,
+      eventCount: evaluation.generalFlash.events.length,
+      eventTimestampsMs: evaluation.generalFlash.events.map((event) => event.atMs),
+      pass: evaluation.generalFlash.pass,
+    },
+    redFlash: {
+      maxPerSecond: evaluation.redFlash.maxPerSecond,
+      eventCount: evaluation.redFlash.events.length,
+      eventTimestampsMs: evaluation.redFlash.events.map((event) => event.atMs),
+      pass: evaluation.redFlash.pass,
+    },
+    pass: evaluation.pass,
+  };
+}
+
+async function captureBurst(cdp, durationMs) {
+  const frames = [];
+  const start = Date.now();
+  const maxFrames = Math.ceil(durationMs / CAPTURE_INTERVAL_MS) + 2;
+  while (Date.now() - start < durationMs && frames.length < maxFrames) {
+    const frameStart = Date.now();
+    const shot = await cdp.send("Page.captureScreenshot", { format: "png" });
+    frames.push({ timestampMs: frameStart - start, dataBase64: shot.data });
+    const remaining = CAPTURE_INTERVAL_MS - (Date.now() - frameStart);
+    if (remaining > 0) await delay(remaining);
+  }
+  if (frames.length < 2) {
+    throw new Error("Flash capture burst produced fewer than two frames.");
+  }
+  return frames;
+}
+
+async function clickIfPresent(cdp, selector) {
+  const point = await selectorPoint(cdp, selector);
+  if (!point) return false;
+  await mouseClick(cdp, point.x, point.y);
+  await delay(180);
+  return true;
+}
+
+async function waitForSelector(cdp, child, output, deadline, selector, label) {
+  const localDeadline = Math.min(deadline, Date.now() + NAVIGATION_TIMEOUT_MS + 4_000);
+  while (Date.now() < localDeadline) {
+    if (child.exitCode !== null) {
+      throw new Error(
+        `Packaged app exited while waiting for ${label} (code ${child.exitCode}): ${output.stderr.slice(-300)}`,
+      );
+    }
+    const found = await evaluateBoolean(cdp, `document.querySelector(${JSON.stringify(selector)}) !== null`);
+    if (found) return;
+    await delay(50);
+  }
+  throw new Error(`Timed out waiting for ${label} (${selector}).`);
+}
+
+async function clickSelector(cdp, selector) {
+  const point = await selectorPoint(cdp, selector);
+  if (!point) throw new Error(`Click target not found or not clickable: ${selector}`);
+  await mouseClick(cdp, point.x, point.y);
+  await delay(180);
+}
+
+async function clickSelectorWithText(cdp, selector, exactText) {
+  const point = await selectorPoint(cdp, selector, exactText);
+  if (!point) throw new Error(`Click target not found: ${selector} with text "${exactText}"`);
+  await mouseClick(cdp, point.x, point.y);
+  await delay(180);
+}
+
+async function selectorPoint(cdp, selector, exactText) {
+  const result = await cdp.send("Runtime.evaluate", {
+    expression: `(() => {
+      const candidates = [...document.querySelectorAll(${JSON.stringify(selector)})];
+      const target = candidates.find((element) => {
+        if (!(element instanceof HTMLElement) || element.matches(':disabled')) return false;
+        return ${exactText === undefined ? "true" : `(element.textContent || '').trim() === ${JSON.stringify(exactText)}`};
+      });
+      if (!(target instanceof HTMLElement)) return null;
+      const box = target.getBoundingClientRect();
+      if (box.width < 2 || box.height < 2) return null;
+      return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    })()`,
+    returnByValue: true,
+  });
+  return result.result?.value ?? null;
+}
+
+async function mouseClick(cdp, x, y) {
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 });
+}
+
+async function evaluateBoolean(cdp, expression) {
+  const result = await cdp.send("Runtime.evaluate", { expression, returnByValue: true });
+  return result.result?.value === true;
+}
+
+async function readBuildIdentity(appPath) {
+  const [exeMetadata] = await Promise.all([stat(appPath)]);
+  return {
+    executable: {
+      fileName: basename(appPath),
+      sizeBytes: exeMetadata.size,
+      sha256: await sha256File(appPath),
+    },
+  };
+}
+
+function readHostIdentity() {
+  const cpuList = cpus();
+  const identity = {
+    platform: platform(),
+    osRelease: osRelease(),
+    osVersion: osVersion(),
+    architecture: arch(),
+    logicalCpuCount: cpuList.length,
+    cpuModels: [...new Set(cpuList.map((cpu) => cpu.model.trim()))].sort(),
+    totalMemoryBytes: totalmem(),
+    nodeVersion: process.versions.node,
+  };
+  return {
+    ...identity,
+    anonymousFingerprintSha256: createHash("sha256").update(canonicalJson(identity)).digest("hex"),
+  };
+}
+
+async function sha256File(filePath) {
+  const hash = createHash("sha256");
+  await new Promise((resolvePromise, reject) => {
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", resolvePromise);
+  });
+  return hash.digest("hex");
+}
+
+async function writeReportArtifacts(report) {
+  await mkdir(join(projectRoot, "work"), { recursive: true });
+  const lines = [
+    "# Packaged rendered flash/luminance analysis",
+    "",
+    `- Scope: one host, ${report.passes.length} capture passes (${report.capturedAt})`,
+    `- Method: implementation of the WCAG 2.3.1 thresholds (see scripts/release/flash-luminance-analysis-lib.mjs) — not a certified analysis tool.`,
+    `- Build: ${report.build.executable.fileName} (${report.build.executable.sha256.slice(0, 12)})`,
+    `- Host: ${report.host.osVersion}, ${report.host.logicalCpuCount} logical CPUs`,
+    `- Overall result: ${report.overallPass ? "PASS" : "FAIL"}`,
+    "",
+  ];
+  for (const pass of report.passes) {
+    lines.push(`## Pass: ${pass.passId} (reducedMotion=${pass.reducedMotionSetting})`, "");
+    lines.push("| Sequence | Frames | Achieved ms/frame | General flash/s (max) | Red flash/s (max) | Result |");
+    lines.push("| --- | --- | --- | --- | --- | --- |");
+    for (const sequence of pass.sequences) {
+      lines.push(
+        `| ${sequence.label} | ${sequence.frameCount} | ${sequence.achievedMeanFrameIntervalMs ?? "n/a"} | ${sequence.generalFlash.maxPerSecond} | ${sequence.redFlash.maxPerSecond} | ${sequence.pass ? "pass" : "FAIL"} |`,
+      );
+    }
+    lines.push("", `Pass result: ${pass.pass ? "PASS" : "FAIL"}`, "");
+  }
+  lines.push(
+    "This is one rendered capture pass per motion setting on one host. It does not replace a recognized",
+    "photosensitive-epilepsy analysis tool, the low-spec/typical/discrete-GPU hardware matrix, or manual",
+    "reduced-motion acceptance on the signed release candidate. See the JSON `limitations` field.",
+    "",
+  );
+  await atomicWrite(JSON_OUTPUT, canonicalJson(report));
+  await atomicWrite(SUMMARY_OUTPUT, `${lines.join("\n")}\n`);
+}
+
+async function atomicWrite(destination, contents) {
+  const temporary = `${destination}.${process.pid}.tmp`;
+  await writeFile(temporary, contents, { encoding: "utf8", flag: "w" });
+  await rename(temporary, destination);
+}
+
+async function removeValidatedTempProfile(profile) {
+  assertValidatedTempProfile(profile);
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(profile, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(100 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
+function assertValidatedTempProfile(profile) {
+  assertValidatedTemporaryProfile(profile, tmpdir(), PROFILE_PREFIX);
+}
+
+function round(value, digits) {
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
+}
+
+function delay(milliseconds) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+}
+
+function parseArguments(arguments_) {
+  let appPath = DEFAULT_APP;
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--app") {
+      appPath = arguments_[++index];
+      if (!appPath) throw new Error("--app requires a value.");
+    } else {
+      throw new Error(`Unknown argument: ${argument}`);
+    }
+  }
+  return { appPath };
+}
+
+const isMain =
+  typeof process.argv[1] === "string" && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+
+if (isMain) {
+  try {
+    const report = await runPackagedFlashCapture(parseArguments(process.argv.slice(2)));
+    console.log(
+      [
+        `Packaged flash/luminance analysis ${report.overallPass ? "passed" : "FAILED"}.`,
+        ...report.passes.map(
+          (pass) =>
+            `Pass ${pass.passId}: ${pass.pass ? "pass" : "FAIL"} (${pass.sequences
+              .map((sequence) => `${sequence.id}=${sequence.pass ? "pass" : "FAIL"}`)
+              .join(", ")}).`,
+        ),
+        `JSON: ${relative(projectRoot, JSON_OUTPUT).split(sep).join("/")}.`,
+        `Summary: ${relative(projectRoot, SUMMARY_OUTPUT).split(sep).join("/")}.`,
+      ].join(" "),
+    );
+    if (!report.overallPass) process.exitCode = 1;
+  } catch (error) {
+    console.error(
+      `Packaged flash/luminance analysis failed to run: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+    process.exitCode = 1;
+  }
+}

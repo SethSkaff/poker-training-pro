@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { formatDateTime } from "../lib/format";
+import { formatMessage } from "../lib/localeMessages";
 import type {
   DurableResult,
   DurableSaveReceipt,
@@ -58,7 +59,7 @@ export function RecoveryScreen({
       }
       if ("boundary" in result.value) onRecovered(result.value);
     } catch {
-      setError("The recovery action could not be completed.");
+      setError(formatMessage("recovery.error.generic"));
     } finally {
       setBusy(undefined);
     }
@@ -71,38 +72,41 @@ export function RecoveryScreen({
       : undefined;
   const busyMessage =
     busy === "restore"
-      ? "Restoring your protected save…"
+      ? formatMessage("recovery.busy.restore")
       : busy === "export-save"
-        ? "Exporting your save…"
+        ? formatMessage("recovery.busy.exportSave")
         : busy === "export-diagnostics"
-          ? "Exporting recovery diagnostics…"
+          ? formatMessage("recovery.busy.exportDiagnostics")
           : busy === "start-fresh"
-            ? "Archiving the old save and starting fresh…"
+            ? formatMessage("recovery.busy.startFresh")
             : "";
 
   return (
     <main className={styles.shell} aria-labelledby="recovery-title">
       <section className={styles.panel}>
-        <p className={styles.eyebrow}>Save recovery</p>
-        <h1 id="recovery-title">Your progress is still protected</h1>
+        <p className={styles.eyebrow}>{formatMessage("recovery.eyebrow")}</p>
+        <h1 id="recovery-title">{formatMessage("recovery.title")}</h1>
         <p className={styles.summary}>{message}</p>
 
         {recommended ? (
-          <dl className={styles.preview} aria-label="Recovery save preview">
+          <dl
+            className={styles.preview}
+            aria-label={formatMessage("recovery.preview.ariaLabel")}
+          >
             <div>
-              <dt>Player</dt>
+              <dt>{formatMessage("recovery.preview.playerLabel")}</dt>
               <dd>{recommended.save.data.progress.playerName}</dd>
             </div>
             <div>
-              <dt>Training complete</dt>
+              <dt>{formatMessage("recovery.preview.trainingCompletedLabel")}</dt>
               <dd>{recommended.save.data.progress.trainingCompleted}</dd>
             </div>
             <div>
-              <dt>Saved</dt>
+              <dt>{formatMessage("recovery.preview.savedLabel")}</dt>
               <dd>
                 {recommended.savedAt
                   ? formatDateTime(recommended.savedAt)
-                  : "Recovery copy"}
+                  : formatMessage("recovery.preview.savedFallback")}
               </dd>
             </div>
           </dl>
@@ -124,10 +128,11 @@ export function RecoveryScreen({
                 void run("restore", () => actions.restore(recoverySource))
               }
             >
-              Restore{" "}
-              {recoverySource === "previous"
-                ? "previous save"
-                : "last-known-good save"}
+              {formatMessage(
+                recoverySource === "previous"
+                  ? "recovery.action.restorePrevious"
+                  : "recovery.action.restoreLastKnownGood",
+              )}
             </button>
           ) : null}
           <button
@@ -139,7 +144,7 @@ export function RecoveryScreen({
               )
             }
           >
-            Export save
+            {formatMessage("shell.action.exportSave")}
           </button>
           <button
             type="button"
@@ -148,7 +153,7 @@ export function RecoveryScreen({
               void run("export-diagnostics", actions.exportDiagnostics)
             }
           >
-            Export diagnostics
+            {formatMessage("shell.action.exportDiagnostics")}
           </button>
           <button
             className={styles.danger}
@@ -158,7 +163,7 @@ export function RecoveryScreen({
             aria-controls="start-fresh-confirmation"
             onClick={() => setConfirmFresh(true)}
           >
-            Start fresh
+            {formatMessage("recovery.action.startFresh")}
           </button>
           <div
             id="start-fresh-confirmation"
@@ -168,8 +173,7 @@ export function RecoveryScreen({
             hidden={!confirmFresh}
           >
             <p id="start-fresh-confirmation-label">
-              Starting fresh archives existing save files before creating a new
-              profile. Nothing is discarded silently. Continue?
+              {formatMessage("recovery.confirm.startFreshLabel")}
             </p>
             <div className={styles.confirmActions}>
               <button
@@ -180,14 +184,14 @@ export function RecoveryScreen({
                   void run("start-fresh", actions.startFresh);
                 }}
               >
-                Archive and start fresh
+                {formatMessage("recovery.confirm.startFreshAction")}
               </button>
               <button
                 type="button"
                 disabled={busy !== undefined}
                 onClick={() => setConfirmFresh(false)}
               >
-                Keep my progress
+                {formatMessage("recovery.confirm.keepProgress")}
               </button>
             </div>
           </div>
@@ -196,7 +200,7 @@ export function RecoveryScreen({
             disabled={busy !== undefined}
             onClick={actions.cancel}
           >
-            Cancel without changes
+            {formatMessage("recovery.action.cancelWithoutChanges")}
           </button>
         </div>
 

@@ -1,5 +1,6 @@
 import { ArrowRight, FastForward, Spade } from "lucide-react";
 import { useEffect, useState } from "react";
+import { formatMessage } from "../lib/localeMessages";
 import { useResilientAsset } from "../lib/useResilientAsset";
 import {
   FreezableDelay,
@@ -25,7 +26,7 @@ export function RoomFlythrough({
   const freezeGroup = useAwayFreezeGroup();
   const backgroundArt = useResilientAsset(
     "/start-menu-room.png",
-    "Championship-room background art",
+    formatMessage("flythrough.asset.backgroundLabel"),
   );
 
   useEffect(() => {
@@ -87,8 +88,8 @@ export function RoomFlythrough({
       <div className="room-flight__venue" aria-hidden="true">
         <div className="venue-marquee">
           <Spade size={20} />
-          <span>Poker Training Pro</span>
-          <strong>Championship Room</strong>
+          <span>{formatMessage("brand.name")}</span>
+          <strong>{formatMessage("flythrough.venue.name")}</strong>
         </div>
         <div className="venue-lights">
           {Array.from({ length: 8 }).map((_, index) => (
@@ -124,10 +125,10 @@ export function RoomFlythrough({
         </div>
         <span className="room-flight__status" aria-hidden="true">
           {phase === "loading"
-            ? "Preparing the room"
+            ? formatMessage("flythrough.status.preparing")
             : phase === "room"
-              ? "Crossing the championship floor"
-              : "Taking your seat"}
+              ? formatMessage("flythrough.status.crossing")
+              : formatMessage("flythrough.status.seating")}
         </span>
       </header>
 
@@ -142,24 +143,26 @@ export function RoomFlythrough({
 
       <div className="room-flight__route" aria-hidden="true">
         <span className={phase !== "loading" ? "is-complete" : "is-current"}>
-          Venue
+          {formatMessage("flythrough.route.venue")}
         </span>
         <i />
         <span className={phase === "room" ? "is-current" : phase === "seat" ? "is-complete" : ""}>
-          Table
+          {formatMessage("flythrough.route.table")}
         </span>
         <i />
-        <span className={phase === "seat" ? "is-current" : ""}>Your seat</span>
+        <span className={phase === "seat" ? "is-current" : ""}>
+          {formatMessage("flythrough.route.yourSeat")}
+        </span>
       </div>
 
       <button className="room-flight__skip" type="button" onClick={onComplete}>
         {phase === "seat" ? (
           <>
-            Sit down <ArrowRight size={17} />
+            {formatMessage("flythrough.button.sitDown")} <ArrowRight size={17} />
           </>
         ) : (
           <>
-            Skip arrival <FastForward size={17} />
+            {formatMessage("flythrough.button.skipArrival")} <FastForward size={17} />
           </>
         )}
       </button>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ExternalLink, FolderOpen } from "lucide-react";
 import { useCreditsResources } from "../lib/useCreditsResources";
+import { formatMessage } from "../lib/localeMessages";
 
 interface AboutSupportProps {
   onOpenCredits: () => void;
@@ -18,36 +19,37 @@ export function AboutSupport({
     if (!window.desktop) return;
     const result = await window.desktop.openFolder(target);
     setStatus(
-      result.ok
-        ? `Opened the ${target} folder.`
-        : `The ${target} folder could not be opened.`,
+      formatMessage(result.ok ? "about.folder.opened" : "about.folder.failed", {
+        target,
+      }),
     );
   };
 
-  const version = appInfo?.appVersion ?? "Unavailable";
-  const buildId = appInfo?.buildId ?? "Unavailable";
+  const unavailable = formatMessage("about.unavailable");
+  const version = appInfo?.appVersion ?? unavailable;
+  const buildId = appInfo?.buildId ?? unavailable;
   const savePath = appInfo?.paths.save;
   const logPath = appInfo?.paths.log;
   const privacyText = documents["privacy-policy"];
 
   return (
     <div className="night-settings__group about-support">
-      <h2>About &amp; support</h2>
+      <h2>{formatMessage("about.heading")}</h2>
 
       <dl className="credits-versions">
         <div>
-          <dt>Version</dt>
+          <dt>{formatMessage("about.versionLabel")}</dt>
           <dd>{version}</dd>
         </div>
         <div>
-          <dt>Build identifier</dt>
+          <dt>{formatMessage("about.buildIdLabel")}</dt>
           <dd>{buildId}</dd>
         </div>
       </dl>
 
       <div className="about-support__links">
         <button type="button" onClick={onOpenCredits}>
-          Credits &amp; licenses
+          {formatMessage("credits.title")}
         </button>
         {onExportDiagnostics ? (
           <button
@@ -56,74 +58,74 @@ export function AboutSupport({
               void onExportDiagnostics().then((result) =>
                 setStatus(
                   result.message ??
-                    (result.ok
-                      ? "Redacted diagnostics exported."
-                      : "Diagnostics export failed."),
+                    formatMessage(
+                      result.ok
+                        ? "saveData.diagnostics.success"
+                        : "about.diagnostics.failed",
+                    ),
                 ),
               );
             }}
           >
-            Export diagnostics
+            {formatMessage("shell.action.exportDiagnostics")}
           </button>
         ) : null}
       </div>
 
       <div className="about-support__paths">
         <div>
-          <span className="about-support__path-label">Save location</span>
-          <code>{savePath ?? "Unavailable"}</code>
+          <span className="about-support__path-label">
+            {formatMessage("about.saveLocationLabel")}
+          </span>
+          <code>{savePath ?? unavailable}</code>
           {savePath ? (
             <button type="button" onClick={() => void openFolder("save")}>
-              <FolderOpen size={15} /> Open folder
+              <FolderOpen size={15} /> {formatMessage("about.openFolder")}
             </button>
           ) : null}
         </div>
         <div>
-          <span className="about-support__path-label">Log location</span>
-          <code>{logPath ?? "Unavailable"}</code>
+          <span className="about-support__path-label">
+            {formatMessage("about.logLocationLabel")}
+          </span>
+          <code>{logPath ?? unavailable}</code>
           {logPath ? (
             <button type="button" onClick={() => void openFolder("log")}>
-              <FolderOpen size={15} /> Open folder
+              <FolderOpen size={15} /> {formatMessage("about.openFolder")}
             </button>
           ) : null}
         </div>
       </div>
 
       <div className="about-support__privacy">
-        <h3>Privacy</h3>
-        <p>
-          This build plays fully offline with no account, ads, analytics, or
-          remote uploads. The full policy is bundled below.
-        </p>
+        <h3>{formatMessage("about.privacyHeading")}</h3>
+        <p>{formatMessage("about.privacyIntro")}</p>
         <details className="credits-doc">
-          <summary>Privacy policy</summary>
+          <summary>{formatMessage("about.privacyPolicySummary")}</summary>
           {privacyText ? (
             <pre className="credits-doc__text">{privacyText}</pre>
           ) : (
             <p className="credits-doc__missing">
-              The bundled privacy policy is unavailable in this preview.
+              {formatMessage("about.privacyPolicyUnavailable")}
             </p>
           )}
         </details>
         <p className="about-support__blocked">
-          <ExternalLink size={13} aria-hidden="true" /> A stable public HTTPS
-          copy of this policy is a separate item that is still blocked pending
-          the publisher.
+          <ExternalLink size={13} aria-hidden="true" />{" "}
+          {formatMessage("about.privacyPolicyBlocked")}
         </p>
       </div>
 
       <div className="about-support__contact">
-        <h3>Support</h3>
+        <h3>{formatMessage("about.supportHeading")}</h3>
         <p className="about-support__blocked">
-          Support contact: pending publisher assignment. No email or web address
-          is published yet.
+          {formatMessage("about.supportBlocked")}
         </p>
       </div>
 
       {desktopUnavailable ? (
         <p className="night-audio-preview-status" role="status">
-          Version, folder, and bundled-document details are available in the
-          desktop app.
+          {formatMessage("about.desktopUnavailable")}
         </p>
       ) : null}
       {status ? (

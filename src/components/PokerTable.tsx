@@ -40,6 +40,7 @@ import {
   formatFixedDecimal,
 } from "../lib/format";
 import { gameAudio } from "../lib/audio";
+import { formatMessage } from "../lib/localeMessages";
 import {
   detectContextualPromptOccurrences,
   loadContextualPromptState,
@@ -168,17 +169,30 @@ export function buildPokerTableAnnouncement({
 }): string {
   const street = `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`;
   const board = scenario.board.length
-    ? `Board: ${scenario.board.map(cardAriaLabel).join(", ")}.`
-    : "No community cards yet.";
+    ? formatMessage("table.announce.board", {
+        cards: scenario.board.map(cardAriaLabel).join(", "),
+      })
+    : formatMessage("table.announce.noBoard");
   const decision = action
-    ? `You submitted ${action.replace("-", " ")}.`
+    ? formatMessage("table.announce.submittedAction", {
+        action: action.replace("-", " "),
+      })
     : scenario.amountToCall > 0
-      ? `${formatChips(scenario.amountToCall)} to call.`
-      : "You may check or bet.";
+      ? formatMessage("table.announce.amountToCall", {
+          amount: formatChips(scenario.amountToCall),
+        })
+      : formatMessage("table.announce.mayCheckOrBet");
   return [
-    `${street}. Pot ${formatChips(scenario.pot)}.`,
+    formatMessage("table.announce.streetPot", {
+      street,
+      pot: formatChips(scenario.pot),
+    }),
     board,
-    latestPublicAction ? `Latest public action: ${latestPublicAction}.` : "",
+    latestPublicAction
+      ? formatMessage("table.announce.latestPublicAction", {
+          action: latestPublicAction,
+        })
+      : "",
     decision,
   ]
     .filter(Boolean)
@@ -199,7 +213,7 @@ function PlayingCard({
       <span
         className={`playing-card playing-card--back ${small ? "playing-card--small" : ""}`}
         role="img"
-        aria-label="Face-down card"
+        aria-label={formatMessage("cards.faceDown")}
       >
         <i />
       </span>
@@ -309,7 +323,7 @@ function PlayerSeat({
         )}
       </div>
       <div className="seat-label" aria-hidden="true">
-        <strong>{isHero ? "You" : player.name}</strong>
+        <strong>{isHero ? formatMessage("table.seat.you") : player.name}</strong>
         <span>
           <ChipStack /> {formatChips(player.stack)}
         </span>
@@ -320,12 +334,26 @@ function PlayerSeat({
           <b>{formatChips(player.bet)}</b>
         </div>
       )}
-      {isFolded && <span className="seat-state" aria-hidden="true">Folded</span>}
-      {player.status === "all-in" && !wonPot && (
-        <span className="seat-state seat-state--all-in" aria-hidden="true">All-in</span>
+      {isFolded && (
+        <span className="seat-state" aria-hidden="true">
+          {formatMessage("table.seat.folded")}
+        </span>
       )}
-      {isOut && <span className="seat-state seat-state--out" aria-hidden="true">Out</span>}
-      {wonPot && <span className="seat-state seat-state--winner" aria-hidden="true">Won pot</span>}
+      {player.status === "all-in" && !wonPot && (
+        <span className="seat-state seat-state--all-in" aria-hidden="true">
+          {formatMessage("table.seat.allIn")}
+        </span>
+      )}
+      {isOut && (
+        <span className="seat-state seat-state--out" aria-hidden="true">
+          {formatMessage("table.seat.out")}
+        </span>
+      )}
+      {wonPot && (
+        <span className="seat-state seat-state--winner" aria-hidden="true">
+          {formatMessage("table.seat.wonPot")}
+        </span>
+      )}
     </div>
   );
 }
@@ -361,29 +389,31 @@ function MathPanel({
   const resultClass = result?.correct ? "correct" : "incorrect";
   const answerPlaceholder =
     question.unit === "%"
-      ? "33%, 1/3, or 2:1"
+      ? formatMessage("table.math.placeholder.percent")
       : question.unit === "ratio"
-        ? "0.6 or 3:5"
+        ? formatMessage("table.math.placeholder.ratio")
         : question.unit === "outs"
-          ? "Number of outs"
-          : "Chip amount";
+          ? formatMessage("table.math.placeholder.outs")
+          : formatMessage("table.math.placeholder.chips");
 
   return (
-    <aside className="training-panel" aria-label="Training math question">
+    <aside className="training-panel" aria-label={formatMessage("table.math.ariaLabel")}>
       <div className="training-panel__heading">
         <span className="training-panel__icon">
           <Sigma size={20} />
         </span>
         <div>
-          <p className="eyebrow">Show your work · Optional</p>
+          <p className="eyebrow">{formatMessage("table.math.eyebrow")}</p>
           <h2>{title}</h2>
         </div>
-        <span className="xp-chip">Math Elo {mathElo}</span>
+        <span className="xp-chip">
+          {formatMessage("table.math.eloChip", { mathElo })}
+        </span>
       </div>
 
       <div className="question-context">
         <span>
-          <Info size={14} /> Use an estimate
+          <Info size={14} /> {formatMessage("table.math.useEstimate")}
         </span>
         <p>{scenario.prompt}</p>
       </div>
@@ -424,14 +454,17 @@ function MathPanel({
           <div>
             <strong>
               {result.correct
-                ? "Inside the range"
+                ? formatMessage("table.math.result.correct")
                 : result.close
-                  ? "Near miss"
-                  : "Not quite"}
+                  ? formatMessage("table.math.result.close")
+                  : formatMessage("table.math.result.incorrect")}
             </strong>
             <small>
-              Accepted estimate: {formatFixedDecimal(lower, 2)}–{formatFixedDecimal(upper, 2)}
-              {question.unit}
+              {formatMessage("table.math.acceptedEstimate", {
+                lower: formatFixedDecimal(lower, 2),
+                upper: formatFixedDecimal(upper, 2),
+                unit: question.unit,
+              })}
             </small>
           </div>
         </div>
@@ -442,16 +475,18 @@ function MathPanel({
           onClick={onSubmit}
           disabled={answer.trim() === ""}
         >
-          Check estimate
+          {formatMessage("table.math.checkEstimate")}
         </button>
       )}
 
       <div className="training-hint">
         <Lightbulb size={16} />
         <span>
-          <strong>One linked question</strong>
-          Accepted tolerance: ±{question.tolerance}
-          {question.unit}.
+          <strong>{formatMessage("table.math.hintTitle")}</strong>
+          {formatMessage("table.math.tolerance", {
+            tolerance: question.tolerance,
+            unit: question.unit,
+          })}
         </span>
       </div>
     </aside>
@@ -484,12 +519,12 @@ function FeedbackPanel({
     : graded.mathEloAfter - graded.mathEloDelta;
   const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
   const mathLabel = !mathAttempted
-    ? "skipped"
+    ? formatMessage("table.feedback.math.skipped")
     : graded.math.correct
-      ? "correct"
+      ? formatMessage("table.feedback.math.correct")
       : graded.math.close
-        ? "near miss"
-        : "incorrect";
+        ? formatMessage("table.feedback.math.nearMiss")
+        : formatMessage("table.feedback.math.incorrect");
 
   return (
     <aside className="feedback-panel" aria-live="polite">
@@ -498,29 +533,37 @@ function FeedbackPanel({
           {actionPositive ? <Check size={24} /> : <X size={24} />}
         </span>
         <div>
-          <p className="eyebrow">Decision review</p>
+          <p className="eyebrow">{formatMessage("table.feedback.eyebrow")}</p>
           <h2>
             {actionCorrect
-              ? "Strong decision"
+              ? formatMessage("table.feedback.strongDecision")
               : graded.action.close
-                ? "Close decision"
-                : "Needs another look"}
+                ? formatMessage("table.feedback.closeDecision")
+                : formatMessage("table.feedback.needsAnotherLook")}
           </h2>
         </div>
       </div>
 
       <div className="rating-delta">
-        <span>Decision Elo</span>
+        <span>{formatMessage("table.feedback.decisionEloLabel")}</span>
         <strong>{signed(decisionDelta)}</strong>
         <small>
-          {graded.decisionEloAfter} · Math {mathEloAfter} ({signed(mathDelta)})
+          {formatMessage("table.feedback.eloSummary", {
+            decisionEloAfter: graded.decisionEloAfter,
+            mathEloAfter,
+            mathDelta: signed(mathDelta),
+          })}
         </small>
       </div>
 
       <p className="feedback-lead">
         {actionCorrect || graded.action.close
           ? scenario.actionReason
-          : `You chose ${action.replace("-", " ")} and gave up ${formatFixedDecimal(graded.action.regret, 2)}bb versus the modeled best action, ${graded.action.bestAction}.`}
+          : formatMessage("table.feedback.chooseRegret", {
+              action: action.replace("-", " "),
+              regret: formatFixedDecimal(graded.action.regret, 2),
+              bestAction: graded.action.bestAction,
+            })}
       </p>
 
       <div className="feedback-math">
@@ -537,13 +580,14 @@ function FeedbackPanel({
 
       <div className="feedback-tags">
         <span>
-          Action: <b>{action}</b>
+          {formatMessage("table.feedback.actionLabel")} <b>{action}</b>
         </span>
         <span>
-          Math: <b>{mathLabel}</b>
+          {formatMessage("table.feedback.mathLabel")} <b>{mathLabel}</b>
         </span>
         <span>
-          Time: <b>{formatFixedDecimal(graded.timing.totalMs / 1000, 1)}s</b>
+          {formatMessage("table.feedback.timeLabel")}{" "}
+          <b>{formatFixedDecimal(graded.timing.totalMs / 1000, 1)}s</b>
         </span>
       </div>
 
@@ -586,32 +630,39 @@ function ModeSidePanel({
         <div>
           <p className="eyebrow">
             {timed
-              ? "Timed Table"
+              ? formatMessage("modes.timed.name")
               : mode === "rational"
-                ? "Rational Tour"
-                : "Normal Tour"}
+                ? formatMessage("modes.rationalTour")
+                : formatMessage("modes.normalTour")}
           </p>
-          <h2>{timed ? "Beat the clock" : "Tournament table"}</h2>
+          <h2>
+            {timed
+              ? formatMessage("table.modePreview.timedHeading")
+              : formatMessage("table.modePreview.tournamentHeading")}
+          </h2>
         </div>
       </div>
       <p className="mode-preview-panel__copy">
         {timed
-          ? "Normal opponents share one escalating table. The blind director increases pressure as your deadline approaches."
+          ? formatMessage("table.modePreview.timedCopy")
           : mode === "rational"
-          ? "Opponents follow explicit range, equity, and pot-odds policies. Review their logic after the hand."
-          : "Opponents stay fundamentally sound while changing tempo, bluff frequency, and pressure."}
+          ? formatMessage("table.modePreview.rationalCopy")
+          : formatMessage("table.modePreview.normalCopy")}
       </p>
       <div className="opponent-read">
-        <span>Your seat</span>
-        <strong>{hero?.name ?? "Player"}</strong>
+        <span>{formatMessage("table.modePreview.yourSeat")}</span>
+        <strong>{hero?.name ?? formatMessage("table.modePreview.playerFallback")}</strong>
         <small>
-          Hand {tournament.handNumber} · {tournament.playersRemaining} of{" "}
-          {tournament.fieldSize} players remain
+          {formatMessage("table.modePreview.handSummary", {
+            handNumber: tournament.handNumber,
+            playersRemaining: tournament.playersRemaining,
+            fieldSize: tournament.fieldSize,
+          })}
         </small>
       </div>
       {timeRemaining !== undefined && (
         <div className="opponent-read">
-          <span>Scheduled time remaining</span>
+          <span>{formatMessage("table.modePreview.timeRemainingLabel")}</span>
           <strong>
             {Math.floor(timeRemaining / 60_000)}:
             {String(Math.floor((timeRemaining % 60_000) / 1000)).padStart(
@@ -619,16 +670,14 @@ function ModeSidePanel({
               "0",
             )}
           </strong>
-          <small>
-            Blinds only rise; deadline pressure forces the field toward heads-up.
-          </small>
+          <small>{formatMessage("table.modePreview.blindsRiseNote")}</small>
         </div>
       )}
       <div className="training-hint">
         <CircleHelp size={16} />
         <span>
-          <strong>Information-set play</strong>
-          Opponents cannot inspect hidden cards.
+          <strong>{formatMessage("table.modePreview.infoSetTitle")}</strong>
+          {formatMessage("table.modePreview.infoSetMessage")}
         </span>
       </div>
     </aside>
@@ -842,8 +891,10 @@ export function PokerTable({
             ...(data.lastAction ? { lastAction: data.lastAction } : {}),
             currentDecision:
               data.amountToCall > 0
-                ? `Call ${formatChips(data.amountToCall)} to continue, raise, or fold.`
-                : "Check, bet, or fold.",
+                ? formatMessage("table.recap.callToContinue", {
+                    amount: formatChips(data.amountToCall),
+                  })
+                : formatMessage("table.recap.checkBetOrFold"),
             ...(data.handNumber !== undefined
               ? { handNumber: data.handNumber }
               : {}),
@@ -992,7 +1043,7 @@ export function PokerTable({
         mode === "training" &&
         trainingMeta?.actionEvs[nextAction] === undefined
       ) {
-        setActionError("That action is not available in this practice scenario.");
+        setActionError(formatMessage("table.error.actionUnavailable"));
         gameAudio.play("error");
         return;
       }
@@ -1373,7 +1424,11 @@ export function PokerTable({
     const value = parseMathAnswer(mathAnswer, scenario.mathQuestion.unit);
     if (value === undefined) {
       setMathError(
-        `Enter a valid ${scenario.mathQuestion.unit === "%" ? "percentage, fraction, or ratio" : scenario.mathQuestion.unit} estimate.`,
+        scenario.mathQuestion.unit === "%"
+          ? formatMessage("table.error.mathEstimatePercent")
+          : formatMessage("table.error.mathEstimateGeneric", {
+              unit: scenario.mathQuestion.unit,
+            }),
       );
       gameAudio.play("error");
       return;
@@ -1415,10 +1470,10 @@ export function PokerTable({
 
   const modeTitle =
     mode === "training"
-      ? "Training Lab"
+      ? formatMessage("table.modeTitle.training")
       : mode === "rational"
-        ? "Rational Circuit"
-        : "Normal Tournament";
+        ? formatMessage("table.modeTitle.rational")
+        : formatMessage("table.modeTitle.normal");
   const scenarioNumber =
     trainingScenarios.findIndex((item) => item.id === scenario.id) + 1;
   const heroStack =
@@ -1495,17 +1550,22 @@ export function PokerTable({
       </p>
       <header className="table-topbar">
         <button className="table-exit" type="button" onClick={onExit}>
-          <ArrowLeft size={18} /> Leave table
+          <ArrowLeft size={18} /> {formatMessage("table.exit")}
         </button>
         <div className="table-session">
           <p className="eyebrow">{modeTitle}</p>
           <strong>{scenario.title}</strong>
           <span>
             {mode === "training"
-              ? `Scenario ${Math.max(1, scenarioNumber)} of ${trainingScenarios.length}`
-              : `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)} · ${
-                  tournament?.playersRemaining ?? scenario.players.length
-                } players remain`}
+              ? formatMessage("table.status.scenarioProgress", {
+                  number: Math.max(1, scenarioNumber),
+                  total: trainingScenarios.length,
+                })
+              : formatMessage("table.status.streetPlayersRemain", {
+                  street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
+                  playersRemaining:
+                    tournament?.playersRemaining ?? scenario.players.length,
+                })}
           </span>
         </div>
         <div className="table-tools">
@@ -1528,13 +1588,13 @@ export function PokerTable({
                 step="0.5"
                 value={speed}
                 onChange={(event) => setSpeed(Number(event.target.value))}
-                aria-label="Opponent presentation speed"
+                aria-label={formatMessage("shared.opponentPresentationSpeed")}
               />
             </label>
           )}
           <button
             type="button"
-            aria-label="Pause table"
+            aria-label={formatMessage("table.pauseButton.ariaLabel")}
             onClick={() => {
               pauseReasonRef.current = "manual";
               setResumeRecap(null);
@@ -1546,7 +1606,11 @@ export function PokerTable({
           </button>
           <button
             type="button"
-            aria-label={settings.muted ? "Unmute table audio" : "Mute table audio"}
+            aria-label={
+              settings.muted
+                ? formatMessage("table.audio.unmute")
+                : formatMessage("table.audio.mute")
+            }
             aria-pressed={settings.muted}
             onClick={() =>
               onSettingsChange({ ...settings, muted: !settings.muted })
@@ -1558,7 +1622,10 @@ export function PokerTable({
       </header>
 
       <div className="table-layout">
-        <section className="table-stage" aria-label="Six-seat poker table">
+        <section
+          className="table-stage"
+          aria-label={formatMessage("table.stageAriaLabel")}
+        >
           {actionError ? (
             <p className="table-action-alert" role="alert">
               <X size={16} aria-hidden="true" /> {actionError}
@@ -1567,9 +1634,12 @@ export function PokerTable({
           {arrivalVisible && tournament && (
             <div className="room-progress-overlay" aria-live="polite">
               <div>
-                <span>Championship progress</span>
+                <span>{formatMessage("table.arrival.progressLabel")}</span>
                 <strong>
-                  Hand {tournament.handNumber} · {tournament.playersRemaining} remain
+                  {formatMessage("table.arrival.handRemain", {
+                    handNumber: tournament.handNumber,
+                    playersRemaining: tournament.playersRemaining,
+                  })}
                 </strong>
               </div>
               <i>
@@ -1584,7 +1654,7 @@ export function PokerTable({
                   }}
                 />
               </i>
-              <small>Settling into the next hand</small>
+              <small>{formatMessage("table.arrival.settling")}</small>
             </div>
           )}
           <div className="room-lights" aria-hidden="true">
@@ -1599,17 +1669,17 @@ export function PokerTable({
               onClick={() =>
                 setCameraPan((value) => Math.max(-2, value - cameraStep))
               }
-              aria-label="Look one seat left"
+              aria-label={formatMessage("table.camera.left")}
             >
               <ChevronLeft size={17} />
             </button>
-            <span>Table view</span>
+            <span>{formatMessage("table.camera.viewLabel")}</span>
             <button
               type="button"
               onClick={() =>
                 setCameraPan((value) => Math.min(2, value + cameraStep))
               }
-              aria-label="Look one seat right"
+              aria-label={formatMessage("table.camera.right")}
             >
               <ChevronRight size={17} />
             </button>
@@ -1618,26 +1688,28 @@ export function PokerTable({
             <div className="poker-scene">
             <div className="poker-table">
               <div className="felt-ring">
-                <span className="felt-brand">PTP · CHAMPIONSHIP</span>
+                <span className="felt-brand">{formatMessage("table.felt.brand")}</span>
                 <div className="dealer">
                   <span className="dealer__head" />
                   <span className="dealer__body" />
-                  <b>DEALER</b>
+                  <b>{formatMessage("table.felt.dealerLabel")}</b>
                 </div>
 
                 <div className="table-readout">
-                  <span>Pot</span>
+                  <span>{formatMessage("table.readout.potLabel")}</span>
                   <strong>{formatChips(scenario.pot)}</strong>
                   <small>
-                    Blinds {formatChips(scenario.blinds[0])}/
-                    {formatChips(scenario.blinds[1])}
+                    {formatMessage("table.readout.blinds", {
+                      smallBlind: formatChips(scenario.blinds[0]),
+                      bigBlind: formatChips(scenario.blinds[1]),
+                    })}
                   </small>
                 </div>
 
                 <div
                   className="community-cards"
                   role="group"
-                  aria-label="Community cards"
+                  aria-label={formatMessage("table.communityCards.ariaLabel")}
                 >
                   {scenario.board.map((card, index) => (
                     <PlayingCard card={card} key={`${card.rank}-${index}`} />
@@ -1685,7 +1757,11 @@ export function PokerTable({
                   foldProgress >= 82 ? "is-ready" : ""
                 }`}
               >
-                <span>{foldProgress >= 82 ? "Release to fold" : "Keep dragging"}</span>
+                <span>
+                  {foldProgress >= 82
+                    ? formatMessage("table.fold.release")
+                    : formatMessage("table.fold.keepDragging")}
+                </span>
                 <i style={{ width: `${foldProgress}%` }} />
               </div>
             )}
@@ -1704,7 +1780,11 @@ export function PokerTable({
                   "--fold-offset": `${Math.min(foldProgress, 82) * -0.55}px`,
                 } as CSSProperties
               }
-              aria-label={`${peeked ? "Hide" : "Peek"} hole cards. Drag toward the dealer to fold.`}
+              aria-label={formatMessage("table.holeCards.ariaLabel", {
+                state: peeked
+                  ? formatMessage("table.holeCards.hide")
+                  : formatMessage("table.holeCards.peek"),
+              })}
               disabled={Boolean(action)}
             >
               <span className="hero-hole-cards__cards">
@@ -1720,7 +1800,9 @@ export function PokerTable({
               {!action && (
                 <span className="peek-label">
                   {peeked ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {peeked ? "Hide cards" : "Click to peek · Drag up to fold"}
+                  {peeked
+                    ? formatMessage("table.holeCards.hideCardsLabel")
+                    : formatMessage("table.holeCards.peekInstructions")}
                 </span>
               )}
             </button>
@@ -1729,32 +1811,36 @@ export function PokerTable({
           <div className="action-context">
             <div>
               <span>{scenario.prompt}</span>
-              <strong>{formatChips(scenario.amountToCall)} to call</strong>
+              <strong>
+                {formatMessage("table.actionContext.toCall", {
+                  amount: formatChips(scenario.amountToCall),
+                })}
+              </strong>
             </div>
             <button
               type="button"
               aria-expanded={historyOpen}
               onClick={() => setHistoryOpen((value) => !value)}
             >
-              <History size={15} /> Prior action
+              <History size={15} /> {formatMessage("table.history.button")}
             </button>
           </div>
 
           {historyOpen && (
             <aside
               className="hand-history-popover"
-              aria-label="Public hand history"
+              aria-label={formatMessage("table.history.ariaLabel")}
               role="dialog"
               aria-modal="true"
               tabIndex={-1}
               ref={historyRef}
             >
               <header>
-                <strong>Public action log</strong>
+                <strong>{formatMessage("table.history.heading")}</strong>
                 <button
                   type="button"
                   onClick={() => setHistoryOpen(false)}
-                  aria-label="Close hand history"
+                  aria-label={formatMessage("table.history.close")}
                 >
                   <X size={15} />
                 </button>
@@ -1766,7 +1852,7 @@ export function PokerTable({
                   ))}
                 </ol>
               ) : (
-                <p>No prior public action this session.</p>
+                <p>{formatMessage("table.history.empty")}</p>
               )}
             </aside>
           )}
@@ -1784,7 +1870,7 @@ export function PokerTable({
                 onClick={() => handleAction("fold")}
               >
                 <span>F</span>
-                <strong>Fold</strong>
+                <strong>{formatMessage("table.action.fold")}</strong>
               </button>
               <button
                 className="action-button action-button--call"
@@ -1801,8 +1887,10 @@ export function PokerTable({
                 <span>C</span>
                 <strong>
                   {scenario.amountToCall > 0
-                    ? `Call ${formatChips(scenario.amountToCall)}`
-                    : "Check"}
+                    ? formatMessage("table.action.callAmount", {
+                        amount: formatChips(scenario.amountToCall),
+                      })
+                    : formatMessage("table.action.check")}
                 </strong>
               </button>
               <button
@@ -1814,13 +1902,14 @@ export function PokerTable({
                 onClick={() => setRaiseOpen((value) => !value)}
               >
                 <span>R</span>
-                <strong>Raise to…</strong>
+                <strong>{formatMessage("table.action.raiseTo")}</strong>
               </button>
             </div>
           ) : (
             <div className="spectator-dock">
               <span>
-                <Check size={16} /> Action locked: {action}
+                <Check size={16} />{" "}
+                {formatMessage("table.spectator.actionLocked", { action })}
               </span>
               <div>
                 <button
@@ -1828,14 +1917,17 @@ export function PokerTable({
                   className={speed === 2 ? "is-active" : ""}
                   onClick={() => setSpeed(speed === 2 ? 1 : 2)}
                 >
-                  <FastForward size={15} /> {speed === 2 ? "Return to 1×" : "2×"}
+                  <FastForward size={15} />{" "}
+                  {speed === 2
+                    ? formatMessage("table.spectator.returnTo1x")
+                    : formatMessage("table.spectator.speed2x")}
                 </button>
                 <button
                   type="button"
                   onClick={() => pendingTournamentAction.current?.finish()}
                   aria-label="Skip opponent presentation and continue the hand"
                 >
-                  Skip to result
+                  {formatMessage("table.spectator.skipToResult")}
                 </button>
               </div>
             </div>
@@ -1846,18 +1938,18 @@ export function PokerTable({
               className="bet-composer"
               role="dialog"
               aria-modal="true"
-              aria-label="Build your raise"
+              aria-label={formatMessage("table.raise.heading")}
               tabIndex={-1}
               ref={raiseComposerRef as React.RefObject<HTMLDivElement>}
             >
               <header>
                 <span>
-                  <HandCoins size={17} /> Build your raise
+                  <HandCoins size={17} /> {formatMessage("table.raise.heading")}
                 </span>
                 <button
                   type="button"
                   onClick={() => setRaiseOpen(false)}
-                  aria-label="Close raise controls"
+                  aria-label={formatMessage("table.raise.close")}
                 >
                   <X size={16} />
                 </button>
@@ -1874,10 +1966,12 @@ export function PokerTable({
                     }}
                   >
                     {amount === allInAmount
-                      ? "All-in"
+                      ? formatMessage("table.raise.presetAllIn")
                       : index === 0
-                        ? "Min"
-                        : `${Math.round((amount / scenario.pot) * 100)}% pot`}
+                        ? formatMessage("table.raise.presetMin")
+                        : formatMessage("table.raise.presetPercentPot", {
+                            percent: Math.round((amount / scenario.pot) * 100),
+                          })}
                   </button>
                 ))}
               </div>
@@ -1889,11 +1983,15 @@ export function PokerTable({
                   step={scenario.blinds[1]}
                   value={raiseAmount}
                   onChange={(event) => setRaiseAmount(Number(event.target.value))}
-                  aria-label="Raise amount"
+                  aria-label={formatMessage("table.raise.amountAriaLabel")}
                 />
                 <output>
                   <strong>{formatChips(raiseAmount)}</strong>
-                  <span>{Math.round(raiseAmount / scenario.blinds[1])} BB</span>
+                  <span>
+                    {formatMessage("table.raise.bbSuffix", {
+                      bb: Math.round(raiseAmount / scenario.blinds[1]),
+                    })}
+                  </span>
                 </output>
                 <button
                   className="primary-button"
@@ -1903,8 +2001,10 @@ export function PokerTable({
                   }
                 >
                   {raiseAmount >= allInAmount
-                    ? "Confirm all-in"
-                    : `Raise to ${formatChips(raiseAmount)}`}
+                    ? formatMessage("table.raise.confirmAllIn")
+                    : formatMessage("table.raise.raiseToAmount", {
+                        amount: formatChips(raiseAmount),
+                      })}
                 </button>
               </div>
             </div>
@@ -1950,7 +2050,7 @@ export function PokerTable({
           aria-labelledby="context-coach-title"
           aria-describedby="context-coach-message"
         >
-          <span className="context-coach__badge">Table tip</span>
+          <span className="context-coach__badge">{formatMessage("table.coach.badge")}</span>
           <h2 id="context-coach-title">{activePrompt.title}</h2>
           <p id="context-coach-message">{activePrompt.message}</p>
           <div>
@@ -1973,7 +2073,7 @@ export function PokerTable({
                 updateCoachState({ ...coachState, enabled: false })
               }
             >
-              Turn off tips
+              {formatMessage("table.coach.turnOff")}
             </button>
           </div>
         </aside>
@@ -1993,7 +2093,7 @@ export function PokerTable({
             ))}
           </ul>
           <button type="button" onClick={() => setResumeRecap(null)}>
-            Continue
+            {formatMessage("common.continue")}
           </button>
         </aside>
       ) : null}
@@ -2008,17 +2108,17 @@ export function PokerTable({
             aria-modal="true"
             aria-labelledby="pause-title"
           >
-            <p className="eyebrow">Table paused</p>
+            <p className="eyebrow">{formatMessage("table.pause.eyebrow")}</p>
             <h2 id="pause-title">
               {pausePage === "menu"
-                ? "Take your time"
+                ? formatMessage("table.pause.menuTitle")
                 : pausePage === "controls"
-                  ? "Table controls"
+                  ? formatMessage("table.pause.controlsTitle")
                   : pausePage === "settings"
-                    ? "Table settings"
+                    ? formatMessage("table.pause.settingsTitle")
                     : pausePage === "remap"
-                      ? "Remap controls"
-                      : "Poker quick reference"}
+                      ? formatMessage("table.pause.remapTitle")
+                      : formatMessage("table.pause.referenceTitle")}
             </h2>
 
             {pausePage === "menu" ? (
@@ -2029,16 +2129,16 @@ export function PokerTable({
                   autoFocus
                   onClick={() => setPaused(false)}
                 >
-                  Resume table
+                  {formatMessage("table.pause.resume")}
                 </button>
                 <button type="button" onClick={() => setPausePage("controls")}>
-                  Controls & hotkeys
+                  {formatMessage("table.pause.controlsLink")}
                 </button>
                 <button type="button" onClick={() => setPausePage("settings")}>
-                  Settings
+                  {formatMessage("common.settings")}
                 </button>
                 <button type="button" onClick={() => setPausePage("reference")}>
-                  Hand & math reference
+                  {formatMessage("table.pause.referenceLink")}
                 </button>
                 <label className="pause-menu__coach-toggle">
                   <input
@@ -2051,7 +2151,7 @@ export function PokerTable({
                       })
                     }
                   />
-                  Show first-time table tips
+                  {formatMessage("table.pause.showTips")}
                 </label>
                 <button
                   type="button"
@@ -2061,7 +2161,7 @@ export function PokerTable({
                     setPaused(false);
                   }}
                 >
-                  Replay contextual tips
+                  {formatMessage("table.pause.replayTips")}
                 </button>
                 {mode === "training" ? (
                   <button
@@ -2072,44 +2172,43 @@ export function PokerTable({
                       setPaused(false);
                     }}
                   >
-                    Restart practice scenario (unscored)
+                    {formatMessage("table.pause.restartPractice")}
                   </button>
                 ) : null}
                 <button className="pause-menu__leave" type="button" onClick={onExit}>
                   {tournament
-                    ? "Leave scored tournament and return to menu"
-                    : "Leave practice and return to menu"}
+                    ? formatMessage("table.pause.leaveTournament")
+                    : formatMessage("table.pause.leavePractice")}
                 </button>
               </div>
             ) : pausePage === "controls" ? (
               <>
                 <dl className="pause-reference-grid">
-                  <div><dt>F</dt><dd>Fold</dd></div>
-                  <div><dt>C</dt><dd>Check / call</dd></div>
-                  <div><dt>R</dt><dd>Custom raise</dd></div>
-                  <div><dt>2 / 5 / 3</dt><dd>2× / 2.5× / 3× BB</dd></div>
-                  <div><dt>P / A</dt><dd>Pot / all-in</dd></div>
-                  <div><dt>Space</dt><dd>Peek / hide cards</dd></div>
-                  <div><dt>Q / E / X</dt><dd>Look left / right / center</dd></div>
-                  <div><dt>[ / ]</dt><dd>Opponent speed</dd></div>
+                  <div><dt>F</dt><dd>{formatMessage("table.action.fold")}</dd></div>
+                  <div><dt>C</dt><dd>{formatMessage("table.controls.checkCall")}</dd></div>
+                  <div><dt>R</dt><dd>{formatMessage("table.controls.customRaise")}</dd></div>
+                  <div><dt>2 / 5 / 3</dt><dd>{formatMessage("table.controls.quickRaiseSizes")}</dd></div>
+                  <div><dt>P / A</dt><dd>{formatMessage("table.controls.potAllIn")}</dd></div>
+                  <div><dt>Space</dt><dd>{formatMessage("table.controls.peekHide")}</dd></div>
+                  <div><dt>Q / E / X</dt><dd>{formatMessage("table.controls.cameraLookDesc")}</dd></div>
+                  <div><dt>[ / ]</dt><dd>{formatMessage("table.controls.opponentSpeedDesc")}</dd></div>
                 </dl>
                 <p className="pause-menu__hint">
-                  Controller: A check/call, X fold, Y raise, LB peek, View pause,
-                  d-pad camera. B goes back in menus.
+                  {formatMessage("table.controls.controllerHint")}
                 </p>
                 <button
                   className="secondary-button secondary-button--wide"
                   type="button"
                   onClick={() => setPausePage("remap")}
                 >
-                  Remap controls…
+                  {formatMessage("table.pause.remapLink")}
                 </button>
                 <button
                   className="secondary-button secondary-button--wide"
                   type="button"
                   onClick={() => setPausePage("menu")}
                 >
-                  Back
+                  {formatMessage("table.pause.back")}
                 </button>
               </>
             ) : pausePage === "remap" ? (
@@ -2124,13 +2223,16 @@ export function PokerTable({
               <>
                 <div className="pause-settings">
                   <label>
-                    <span>Master volume <b>{settings.masterVolume}%</b></span>
+                    <span>
+                      {formatMessage("table.settings.masterVolumeLabel")}{" "}
+                      <b>{settings.masterVolume}%</b>
+                    </span>
                     <input
                       type="range"
                       min="0"
                       max="100"
                       value={settings.masterVolume}
-                      aria-label="Master volume"
+                      aria-label={formatMessage("table.settings.masterVolumeLabel")}
                       onChange={(event) =>
                         onSettingsChange({
                           ...settings,
@@ -2150,7 +2252,7 @@ export function PokerTable({
                         })
                       }
                     />
-                    Mute all audio
+                    {formatMessage("table.settings.muteAll")}
                   </label>
                   <label className="pause-settings__toggle">
                     <input
@@ -2163,7 +2265,7 @@ export function PokerTable({
                         })
                       }
                     />
-                    Reduce motion
+                    {formatMessage("table.settings.reduceMotion")}
                   </label>
                   <label className="pause-settings__toggle">
                     <input
@@ -2176,7 +2278,7 @@ export function PokerTable({
                         })
                       }
                     />
-                    High contrast and four-color deck
+                    {formatMessage("table.settings.highContrast")}
                   </label>
                 </div>
                 <button
@@ -2184,44 +2286,75 @@ export function PokerTable({
                   type="button"
                   onClick={() => setPausePage("menu")}
                 >
-                  Back
+                  {formatMessage("table.pause.back")}
                 </button>
               </>
             ) : (
               <>
                 <ol className="hand-ranking-list">
-                  <li>Royal flush</li><li>Straight flush</li><li>Four of a kind</li>
-                  <li>Full house</li><li>Flush</li><li>Straight</li>
-                  <li>Three of a kind</li><li>Two pair</li><li>Pair</li><li>High card</li>
+                  <li>{formatMessage("table.handRank.royalFlush")}</li>
+                  <li>{formatMessage("table.handRank.straightFlush")}</li>
+                  <li>{formatMessage("table.handRank.fourOfAKind")}</li>
+                  <li>{formatMessage("table.handRank.fullHouse")}</li>
+                  <li>{formatMessage("table.handRank.flush")}</li>
+                  <li>{formatMessage("table.handRank.straight")}</li>
+                  <li>{formatMessage("table.handRank.threeOfAKind")}</li>
+                  <li>{formatMessage("table.handRank.twoPair")}</li>
+                  <li>{formatMessage("table.handRank.pair")}</li>
+                  <li>{formatMessage("table.handRank.highCard")}</li>
                 </ol>
                 <div className="pause-formulas">
-                  <p><strong>Pot odds</strong> Call ÷ (pot after your call)</p>
-                  <p><strong>Equity</strong> Your estimated share of the pot at showdown</p>
-                  <p><strong>SPR</strong> Effective stack divided by the pot at the start of the street</p>
-                  <p><strong>Minimum raise</strong> At least the size of the last full bet or raise</p>
-                  <p><strong>Side pot</strong> Separate chips contested only by players who matched them</p>
-                  <p><strong>Bubble</strong> The last finish before a qualification or prize cutoff</p>
                   <p>
-                    <strong>Worked call</strong> Calling 200 into a final pot of
-                    800 costs 25%. Continue when estimated equity is above 25%,
-                    before tournament-risk adjustments.
+                    <strong>{formatMessage("table.formula.potOdds.label")}</strong>{" "}
+                    {formatMessage("table.formula.potOdds.desc")}
                   </p>
                   <p>
-                    <strong>Shortcut</strong> Nine flush outs from the flop are roughly 36% to improve by the river.
+                    <strong>{formatMessage("table.formula.equity.label")}</strong>{" "}
+                    {formatMessage("table.formula.equity.desc")}
                   </p>
-                  <p><strong>Rule of 2 & 4</strong> Outs × 2 for one card; × 4 from the flop</p>
-                  <p><strong>Expected value</strong> Win value − loss cost, weighted by probability</p>
+                  <p>
+                    <strong>{formatMessage("table.formula.spr.label")}</strong>{" "}
+                    {formatMessage("table.formula.spr.desc")}
+                  </p>
+                  <p>
+                    <strong>{formatMessage("table.formula.minRaise.label")}</strong>{" "}
+                    {formatMessage("table.formula.minRaise.desc")}
+                  </p>
+                  <p>
+                    <strong>{formatMessage("table.formula.sidePot.label")}</strong>{" "}
+                    {formatMessage("table.formula.sidePot.desc")}
+                  </p>
+                  <p>
+                    <strong>{formatMessage("table.formula.bubble.label")}</strong>{" "}
+                    {formatMessage("table.formula.bubble.desc")}
+                  </p>
+                  <p>
+                    <strong>{formatMessage("table.formula.workedCall.label")}</strong>{" "}
+                    {formatMessage("table.formula.workedCall.desc")}
+                  </p>
+                  <p>
+                    <strong>{formatMessage("table.formula.shortcut.label")}</strong>{" "}
+                    {formatMessage("table.formula.shortcut.desc")}
+                  </p>
+                  <p>
+                    <strong>{formatMessage("table.formula.ruleOf2And4.label")}</strong>{" "}
+                    {formatMessage("table.formula.ruleOf2And4.desc")}
+                  </p>
+                  <p>
+                    <strong>{formatMessage("table.formula.expectedValue.label")}</strong>{" "}
+                    {formatMessage("table.formula.expectedValue.desc")}
+                  </p>
                 </div>
                 <button
                   className="secondary-button secondary-button--wide"
                   type="button"
                   onClick={() => setPausePage("menu")}
                 >
-                  Back
+                  {formatMessage("table.pause.back")}
                 </button>
               </>
             )}
-            <small className="pause-menu__hint">Esc resumes without changing the hand.</small>
+            <small className="pause-menu__hint">{formatMessage("table.pause.escHint")}</small>
           </section>
         </div>
       )}
@@ -2229,33 +2362,37 @@ export function PokerTable({
       <footer className="table-footer">
         {gamepadActive ? (
           <span className="table-footer__controller">
-            <b>A</b> Check/Call · <b>X</b> Fold · <b>Y</b> Raise · <b>LB</b> Peek
-            · <b>View</b> Pause · <b>D-pad</b> Camera
+            <b>A</b> {formatMessage("table.footer.checkCall")} · <b>X</b>{" "}
+            {formatMessage("table.action.fold")} · <b>Y</b>{" "}
+            {formatMessage("table.footer.raise")} · <b>LB</b>{" "}
+            {formatMessage("table.footer.peek")}
+            · <b>View</b> {formatMessage("table.footer.pause")} · <b>D-pad</b>{" "}
+            {formatMessage("table.footer.camera")}
           </span>
         ) : null}
         <span>
-          <b>Space</b> Peek cards
+          <b>Space</b> {formatMessage("table.footer.peekCards")}
         </span>
         <span>
-          <b>F</b> Fold
+          <b>F</b> {formatMessage("table.action.fold")}
         </span>
         <span>
-          <b>C</b> Call
+          <b>C</b> {formatMessage("table.footer.call")}
         </span>
         <span>
-          <b>R</b> Raise
+          <b>R</b> {formatMessage("table.footer.raise")}
         </span>
         <span>
-          <b>2 / 5 / 3</b> Quick raise
+          <b>2 / 5 / 3</b> {formatMessage("table.footer.quickRaise")}
         </span>
         <span>
-          <b>A</b> All-in
+          <b>A</b> {formatMessage("table.raise.presetAllIn")}
         </span>
         <span>
-          <b>H</b> History
+          <b>H</b> {formatMessage("table.footer.history")}
         </span>
         <span>
-          <b>Q / E / X</b> Camera
+          <b>Q / E / X</b> {formatMessage("table.footer.camera")}
         </span>
       </footer>
     </div>

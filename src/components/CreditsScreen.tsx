@@ -1,6 +1,7 @@
 import { ArrowLeft } from "lucide-react";
 import { assembleCredits, type CreditsDocument } from "../lib/creditsData";
 import { useCreditsResources } from "../lib/useCreditsResources";
+import { formatMessage } from "../lib/localeMessages";
 import { NightCircuitScene } from "./Dashboard";
 
 interface CreditsScreenProps {
@@ -15,8 +16,7 @@ function DocumentBlock({ document }: { document: CreditsDocument }) {
         <pre className="credits-doc__text">{document.text}</pre>
       ) : (
         <p className="credits-doc__missing">
-          This notice is bundled with the installed app and is unavailable in
-          this preview.
+          {formatMessage("credits.document.unavailable")}
         </p>
       )}
     </details>
@@ -33,10 +33,10 @@ export function CreditsScreen({ onBack }: CreditsScreenProps) {
       <section className="night-settings credits-screen">
         <header>
           <button className="night-back" type="button" onClick={onBack}>
-            <ArrowLeft size={18} /> Back
+            <ArrowLeft size={18} /> {formatMessage("common.back")}
           </button>
-          <p className="night-section-label">About</p>
-          <h1 id="credits-title">Credits &amp; licenses</h1>
+          <p className="night-section-label">{formatMessage("credits.eyebrow")}</p>
+          <h1 id="credits-title">{formatMessage("credits.title")}</h1>
         </header>
 
         {model.sections.map((section) => (

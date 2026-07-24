@@ -49,7 +49,9 @@ import {
   canonicalJson,
   classifyRuntimeObservations,
   parseWindowsProcessTreeSample,
+  summarizeLongTasks,
   summarizeProcessSamples,
+  summarizeResourceEntries,
 } from "./release/runtime-performance-profile-lib.mjs";
 import { projectRoot } from "./release/shared.mjs";
 
@@ -143,6 +145,7 @@ export async function profilePackagedRuntime(options = {}) {
   let observation;
   let navigationTiming;
   let cdpMetrics;
+  let startupInstrumentation;
   let coldLaunchToRecognizedMs;
 
   try {
@@ -164,6 +167,11 @@ export async function profilePackagedRuntime(options = {}) {
     await cdp.send("Network.enable");
     await cdp.send("Log.enable");
     await cdp.send("Performance.enable");
+    // Installed as early as this CDP session allows. `buffered: true` asks
+    // Chromium to replay any matching performance entries already recorded
+    // before this observer existed, which narrows (but does not eliminate)
+    // the attach-race gap against true main-thread blocking during startup.
+    await installLongTaskObserver(cdp);
 
     observation = await waitForRenderSmoke({
       timeoutMs: Math.max(1, deadline - Date.now()),
@@ -200,6 +208,7 @@ export async function profilePackagedRuntime(options = {}) {
     assertNoFatalCdpEvents(cdp.takeFatalEvents());
     navigationTiming = await readNavigationTiming(cdp);
     cdpMetrics = await readCdpPerformanceMetrics(cdp);
+    startupInstrumentation = await readStartupInstrumentation(cdp);
     try {
       processSamples.push(
         await sampleWindowsProcessTree(child.pid),
@@ -244,11 +253,15 @@ export async function profilePackagedRuntime(options = {}) {
     processSamples,
     hostIdentity.logicalCpuCount,
   );
+  const longTasks = summarizeStartupLongTasks(startupInstrumentation);
+  const assetTiming = summarizeStartupAssetTiming(startupInstrumentation);
   const metrics = {
     coldLaunchToRecognizedMs,
     navigationTiming,
     cdpPerformanceMetrics: cdpMetrics,
     processTree,
+    longTasks,
+    assetTiming,
   };
   const report = {
     format: RUNTIME_PROFILE_FORMAT,
@@ -277,6 +290,9 @@ export async function profilePackagedRuntime(options = {}) {
       "Windows process data is sampled, so short working-set or CPU spikes between samples may be missed.",
       "CPU percent is normalized across the host logical CPU count and includes only the spawned Electron process tree.",
       "The profiler does not measure sustained gameplay, long-session memory growth, frame pacing, GPU memory, power, or thermal throttling.",
+      "Long-task totals come from a buffered PerformanceObserver registered as soon as this profiler's CDP session attaches; tasks that ran and were evicted before that attach are not guaranteed to be replayed, so longTasks is a startup-window lower-bound proxy, not a from-process-start guarantee.",
+      "Image and script asset timings are Resource Timing API durations (network fetch plus whatever in-process handling Chromium folds into that span), not isolated GPU image-decode or V8 script-compile/evaluate phases; treat assetTiming as a dependency-evaluation and decode proxy. Isolating true compile/evaluate/decode phases would require the heavier Tracing domain, which this profiler intentionally avoids.",
+      "JS heap and long-task figures are a single settled-moment snapshot, not a peak or sustained measurement.",
     ],
   };
   await writeProfileArtifacts(report);
@@ -335,6 +351,133 @@ async function readCdpPerformanceMetrics(cdp) {
       .sort((left, right) => left.name.localeCompare(right.name))
       .map((entry) => [entry.name, round(entry.value, 6)]),
   );
+}
+
+async function installLongTaskObserver(cdp) {
+  await cdp.send("Runtime.evaluate", {
+    expression: `(() => {
+      if (window.__ptpLongTaskObserverInstalled) return true;
+      window.__ptpLongTaskObserverInstalled = true;
+      window.__ptpLongTasks = [];
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            window.__ptpLongTasks.push({
+              startTime: entry.startTime,
+              duration: entry.duration,
+            });
+          }
+        }).observe({ type: "longtask", buffered: true });
+      } catch (error) {
+        window.__ptpLongTaskObserverError = String(
+          (error && error.message) || error,
+        );
+      }
+      return true;
+    })()`,
+    returnByValue: true,
+  });
+}
+
+/**
+ * A single lightweight read of everything the CDP Performance/Runtime
+ * domains expose without turning on the heavier Tracing domain: the
+ * buffered long-task samples installed by installLongTaskObserver, and the
+ * Resource Timing entries recorded for the startup document/script/image
+ * fetches (used as dependency-evaluation and asset-decode proxies).
+ */
+async function readStartupInstrumentation(cdp) {
+  const result = await cdp.send("Runtime.evaluate", {
+    expression: `(() => {
+      const longTasks = Array.isArray(window.__ptpLongTasks)
+        ? window.__ptpLongTasks.map((entry) => ({
+            startTime: entry.startTime,
+            duration: entry.duration,
+          }))
+        : [];
+      const resources = performance.getEntriesByType("resource").map((entry) => ({
+        name: entry.name,
+        initiatorType: entry.initiatorType,
+        startTime: entry.startTime,
+        responseEnd: entry.responseEnd,
+        transferSize: entry.transferSize || 0,
+      }));
+      return {
+        longTasks,
+        longTaskObserverError: window.__ptpLongTaskObserverError ?? null,
+        resources,
+      };
+    })()`,
+    returnByValue: true,
+  });
+  return (
+    result.result?.value ?? {
+      longTasks: [],
+      longTaskObserverError: "evaluate-produced-no-value",
+      resources: [],
+    }
+  );
+}
+
+function summarizeStartupLongTasks(startupInstrumentation) {
+  const rawEntries = Array.isArray(startupInstrumentation?.longTasks)
+    ? startupInstrumentation.longTasks
+    : [];
+  const validEntries = rawEntries.filter(
+    (entry) =>
+      entry &&
+      typeof entry === "object" &&
+      Number.isFinite(entry.startTime) &&
+      entry.startTime >= 0 &&
+      Number.isFinite(entry.duration) &&
+      entry.duration >= 0 &&
+      entry.duration < 60_000,
+  );
+  const summary = summarizeLongTasks(validEntries);
+  return {
+    ...summary,
+    droppedInvalidSampleCount: rawEntries.length - validEntries.length,
+    observerError:
+      typeof startupInstrumentation?.longTaskObserverError === "string"
+        ? startupInstrumentation.longTaskObserverError.slice(0, 200)
+        : null,
+  };
+}
+
+const IMAGE_RESOURCE_PATTERN = /\.(?:png|jpe?g|gif|webp|svg|avif|ico)(?:\?|#|$)/i;
+const SCRIPT_RESOURCE_PATTERN = /\.m?js(?:\?|#|$)/i;
+
+function summarizeStartupAssetTiming(startupInstrumentation) {
+  const rawResources = Array.isArray(startupInstrumentation?.resources)
+    ? startupInstrumentation.resources
+    : [];
+  const validResources = rawResources.filter(
+    (entry) =>
+      entry &&
+      typeof entry === "object" &&
+      typeof entry.name === "string" &&
+      entry.name.length > 0 &&
+      Number.isFinite(entry.startTime) &&
+      entry.startTime >= 0 &&
+      Number.isFinite(entry.responseEnd) &&
+      entry.responseEnd >= 0 &&
+      Number.isFinite(entry.transferSize) &&
+      entry.transferSize >= 0,
+  );
+  const imageEntries = validResources.filter(
+    (entry) =>
+      entry.initiatorType === "img" || IMAGE_RESOURCE_PATTERN.test(entry.name),
+  );
+  const scriptEntries = validResources.filter(
+    (entry) =>
+      entry.initiatorType === "script" ||
+      SCRIPT_RESOURCE_PATTERN.test(entry.name),
+  );
+  return {
+    imageDecodeProxy: summarizeResourceEntries(imageEntries),
+    scriptEvaluateProxy: summarizeResourceEntries(scriptEntries),
+    droppedInvalidSampleCount: rawResources.length - validResources.length,
+  };
 }
 
 function sanitizeTimingValue(value) {
@@ -532,10 +675,14 @@ async function writeProfileArtifacts(report) {
     `- Build: app ${report.build.applicationVersion}, Electron ${report.build.electronVersion}, ASAR ${report.build.appAsar.sha256.slice(0, 12)}`,
     `- Host: ${report.host.osVersion}, ${report.host.logicalCpuCount} logical CPUs, ${formatMiB(report.host.totalMemoryBytes)} MiB RAM`,
     `- Cold launch to recognized renderer: ${report.metrics.coldLaunchToRecognizedMs} ms (${report.classification.coldLaunch})`,
-    `- First paint / FCP: ${displayOptionalMs(report.metrics.navigationTiming?.firstPaintMs)} / ${displayOptionalMs(report.metrics.navigationTiming?.firstContentfulPaintMs)}`,
+    `- First paint / FCP: ${displayOptionalMs(report.metrics.navigationTiming?.firstPaintMs)} / ${displayOptionalMs(report.metrics.navigationTiming?.firstContentfulPaintMs)} (FCP: ${report.classification.firstContentfulPaint})`,
     `- Peak Electron process-tree working set: ${formatMiB(report.metrics.processTree.peakWorkingSetBytes)} MiB (${report.classification.peakWorkingSet})`,
     `- Peak normalized process-tree CPU: ${report.metrics.processTree.peakNormalizedCpuPercent}% (${report.classification.peakNormalizedCpu})`,
     `- Samples: ${report.metrics.processTree.sampleCount} across ${report.metrics.processTree.sampleWindowMs} ms; peak ${report.metrics.processTree.peakProcessCount} processes`,
+    `- Main-thread long tasks during startup: ${report.metrics.longTasks.count} totaling ${report.metrics.longTasks.totalDurationMs} ms (${report.classification.longTaskTotal})`,
+    `- JS heap used after settle: ${displayOptionalBytesMiB(report.metrics.cdpPerformanceMetrics?.JSHeapUsedSize)} MiB / total ${displayOptionalBytesMiB(report.metrics.cdpPerformanceMetrics?.JSHeapTotalSize)} MiB (${report.classification.jsHeapUsed})`,
+    `- Image asset network+decode-inclusive proxy: ${report.metrics.assetTiming.imageDecodeProxy.count} assets, ${report.metrics.assetTiming.imageDecodeProxy.totalDurationMs} ms total`,
+    `- Script bundle network+evaluate-inclusive proxy: ${report.metrics.assetTiming.scriptEvaluateProxy.count} chunks, ${report.metrics.assetTiming.scriptEvaluateProxy.totalDurationMs} ms total`,
     "",
     "This observation does not establish the low-spec, typical, or discrete-GPU hardware matrix. See the JSON limitations field.",
     "",
@@ -630,6 +777,10 @@ function displayOptionalMs(value) {
   return typeof value === "number" ? `${value} ms` : "not exposed";
 }
 
+function displayOptionalBytesMiB(value) {
+  return typeof value === "number" ? formatMiB(value) : "not exposed";
+}
+
 function formatMiB(bytes) {
   return round(bytes / 1024 / 1024, 1);
 }
@@ -673,6 +824,8 @@ if (isMain) {
         `Cold launch: ${report.metrics.coldLaunchToRecognizedMs} ms (${report.classification.coldLaunch}).`,
         `Peak working set: ${formatMiB(report.metrics.processTree.peakWorkingSetBytes)} MiB.`,
         `Peak normalized CPU: ${report.metrics.processTree.peakNormalizedCpuPercent}%.`,
+        `Long tasks: ${report.metrics.longTasks.count} (${report.metrics.longTasks.totalDurationMs} ms total, ${report.classification.longTaskTotal}).`,
+        `JS heap used: ${displayOptionalBytesMiB(report.metrics.cdpPerformanceMetrics?.JSHeapUsedSize)} MiB (${report.classification.jsHeapUsed}).`,
         "Scope: one host only; no low-spec/typical/discrete hardware claim.",
         `JSON: ${relative(projectRoot, JSON_OUTPUT).split(sep).join("/")}.`,
         `Summary: ${relative(projectRoot, SUMMARY_OUTPUT).split(sep).join("/")}.`,

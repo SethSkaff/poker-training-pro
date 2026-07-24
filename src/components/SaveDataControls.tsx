@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatMessage } from "../lib/localeMessages";
 import type {
   DurablePersistence,
   ProgressResetPreview,
@@ -22,8 +23,8 @@ export function SaveDataControls({
 }: SaveDataControlsProps) {
   const [busy, setBusy] = useState<string>();
   const [pending, setPending] = useState<PendingConfirmation>();
-  const [message, setMessage] = useState(
-    "Exports are local files. Import and reset always require a preview and confirmation.",
+  const [message, setMessage] = useState(() =>
+    formatMessage("saveData.status.default"),
   );
   const [error, setError] = useState<string>();
 
@@ -33,7 +34,7 @@ export function SaveDataControls({
     try {
       await operation();
     } catch {
-      setError("The data operation could not be completed.");
+      setError(formatMessage("saveData.error.generic"));
     } finally {
       setBusy(undefined);
     }
@@ -48,8 +49,10 @@ export function SaveDataControls({
       }
       setMessage(
         result.value.fileName
-          ? `Save exported as ${result.value.fileName}.`
-          : "Save exported.",
+          ? formatMessage("saveData.export.successNamed", {
+              fileName: result.value.fileName,
+            })
+          : formatMessage("saveData.export.success"),
       );
     });
 
@@ -92,9 +95,9 @@ export function SaveDataControls({
       setPending(undefined);
       await onAuthoritativeDataChanged();
       setMessage(
-        completedKind === "import"
-          ? "Imported save validated and loaded."
-          : "Player progress reset. Audio and display settings were preserved.",
+        formatMessage(
+          completedKind === "import" ? "saveData.import.success" : "saveData.reset.success",
+        ),
       );
     });
   };
@@ -108,8 +111,10 @@ export function SaveDataControls({
       }
       setMessage(
         result.value.fileName
-          ? `Redacted diagnostics exported as ${result.value.fileName}.`
-          : "Redacted diagnostics exported.",
+          ? formatMessage("saveData.diagnostics.successNamed", {
+              fileName: result.value.fileName,
+            })
+          : formatMessage("saveData.diagnostics.success"),
       );
     });
 
@@ -121,46 +126,47 @@ export function SaveDataControls({
         setError(result.error.message);
         return;
       }
-      setMessage(`Public replay exported as ${result.value.fileName}.`);
+      setMessage(
+        formatMessage("saveData.replay.success", {
+          fileName: result.value.fileName,
+        }),
+      );
     });
   };
 
   return (
     <div className="night-settings__group save-data-controls">
-      <h2>Save data & diagnostics</h2>
-      <p>
-        Desktop progress is stored in a protected local journal. Browser storage
-        is never used as the authoritative desktop save.
-      </p>
+      <h2>{formatMessage("saveData.heading")}</h2>
+      <p>{formatMessage("saveData.intro")}</p>
       <div className="save-data-controls__buttons">
         <button
           type="button"
           disabled={busy !== undefined}
           onClick={() => void exportSave()}
         >
-          Export save
+          {formatMessage("shell.action.exportSave")}
         </button>
         <button
           type="button"
           disabled={busy !== undefined}
           onClick={() => void prepareImport()}
         >
-          Import save…
+          {formatMessage("saveData.button.importSave")}
         </button>
         <button
           type="button"
           disabled={busy !== undefined}
           onClick={() => void exportDiagnostics()}
         >
-          Export diagnostics
+          {formatMessage("shell.action.exportDiagnostics")}
         </button>
         <button
           type="button"
           disabled={busy !== undefined || !replay}
-          title={replay ? undefined : "Complete or start a tournament first."}
+          title={replay ? undefined : formatMessage("saveData.replay.unavailableTitle")}
           onClick={exportReplay}
         >
-          Export public replay
+          {formatMessage("saveData.button.exportReplay")}
         </button>
         <button
           className="save-data-controls__danger"
@@ -168,7 +174,7 @@ export function SaveDataControls({
           disabled={busy !== undefined}
           onClick={() => void prepareReset()}
         >
-          Reset player progress…
+          {formatMessage("saveData.button.resetProgress")}
         </button>
       </div>
 
@@ -178,25 +184,28 @@ export function SaveDataControls({
           aria-labelledby="save-confirm-title"
         >
           <h3 id="save-confirm-title">
-            {pending.kind === "import"
-              ? "Confirm imported save"
-              : "Confirm progress reset"}
+            {formatMessage(
+              pending.kind === "import"
+                ? "saveData.confirm.importTitle"
+                : "saveData.confirm.resetTitle",
+            )}
           </h3>
           {pending.kind === "import" ? (
             <p>
-              This valid save contains {pending.preview.resultCount} recorded
-              results and {pending.preview.trainingCompleted} completed training
-              hands. Ratings: decision {pending.preview.decisionElo}, math{" "}
-              {pending.preview.mathElo}, tournament{" "}
-              {pending.preview.tournamentElo}. It will replace both settings and
-              progress.
+              {formatMessage("saveData.confirm.importPreview", {
+                resultCount: pending.preview.resultCount,
+                trainingCompleted: pending.preview.trainingCompleted,
+                decisionElo: pending.preview.decisionElo,
+                mathElo: pending.preview.mathElo,
+                tournamentElo: pending.preview.tournamentElo,
+              })}
             </p>
           ) : (
             <p>
-              This will archive the current save, clear{" "}
-              {pending.preview.resultCount} recorded results and{" "}
-              {pending.preview.trainingCompleted} completed training hands, and
-              preserve audio and display settings.
+              {formatMessage("saveData.confirm.resetPreview", {
+                resultCount: pending.preview.resultCount,
+                trainingCompleted: pending.preview.trainingCompleted,
+              })}
             </p>
           )}
           <div className="save-data-controls__buttons">
@@ -206,16 +215,18 @@ export function SaveDataControls({
               disabled={busy !== undefined}
               onClick={confirmPending}
             >
-              {pending.kind === "import"
-                ? "Import this save"
-                : "Archive and reset progress"}
+              {formatMessage(
+                pending.kind === "import"
+                  ? "saveData.confirm.importAction"
+                  : "saveData.confirm.resetAction",
+              )}
             </button>
             <button
               type="button"
               disabled={busy !== undefined}
               onClick={() => setPending(undefined)}
             >
-              Cancel
+              {formatMessage("common.cancel")}
             </button>
           </div>
         </section>
@@ -227,7 +238,7 @@ export function SaveDataControls({
         </p>
       ) : null}
       <p className="night-audio-preview-status" role="status" aria-live="polite">
-        {busy ? "Working…" : message}
+        {busy ? formatMessage("saveData.status.working") : message}
       </p>
     </div>
   );

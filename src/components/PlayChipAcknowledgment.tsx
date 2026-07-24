@@ -1,3 +1,5 @@
+import { formatMessage } from "../lib/localeMessages";
+
 interface PlayChipAcknowledgmentProps {
   onAcknowledge: () => void;
   onBack: () => void;
@@ -16,24 +18,16 @@ export function PlayChipAcknowledgment({
   return (
     <main className="startup-gate" aria-labelledby="play-chip-ack-title">
       <section className="startup-gate__panel">
-        <p className="startup-gate__eyebrow">Before you play</p>
-        <h1 id="play-chip-ack-title">These are play chips</h1>
-        <p>
-          Poker Training Pro is a poker trainer. Play chips only. Chips have no
-          cash value, and there is no real-money wagering, no deposits, no
-          purchases, and no withdrawals. There is nothing to win or lose but
-          practice.
-        </p>
-        <p>
-          This message appears once. You can revisit the details any time from
-          Settings.
-        </p>
+        <p className="startup-gate__eyebrow">{formatMessage("playChipAck.eyebrow")}</p>
+        <h1 id="play-chip-ack-title">{formatMessage("playChipAck.title")}</h1>
+        <p>{formatMessage("playChipAck.body")}</p>
+        <p>{formatMessage("playChipAck.followUp")}</p>
         <div className="startup-gate__actions">
           <button type="button" autoFocus onClick={onAcknowledge}>
-            I understand — continue
+            {formatMessage("playChipAck.acknowledgeButton")}
           </button>
           <button type="button" onClick={onBack}>
-            Back to menu
+            {formatMessage("playChipAck.backButton")}
           </button>
         </div>
       </section>

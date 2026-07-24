@@ -2,6 +2,7 @@ import { type ReactNode, useState } from "react";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import { previewSettingsEffect } from "../lib/audioPreview";
 import { defaultSettings } from "../lib/storage";
+import { formatMessage } from "../lib/localeMessages";
 import type { GameSettings } from "../types/poker";
 import { NightCircuitScene } from "./Dashboard";
 import { ControlsRemapPanel } from "./ControlsRemapPanel";
@@ -79,7 +80,7 @@ function VolumeRow({
         min="0"
         max="100"
         value={value}
-        aria-label={`${label} volume`}
+        aria-label={formatMessage("settings.audio.volumeAriaLabel", { label })}
         aria-describedby={`${id}-description ${id}-value`}
         onChange={(event) => onChange(Number(event.target.value))}
       />
@@ -90,16 +91,20 @@ function VolumeRow({
         aria-describedby="audio-preview-status"
         onClick={onTest}
       >
-        {previewDisabled ? "Unavailable" : "Preview"}
+        {formatMessage(
+          previewDisabled
+            ? "settings.audio.buttonUnavailable"
+            : "settings.audio.buttonPreview",
+        )}
       </button>
     </div>
   );
 }
 
 const motionChoices = [
-  ["full", "Full"],
-  ["reduced", "Reduced"],
-  ["off", "Off"],
+  ["full", "settings.motion.choice.full"],
+  ["reduced", "settings.motion.choice.reduced"],
+  ["off", "settings.motion.choice.off"],
 ] as const;
 
 function MotionControl({
@@ -122,7 +127,7 @@ function MotionControl({
         {description}
       </p>
       <div className="night-speed" role="group" aria-labelledby={id}>
-        {motionChoices.map(([nextValue, nextLabel]) => (
+        {motionChoices.map(([nextValue, nextLabelKey]) => (
           <button
             key={nextValue}
             type="button"
@@ -130,7 +135,7 @@ function MotionControl({
             aria-pressed={value === nextValue}
             onClick={() => onChange(nextValue)}
           >
-            {nextLabel}
+            {formatMessage(nextLabelKey)}
           </button>
         ))}
       </div>
@@ -147,8 +152,8 @@ export function SettingsPanel({
   about,
 }: SettingsPanelProps) {
   const gamepadActive = useIsGamepadActive();
-  const [previewStatus, setPreviewStatus] = useState(
-    "Choose Preview to hear the saved Master or Table effects level.",
+  const [previewStatus, setPreviewStatus] = useState(() =>
+    formatMessage("settings.audio.previewStatusDefault"),
   );
   const patchSettings = (patch: Partial<GameSettings>) =>
     onChange({ ...settings, ...patch });
@@ -163,52 +168,57 @@ export function SettingsPanel({
       <section className="night-settings">
         <header>
           <button className="night-back" type="button" onClick={onBack}>
-            <ArrowLeft size={18} /> Main menu
+            <ArrowLeft size={18} /> {formatMessage("settings.header.backToMainMenu")}
           </button>
-          <p className="night-section-label">System</p>
-          <h1>Settings</h1>
+          <p className="night-section-label">
+            {formatMessage("settings.header.sectionLabel")}
+          </p>
+          <h1>{formatMessage("common.settings")}</h1>
           {gamepadActive ? (
             <p className="controller-hint" role="note">
-              Controller: D-pad move · A select · B back · D-pad ←/→ adjust
-              sliders
+              {formatMessage("settings.header.controllerHint")}
             </p>
           ) : null}
         </header>
 
         <div className="night-settings__group">
-          <h2>Audio</h2>
+          <h2>{formatMessage("settings.audio.heading")}</h2>
           <ToggleRow
-            label="Mute all audio"
-            description="Silence music and table effects without changing their levels."
+            label={formatMessage("settings.audio.muteAll.label")}
+            description={formatMessage("settings.audio.muteAll.description")}
             checked={settings.muted}
             onChange={(muted) => patchSettings({ muted })}
           />
           <VolumeRow
             id="master-volume"
-            label="Master"
-            description="Controls the combined level of all available game audio."
+            label={formatMessage("settings.audio.master.label")}
+            description={formatMessage("settings.audio.master.description")}
             value={settings.masterVolume}
             onChange={(masterVolume) => patchSettings({ masterVolume })}
-            previewLabel={`Preview Master volume at ${settings.masterVolume} percent`}
+            previewLabel={formatMessage("settings.audio.master.previewLabel", {
+              percent: settings.masterVolume,
+            })}
             onTest={() => preview("master")}
           />
           <VolumeRow
             id="music-volume"
-            label="Music"
-            description="Preview unavailable — no approved licensed music masters are installed."
+            label={formatMessage("settings.audio.music.label")}
+            description={formatMessage("settings.audio.music.description")}
             value={settings.musicVolume}
             onChange={(musicVolume) => patchSettings({ musicVolume })}
             previewDisabled
-            previewLabel="Music preview unavailable"
+            previewLabel={formatMessage("settings.audio.music.previewUnavailableLabel")}
             onTest={() => undefined}
           />
           <VolumeRow
             id="effects-volume"
-            label="Table effects"
-            description="Controls card, chip, fold, and result cues."
+            label={formatMessage("settings.audio.effects.label")}
+            description={formatMessage("settings.audio.effects.description")}
             value={settings.effectsVolume}
             onChange={(effectsVolume) => patchSettings({ effectsVolume })}
-            previewLabel={`Preview Table effects volume at ${settings.effectsVolume} percent`}
+            previewLabel={formatMessage("settings.audio.effects.previewLabel", {
+              percent: settings.effectsVolume,
+            })}
             onTest={() => preview("effects")}
           />
           <p
@@ -223,27 +233,27 @@ export function SettingsPanel({
         </div>
 
         <div className="night-settings__group">
-          <h2>Display</h2>
+          <h2>{formatMessage("settings.display.heading")}</h2>
           <ToggleRow
-            label="Fullscreen"
-            description="Alt + Enter also changes display mode."
+            label={formatMessage("settings.display.fullscreen.label")}
+            description={formatMessage("settings.display.fullscreen.description")}
             checked={settings.fullscreen}
             onChange={(fullscreen) => onFullscreenChange(fullscreen)}
           />
           <ToggleRow
-            label="Reduce motion"
-            description="Use quiet fades instead of camera and object travel."
+            label={formatMessage("settings.display.reduceMotion.label")}
+            description={formatMessage("settings.display.reduceMotion.description")}
             checked={settings.reducedMotion}
             onChange={(reducedMotion) => patchSettings({ reducedMotion })}
           />
           <ToggleRow
-            label="High contrast & four-color deck"
-            description="Strengthen table edges and distinguish every suit."
+            label={formatMessage("settings.display.highContrast.label")}
+            description={formatMessage("settings.display.highContrast.description")}
             checked={settings.colorAssist}
             onChange={(colorAssist) => patchSettings({ colorAssist })}
           />
           <p className="night-setting__hint" id="interface-scale-heading">
-            Interface size
+            {formatMessage("settings.display.interfaceScale.heading")}
           </p>
           <div
             className="night-speed"
@@ -252,12 +262,12 @@ export function SettingsPanel({
           >
             {(
               [
-                ["compact", "Compact"],
-                ["standard", "Standard"],
-                ["large", "Large"],
-                ["extra-large", "Extra large"],
+                ["compact", "settings.display.interfaceScale.compact"],
+                ["standard", "settings.display.interfaceScale.standard"],
+                ["large", "settings.display.interfaceScale.large"],
+                ["extra-large", "settings.display.interfaceScale.extraLarge"],
               ] as const
-            ).map(([value, label]) => (
+            ).map(([value, labelKey]) => (
               <button
                 key={value}
                 type="button"
@@ -265,18 +275,17 @@ export function SettingsPanel({
                 aria-pressed={settings.interfaceScale === value}
                 onClick={() => patchSettings({ interfaceScale: value })}
               >
-                {label}
+                {formatMessage(labelKey)}
               </button>
             ))}
           </div>
           <p className="night-setting__hint">
-            Changes the size of menus, table labels, and action controls. You can
-            scroll a larger interface; gameplay information is never hidden.
+            {formatMessage("settings.display.interfaceScale.hint")}
           </p>
         </div>
 
         <div className="night-settings__group">
-          <h2 id="deal-speed-heading">Deal speed</h2>
+          <h2 id="deal-speed-heading">{formatMessage("settings.dealSpeed.heading")}</h2>
           <div
             className="night-speed"
             role="group"
@@ -297,17 +306,17 @@ export function SettingsPanel({
         </div>
 
         <div className="night-settings__group">
-          <h2>Table camera</h2>
+          <h2>{formatMessage("settings.camera.heading")}</h2>
           <ToggleRow
-            label="Automatic camera movement"
-            description="Play the room arrival and recenter your view at the start of a new hand."
+            label={formatMessage("settings.camera.autoMovement.label")}
+            description={formatMessage("settings.camera.autoMovement.description")}
             checked={settings.autoCameraMovement}
             onChange={(autoCameraMovement) =>
               patchSettings({ autoCameraMovement })
             }
           />
           <p className="night-setting__hint" id="camera-sensitivity-heading">
-            Look sensitivity
+            {formatMessage("settings.camera.sensitivity.heading")}
           </p>
           <div
             className="night-speed"
@@ -329,7 +338,7 @@ export function SettingsPanel({
             ))}
           </div>
           <p className="night-setting__hint" id="camera-view-heading">
-            Table view
+            {formatMessage("settings.camera.view.heading")}
           </p>
           <div
             className="night-speed"
@@ -351,53 +360,51 @@ export function SettingsPanel({
         </div>
 
         <div className="night-settings__group">
-          <h2>Motion details</h2>
+          <h2>{formatMessage("settings.motion.heading")}</h2>
           <p className="night-setting__hint">
-            Tune each surface independently. Reduce motion above remains a
-            one-click safety override and temporarily stops every category.
+            {formatMessage("settings.motion.hint")}
           </p>
           <MotionControl
             id="menu-motion-heading"
-            label="Menu background"
-            description="Decorative title and selection movement."
+            label={formatMessage("settings.motion.menu.label")}
+            description={formatMessage("settings.motion.menu.description")}
             value={settings.menuMotion}
             onChange={(menuMotion) => patchSettings({ menuMotion })}
           />
           <MotionControl
             id="room-motion-heading"
-            label="Room arrival"
-            description="The championship-floor approach before a seat is shown."
+            label={formatMessage("settings.motion.room.label")}
+            description={formatMessage("settings.motion.room.description")}
             value={settings.roomMotion}
             onChange={(roomMotion) => patchSettings({ roomMotion })}
           />
           <MotionControl
             id="camera-motion-heading"
-            label="Camera movement"
-            description="Automatic recentering and the eased table-view response."
+            label={formatMessage("settings.motion.camera.label")}
+            description={formatMessage("settings.motion.camera.description")}
             value={settings.cameraMotion}
             onChange={(cameraMotion) => patchSettings({ cameraMotion })}
           />
           <MotionControl
             id="table-motion-heading"
-            label="Card and chip flourish"
-            description="Deal, fold, chip-push, and opponent thinking effects."
+            label={formatMessage("settings.motion.table.label")}
+            description={formatMessage("settings.motion.table.description")}
             value={settings.tableMotion}
             onChange={(tableMotion) => patchSettings({ tableMotion })}
           />
           <MotionControl
             id="transition-motion-heading"
-            label="Screen transitions"
-            description="Mode changes and the between-hand progress overlay."
+            label={formatMessage("settings.motion.transition.label")}
+            description={formatMessage("settings.motion.transition.description")}
             value={settings.transitionMotion}
             onChange={(transitionMotion) => patchSettings({ transitionMotion })}
           />
         </div>
 
         <div className="night-settings__group">
-          <h2>Controls</h2>
+          <h2>{formatMessage("settings.controls.heading")}</h2>
           <p className="night-setting__hint">
-            Rebind keyboard and controller actions. Conflicts and reserved
-            system keys are flagged; reset either device to its defaults.
+            {formatMessage("settings.controls.hint")}
           </p>
           <ControlsRemapPanel
             controlBindings={settings.controlBindings}
@@ -417,7 +424,7 @@ export function SettingsPanel({
             onFullscreenChange(defaultSettings.fullscreen);
           }}
         >
-          <RotateCcw size={15} /> Reset defaults
+          <RotateCcw size={15} /> {formatMessage("settings.footer.resetDefaults")}
         </button>
       </section>
     </main>

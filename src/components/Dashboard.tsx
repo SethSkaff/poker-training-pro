@@ -34,8 +34,8 @@ export function NightCircuitScene({ quiet = false }: SceneProps) {
       </div>
       <div className="night-scene__marquee">
         <img src="/poker-training-pro-mark.png" alt="" />
-        <small>Poker Training Pro</small>
-        <strong>Championship Series</strong>
+        <small>{formatMessage("brand.name")}</small>
+        <strong>{formatMessage("brand.tagline")}</strong>
       </div>
       <div className="night-scene__crowd">
         <i />
@@ -88,19 +88,19 @@ export function HomeView({
   );
   const canonicalStill = useResilientAsset(
     START_MENU_STILL,
-    "Start-menu artwork",
+    formatMessage("dashboard.asset.startMenuLabel"),
   );
   const selectedStill = useResilientAsset(
     selectedAction === "settings"
       ? START_MENU_SETTINGS_STILL
       : START_MENU_STILL,
     selectedAction === "settings"
-      ? "Settings-selected artwork"
-      : "Start-menu artwork",
+      ? formatMessage("dashboard.asset.settingsSelectedLabel")
+      : formatMessage("dashboard.asset.startMenuLabel"),
   );
   const loop = useResilientAsset(
     START_MENU_LOOP ?? "start-menu-loop-disabled",
-    "Animated start-menu background",
+    formatMessage("dashboard.asset.animatedBackgroundLabel"),
   );
   const activeMediaStatus =
     START_MENU_LOOP && selectedAction === "play"
@@ -117,7 +117,7 @@ export function HomeView({
       aria-labelledby="main-menu-title"
     >
       <h1 id="main-menu-title" className="visually-hidden">
-        Poker Training Pro main menu
+        {formatMessage("dashboard.home.title")}
       </h1>
       <div
         className="home-reference__media"
@@ -127,13 +127,13 @@ export function HomeView({
       >
         <div className="home-reference__fallback">
           <span className="home-reference__fallback-mark">♠</span>
-          <strong>Poker Training Pro</strong>
-          <small>Championship Series</small>
+          <strong>{formatMessage("brand.name")}</strong>
+          <small>{formatMessage("brand.tagline")}</small>
           <span className="home-reference__fallback-action home-reference__fallback-action--play">
-            Play
+            {formatMessage("common.play")}
           </span>
           <span className="home-reference__fallback-action home-reference__fallback-action--settings">
-            Settings
+            {formatMessage("common.settings")}
           </span>
         </div>
         <img
@@ -175,7 +175,10 @@ export function HomeView({
         </p>
       )}
 
-      <nav className="home-reference__controls" aria-label="Main menu">
+      <nav
+        className="home-reference__controls"
+        aria-label={formatMessage("dashboard.home.navLabel")}
+      >
         <button
           className="home-reference__hit home-reference__hit--play"
           type="button"
@@ -199,7 +202,9 @@ export function HomeView({
       </nav>
 
       <p className="home-reference__play-chip-boundary">
-        Play chips only <span aria-hidden="true">·</span> No real-money wagering
+        {formatMessage("dashboard.home.chipsOnly")}{" "}
+        <span aria-hidden="true">·</span>{" "}
+        {formatMessage("dashboard.home.noRealMoney")}
       </p>
 
       {onCredits ? (
@@ -208,7 +213,7 @@ export function HomeView({
           type="button"
           onClick={onCredits}
         >
-          Credits &amp; licenses
+          {formatMessage("dashboard.home.creditsLink")}
         </button>
       ) : null}
     </main>
@@ -230,11 +235,11 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
       <section className="mode-stage">
         <header>
           <button className="night-back" type="button" onClick={onBack}>
-            <ArrowLeft size={18} /> Main menu
+            <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToMenu")}
           </button>
           <div>
-            <p className="night-section-label">Play</p>
-            <h1 id="mode-select-title">Choose a mode</h1>
+            <p className="night-section-label">{formatMessage("common.play")}</p>
+            <h1 id="mode-select-title">{formatMessage("dashboard.modeSelect.title")}</h1>
           </div>
         </header>
 
@@ -251,9 +256,9 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
               <i />
             </span>
             <span className="mode-stage__copy">
-              <small>Adaptive tournament field</small>
-              <strong>Normal</strong>
-              <span>Strong opponents with pressure, personalities, and selective bluffs.</span>
+              <small>{formatMessage("modes.normal.tag")}</small>
+              <strong>{formatMessage("modes.normal.name")}</strong>
+              <span>{formatMessage("modes.normal.description")}</span>
             </span>
             <ArrowRight size={21} />
           </button>
@@ -270,9 +275,9 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
               <i />
             </span>
             <span className="mode-stage__copy">
-              <small>Mathematical tournament field</small>
-              <strong>Rational</strong>
-              <span>Range-aware opponents following explicit information-set policy.</span>
+              <small>{formatMessage("modes.rational.tag")}</small>
+              <strong>{formatMessage("modes.rational.name")}</strong>
+              <span>{formatMessage("modes.rational.description")}</span>
             </span>
             <ArrowRight size={21} />
           </button>
@@ -289,9 +294,9 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
               <i />
             </span>
             <span className="mode-stage__copy">
-              <small>One decision at a time</small>
-              <strong>Training</strong>
-              <span>Focused poker situations with one linked math question and feedback.</span>
+              <small>{formatMessage("modes.training.tag")}</small>
+              <strong>{formatMessage("modes.training.name")}</strong>
+              <span>{formatMessage("modes.training.description")}</span>
             </span>
             <ArrowRight size={21} />
           </button>
@@ -308,9 +313,9 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
               <i />
             </span>
             <span className="mode-stage__copy">
-              <small>Fit a table into your schedule</small>
-              <strong>Timed Table</strong>
-              <span>Normal opponents at one table for the time you choose.</span>
+              <small>{formatMessage("modes.timed.tag")}</small>
+              <strong>{formatMessage("modes.timed.name")}</strong>
+              <span>{formatMessage("modes.timed.description")}</span>
             </span>
             <ArrowRight size={21} />
           </button>
@@ -320,7 +325,8 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
           type="button"
           onClick={() => onSelect("tutorial")}
         >
-          New to the table? <strong>Learn the basics</strong>
+          {formatMessage("dashboard.modeSelect.tutorialPrompt")}{" "}
+          <strong>{formatMessage("dashboard.modeSelect.tutorialCta")}</strong>
           <ArrowRight size={16} aria-hidden="true" />
         </button>
       </section>
@@ -351,12 +357,15 @@ export function TimedSetup({
       <NightCircuitScene quiet />
       <section className="timed-setup">
         <button className="night-back" type="button" onClick={onBack}>
-          <ArrowLeft size={18} /> Choose mode
+          <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToModes")}
         </button>
-        <p className="night-section-label">Timed Table</p>
-        <h1>How much time do you have?</h1>
+        <p className="night-section-label">{formatMessage("modes.timed.name")}</p>
+        <h1>{formatMessage("dashboard.timed.title")}</h1>
 
-        <div className="timed-presets" aria-label="Session length presets">
+        <div
+          className="timed-presets"
+          aria-label={formatMessage("dashboard.timed.presetsAriaLabel")}
+        >
           {TIMED_PRESETS.map((preset) => (
             <button
               key={preset}
@@ -366,13 +375,13 @@ export function TimedSetup({
               aria-pressed={minutes === preset}
             >
               <strong>{preset}</strong>
-              <span>min</span>
+              <span>{formatMessage("dashboard.timed.minUnit")}</span>
             </button>
           ))}
         </div>
 
         <label className="timed-custom">
-          <span>Custom minutes</span>
+          <span>{formatMessage("dashboard.timed.customLabel")}</span>
           <input
             type="number"
             min="5"
@@ -384,11 +393,11 @@ export function TimedSetup({
           />
         </label>
         <p id="timed-minutes-help" className="timed-setup__range">
-          Choose a whole number from 5 to 180 minutes.
+          {formatMessage("dashboard.timed.rangeHelp")}
         </p>
 
         <p className="timed-setup__note">
-          One table · Normal opponents · No career progression
+          {formatMessage("dashboard.timed.note")}
         </p>
 
         <button
@@ -397,7 +406,7 @@ export function TimedSetup({
           disabled={!validMinutes}
           onClick={() => onStart(minutes)}
         >
-          Start <ArrowRight size={19} />
+          {formatMessage("dashboard.timed.start")} <ArrowRight size={19} />
         </button>
       </section>
     </main>
@@ -444,24 +453,35 @@ export function TourLobby({
       <section className="tour-lobby">
         <header className="tour-lobby__header">
           <button className="night-back" type="button" onClick={onBack}>
-            <ArrowLeft size={18} /> Choose tour
+            <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToTours")}
           </button>
           <p className="night-section-label">
-            {mode === "normal" ? "Normal Tour" : "Rational Tour"}
+            {mode === "normal"
+              ? formatMessage("modes.normalTour")
+              : formatMessage("modes.rationalTour")}
           </p>
-          <h1>Championship road</h1>
+          <h1>{formatMessage("dashboard.tour.title")}</h1>
         </header>
 
-        <ol className="event-route" aria-label="Tournament events">
+        <ol
+          className="event-route"
+          aria-label={formatMessage("dashboard.tour.eventsAriaLabel")}
+        >
           {events.map((event, index) => {
             const result = resultForEvent(careerResults, event.id);
             const status = !event.unlocked
-              ? "Locked"
+              ? formatMessage("dashboard.tour.locked")
               : result?.qualified
-                ? `${result.finishPlace} of ${result.fieldSize} · Qualified`
+                ? formatMessage("dashboard.tour.qualifiedStatus", {
+                    finishPlace: result.finishPlace,
+                    fieldSize: result.fieldSize,
+                  })
                 : result
-                  ? `${result.finishPlace} of ${result.fieldSize} · Retry`
-                  : "Available";
+                  ? formatMessage("dashboard.tour.retryStatus", {
+                      finishPlace: result.finishPlace,
+                      fieldSize: result.fieldSize,
+                    })
+                  : formatMessage("dashboard.tour.available");
             return (
               <li key={event.id}>
                 <button
@@ -488,30 +508,38 @@ export function TourLobby({
           <h2>{selected.name}</h2>
           <dl>
             <div>
-              <dt>Starting stack</dt>
+              <dt>{formatMessage("dashboard.tour.startingStack")}</dt>
               <dd>{formatChips(selected.structure.startingStack)}</dd>
             </div>
             <div>
-              <dt>Opening blinds</dt>
+              <dt>{formatMessage("dashboard.tour.openingBlinds")}</dt>
               <dd>
                 {openingLevel.smallBlind} / {openingLevel.bigBlind}
               </dd>
             </div>
             <div>
-              <dt>Local field</dt>
-              <dd>{selected.sessionFieldSize} players</dd>
+              <dt>{formatMessage("dashboard.tour.localField")}</dt>
+              <dd>
+                {formatMessage("dashboard.tour.playersCount", {
+                  count: selected.sessionFieldSize,
+                })}
+              </dd>
             </div>
             <div>
-              <dt>Advance</dt>
+              <dt>{formatMessage("dashboard.tour.advance")}</dt>
               <dd>{selected.qualificationLabel}</dd>
             </div>
           </dl>
 
           {selectedResult && (
             <p className="event-board__last-result">
-              Last result: {selectedResult.finishPlace} of{" "}
-              {selectedResult.fieldSize}
-              {selectedResult.qualified ? " — qualified" : " — not qualified"}
+              {formatMessage("dashboard.tour.lastResult", {
+                finishPlace: selectedResult.finishPlace,
+                fieldSize: selectedResult.fieldSize,
+                suffix: selectedResult.qualified
+                  ? formatMessage("dashboard.tour.qualifiedSuffix")
+                  : formatMessage("dashboard.tour.notQualifiedSuffix"),
+              })}
             </p>
           )}
 
@@ -523,13 +551,12 @@ export function TourLobby({
           >
             {onStartEvent
               ? selectedResult
-                ? "Play event again"
-                : "Enter event"
-              : "Tournament table connection pending"}
+                ? formatMessage("dashboard.tour.playAgain")
+                : formatMessage("dashboard.tour.enterEvent")
+              : formatMessage("dashboard.tour.connectionPending")}
           </button>
           <small className="event-board__disclosure">
-            Six-seat local simulation. Qualification ratios and blind structure
-            come from the full career event.
+            {formatMessage("dashboard.tour.disclosure")}
           </small>
         </aside>
       </section>
@@ -553,29 +580,29 @@ export function PlayerRecord({ progress, onBack }: PlayerRecordProps) {
       <NightCircuitScene quiet />
       <section className="record-sheet">
         <button className="night-back" type="button" onClick={onBack}>
-          <ArrowLeft size={18} /> Main menu
+          <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToMenu")}
         </button>
-        <p className="night-section-label">Player record</p>
+        <p className="night-section-label">{formatMessage("dashboard.record.title")}</p>
         <h1>{progress.playerName}</h1>
         <dl>
           <div>
-            <dt>Tournament Elo</dt>
+            <dt>{formatMessage("dashboard.record.tournamentElo")}</dt>
             <dd>{progress.tournamentElo}</dd>
           </div>
           <div>
-            <dt>Decision Elo</dt>
+            <dt>{formatMessage("dashboard.record.decisionElo")}</dt>
             <dd>{progress.decisionElo}</dd>
           </div>
           <div>
-            <dt>Math Elo</dt>
+            <dt>{formatMessage("dashboard.record.mathElo")}</dt>
             <dd>{progress.mathElo}</dd>
           </div>
           <div>
-            <dt>Practice hands</dt>
+            <dt>{formatMessage("dashboard.record.practiceHands")}</dt>
             <dd>{progress.trainingCompleted}</dd>
           </div>
           <div>
-            <dt>Average decision</dt>
+            <dt>{formatMessage("dashboard.record.averageDecision")}</dt>
             <dd>{averageMs ? formatClock(averageMs) : "—"}</dd>
           </div>
         </dl>
@@ -605,10 +632,10 @@ export function TournamentCeremony({
   const [exportStatus, setExportStatus] = useState<string>();
   const headline =
     result.finishPlace === 1
-      ? "Champion"
+      ? formatMessage("dashboard.ceremony.champion")
       : result.qualified
-        ? "Qualified"
-        : "Eliminated";
+        ? formatMessage("dashboard.ceremony.qualified")
+        : formatMessage("dashboard.ceremony.eliminated");
   const eventNames = new Map(
     listTournamentSessionEvents([]).map((event) => [event.id, event.name]),
   );
@@ -626,7 +653,7 @@ export function TournamentCeremony({
         </p>
         <dl>
           <div>
-            <dt>Tournament Elo</dt>
+            <dt>{formatMessage("dashboard.record.tournamentElo")}</dt>
             <dd>
               {result.elo.heroRating}{" "}
               <span>
@@ -636,14 +663,14 @@ export function TournamentCeremony({
             </dd>
           </div>
           <div>
-            <dt>Hands played</dt>
+            <dt>{formatMessage("dashboard.ceremony.handsPlayed")}</dt>
             <dd>{result.handNumber}</dd>
           </div>
         </dl>
 
         {result.newlyUnlockedEventIds.length > 0 && (
           <div className="ceremony-board__unlocks">
-            <span>Unlocked</span>
+            <span>{formatMessage("dashboard.ceremony.unlocked")}</span>
             <strong>
               {result.newlyUnlockedEventIds
                 .map((id) => eventNames.get(id) ?? id)
@@ -655,12 +682,12 @@ export function TournamentCeremony({
         <div className="ceremony-board__actions">
           {result.nextEventId && onNext && (
             <button type="button" onClick={() => onNext(result.nextEventId!)}>
-              Next event <ArrowRight size={18} />
+              {formatMessage("dashboard.ceremony.nextEvent")} <ArrowRight size={18} />
             </button>
           )}
           {onReview && (
             <button type="button" onClick={onReview}>
-              Review key hand
+              {formatMessage("dashboard.ceremony.reviewKeyHand")}
             </button>
           )}
           {onExportReplay && (
@@ -675,8 +702,10 @@ export function TournamentCeremony({
                     if (outcome.ok) {
                       setExportStatus(
                         outcome.fileName
-                          ? `Redacted replay exported as ${outcome.fileName}.`
-                          : "Redacted replay exported.",
+                          ? formatMessage("dashboard.ceremony.exportedAs", {
+                              fileName: outcome.fileName,
+                            })
+                          : formatMessage("dashboard.ceremony.exportedPlain"),
                       );
                     } else {
                       setExportStatus(outcome.message);
@@ -685,11 +714,11 @@ export function TournamentCeremony({
                   .finally(() => setExportBusy(false));
               }}
             >
-              Export event replay
+              {formatMessage("dashboard.ceremony.exportReplay")}
             </button>
           )}
           <button type="button" onClick={onMenu}>
-            Return to menu
+            {formatMessage("dashboard.ceremony.returnToMenu")}
           </button>
         </div>
         {onExportReplay && (
@@ -699,9 +728,8 @@ export function TournamentCeremony({
             aria-live="polite"
           >
             {exportBusy
-              ? "Preparing a redacted replay…"
-              : (exportStatus ??
-                "Export a redacted, play-safe replay of this event for a bug report.")}
+              ? formatMessage("dashboard.ceremony.exportPreparing")
+              : (exportStatus ?? formatMessage("dashboard.ceremony.exportHint"))}
           </p>
         )}
       </section>

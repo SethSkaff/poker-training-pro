@@ -1,3 +1,4 @@
+import { formatMessage } from "./localeMessages";
 import type { TrainingScenario } from "../types/poker";
 
 export type ContextualPromptId =
@@ -28,57 +29,48 @@ export const CONTEXTUAL_PROMPTS: Record<
 > = {
   "all-in": {
     id: "all-in",
-    title: "All-in",
-    message:
-      "An all-in player cannot wager again. Other players may keep betting if at least two of them still have chips.",
+    title: formatMessage("prompts.allIn.title"),
+    message: formatMessage("prompts.allIn.message"),
   },
   "side-pot": {
     id: "side-pot",
-    title: "Side pot",
-    message:
-      "Each player can win only the chips they matched. Extra chips form a side pot contested by the deeper stacks.",
+    title: formatMessage("prompts.sidePot.title"),
+    message: formatMessage("prompts.sidePot.message"),
   },
   "minimum-raise": {
     id: "minimum-raise",
-    title: "Minimum raise",
-    message:
-      "A raise must add at least the size of the previous bet or raise. Smaller increases are illegal, which sets the floor on your raise slider.",
+    title: formatMessage("prompts.minimumRaise.title"),
+    message: formatMessage("prompts.minimumRaise.message"),
   },
   "blind-increase": {
     id: "blind-increase",
-    title: "Blinds went up",
-    message:
-      "Every stack is now shorter measured in big blinds. Waiting for premium hands costs more each orbit, so wider aggression becomes correct.",
+    title: formatMessage("prompts.blindIncrease.title"),
+    message: formatMessage("prompts.blindIncrease.message"),
   },
   elimination: {
     id: "elimination",
-    title: "A player busted",
-    message:
-      "The field is smaller. The blinds reach you more often and each remaining pot is worth a larger share of the payouts.",
+    title: formatMessage("prompts.elimination.title"),
+    message: formatMessage("prompts.elimination.message"),
   },
   qualification: {
     id: "qualification",
-    title: "In the qualifying places",
-    message:
-      "Surviving now banks the result. Weigh tournament survival against raw chip expected value before committing a big stack.",
+    title: formatMessage("prompts.qualification.title"),
+    message: formatMessage("prompts.qualification.message"),
   },
   "elo-change": {
     id: "elo-change",
-    title: "Your Elo moved",
-    message:
-      "Elo tracks decision and math skill against calibrated bots, not chips won. A single hand rarely swings it far, so keep playing your reads.",
+    title: formatMessage("prompts.eloChange.title"),
+    message: formatMessage("prompts.eloChange.message"),
   },
   "short-stack": {
     id: "short-stack",
-    title: "Short-stack pressure",
-    message:
-      "At ten big blinds or fewer, blinds consume your stack quickly. Waiting is still a choice, but each orbit makes it more expensive.",
+    title: formatMessage("prompts.shortStack.title"),
+    message: formatMessage("prompts.shortStack.message"),
   },
   "decision-mistake": {
     id: "decision-mistake",
-    title: "Review the decision",
-    message:
-      "A mistake is useful evidence. Compare the legal choices and their expected value, then retry the unscored scenario.",
+    title: formatMessage("prompts.decisionMistake.title"),
+    message: formatMessage("prompts.decisionMistake.message"),
   },
 };
 

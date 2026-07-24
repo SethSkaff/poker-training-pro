@@ -7091,6 +7091,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .tutorial-actions > button {
+  min-height: 44px;
   padding: 12px 22px;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
@@ -7162,6 +7163,7 @@ input[type="range"]::-webkit-slider-thumb {
 .tutorial-showdown > button,
 .tutorial-continue,
 .tutorial-finish > button {
+  min-height: 44px;
   padding: 12px 24px;
   border: 0;
   border-radius: 12px;
@@ -7314,6 +7316,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .resume-recap > button {
   justify-self: end;
+  min-height: 24px;
   padding: 6px 16px;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
@@ -7353,6 +7356,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .context-coach > div > button {
   flex: 1;
+  min-height: 24px;
   padding: 9px 12px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
@@ -7781,6 +7785,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .credits-doc > summary {
   cursor: pointer;
+  min-height: 24px;
   padding: 0.55rem 0.8rem;
   font-weight: 600;
 }
@@ -7829,6 +7834,19 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 1 1 12rem;
   overflow-wrap: anywhere;
   font-size: 0.78rem;
+}
+
+.about-support__links button,
+.about-support__paths button {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+  font: inherit;
+  cursor: pointer;
 }
 
 .about-support__blocked {

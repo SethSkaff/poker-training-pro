@@ -43,6 +43,7 @@ import {
 } from "./lib/desktopLifecycle";
 import { createSaveEnvelope } from "./lib/saveMigration";
 import { formatChips } from "./lib/format";
+import { formatMessage } from "./lib/localeMessages";
 import { deriveSafeModeSettings } from "./lib/safeMode";
 import { selectNearTransferScenario } from "./lib/trainingEngine";
 import {
@@ -146,12 +147,9 @@ function FirstRunSetup({
   return (
     <main className="startup-gate" aria-labelledby="first-run-title">
       <section className="startup-gate__panel startup-gate__panel--wide">
-        <p className="startup-gate__eyebrow">First-time setup</p>
-        <h1 id="first-run-title">Make the table comfortable</h1>
-        <p>
-          Choose a quiet starting setup before camera motion or timed play begins.
-          You can change every option later in Settings.
-        </p>
+        <p className="startup-gate__eyebrow">{formatMessage("shell.firstRun.eyebrow")}</p>
+        <h1 id="first-run-title">{formatMessage("shell.firstRun.title")}</h1>
+        <p>{formatMessage("shell.firstRun.intro")}</p>
         <div className="first-run-options">
           <label>
             <input
@@ -162,8 +160,8 @@ function FirstRunSetup({
               }
             />
             <span>
-              <strong>Reduce motion</strong>
-              <small>Replace room travel and card movement with calm fades.</small>
+              <strong>{formatMessage("shell.firstRun.reduceMotion.label")}</strong>
+              <small>{formatMessage("shell.firstRun.reduceMotion.description")}</small>
             </span>
           </label>
           <label>
@@ -173,8 +171,8 @@ function FirstRunSetup({
               onChange={(event) => patch({ colorAssist: event.target.checked })}
             />
             <span>
-              <strong>High contrast and four-color deck</strong>
-              <small>Strengthen edges and distinguish suits without color alone.</small>
+              <strong>{formatMessage("shell.firstRun.highContrast.label")}</strong>
+              <small>{formatMessage("shell.firstRun.highContrast.description")}</small>
             </span>
           </label>
           <label>
@@ -184,12 +182,12 @@ function FirstRunSetup({
               onChange={(event) => patch({ muted: event.target.checked })}
             />
             <span>
-              <strong>Start muted</strong>
-              <small>All decisions remain fully readable without audio.</small>
+              <strong>{formatMessage("shell.firstRun.startMuted.label")}</strong>
+              <small>{formatMessage("shell.firstRun.startMuted.description")}</small>
             </span>
           </label>
           <fieldset>
-            <legend>Deal speed</legend>
+            <legend>{formatMessage("settings.dealSpeed.heading")}</legend>
             {(["cinematic", "standard", "quick"] as const).map((speed) => (
               <button
                 key={speed}
@@ -203,15 +201,14 @@ function FirstRunSetup({
           </fieldset>
         </div>
         <p className="first-run-controls">
-          Keyboard: arrow keys and Tab navigate menus; Space/Enter activate; F
-          folds, C calls/checks, 2 raises double, R raises custom, and Esc pauses.
+          {formatMessage("shell.firstRun.keyboardHint")}
         </p>
         <div className="startup-gate__actions">
           <button type="button" onClick={() => onComplete(draft)}>
-            Save and continue
+            {formatMessage("shell.firstRun.saveButton")}
           </button>
           <button type="button" onClick={() => onComplete(initialSettings)}>
-            Skip setup
+            {formatMessage("shell.firstRun.skipButton")}
           </button>
         </div>
       </section>
@@ -314,7 +311,7 @@ export default function App() {
             setLastPublicReplay(loaded.replay);
           }
         } catch {
-          setStartupError("The saved tournament checkpoint could not be replayed. Your ratings and training progress are still safe.");
+          setStartupError(formatMessage("shell.error.tournamentReplayFailed"));
         }
       } else {
         const trainingCheckpoint = restoreTrainingCheckpoint(
@@ -889,9 +886,9 @@ export default function App() {
     return (
       <main className="startup-gate" aria-live="polite">
         <section className="startup-gate__panel">
-          <p className="startup-gate__eyebrow">Poker Training Pro</p>
-          <h1>Loading your table…</h1>
-          <p>Checking the protected desktop save journal.</p>
+          <p className="startup-gate__eyebrow">{formatMessage("shell.productName")}</p>
+          <h1>{formatMessage("shell.loading.title")}</h1>
+          <p>{formatMessage("shell.loading.detail")}</p>
         </section>
       </main>
     );
@@ -901,35 +898,32 @@ export default function App() {
     return (
       <main className="startup-gate" aria-labelledby="safe-mode-title">
         <section className="startup-gate__panel">
-          <p className="startup-gate__eyebrow">Recovery launch</p>
-          <h1 id="safe-mode-title">Safe mode is protecting this session</h1>
+          <p className="startup-gate__eyebrow">{formatMessage("shell.safeMode.eyebrow")}</p>
+          <h1 id="safe-mode-title">{formatMessage("shell.safeMode.title")}</h1>
+          <p>{formatMessage("shell.safeMode.description")}</p>
           <p>
-            Poker Training Pro detected repeated startup or renderer failures.
-            Hardware acceleration is disabled, animation is reduced, audio is
-            muted, and quick dealing is forced for this launch. Your saved
-            preferences and poker progress have not been replaced.
-          </p>
-          <p>
-            Recovery count: {safeMode.failureCount}.{" "}
-            {safeMode.recoveryMarkerRecovered
-              ? "A damaged recovery marker was repaired."
-              : "The recovery marker passed validation."}
+            {formatMessage(
+              safeMode.recoveryMarkerRecovered
+                ? "shell.safeMode.recoveryCountRepaired"
+                : "shell.safeMode.recoveryCountValid",
+              { failureCount: safeMode.failureCount },
+            )}
           </p>
           <div className="startup-gate__actions">
             <button
               type="button"
               onClick={() => setSafeModeAcknowledged(true)}
             >
-              Continue in safe mode
+              {formatMessage("shell.safeMode.continueButton")}
             </button>
             <button
               type="button"
               onClick={() => void persistence?.exportDiagnostics()}
             >
-              Export diagnostics
+              {formatMessage("shell.action.exportDiagnostics")}
             </button>
             <button type="button" onClick={() => void window.desktop?.quit()}>
-              Quit safely
+              {formatMessage("shell.action.quitSafely")}
             </button>
           </div>
         </section>
@@ -942,12 +936,14 @@ export default function App() {
     return (
       <main className="startup-gate" aria-labelledby="import-title">
         <section className="startup-gate__panel">
-          <p className="startup-gate__eyebrow">Progress found</p>
-          <h1 id="import-title">Bring your browser progress to desktop?</h1>
+          <p className="startup-gate__eyebrow">{formatMessage("shell.import.eyebrow")}</p>
+          <h1 id="import-title">{formatMessage("shell.import.title")}</h1>
           <p>
-            Player {candidate.preview.playerName} has completed{" "}
-            {candidate.preview.trainingCompleted} training scenarios across{" "}
-            {candidate.preview.resultCount} recorded results.
+            {formatMessage("shell.import.summary", {
+              playerName: candidate.preview.playerName,
+              trainingCompleted: candidate.preview.trainingCompleted,
+              resultCount: candidate.preview.resultCount,
+            })}
           </p>
           {startupError ? (
             <p className="startup-gate__error" role="alert">
@@ -972,7 +968,7 @@ export default function App() {
                 });
               }}
             >
-              Import progress
+              {formatMessage("shell.import.importButton")}
             </button>
             <button
               type="button"
@@ -1000,7 +996,7 @@ export default function App() {
                   });
               }}
             >
-              Start fresh
+              {formatMessage("recovery.action.startFresh")}
             </button>
           </div>
         </section>
@@ -1030,13 +1026,10 @@ export default function App() {
     return (
       <main className="startup-gate" aria-labelledby="save-failure-title">
         <section className="startup-gate__panel">
-          <p className="startup-gate__eyebrow">Save interrupted</p>
-          <h1 id="save-failure-title">Your last move is paused</h1>
+          <p className="startup-gate__eyebrow">{formatMessage("shell.saveFailure.eyebrow")}</p>
+          <h1 id="save-failure-title">{formatMessage("shell.saveFailure.title")}</h1>
           <p>{saveFailure}</p>
-          <p>
-            Gameplay is blocked until the protected save succeeds, so your
-            progress cannot silently diverge from disk.
-          </p>
+          <p>{formatMessage("shell.saveFailure.detail")}</p>
           <div className="startup-gate__actions">
             <button
               type="button"
@@ -1048,16 +1041,16 @@ export default function App() {
                 });
               }}
             >
-              Retry save
+              {formatMessage("shell.saveFailure.retryButton")}
             </button>
             <button
               type="button"
               onClick={() => void persistence?.exportDiagnostics()}
             >
-              Export diagnostics
+              {formatMessage("shell.action.exportDiagnostics")}
             </button>
             <button type="button" onClick={() => void window.desktop?.quit()}>
-              Quit safely
+              {formatMessage("shell.action.quitSafely")}
             </button>
           </div>
         </section>
@@ -1090,13 +1083,14 @@ export default function App() {
     return (
       <main className="startup-gate" aria-labelledby="resume-title">
         <section className="startup-gate__panel">
-          <p className="startup-gate__eyebrow">Tournament checkpoint</p>
-          <h1 id="resume-title">Return to your saved seat?</h1>
+          <p className="startup-gate__eyebrow">{formatMessage("shell.resumeTournament.eyebrow")}</p>
+          <h1 id="resume-title">{formatMessage("shell.resumeTournament.title")}</h1>
           <p>
-            {resumeCandidate.session.event.name} is waiting at hand{" "}
-            {resumeCandidate.session.tournament.tables[0]?.handNumber ?? 1}.
-            The deck and decisions were reconstructed from the protected seed
-            and public action log.
+            {formatMessage("shell.resumeTournament.summary", {
+              eventName: resumeCandidate.session.event.name,
+              handNumber:
+                resumeCandidate.session.tournament.tables[0]?.handNumber ?? 1,
+            })}
           </p>
           {startupError ? (
             <p className="startup-gate__error" role="alert">{startupError}</p>
@@ -1110,7 +1104,7 @@ export default function App() {
                 setScreen("tournament-table");
               }}
             >
-              Resume tournament
+              {formatMessage("shell.resumeTournament.resumeButton")}
             </button>
             <button
               type="button"
@@ -1120,7 +1114,7 @@ export default function App() {
                 persistBoundary("lifecycle", settings, progress);
               }}
             >
-              Abandon checkpoint and go to menu
+              {formatMessage("shell.resumeTournament.abandonButton")}
             </button>
           </div>
         </section>
@@ -1135,11 +1129,14 @@ export default function App() {
     return (
       <main className="startup-gate" aria-labelledby="resume-training-title">
         <section className="startup-gate__panel">
-          <p className="startup-gate__eyebrow">Training checkpoint</p>
-          <h1 id="resume-training-title">Return to your saved scenario?</h1>
+          <p className="startup-gate__eyebrow">{formatMessage("shell.resumeTraining.eyebrow")}</p>
+          <h1 id="resume-training-title">{formatMessage("shell.resumeTraining.title")}</h1>
           <p>
-            {scenario?.title ?? "Your saved Training scenario"} is ready at the
-            table. Your answer and score have not been submitted yet.
+            {formatMessage("shell.resumeTraining.summary", {
+              scenarioTitle:
+                scenario?.title ??
+                formatMessage("shell.resumeTraining.fallbackScenarioTitle"),
+            })}
           </p>
           <div className="startup-gate__actions">
             <button
@@ -1150,7 +1147,7 @@ export default function App() {
                 setScreen("practice");
               }}
             >
-              Resume Training
+              {formatMessage("shell.resumeTraining.resumeButton")}
             </button>
             <button
               type="button"
@@ -1160,7 +1157,7 @@ export default function App() {
                 persistBoundary("lifecycle", settings, progress);
               }}
             >
-              Abandon scenario and go to menu
+              {formatMessage("shell.resumeTraining.abandonButton")}
             </button>
           </div>
         </section>
@@ -1173,7 +1170,7 @@ export default function App() {
       <Suspense
         fallback={
           <SceneLoadingFallback
-            label="Loading the training table…"
+            label={formatMessage("shell.loading.trainingTable")}
             onCancel={() => setScreen("play")}
           />
         }
@@ -1204,7 +1201,7 @@ export default function App() {
       <Suspense
         fallback={
           <SceneLoadingFallback
-            label="Loading the tutorial…"
+            label={formatMessage("shell.loading.tutorial")}
             onCancel={() => setScreen("play")}
           />
         }
@@ -1219,7 +1216,9 @@ export default function App() {
       <Suspense
         fallback={
           <SceneLoadingFallback
-            label={`Entering ${runner.session.event.name}…`}
+            label={formatMessage("shell.loading.enteringEvent", {
+              eventName: runner.session.event.name,
+            })}
             onCancel={() => {
               activeReplayRef.current = undefined;
               setRunner(null);
@@ -1264,7 +1263,7 @@ export default function App() {
       <Suspense
         fallback={
           <SceneLoadingFallback
-            label="Loading the tournament table…"
+            label={formatMessage("shell.loading.tournamentTable")}
             onCancel={() => {
               activeReplayRef.current = undefined;
               persistBoundary("lifecycle", settings, progress);
@@ -1497,8 +1496,10 @@ export default function App() {
                       ? {
                           ok: true,
                           message: result.value.fileName
-                            ? `Redacted diagnostics exported as ${result.value.fileName}.`
-                            : "Redacted diagnostics exported.",
+                            ? formatMessage("saveData.diagnostics.successNamed", {
+                                fileName: result.value.fileName,
+                              })
+                            : formatMessage("saveData.diagnostics.success"),
                         }
                       : { ok: false, message: result.error.message };
                   }

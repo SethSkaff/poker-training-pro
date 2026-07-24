@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Volume2, VolumeX } from "lucide-react";
+import { formatMessage } from "../lib/localeMessages";
 import { NightCircuitScene } from "./Dashboard";
 
 interface TitleScreenProps {
@@ -25,7 +26,7 @@ export function TitleScreen({
   return (
     <main
       className="night-title"
-      aria-label="Poker Training Pro title screen"
+      aria-label={formatMessage("titleScreen.ariaLabel")}
       onClick={onEnter}
     >
       <NightCircuitScene />
@@ -36,18 +37,22 @@ export function TitleScreen({
           event.stopPropagation();
           onToggleMute();
         }}
-        aria-label={muted ? "Unmute music" : "Mute music"}
+        aria-label={formatMessage(
+          muted ? "titleScreen.unmuteMusic" : "titleScreen.muteMusic",
+        )}
       >
         {muted ? <VolumeX size={19} /> : <Volume2 size={19} />}
       </button>
 
       <section className="title-identity">
         <img src="/poker-training-pro-mark.png" alt="" />
-        <h1>Poker Training Pro</h1>
-        <p>Press any key</p>
+        <h1>{formatMessage("shell.productName")}</h1>
+        <p>{formatMessage("titleScreen.pressAnyKey")}</p>
       </section>
 
-      <small className="title-legal">Play chips only · No real-money wagering</small>
+      <small className="title-legal">
+        {formatMessage("titleScreen.playChipDisclosure")}
+      </small>
     </main>
   );
 }

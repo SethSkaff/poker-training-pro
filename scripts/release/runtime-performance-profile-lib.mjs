@@ -26,6 +26,25 @@ export const OBSERVATIONAL_BUDGETS = Object.freeze({
     reviewMax: 100,
     unit: "percent-of-host-capacity",
   }),
+  // Common "good"/"needs improvement" paint budgets (e.g. the Lighthouse FCP
+  // scoring curve), used here only as an observational reference point.
+  firstContentfulPaintMs: Object.freeze({
+    targetMax: 2_000,
+    reviewMax: 4_000,
+    unit: "ms",
+  }),
+  // Mirrors the widely published Total Blocking Time "good"/"needs
+  // improvement" split, applied here to the startup window only.
+  longTaskTotalMs: Object.freeze({
+    targetMax: 200,
+    reviewMax: 600,
+    unit: "ms",
+  }),
+  jsHeapUsedBytes: Object.freeze({
+    targetMax: 150 * 1024 * 1024,
+    reviewMax: 300 * 1024 * 1024,
+    unit: "bytes",
+  }),
 });
 
 export function parseWindowsProcessTreeSample(
@@ -81,6 +100,103 @@ export function classifyObservedMetric(value, budget) {
   if (value <= budget.targetMax) return "within-observed-target";
   if (value <= budget.reviewMax) return "review-on-this-host";
   return "over-observed-budget";
+}
+
+/**
+ * Some metrics (first paint, FCP, long-task totals) are not guaranteed to be
+ * exposed by every Chromium build/flag combination. This tolerates a missing
+ * observation instead of throwing, so one absent optional metric cannot hide
+ * the rest of the report.
+ */
+export function classifyOptionalMetric(value, budget) {
+  if (value === null || value === undefined) return "not-observed";
+  return classifyObservedMetric(value, budget);
+}
+
+/**
+ * Validates and summarizes samples captured from a buffered
+ * `PerformanceObserver({ type: "longtask", buffered: true })` registered as
+ * early as the profiler's CDP session allows. This is a startup-window
+ * main-thread-blocking proxy, not a full-session or pre-attach measurement.
+ */
+export function summarizeLongTasks(entries) {
+  if (!Array.isArray(entries)) {
+    throw new TypeError("Long-task entries must be an array.");
+  }
+  for (const entry of entries) {
+    if (
+      !isRecord(entry) ||
+      !Number.isFinite(entry.startTime) ||
+      entry.startTime < 0 ||
+      !Number.isFinite(entry.duration) ||
+      entry.duration < 0 ||
+      entry.duration > 60_000
+    ) {
+      throw new TypeError("Long-task entry has an invalid schema.");
+    }
+  }
+  const totalDurationMs = round(
+    entries.reduce((sum, entry) => sum + entry.duration, 0),
+    3,
+  );
+  const longestDurationMs = entries.length
+    ? round(Math.max(...entries.map((entry) => entry.duration)), 3)
+    : 0;
+  return {
+    count: entries.length,
+    totalDurationMs,
+    longestDurationMs,
+  };
+}
+
+/**
+ * Validates and summarizes `PerformanceResourceTiming` samples into a
+ * deterministic, name-sorted evidence shape. `durationMs` spans
+ * `startTime`..`responseEnd`, so it includes network fetch time as well as
+ * any in-process handling Chromium folds into that interval; it is a
+ * dependency-evaluation / asset-decode *proxy*, not an isolated V8 compile or
+ * GPU decode measurement (that requires the heavier Tracing domain).
+ */
+export function summarizeResourceEntries(entries) {
+  if (!Array.isArray(entries)) {
+    throw new TypeError("Resource entries must be an array.");
+  }
+  const sanitized = entries.map((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.name !== "string" ||
+      entry.name.length === 0 ||
+      !Number.isFinite(entry.startTime) ||
+      entry.startTime < 0 ||
+      !Number.isFinite(entry.responseEnd) ||
+      entry.responseEnd < 0 ||
+      !Number.isFinite(entry.transferSize) ||
+      entry.transferSize < 0
+    ) {
+      throw new TypeError("Resource entry has an invalid schema.");
+    }
+    return {
+      name: entry.name.slice(0, 300),
+      durationMs: round(Math.max(0, entry.responseEnd - entry.startTime), 3),
+      transferBytes: Math.round(entry.transferSize),
+    };
+  });
+  sanitized.sort(
+    (left, right) =>
+      left.name.localeCompare(right.name) || left.durationMs - right.durationMs,
+  );
+  return {
+    count: sanitized.length,
+    totalDurationMs: round(
+      sanitized.reduce((sum, entry) => sum + entry.durationMs, 0),
+      3,
+    ),
+    totalTransferBytes: sanitized.reduce(
+      (sum, entry) => sum + entry.transferBytes,
+      0,
+    ),
+    entries: sanitized,
+  };
 }
 
 export function summarizeProcessSamples(samples, logicalCpuCount) {
@@ -153,6 +269,18 @@ export function classifyRuntimeObservations(metrics) {
         metrics.processTree.peakNormalizedCpuPercent,
         OBSERVATIONAL_BUDGETS.peakNormalizedCpuPercent,
       ),
+    firstContentfulPaint: classifyOptionalMetric(
+      metrics.navigationTiming?.firstContentfulPaintMs,
+      OBSERVATIONAL_BUDGETS.firstContentfulPaintMs,
+    ),
+    longTaskTotal: classifyOptionalMetric(
+      metrics.longTasks?.totalDurationMs,
+      OBSERVATIONAL_BUDGETS.longTaskTotalMs,
+    ),
+    jsHeapUsed: classifyOptionalMetric(
+      metrics.cdpPerformanceMetrics?.JSHeapUsedSize,
+      OBSERVATIONAL_BUDGETS.jsHeapUsedBytes,
+    ),
   };
 }
 

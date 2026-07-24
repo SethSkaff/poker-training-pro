@@ -1,3 +1,6 @@
+import { SHELL_MESSAGES } from "./en-US.messages.shell";
+import { EN_US_GAMEPLAY_MESSAGES } from "./en-US.messages.gameplay";
+
 /**
  * Versioned English copy resource. New player-facing copy should be added here
  * instead of introducing another untracked string surface in a component.
@@ -37,6 +40,8 @@ export const EN_US_MESSAGES = Object.freeze({
     "support.offline": "This build plays fully offline with no account, ads, analytics, or remote uploads.",
     "support.publisherPending": "Support contact is pending publisher assignment.",
     "table.skipOpponentAnimation": "Skip opponent animation",
+    ...SHELL_MESSAGES,
+    ...EN_US_GAMEPLAY_MESSAGES,
   }),
 } as const satisfies MessageLocaleResourceV1);
 

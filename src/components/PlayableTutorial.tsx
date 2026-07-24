@@ -9,52 +9,46 @@ import {
   type TutorialStep,
 } from "../lib/playableTutorial";
 import { formatFixedDecimal } from "../lib/format";
+import { formatMessage } from "../lib/localeMessages";
 
 const STEP_COPY: Record<
   TutorialStep,
   { eyebrow: string; title: string; instruction: string }
 > = {
   peek: {
-    eyebrow: "1 · Your private cards",
-    title: "Peek before you decide",
-    instruction:
-      "Your hole cards belong only to you. Click the cards to reveal them.",
+    eyebrow: formatMessage("tutorial.step.peek.eyebrow"),
+    title: formatMessage("tutorial.step.peek.title"),
+    instruction: formatMessage("tutorial.step.peek.instruction"),
   },
   "legal-action": {
-    eyebrow: "2 · Legal actions",
-    title: "Use only the available choice",
-    instruction:
-      "You face no bet, so checking continues for zero chips. Calling is not possible and raising is closed in this practice beat.",
+    eyebrow: formatMessage("tutorial.step.legalAction.eyebrow"),
+    title: formatMessage("tutorial.step.legalAction.title"),
+    instruction: formatMessage("tutorial.step.legalAction.instruction"),
   },
   "bet-sizing": {
-    eyebrow: "3 · Bet sizing",
-    title: "Choose a legal amount",
-    instruction:
-      "The minimum is 400 and your maximum is 1,200. A 600-chip bet is 50% of the 1,200-chip pot.",
+    eyebrow: formatMessage("tutorial.step.betSizing.eyebrow"),
+    title: formatMessage("tutorial.step.betSizing.title"),
+    instruction: formatMessage("tutorial.step.betSizing.instruction"),
   },
   showdown: {
-    eyebrow: "4 · Hand flow",
-    title: "Be patient during an all-in runout",
-    instruction:
-      "No decision is pending: both players are all-in. Deal the turn and river one at a time, then compare five-card hands at showdown.",
+    eyebrow: formatMessage("tutorial.step.showdown.eyebrow"),
+    title: formatMessage("tutorial.step.showdown.title"),
+    instruction: formatMessage("tutorial.step.showdown.instruction"),
   },
   math: {
-    eyebrow: "5 · Read the numbers",
-    title: "Chips are not odds",
-    instruction:
-      "These four ideas answer different questions. Read them before continuing.",
+    eyebrow: formatMessage("tutorial.step.math.eyebrow"),
+    title: formatMessage("tutorial.step.math.title"),
+    instruction: formatMessage("tutorial.step.math.instruction"),
   },
   speed: {
-    eyebrow: "6 · Presentation speed",
-    title: "Set the table’s pace",
-    instruction:
-      "Speed changes how quickly opponents and cards are presented, never the cards, legal actions, or AI policy. Choose any speed except 1×.",
+    eyebrow: formatMessage("tutorial.step.speed.eyebrow"),
+    title: formatMessage("tutorial.step.speed.title"),
+    instruction: formatMessage("tutorial.step.speed.instruction"),
   },
   complete: {
-    eyebrow: "Tutorial complete",
-    title: "You are ready for the table",
-    instruction:
-      "You peeked, checked a legal action, sized a bet, waited for showdown, read the core math, and changed presentation speed.",
+    eyebrow: formatMessage("tutorial.step.complete.eyebrow"),
+    title: formatMessage("tutorial.step.complete.title"),
+    instruction: formatMessage("tutorial.step.complete.instruction"),
   },
 };
 
@@ -74,7 +68,10 @@ function TutorialCard({
 }) {
   if (hidden) {
     return (
-      <span className="tutorial-card tutorial-card--back" aria-label="Face-down card">
+      <span
+        className="tutorial-card tutorial-card--back"
+        aria-label={formatMessage("cards.faceDown")}
+      >
         <i />
       </span>
     );
@@ -84,7 +81,10 @@ function TutorialCard({
   return (
     <span
       className={`tutorial-card tutorial-card--${suit}`}
-      aria-label={`${rank} ${SUITS[suit]}`}
+      aria-label={formatMessage("tutorial.card.rankSuit", {
+        rank,
+        suit: SUITS[suit],
+      })}
     >
       <b>{rank}</b>
       <i>{SUITS[suit]}</i>
@@ -112,16 +112,18 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
     <main className="playable-tutorial" aria-labelledby="tutorial-title">
       <header className="tutorial-topbar">
         <button type="button" onClick={onExit}>
-          <ArrowLeft size={18} /> Choose mode
+          <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToModes")}
         </button>
         <div>
-          <span>Playable tutorial</span>
+          <span>{formatMessage("tutorial.header.label")}</span>
           <strong>
-            Step {Math.min(stepIndex + 1, 6)} of 6
+            {formatMessage("tutorial.header.stepProgress", {
+              step: Math.min(stepIndex + 1, 6),
+            })}
           </strong>
         </div>
         <button type="button" onClick={() => dispatch({ type: "restart" })}>
-          <RotateCcw size={17} /> Restart
+          <RotateCcw size={17} /> {formatMessage("tutorial.header.restart")}
         </button>
       </header>
 
@@ -141,12 +143,15 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
 
       <section className="tutorial-table" aria-label="Guided poker hand">
         <div className="tutorial-pot">
-          <span>Pot</span>
+          <span>{formatMessage("table.readout.potLabel")}</span>
           <strong>1,200</strong>
-          <small>Blinds 100 / 200</small>
+          <small>{formatMessage("tutorial.pot.blinds", { small: 100, big: 200 })}</small>
         </div>
 
-        <div className="tutorial-board" aria-label="Community cards">
+        <div
+          className="tutorial-board"
+          aria-label={formatMessage("table.communityCards.ariaLabel")}
+        >
           {activeBoard.map((card) => (
             <TutorialCard key={card} card={card} />
           ))}
@@ -156,8 +161,12 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
         </div>
 
         <div className="tutorial-villain">
-          <span>Patient Pat</span>
-          <small>{state.step === "showdown" ? "All-in" : "2,800 chips"}</small>
+          <span>{formatMessage("tutorial.villain.name")}</span>
+          <small>
+            {state.step === "showdown"
+              ? formatMessage("table.seat.allIn")
+              : formatMessage("tutorial.villain.chips")}
+          </small>
         </div>
 
         <button
@@ -168,14 +177,16 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
           disabled={state.step !== "peek"}
           onClick={() => dispatch({ type: "peek" })}
           aria-label={
-            state.cardsPeeked ? "Hole cards: ace and king of hearts" : "Peek at hole cards"
+            state.cardsPeeked
+              ? formatMessage("tutorial.holeCards.revealedAriaLabel")
+              : formatMessage("tutorial.holeCards.peekAriaLabel")
           }
         >
           <TutorialCard card="Ah" hidden={!state.cardsPeeked} />
           <TutorialCard card="Kh" hidden={!state.cardsPeeked} />
           {state.step === "peek" ? (
             <span>
-              <Eye size={16} /> Click to peek
+              <Eye size={16} /> {formatMessage("tutorial.holeCards.clickToPeek")}
             </span>
           ) : null}
         </button>
@@ -183,9 +194,12 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
 
       <section className="tutorial-controls">
         {state.step === "legal-action" ? (
-          <div className="tutorial-actions" aria-label="Legal poker actions">
+          <div
+            className="tutorial-actions"
+            aria-label={formatMessage("tutorial.actions.ariaLabel")}
+          >
             <button type="button" disabled>
-              Fold unavailable
+              {formatMessage("tutorial.actions.foldUnavailable")}
             </button>
             <button
               className="is-primary"
@@ -194,10 +208,10 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
                 dispatch({ type: "choose-action", action: "check" })
               }
             >
-              <Check size={17} /> Check
+              <Check size={17} /> {formatMessage("table.action.check")}
             </button>
             <button type="button" disabled>
-              Raise unavailable
+              {formatMessage("tutorial.actions.raiseUnavailable")}
             </button>
           </div>
         ) : null}
@@ -205,7 +219,7 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
         {state.step === "bet-sizing" ? (
           <div className="tutorial-bet">
             <label>
-              <span>Bet amount</span>
+              <span>{formatMessage("tutorial.bet.amountLabel")}</span>
               <input
                 type="range"
                 min={TUTORIAL_MIN_BET}
@@ -218,18 +232,20 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
                     amount: Number(event.target.value),
                   })
                 }
-                aria-label="Tutorial bet amount"
+                aria-label={formatMessage("tutorial.bet.ariaLabel")}
               />
               <output>
-                {state.betSize} chips · {Math.round((state.betSize / 1_200) * 100)}%
-                pot
+                {formatMessage("tutorial.bet.output", {
+                  amount: state.betSize,
+                  percent: Math.round((state.betSize / 1_200) * 100),
+                })}
               </output>
             </label>
             <button
               type="button"
               onClick={() => dispatch({ type: "confirm-bet" })}
             >
-              Bet {state.betSize}
+              {formatMessage("tutorial.bet.confirmButton", { amount: state.betSize })}
             </button>
           </div>
         ) : null}
@@ -238,14 +254,16 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
           <div className="tutorial-showdown">
             <p>
               {state.runoutCards === 0
-                ? "The flop is complete. Wait for the turn."
-                : "The turn makes your flush. The river still must be dealt before the pot is awarded."}
+                ? formatMessage("tutorial.showdown.waitTurn")
+                : formatMessage("tutorial.showdown.waitRiver")}
             </p>
             <button
               type="button"
               onClick={() => dispatch({ type: "wait-for-card" })}
             >
-              {state.runoutCards === 0 ? "Deal turn" : "Deal river and show down"}
+              {state.runoutCards === 0
+                ? formatMessage("tutorial.showdown.dealTurn")
+                : formatMessage("tutorial.showdown.dealRiverShowdown")}
             </button>
           </div>
         ) : null}
@@ -254,20 +272,20 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
           <>
             <dl className="tutorial-math">
               <div>
-                <dt>Chips</dt>
-                <dd>The countable units in stacks and the pot.</dd>
+                <dt>{formatMessage("tutorial.math.chips.label")}</dt>
+                <dd>{formatMessage("tutorial.math.chips.desc")}</dd>
               </div>
               <div>
-                <dt>Pot odds</dt>
-                <dd>A 400 call to win 2,000 total costs 20%.</dd>
+                <dt>{formatMessage("table.formula.potOdds.label")}</dt>
+                <dd>{formatMessage("tutorial.math.potOdds.desc")}</dd>
               </div>
               <div>
-                <dt>Equity</dt>
-                <dd>Your estimated share of the pot at showdown.</dd>
+                <dt>{formatMessage("table.formula.equity.label")}</dt>
+                <dd>{formatMessage("tutorial.math.equity.desc")}</dd>
               </div>
               <div>
-                <dt>Expected value</dt>
-                <dd>Average chips won or lost across repeated decisions.</dd>
+                <dt>{formatMessage("table.formula.expectedValue.label")}</dt>
+                <dd>{formatMessage("tutorial.math.expectedValue.desc")}</dd>
               </div>
             </dl>
             <button
@@ -275,7 +293,7 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
               type="button"
               onClick={() => dispatch({ type: "continue-math" })}
             >
-              Continue
+              {formatMessage("common.continue")}
             </button>
           </>
         ) : null}
@@ -283,7 +301,7 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
         {state.step === "speed" ? (
           <label className="tutorial-speed">
             <FastForward size={18} />
-            <span>Opponent presentation speed</span>
+            <span>{formatMessage("shared.opponentPresentationSpeed")}</span>
             <input
               type="range"
               min="0.5"
@@ -305,11 +323,11 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
           <div className="tutorial-finish">
             <Check size={22} />
             <p>
-              <strong>Practice is unscored.</strong>
-              Start Training for coached decisions or a Tour for full hands.
+              <strong>{formatMessage("tutorial.complete.unscored")}</strong>
+              {formatMessage("tutorial.complete.nextSteps")}
             </p>
             <button type="button" onClick={onExit}>
-              Return to modes
+              {formatMessage("tutorial.complete.returnToModes")}
             </button>
           </div>
         ) : null}
