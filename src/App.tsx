@@ -8,11 +8,22 @@ import {
   TourLobby,
 } from "./components/Dashboard";
 import { RecoveryScreen } from "./components/RecoveryScreen";
+import { useGamepadNavigation } from "./components/GamepadNavigationProvider";
+import { AboutSupport } from "./components/AboutSupport";
+import { CreditsScreen } from "./components/CreditsScreen";
+import { PlayChipAcknowledgment } from "./components/PlayChipAcknowledgment";
 import { SaveDataControls } from "./components/SaveDataControls";
 import { lazyWithPreload, SceneLoadingFallback } from "./components/SceneLoader";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { trainingScenarios } from "./data/trainingScenarios";
 import { gameAudio } from "./lib/audio";
+import { productionMusicManifest } from "./data/musicPlaylistManifest";
+import { createMusicPlaylist } from "./lib/musicPlaylist";
+import { connectFeedbackDucking } from "./lib/musicDucking";
+import {
+  acknowledgePlayChips,
+  needsPlayChipAcknowledgment,
+} from "./lib/playChipDisclosure";
 import {
   defaultProgress,
   defaultSettings,
@@ -89,7 +100,9 @@ type DesktopScreen =
   | "room-transition"
   | "tournament-table"
   | "practice"
-  | "tutorial";
+  | "tutorial"
+  | "credits"
+  | "chip-ack";
 
 type SafeModeState = Awaited<
   ReturnType<NonNullable<Window["desktop"]>["getSafeModeState"]>
@@ -205,6 +218,7 @@ export default function App() {
     StartupLoadResult | { kind: "loading" }
   >(() => (persistence ? { kind: "loading" } : { kind: "first-run" }));
   const [screen, setScreen] = useState<DesktopScreen>("home");
+  const [creditsReturn, setCreditsReturn] = useState<DesktopScreen>("home");
   const [tourMode, setTourMode] = useState<TournamentPolicyMode>("normal");
   const [timedMinutes, setTimedMinutes] = useState(30);
   const [runner, setRunner] = useState<TournamentRunner | null>(null);
@@ -240,6 +254,10 @@ export default function App() {
     settings,
     Boolean(safeMode?.active),
   );
+
+  // Controller navigation for the entire desktop flow (menus, dialogs,
+  // sliders, table). Keyboard-only operation stays complete alongside it.
+  useGamepadNavigation(effectiveSettings.controlBindings);
 
   useEffect(() => {
     if (!window.desktop) return;
@@ -362,6 +380,28 @@ export default function App() {
     screen !== "practice" && screen !== "tournament-table",
   );
 
+  // Background music playlist engine. DORMANT: the production manifest ships no
+  // licensed masters, so `createMusicPlaylist` builds no audio graph and makes
+  // no sound. The duck-under-feedback bridge is wired here but a dormant
+  // controller ignores it. When a licensed manifest exists, this is where a real
+  // Web Audio sink is supplied and `playlist.start()` runs.
+  useEffect(() => {
+    const playlist = createMusicPlaylist(productionMusicManifest, {
+      sink: { createVoice: () => null },
+      random: { next: () => Math.random() },
+      now: () =>
+        typeof performance !== "undefined" ? performance.now() : Date.now(),
+    });
+    const disconnectDucking = connectFeedbackDucking(gameAudio, playlist);
+    if (!playlist.dormant) {
+      playlist.start();
+    }
+    return () => {
+      disconnectDucking();
+      playlist.stop();
+    };
+  }, []);
+
   const updateProgress = useCallback(
     (nextProgress: PlayerProgress) => {
       setProgress(nextProgress);
@@ -471,6 +511,22 @@ export default function App() {
 
   const navigate = (nextScreen: DesktopScreen) => {
     setScreen(nextScreen);
+    gameAudio.play("click");
+  };
+
+  // First play requires the one-time interactive play-chip acknowledgment.
+  const enterPlay = () => {
+    if (needsPlayChipAcknowledgment(progress)) {
+      setScreen("chip-ack");
+      gameAudio.play("click");
+      return;
+    }
+    navigate("play");
+  };
+
+  const openCredits = (from: DesktopScreen) => {
+    setCreditsReturn(from);
+    setScreen("credits");
     gameAudio.play("click");
   };
 
@@ -1155,6 +1211,24 @@ export default function App() {
     );
   }
 
+  if (screen === "chip-ack") {
+    return (
+      <PlayChipAcknowledgment
+        onAcknowledge={() => {
+          const nextProgress = acknowledgePlayChips(progress);
+          setProgress(nextProgress);
+          persistBoundary("settings", settings, nextProgress);
+          navigate("play");
+        }}
+        onBack={() => navigate("home")}
+      />
+    );
+  }
+
+  if (screen === "credits") {
+    return <CreditsScreen onBack={() => navigate(creditsReturn)} />;
+  }
+
   if (screen === "play") {
     return (
       <ModeSelect
@@ -1231,6 +1305,26 @@ export default function App() {
             />
           ) : undefined
         }
+        about={
+          <AboutSupport
+            onOpenCredits={() => openCredits("settings")}
+            onExportDiagnostics={
+              persistence
+                ? async () => {
+                    const result = await persistence.exportDiagnostics();
+                    return result.ok
+                      ? {
+                          ok: true,
+                          message: result.value.fileName
+                            ? `Redacted diagnostics exported as ${result.value.fileName}.`
+                            : "Redacted diagnostics exported.",
+                        }
+                      : { ok: false, message: result.error.message };
+                  }
+                : undefined
+            }
+          />
+        }
       />
     );
   }
@@ -1243,8 +1337,9 @@ export default function App() {
 
   return (
     <HomeView
-      onPlay={() => navigate("play")}
+      onPlay={enterPlay}
       onSettings={() => navigate("settings")}
+      onCredits={() => openCredits("home")}
     />
   );
 }

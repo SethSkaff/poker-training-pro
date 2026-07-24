@@ -186,7 +186,16 @@ function clamp(value: number, minimum: number, maximum: number): number {
 }
 
 function roundChips(value: number, unit: number): number {
-  return Math.max(unit, Math.round(value / unit) * unit);
+  // Snap to the requested increment, then force a whole-chip amount. When the
+  // sizing unit is fractional (e.g. bigBlind/4 with a 50-chip big blind) the
+  // snapped value can be a half-chip like 187.5; the engine only accepts safe
+  // integer targets, so an unrounded value would produce an illegal bet/raise
+  // that trips `requireTarget`. Rounding here is a no-op whenever `unit` is a
+  // whole number (the snapped value is already integral), so decision cells
+  // that already used integer sizing — including the frozen bot-league
+  // baseline at bigBlind=100 — are bit-for-bit unchanged.
+  const snapped = Math.max(unit, Math.round(value / unit) * unit);
+  return Math.round(snapped);
 }
 
 function aggressionFor(actions: readonly HandActionRecord[], playerId: string): number {

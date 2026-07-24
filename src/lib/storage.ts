@@ -14,10 +14,12 @@ export const defaultSettings: GameSettings = {
   reducedMotion: false,
   dealSpeed: "standard",
   colorAssist: false,
+  // No control remaps by default; the action map supplies built-in bindings.
 };
 
 export const defaultProgress: PlayerProgress = {
   onboardingCompleted: false,
+  playChipsAcknowledged: false,
   playerName: "Player",
   decisionElo: 1000,
   mathElo: 1000,

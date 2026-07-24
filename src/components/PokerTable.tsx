@@ -56,6 +56,20 @@ import {
 import type { HeroTournamentAction } from "../modes/tournamentRunner";
 import { calculateAiDecisionTiming } from "../modes/decisionTiming";
 import {
+  keyEventToken,
+  resolveBindings,
+  resolveKeyboardAction,
+  type ActionId,
+} from "../lib/actionMap";
+import { isInputCaptureActive } from "../lib/inputCaptureGate";
+import {
+  GAME_ACTION_EVENT,
+  useIsGamepadActive,
+  type GameActionEventDetail,
+} from "./GamepadNavigationProvider";
+import { ControlsRemapPanel } from "./ControlsRemapPanel";
+import { useModalFocusTrap } from "../hooks/useModalFocusTrap";
+import {
   FreezableDelay,
   realFreezableDelayHost,
 } from "../lib/freezableDelay";
@@ -562,7 +576,7 @@ export function PokerTable({
   );
   const [paused, setPaused] = useState(false);
   const [pausePage, setPausePage] = useState<
-    "menu" | "controls" | "reference" | "settings"
+    "menu" | "controls" | "reference" | "settings" | "remap"
   >("menu");
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const arrivalDelayRef = useRef<FreezableDelay | null>(null);
@@ -574,7 +588,9 @@ export function PokerTable({
   const [resumeRecap, setResumeRecap] = useState<ResumeRecap | null>(null);
   const pausedRef = useRef(false);
   const pauseDialogRef = useRef<HTMLElement | null>(null);
-  const focusBeforePause = useRef<HTMLElement | null>(null);
+  const raiseComposerRef = useRef<HTMLDivElement | null>(null);
+  const historyRef = useRef<HTMLElement | null>(null);
+  const gamepadActive = useIsGamepadActive();
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
   const mathStartedAt = useRef<number | null>(null);
@@ -715,57 +731,21 @@ export function PokerTable({
     return () => gameAudio.setFocusMuted(false);
   }, [onPauseChange, paused]);
 
-  useEffect(() => {
-    if (!paused) return;
-    focusBeforePause.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    const dialog = pauseDialogRef.current;
-    const focusable = () =>
-      Array.from(
-        dialog?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      );
-    focusable()[0]?.focus();
-    const trapFocus = (event: KeyboardEvent) => {
-      if (event.key !== "Tab") return;
-      const controls = focusable();
-      if (controls.length === 0) {
-        event.preventDefault();
-        dialog?.focus();
-        return;
-      }
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", trapFocus);
-    return () => {
-      document.removeEventListener("keydown", trapFocus);
-      focusBeforePause.current?.focus();
-      focusBeforePause.current = null;
-    };
-  }, [paused]);
-
-  useEffect(() => {
-    if (!paused) return;
-    const frame = window.requestAnimationFrame(() => {
-      pauseDialogRef.current
-        ?.querySelector<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), select:not([disabled])',
-        )
-        ?.focus();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [pausePage, paused]);
+  // The shared modal focus contract: initial focus inside the dialog, a
+  // wraparound Tab trap, and exact restoration of the pre-pause focus. Subpage
+  // changes re-apply initial focus without disturbing the restore target.
+  useModalFocusTrap({
+    active: paused,
+    containerRef: pauseDialogRef,
+    focusKey: pausePage,
+  });
+  // The custom raise panel and hand-history popover follow the same modal focus
+  // contract (initial focus, wraparound trap, restore) as the pause dialog.
+  useModalFocusTrap({
+    active: raiseOpen && !action,
+    containerRef: raiseComposerRef,
+  });
+  useModalFocusTrap({ active: historyOpen, containerRef: historyRef });
 
   useEffect(() => {
     if (action || paused) return;
@@ -1008,7 +988,129 @@ export function PokerTable({
   );
 
   useEffect(() => {
+    // All table hotkeys resolve through the shared action map, so remaps and
+    // controller bindings stay consistent with the keyboard defaults.
+    const bindings = resolveBindings(settings.controlBindings);
+
+    const submitPresetRaise = (
+      sizing: "double" | "two-five" | "triple" | "pot" | "all-in",
+    ) => {
+      const raiseAvailable =
+        mode === "training"
+          ? trainingMeta?.actionEvs.raise !== undefined ||
+            trainingMeta?.actionEvs["all-in"] !== undefined
+          : Boolean(
+              tournament?.legalActions.raise ||
+                tournament?.legalActions.bet ||
+                tournament?.legalActions.allIn,
+            );
+      if (!raiseAvailable) return;
+      if (sizing === "all-in") {
+        handleAction("all-in");
+        return;
+      }
+      const legalMinimum =
+        tournament?.legalActions.raise?.minTo ??
+        tournament?.legalActions.bet?.min ??
+        scenario.minimumRaise;
+      const legalMaximum =
+        tournament?.legalActions.raise?.maxTo ??
+        tournament?.legalActions.bet?.max ??
+        tournament?.legalActions.allInTo ??
+        scenario.players.find((player) => player.seat === scenario.heroSeat)
+          ?.stack ??
+        scenario.minimumRaise;
+      const base =
+        sizing === "pot"
+          ? scenario.pot
+          : scenario.blinds[1] *
+            (sizing === "double"
+              ? 2
+              : sizing === "two-five"
+                ? 2.5
+                : 3);
+      const target = Math.max(
+        legalMinimum,
+        Math.min(legalMaximum, Math.round(base / scenario.blinds[1]) * scenario.blinds[1]),
+      );
+      setRaiseAmount(target);
+      handleAction(target >= legalMaximum ? "all-in" : "raise", target);
+    };
+
+    // Shared by keyboard and controller: run the resolved gameplay action.
+    const runGameAction = (actionId: ActionId) => {
+      switch (actionId) {
+        case "game.pause":
+          pauseReasonRef.current = "manual";
+          setResumeRecap(null);
+          setPausePage("menu");
+          setPaused(true);
+          break;
+        case "game.peek":
+          if (!action) setPeeked((value) => !value);
+          break;
+        case "game.fold":
+          handleAction("fold");
+          break;
+        case "game.checkCall":
+          handleAction(scenario.amountToCall > 0 ? "call" : "check");
+          break;
+        case "game.raiseCustom":
+          if (
+            !action &&
+            (mode === "training"
+              ? trainingMeta?.actionEvs.raise !== undefined ||
+                trainingMeta?.actionEvs["all-in"] !== undefined
+              : Boolean(
+                  tournament?.legalActions.raise ||
+                    tournament?.legalActions.bet ||
+                    tournament?.legalActions.allIn,
+                ))
+          ) {
+            setRaiseOpen((value) => !value);
+          }
+          break;
+        case "game.raiseDouble":
+          submitPresetRaise("double");
+          break;
+        case "game.raiseTwoFive":
+          submitPresetRaise("two-five");
+          break;
+        case "game.raiseTriple":
+          submitPresetRaise("triple");
+          break;
+        case "game.pot":
+          submitPresetRaise("pot");
+          break;
+        case "game.allIn":
+          submitPresetRaise("all-in");
+          break;
+        case "camera.left":
+          setCameraPan((value) => Math.max(-2, value - 1));
+          break;
+        case "camera.right":
+          setCameraPan((value) => Math.min(2, value + 1));
+          break;
+        case "camera.center":
+          setCameraPan(0);
+          break;
+        case "game.history":
+          setHistoryOpen((value) => !value);
+          break;
+        case "speed.down":
+          setSpeed((value) => Math.max(0.5, value - 0.5));
+          break;
+        case "speed.up":
+          setSpeed((value) => Math.min(3, value + 0.5));
+          break;
+        default:
+          break;
+      }
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
+      // The remapping capture dialog owns input exclusively while listening.
+      if (isInputCaptureActive()) return;
       const target = event.target;
       if (
         target instanceof HTMLInputElement ||
@@ -1018,8 +1120,9 @@ export function PokerTable({
         return;
       }
 
-      const key = event.key.toLowerCase();
-      if (key === "escape") {
+      // Escape stays reserved: it always pauses/closes and must stop App's
+      // own Escape handler from double-firing.
+      if (keyEventToken(event) === "escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (paused) {
@@ -1036,98 +1139,25 @@ export function PokerTable({
       }
       if (paused) return;
 
-      const submitPresetRaise = (
-        sizing: "double" | "two-five" | "triple" | "pot" | "all-in",
-      ) => {
-        const raiseAvailable =
-          mode === "training"
-            ? trainingMeta?.actionEvs.raise !== undefined ||
-              trainingMeta?.actionEvs["all-in"] !== undefined
-            : Boolean(
-                tournament?.legalActions.raise ||
-                  tournament?.legalActions.bet ||
-                  tournament?.legalActions.allIn,
-              );
-        if (!raiseAvailable) return;
-        if (sizing === "all-in") {
-          handleAction("all-in");
-          return;
-        }
-        const legalMinimum =
-          tournament?.legalActions.raise?.minTo ??
-          tournament?.legalActions.bet?.min ??
-          scenario.minimumRaise;
-        const legalMaximum =
-          tournament?.legalActions.raise?.maxTo ??
-          tournament?.legalActions.bet?.max ??
-          tournament?.legalActions.allInTo ??
-          scenario.players.find((player) => player.seat === scenario.heroSeat)
-            ?.stack ??
-          scenario.minimumRaise;
-        const base =
-          sizing === "pot"
-            ? scenario.pot
-            : scenario.blinds[1] *
-              (sizing === "double"
-                ? 2
-                : sizing === "two-five"
-                  ? 2.5
-                  : 3);
-        const target = Math.max(
-          legalMinimum,
-          Math.min(legalMaximum, Math.round(base / scenario.blinds[1]) * scenario.blinds[1]),
-        );
-        setRaiseAmount(target);
-        handleAction(target >= legalMaximum ? "all-in" : "raise", target);
-      };
-
-      if (key === " ") {
-        event.preventDefault();
-        if (!action) setPeeked((value) => !value);
-      } else if (key === "f") {
-        handleAction("fold");
-      } else if (key === "c") {
-        handleAction(scenario.amountToCall > 0 ? "call" : "check");
-      } else if (key === "r") {
-        if (
-          !action &&
-          (mode === "training"
-            ? trainingMeta?.actionEvs.raise !== undefined ||
-              trainingMeta?.actionEvs["all-in"] !== undefined
-            : Boolean(
-                tournament?.legalActions.raise ||
-                  tournament?.legalActions.bet ||
-                  tournament?.legalActions.allIn,
-              ))
-        ) {
-          setRaiseOpen((value) => !value);
-        }
-      } else if (key === "2") {
-        submitPresetRaise("double");
-      } else if (key === "5") {
-        submitPresetRaise("two-five");
-      } else if (key === "3") {
-        submitPresetRaise("triple");
-      } else if (key === "p") {
-        submitPresetRaise("pot");
-      } else if (key === "a") {
-        submitPresetRaise("all-in");
-      } else if (key === "q") {
-        setCameraPan((value) => Math.max(-2, value - 1));
-      } else if (key === "e") {
-        setCameraPan((value) => Math.min(2, value + 1));
-      } else if (key === "x") {
-        setCameraPan(0);
-      } else if (key === "h") {
-        setHistoryOpen((value) => !value);
-      } else if (key === "[" || key === "-") {
-        setSpeed((value) => Math.max(0.5, value - 0.5));
-      } else if (key === "]" || key === "=" || key === "+") {
-        setSpeed((value) => Math.min(3, value + 0.5));
-      }
+      const actionId = resolveKeyboardAction(bindings, "game", event);
+      if (!actionId) return;
+      // Peek uses Space by default; keep the page from scrolling.
+      if (keyEventToken(event) === "space") event.preventDefault();
+      runGameAction(actionId);
     };
+
+    const handleControllerAction = (event: Event) => {
+      if (isInputCaptureActive() || paused) return;
+      const detail = (event as CustomEvent<GameActionEventDetail>).detail;
+      if (detail?.actionId) runGameAction(detail.actionId as ActionId);
+    };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener(GAME_ACTION_EVENT, handleControllerAction);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(GAME_ACTION_EVENT, handleControllerAction);
+    };
   }, [
     action,
     handleAction,
@@ -1141,6 +1171,7 @@ export function PokerTable({
     scenario.pot,
     scenario.heroSeat,
     scenario.players,
+    settings.controlBindings,
     trainingMeta,
     tournament?.legalActions,
   ]);
@@ -1498,7 +1529,14 @@ export function PokerTable({
           </div>
 
           {historyOpen && (
-            <aside className="hand-history-popover" aria-label="Public hand history">
+            <aside
+              className="hand-history-popover"
+              aria-label="Public hand history"
+              role="dialog"
+              aria-modal="true"
+              tabIndex={-1}
+              ref={historyRef}
+            >
               <header>
                 <strong>Public action log</strong>
                 <button
@@ -1586,7 +1624,14 @@ export function PokerTable({
           )}
 
           {raiseOpen && !action && (
-            <div className="bet-composer">
+            <div
+              className="bet-composer"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Build your raise"
+              tabIndex={-1}
+              ref={raiseComposerRef as React.RefObject<HTMLDivElement>}
+            >
               <header>
                 <span>
                   <HandCoins size={17} /> Build your raise
@@ -1749,7 +1794,9 @@ export function PokerTable({
                   ? "Table controls"
                   : pausePage === "settings"
                     ? "Table settings"
-                    : "Poker quick reference"}
+                    : pausePage === "remap"
+                      ? "Remap controls"
+                      : "Poker quick reference"}
             </h2>
 
             {pausePage === "menu" ? (
@@ -1824,6 +1871,17 @@ export function PokerTable({
                   <div><dt>Q / E / X</dt><dd>Look left / right / center</dd></div>
                   <div><dt>[ / ]</dt><dd>Opponent speed</dd></div>
                 </dl>
+                <p className="pause-menu__hint">
+                  Controller: A check/call, X fold, Y raise, LB peek, View pause,
+                  d-pad camera. B goes back in menus.
+                </p>
+                <button
+                  className="secondary-button secondary-button--wide"
+                  type="button"
+                  onClick={() => setPausePage("remap")}
+                >
+                  Remap controls…
+                </button>
                 <button
                   className="secondary-button secondary-button--wide"
                   type="button"
@@ -1832,6 +1890,14 @@ export function PokerTable({
                   Back
                 </button>
               </>
+            ) : pausePage === "remap" ? (
+              <ControlsRemapPanel
+                controlBindings={settings.controlBindings}
+                onChange={(next) =>
+                  onSettingsChange({ ...settings, controlBindings: next })
+                }
+                onClose={() => setPausePage("controls")}
+              />
             ) : pausePage === "settings" ? (
               <>
                 <div className="pause-settings">
@@ -1939,6 +2005,12 @@ export function PokerTable({
       )}
 
       <footer className="table-footer">
+        {gamepadActive ? (
+          <span className="table-footer__controller">
+            <b>A</b> Check/Call · <b>X</b> Fold · <b>Y</b> Raise · <b>LB</b> Peek
+            · <b>View</b> Pause · <b>D-pad</b> Camera
+          </span>
+        ) : null}
         <span>
           <b>Space</b> Peek cards
         </span>

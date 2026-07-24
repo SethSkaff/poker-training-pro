@@ -12,6 +12,7 @@ const hero = { id: "hero", name: "Player", rating: 1_000 };
 function driveEvent(seed: string): {
   maxDecisions: number;
   replayActions: number;
+  resolved: boolean;
 } {
   let runner: TournamentRunner = advanceTournamentRunnerToHero(
     createCareerTournamentRunner({
@@ -23,40 +24,36 @@ function driveEvent(seed: string): {
     { policy: { simulations: 50 } },
   );
   let maxDecisions = runner.decisions.length;
-  try {
-    for (let step = 0; step < 400 && !runner.session.result; step += 1) {
-      const legal = heroTournamentLegalActions(runner);
-      if (!legal) {
-        runner = advanceTournamentRunnerToHero(runner, {
-          policy: { simulations: 50 },
-        });
-        maxDecisions = Math.max(maxDecisions, runner.decisions.length);
-        continue;
-      }
-      // Push chips aggressively so events resolve quickly.
-      const action = legal.allIn
-        ? "all-in"
-        : legal.call
-          ? "call"
-          : legal.check
-            ? "check"
-            : "fold";
-      runner = applyHeroTournamentAction(
-        runner,
-        { action, decisionElapsedMs: 200 },
-        { policy: { simulations: 50 } },
-      );
+  // No abort tolerance: an opponent policy must never propose an illegal bet
+  // target, so a scored career event must always advance without throwing.
+  for (let step = 0; step < 400 && !runner.session.result; step += 1) {
+    const legal = heroTournamentLegalActions(runner);
+    if (!legal) {
+      runner = advanceTournamentRunnerToHero(runner, {
+        policy: { simulations: 50 },
+      });
       maxDecisions = Math.max(maxDecisions, runner.decisions.length);
+      continue;
     }
-  } catch {
-    // A rare pre-existing engine edge (invalid opponent bet target under some
-    // seeds) can abort an event. It is orthogonal to memory retention; skip the
-    // event and keep the bounds we already observed for it.
-    return { maxDecisions, replayActions: runner.replayActions.length };
+    // Push chips aggressively so events resolve quickly.
+    const action = legal.allIn
+      ? "all-in"
+      : legal.call
+        ? "call"
+        : legal.check
+          ? "check"
+          : "fold";
+    runner = applyHeroTournamentAction(
+      runner,
+      { action, decisionElapsedMs: 200 },
+      { policy: { simulations: 50 } },
+    );
+    maxDecisions = Math.max(maxDecisions, runner.decisions.length);
   }
   return {
     maxDecisions,
     replayActions: runner.replayActions.length,
+    resolved: runner.session.result !== undefined,
   };
 }
 
@@ -64,11 +61,18 @@ describe("long-session memory bounds", () => {
   it("keeps the automatic decision log bounded across many events", () => {
     let observedMax = 0;
     let maxReplayActions = 0;
+    let abortedEvents = 0;
     for (let event = 0; event < 6; event += 1) {
-      const { maxDecisions, replayActions } = driveEvent(`soak-${event}`);
+      const { maxDecisions, replayActions, resolved } = driveEvent(
+        `soak-${event}`,
+      );
       observedMax = Math.max(observedMax, maxDecisions);
       maxReplayActions = Math.max(maxReplayActions, replayActions);
+      if (!resolved) abortedEvents += 1;
     }
+    // Every scored event must finish; an opponent policy proposing an illegal
+    // bet target would throw above (no tolerance) or leave the event unresolved.
+    expect(abortedEvents).toBe(0);
     // decisions is capped via slice(-79) => at most 80 retained.
     expect(observedMax).toBeLessThanOrEqual(80);
     // A single six-seat event cannot generate an unbounded replay log; each

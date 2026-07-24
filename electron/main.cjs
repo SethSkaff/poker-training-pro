@@ -6,10 +6,23 @@ const {
   powerMonitor,
   protocol,
   session,
+  shell,
 } = require("electron");
 const { writeFileSync } = require("node:fs");
-const { readFile } = require("node:fs/promises");
+const { mkdir, readFile } = require("node:fs/promises");
 const path = require("node:path");
+
+// Allowlisted bundled documents surfaced by the in-app Credits and About/Support
+// screens. Paths are relative to the application root (repo root in development,
+// the app.asar root once packaged) and are read verbatim; the renderer can only
+// request one of these fixed identifiers.
+const BUNDLED_DOCUMENTS = {
+  "privacy-policy": "docs/privacy-policy.md",
+  "third-party-packages": "THIRD-PARTY-NOTICES.packages.md",
+  "third-party-runtime": "THIRD-PARTY-NOTICES.runtime.txt",
+  "font-inter": "licenses/fonts/inter-OFL-1.1.txt",
+  "font-barlow": "licenses/fonts/barlow-condensed-OFL-1.1.txt",
+};
 const {
   createDiagnosticExport,
   loadAutosaveGeneration,
@@ -274,6 +287,63 @@ app.whenReady().then(() => {
   ipcMain.handle("app:getVersion", (event) => {
     assertTrustedSender(event);
     return app.getVersion();
+  });
+  ipcMain.handle("app:getAppInfo", (event) => {
+    assertTrustedSender(event);
+    return {
+      appVersion: app.getVersion(),
+      buildId: `${app.getVersion()}+${process.platform}-${process.arch}`,
+      versions: {
+        electron: process.versions.electron,
+        chromium: process.versions.chrome,
+        node: process.versions.node,
+      },
+      paths: {
+        save: saveDirectory(),
+        log: logDirectory(),
+      },
+      packaged: app.isPackaged,
+      platform: process.platform,
+      arch: process.arch,
+    };
+  });
+  ipcMain.handle("docs:readBundled", async (event, id) => {
+    assertTrustedSender(event);
+    const relativePath = BUNDLED_DOCUMENTS[id];
+    if (!relativePath) {
+      throw new TypeError("Unknown bundled document identifier");
+    }
+    try {
+      const text = await readFile(
+        path.resolve(__dirname, "..", relativePath),
+        "utf8",
+      );
+      return { ok: true, id, text };
+    } catch (error) {
+      diagnosticLogger.log("warn", "bundled-document-read-failed", {
+        id,
+        systemCode:
+          error && typeof error === "object" && typeof error.code === "string"
+            ? error.code
+            : "unknown",
+      });
+      return { ok: false, error: "read-failed" };
+    }
+  });
+  ipcMain.handle("shell:openFolder", async (event, target) => {
+    assertTrustedSender(event);
+    if (target !== "save" && target !== "log") {
+      throw new TypeError("Unknown folder target");
+    }
+    const directory = target === "save" ? saveDirectory() : logDirectory();
+    try {
+      await mkdir(directory, { recursive: true });
+      const message = await shell.openPath(directory);
+      // shell.openPath resolves with a non-empty string on failure.
+      return message ? { ok: false, error: message } : { ok: true };
+    } catch {
+      return { ok: false, error: "open-failed" };
+    }
   });
   ipcMain.handle("app:quit", (event) => {
     assertTrustedSender(event);
@@ -556,6 +626,10 @@ app.on("before-quit", () => {
 
 function saveDirectory() {
   return path.join(app.getPath("userData"), "saves");
+}
+
+function logDirectory() {
+  return path.join(app.getPath("userData"), "logs");
 }
 
 function createCrashLoopSafely() {

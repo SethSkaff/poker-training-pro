@@ -88,6 +88,8 @@ export interface TrainingResult {
 
 export interface PlayerProgress {
   onboardingCompleted: boolean;
+  /** One-time interactive play-chip disclosure acknowledgment. */
+  playChipsAcknowledged: boolean;
   playerName: string;
   decisionElo: number;
   mathElo: number;
@@ -100,6 +102,12 @@ export interface PlayerProgress {
   unlockedCircuit: number;
 }
 
+// Persisted per-device control remaps. Only differences from the built-in
+// defaults are stored; see `src/lib/actionMap.ts`. Optional so existing saves
+// (and the iOS bundle) remain valid without it.
+export type { ControlBindingOverrides } from "../lib/actionMap";
+import type { ControlBindingOverrides } from "../lib/actionMap";
+
 export interface GameSettings {
   masterVolume: number;
   muted: boolean;
@@ -109,4 +117,5 @@ export interface GameSettings {
   reducedMotion: boolean;
   dealSpeed: "cinematic" | "standard" | "quick";
   colorAssist: boolean;
+  controlBindings?: ControlBindingOverrides;
 }

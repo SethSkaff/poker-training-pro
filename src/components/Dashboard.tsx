@@ -1,10 +1,4 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  LockKeyhole,
-  RotateCcw,
-  Trophy,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, LockKeyhole, Trophy } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatClock, formatChips } from "../lib/format";
 import { useResilientAsset } from "../lib/useResilientAsset";
@@ -80,11 +74,13 @@ export function NightCircuitScene({ quiet = false }: SceneProps) {
 interface HomeViewProps {
   onPlay: () => void;
   onSettings: () => void;
+  onCredits?: () => void;
 }
 
 export function HomeView({
   onPlay,
   onSettings,
+  onCredits,
 }: HomeViewProps) {
   const [selectedAction, setSelectedAction] = useState<"play" | "settings">(
     "play",
@@ -206,6 +202,15 @@ export function HomeView({
         Play chips only <span aria-hidden="true">·</span> No real-money wagering
       </p>
 
+      {onCredits ? (
+        <button
+          className="home-reference__credits-link"
+          type="button"
+          onClick={onCredits}
+        >
+          Credits &amp; licenses
+        </button>
+      ) : null}
     </main>
   );
 }
@@ -404,34 +409,6 @@ export function TimedSetup({
           onClick={() => onStart(minutes)}
         >
           Start <ArrowRight size={19} />
-        </button>
-      </section>
-    </main>
-  );
-}
-
-interface TimedTablePendingProps {
-  minutes: number;
-  onBack: () => void;
-}
-
-export function TimedTablePending({
-  minutes,
-  onBack,
-}: TimedTablePendingProps) {
-  return (
-    <main className="night-shell night-shell--timed">
-      <NightCircuitScene />
-      <section className="timed-pending">
-        <p className="night-section-label">Timed Table</p>
-        <h1>{minutes} minutes selected</h1>
-        <p>One table · Normal opponents · No career progression</p>
-        <p className="timed-pending__status">
-          The selected duration is ready. Live table-runner wiring is the next
-          implementation step.
-        </p>
-        <button className="night-back" type="button" onClick={onBack}>
-          <ArrowLeft size={18} /> Change time
         </button>
       </section>
     </main>
@@ -739,17 +716,5 @@ export function TournamentCeremony({
         )}
       </section>
     </main>
-  );
-}
-
-export function EmptyTourReset({
-  onReset,
-}: {
-  onReset: () => void;
-}) {
-  return (
-    <button className="tour-reset" type="button" onClick={onReset}>
-      <RotateCcw size={15} /> Reset tour progress
-    </button>
   );
 }

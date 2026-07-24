@@ -17,6 +17,16 @@ interface DesktopPrepareCloseRequest {
 interface Window {
   desktop?: import("./lib/durablePersistence").DesktopPersistenceBridge & {
     getVersion: () => Promise<string>;
+    getAppInfo: () => Promise<import("./lib/creditsData").DesktopAppInfo>;
+    readBundledDocument: (
+      id: import("./lib/creditsData").BundledDocumentId,
+    ) => Promise<
+      | { ok: true; id: string; text: string }
+      | { ok: false; error: string }
+    >;
+    openFolder: (
+      target: "save" | "log",
+    ) => Promise<{ ok: true } | { ok: false; error: string }>;
     quit: () => Promise<void>;
     setFullscreen: (fullscreen: boolean) => Promise<boolean>;
     getSafeModeState: () => Promise<{

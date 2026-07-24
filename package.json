@@ -56,6 +56,9 @@
       "dist/**/*",
       "electron/**/*",
       "licenses/**/*",
+      "docs/privacy-policy.md",
+      "THIRD-PARTY-NOTICES.packages.md",
+      "THIRD-PARTY-NOTICES.runtime.txt",
       "package.json"
     ],
     "extraResources": [

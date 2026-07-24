@@ -4,6 +4,8 @@ import { previewSettingsEffect } from "../lib/audioPreview";
 import { defaultSettings } from "../lib/storage";
 import type { GameSettings } from "../types/poker";
 import { NightCircuitScene } from "./Dashboard";
+import { ControlsRemapPanel } from "./ControlsRemapPanel";
+import { useIsGamepadActive } from "./GamepadNavigationProvider";
 
 interface SettingsPanelProps {
   settings: GameSettings;
@@ -11,6 +13,7 @@ interface SettingsPanelProps {
   onChange: (settings: GameSettings) => void;
   onFullscreenChange: (fullscreen: boolean) => void;
   dataControls?: ReactNode;
+  about?: ReactNode;
 }
 
 interface ToggleRowProps {
@@ -99,7 +102,9 @@ export function SettingsPanel({
   onChange,
   onFullscreenChange,
   dataControls,
+  about,
 }: SettingsPanelProps) {
+  const gamepadActive = useIsGamepadActive();
   const [previewStatus, setPreviewStatus] = useState(
     "Choose Preview to hear the saved Master or Table effects level.",
   );
@@ -120,6 +125,12 @@ export function SettingsPanel({
           </button>
           <p className="night-section-label">System</p>
           <h1>Settings</h1>
+          {gamepadActive ? (
+            <p className="controller-hint" role="note">
+              Controller: D-pad move · A select · B back · D-pad ←/→ adjust
+              sliders
+            </p>
+          ) : null}
         </header>
 
         <div className="night-settings__group">
@@ -212,7 +223,21 @@ export function SettingsPanel({
           </div>
         </div>
 
+        <div className="night-settings__group">
+          <h2>Controls</h2>
+          <p className="night-setting__hint">
+            Rebind keyboard and controller actions. Conflicts and reserved
+            system keys are flagged; reset either device to its defaults.
+          </p>
+          <ControlsRemapPanel
+            controlBindings={settings.controlBindings}
+            onChange={(controlBindings) => patchSettings({ controlBindings })}
+          />
+        </div>
+
         {dataControls}
+
+        {about}
 
         <button
           className="night-reset"

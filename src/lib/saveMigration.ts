@@ -5,6 +5,7 @@ import type {
   TrainingResult,
 } from "../types/poker";
 import { defaultProgress, defaultSettings } from "./storage";
+import { normalizeControlBindingOverrides } from "./actionMap";
 
 export const SAVE_FORMAT = "poker-training-pro-save";
 export const CURRENT_SAVE_VERSION = 1;
@@ -240,6 +241,15 @@ function normalizeSettings(value: unknown): GameSettings {
         ? source.dealSpeed
         : defaultSettings.dealSpeed,
     colorAssist: booleanOr(source.colorAssist, defaultSettings.colorAssist),
+    // Preserve remapped controls through the durable save path, validating the
+    // untrusted persisted shape and dropping unknown ids/tokens.
+    ...(normalizeControlBindingOverrides(source.controlBindings)
+      ? {
+          controlBindings: normalizeControlBindingOverrides(
+            source.controlBindings,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -265,6 +275,10 @@ function normalizeProgress(value: unknown): PlayerProgress {
     onboardingCompleted: booleanOr(
       source.onboardingCompleted,
       defaultProgress.onboardingCompleted,
+    ),
+    playChipsAcknowledged: booleanOr(
+      source.playChipsAcknowledged,
+      defaultProgress.playChipsAcknowledged,
     ),
     playerName:
       typeof source.playerName === "string" &&

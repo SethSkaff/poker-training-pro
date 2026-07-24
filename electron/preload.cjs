@@ -1,7 +1,25 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const ALLOWED_DOCUMENT_IDS = new Set([
+  "privacy-policy",
+  "third-party-packages",
+  "third-party-runtime",
+  "font-inter",
+  "font-barlow",
+]);
+const ALLOWED_FOLDER_TARGETS = new Set(["save", "log"]);
+
 contextBridge.exposeInMainWorld("desktop", {
   getVersion: () => ipcRenderer.invoke("app:getVersion"),
+  getAppInfo: () => ipcRenderer.invoke("app:getAppInfo"),
+  readBundledDocument: (id) =>
+    ALLOWED_DOCUMENT_IDS.has(id)
+      ? ipcRenderer.invoke("docs:readBundled", id)
+      : Promise.resolve({ ok: false, error: "unknown-document" }),
+  openFolder: (target) =>
+    ALLOWED_FOLDER_TARGETS.has(target)
+      ? ipcRenderer.invoke("shell:openFolder", target)
+      : Promise.resolve({ ok: false, error: "unknown-target" }),
   quit: () => ipcRenderer.invoke("app:quit"),
   setFullscreen: (fullscreen) =>
     ipcRenderer.invoke("window:setFullscreen", Boolean(fullscreen)),

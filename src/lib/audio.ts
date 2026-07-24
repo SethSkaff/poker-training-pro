@@ -18,6 +18,7 @@ export class GameAudio {
   private muted = false;
   private focusMuted = false;
   private initializationFailed = false;
+  private readonly feedbackListeners = new Set<(sound: SoundName) => void>();
 
   setMusicVolume(volume: number): void {
     this.musicVolume = percent(volume) * 0.12;
@@ -89,7 +90,31 @@ export class GameAudio {
   }
 
   play(sound: SoundName): void {
+    // Notify observers (e.g. music ducking) before any graph work. This is a
+    // pure notification: it never constructs or wakes an audio graph and never
+    // discloses information the visual interface does not, so it cannot create
+    // a timing tell.
+    this.notifyFeedback(sound);
     this.playEffect(sound);
+  }
+
+  /**
+   * Observe feedback sounds so the (dormant) music bed can duck under card,
+   * chip, fold, and result cues. Returns an unsubscribe function.
+   */
+  observeFeedback(listener: (sound: SoundName) => void): () => void {
+    this.feedbackListeners.add(listener);
+    return () => this.feedbackListeners.delete(listener);
+  }
+
+  private notifyFeedback(sound: SoundName): void {
+    for (const listener of this.feedbackListeners) {
+      try {
+        listener(sound);
+      } catch {
+        // Observers are supplementary; a faulty one must never block a sound.
+      }
+    }
   }
 
   /**
