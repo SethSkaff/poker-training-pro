@@ -144,12 +144,21 @@ requirements are added.
 - [ ] Complete every remaining packaged input path (mouse, keyboard,
       controller, peek, drag-fold, raise sizing, history, resume/recovery,
       Normal/Rational/Timed completion) before calling the whole desktop build
-      previewed. A fresh Windows CDP smoke proves mouse/keyboard navigation,
-      peek, drag-fold, legal raise sizing, public hand history, pause settings,
+      previewed. A fresh Windows CDP smoke (rebuilt 2026-07-24 against current
+      source, hash `db18139b2b8c...`) proves mouse/keyboard navigation, peek,
+      drag-fold, legal raise sizing, public hand history, pause settings,
       fast-forward, keyboard resume, Gamepad API polling/mapping, and an
       isolated corrupt-current-save recovery flow, and full Normal/Rational/
       Timed Table tournament completion through their placement ceremonies;
       controller hardware still needs its own packaged acceptance coverage.
+      **New finding, not yet resolved**: the packaged input smoke is
+      intermittently flaky on the verification host — across 4 consecutive
+      runs against the fresh build, 2 passed cleanly (47/47) and 2 failed at
+      different unrelated steps (a raise-legality timing case, a pause-menu
+      poll timeout), pointing to real unseeded gameplay/timing variance rather
+      than a selector regression. Do not treat a single green run as reliable
+      evidence until this is investigated (deterministic seeding or
+      longer/retrying waits around the affected steps).
 
 ## Audio — after the desktop gameplay loop
 
@@ -333,7 +342,13 @@ requirements are added.
       missing operating-system or in-app reduced-motion coverage.
 - [ ] Analyze rendered luminance, saturated-red flashes, visual angle, and loop
       boundaries with a recognized tool; verify reduced motion on the packaged
-      release candidate and remove any sequence that fails.
+      release candidate and remove any sequence that fails. Re-run 2026-07-24
+      against the fresh package: 8/8 sequences pass (0 general/red flashes)
+      across full-motion and reduced-motion. Sampling density was measurably
+      improved (CDP `optimizeForSpeed` capture) from a worst case of ~1392ms
+      to 284.4ms per frame (~1.76fps) on the slowest sequence — still sparse
+      evidence for sub-second fast-motion content and still not a certified/
+      recognized analysis tool, so this stays unchecked.
 - [x] Keep tutorials, math explanations, errors, and non-gameplay notifications
       on screen until dismissed, or provide adjustable display duration. The
       audit locks out auto-dismiss timers in those surfaces; the lone lazy-load
@@ -499,7 +514,13 @@ requirements are added.
       arrival background; the production composition audit now proves every
       built runtime asset has a static reference.
 - [ ] Instrument dependency evaluation, startup/main-thread blocking, decode,
-      memory, and first-paint cost on supported hardware.
+      memory, and first-paint cost on supported hardware. Refreshed
+      2026-07-24 against the fresh package on this dev host: 492.8ms cold
+      launch to recognized renderer, 355 MiB peak process-tree working set,
+      4.735% peak normalized CPU, 0 startup long tasks, 2.4 MiB JS heap after
+      settle; first paint/FCP still not exposed by the custom
+      `poker-training-pro://` protocol. One host only — the low-spec/typical/
+      discrete-GPU hardware matrix remains outstanding.
 
 ### Audio behavior beyond the soundtrack
 

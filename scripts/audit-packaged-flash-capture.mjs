@@ -336,13 +336,27 @@ async function captureAndAnalyzeSequence(cdp, sequenceDefinition) {
   };
 }
 
+// The previous run's achieved capture cadence (see docs/rendered-flash-
+// luminance-analysis.md and work/packaged-flash-luminance-analysis.md) was
+// far slower than the CAPTURE_INTERVAL_MS request on several sequences (up to
+// ~1.4s/frame), driven by Chromium's Page.captureScreenshot encode time, not
+// by this script's own PNG decode step (decode happens after the burst, off
+// the capture-cadence critical path; see captureAndAnalyzeSequence). CDP's
+// `optimizeForSpeed` capture flag asks Chromium to use a faster, lower-effort
+// PNG encoder path instead of its default size-optimized one, trading file
+// size for encode latency; the output remains a standard PNG that
+// png-decode-lib.mjs's generic zlib-based decoder reads unchanged. Some
+// Chromium builds may not accept the flag, so the first call each pass
+// probes it and silently falls back to a plain capture if it errors.
+let optimizeForSpeedSupported = true;
+
 async function captureBurst(cdp, durationMs) {
   const frames = [];
   const start = Date.now();
   const maxFrames = Math.ceil(durationMs / CAPTURE_INTERVAL_MS) + 2;
   while (Date.now() - start < durationMs && frames.length < maxFrames) {
     const frameStart = Date.now();
-    const shot = await cdp.send("Page.captureScreenshot", { format: "png" });
+    const shot = await captureScreenshotFast(cdp);
     frames.push({ timestampMs: frameStart - start, dataBase64: shot.data });
     const remaining = CAPTURE_INTERVAL_MS - (Date.now() - frameStart);
     if (remaining > 0) await delay(remaining);
@@ -351,6 +365,20 @@ async function captureBurst(cdp, durationMs) {
     throw new Error("Flash capture burst produced fewer than two frames.");
   }
   return frames;
+}
+
+async function captureScreenshotFast(cdp) {
+  if (optimizeForSpeedSupported) {
+    try {
+      return await cdp.send("Page.captureScreenshot", {
+        format: "png",
+        optimizeForSpeed: true,
+      });
+    } catch {
+      optimizeForSpeedSupported = false;
+    }
+  }
+  return cdp.send("Page.captureScreenshot", { format: "png" });
 }
 
 async function clickIfPresent(cdp, selector) {

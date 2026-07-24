@@ -158,9 +158,16 @@ function auditInputs({
 
   for (const item of sourceFiles) {
     scanText(item.label, item.source, findings);
+    // The disclosure's two required phrases used to live inline in
+    // src/components/Dashboard.tsx. The string-catalog migration moved them
+    // into the versioned locale message resources (see
+    // src/locales/en-US.messages.gameplay.ts's "dashboard.home.chipsOnly"/
+    // "dashboard.home.noRealMoney" keys, which Dashboard.tsx's HomeView now
+    // renders through formatMessage()); the literal English text is still
+    // real, shipped production source, just relocated. Match the same
+    // any-real-file rule already used for the build/asar disclosure checks
+    // below instead of pinning to one filename.
     if (
-      (item.label === "src/components/Dashboard.tsx" ||
-        item.label.startsWith("fixture")) &&
       /\bPlay chips only\b/i.test(item.source) &&
       /\bNo real-money wagering\b/i.test(item.source)
     ) {
