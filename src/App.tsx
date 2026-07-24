@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   HomeView,
   ModeSelect,
@@ -7,11 +7,9 @@ import {
   TournamentCeremony,
   TourLobby,
 } from "./components/Dashboard";
-import { PokerTable } from "./components/PokerTable";
-import { PlayableTutorial } from "./components/PlayableTutorial";
 import { RecoveryScreen } from "./components/RecoveryScreen";
-import { RoomFlythrough } from "./components/RoomFlythrough";
 import { SaveDataControls } from "./components/SaveDataControls";
+import { lazyWithPreload, SceneLoadingFallback } from "./components/SceneLoader";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { trainingScenarios } from "./data/trainingScenarios";
 import { gameAudio } from "./lib/audio";
@@ -28,20 +26,33 @@ import {
   type DurableBoundary,
   type StartupLoadResult,
 } from "./lib/durablePersistence";
+import {
+  useAudioFocusLifecycle,
+  useDesktopSaveHandshake,
+} from "./lib/desktopLifecycle";
 import { createSaveEnvelope } from "./lib/saveMigration";
+import { deriveSafeModeSettings } from "./lib/safeMode";
 import { selectNearTransferScenario } from "./lib/trainingEngine";
 import {
   advanceTournamentRunnerToHero,
   applyHeroTournamentAction,
+  applyHeroTournamentActionAsync,
   createCareerTournamentRunner,
   createTimedTournamentRunner,
   createTournamentRunnerReplay,
   heroTournamentLegalActions,
   restoreTournamentRunnerReplay,
+  TournamentAdvanceAborted,
   type HeroTournamentAction,
   type TournamentRunner,
   type TournamentRunnerReplay,
 } from "./modes/tournamentRunner";
+import {
+  CancelledEquityRequestError,
+  createDesktopEquityService,
+  StaleEquityRequestError,
+  type RationalEquityService,
+} from "./modes/rationalEquityService";
 import type {
   TournamentPolicyMode,
   TournamentSessionCareerResult,
@@ -49,6 +60,24 @@ import type {
 } from "./modes/tournamentSession";
 import { createPokerTableSnapshot } from "./modes/tournamentSession";
 import type { GameSettings, PlayerProgress } from "./types/poker";
+
+// Mode-specific heavy scenes are code-split so the initial bundle stays small.
+// Each keeps an idempotent `preload()` used to fetch the next likely scene.
+const PokerTable = lazyWithPreload(() =>
+  import("./components/PokerTable").then((module) => ({
+    default: module.PokerTable,
+  })),
+);
+const PlayableTutorial = lazyWithPreload(() =>
+  import("./components/PlayableTutorial").then((module) => ({
+    default: module.PlayableTutorial,
+  })),
+);
+const RoomFlythrough = lazyWithPreload(() =>
+  import("./components/RoomFlythrough").then((module) => ({
+    default: module.RoomFlythrough,
+  })),
+);
 
 type DesktopScreen =
   | "home"
@@ -200,14 +229,17 @@ export default function App() {
     () => trainingScenarios[0],
   );
   const lastPresentedHand = useRef<string | null>(null);
-  const effectiveSettings: GameSettings = safeMode?.active
-    ? {
-        ...settings,
-        muted: true,
-        reducedMotion: true,
-        dealSpeed: "quick",
-      }
-    : settings;
+  // Worker-backed equity boundary: opponent Monte Carlo runs off the main
+  // thread. Decisions stay bit-for-bit deterministic with the synchronous path;
+  // a superseded/obsolete decision is cancelled and its stale result rejected.
+  const equityServiceRef = useRef<RationalEquityService | null>(null);
+  const decisionAbortRef = useRef<{ aborted: boolean } | null>(null);
+  const decisionPendingRef = useRef(false);
+  const runnerRef = useRef<TournamentRunner | null>(null);
+  const effectiveSettings: GameSettings = deriveSafeModeSettings(
+    settings,
+    Boolean(safeMode?.active),
+  );
 
   useEffect(() => {
     if (!window.desktop) return;
@@ -316,6 +348,18 @@ export default function App() {
       });
     },
     [persistence],
+  );
+
+  // Save at every safe OS boundary (close, session end, before-quit, suspend)
+  // and let the main process confirm before abandoning unsaved scored progress.
+  useDesktopSaveHandshake({
+    saveNow: () => persistBoundary("lifecycle", settings, progress),
+    hasUnsavedScoredProgress: () => persistence?.hasPendingCommit() ?? false,
+  });
+  // Apply the deterministic audio-focus policy outside the table; the table owns
+  // its own focus muting while it is mounted.
+  useAudioFocusLifecycle(
+    screen !== "practice" && screen !== "tournament-table",
   );
 
   const updateProgress = useCallback(
@@ -537,17 +581,13 @@ export default function App() {
     [persistBoundary, progress, settings],
   );
 
-  const actInTournament = useCallback(
-    (request: HeroTournamentAction) => {
-      if (!runner) return;
-      const next = applyHeroTournamentAction(runner, request, {
-        policy: { simulations: 60 },
-      });
+  const commitHeroAdvance = useCallback(
+    (previous: TournamentRunner, next: TournamentRunner) => {
       const replay = createTournamentRunnerReplay(next, 60);
       activeReplayRef.current = replay as unknown as Record<string, unknown>;
       finishRunner(next);
       if (!next.session.result) {
-        const previousHandId = runner.session.activeHand?.handId;
+        const previousHandId = previous.session.activeHand?.handId;
         const nextHandId = next.session.activeHand?.handId;
         persistBoundary(
           previousHandId !== nextHandId ? "hand" : "action",
@@ -557,7 +597,65 @@ export default function App() {
         );
       }
     },
-    [finishRunner, persistBoundary, progress, runner, settings],
+    [finishRunner, persistBoundary, progress, settings],
+  );
+
+  const actInTournament = useCallback(
+    (request: HeroTournamentAction) => {
+      if (!runner) return;
+      // Ignore re-entrant input while the previous decision resolves off-thread.
+      if (decisionPendingRef.current) return;
+      equityServiceRef.current ??= createDesktopEquityService();
+      const service = equityServiceRef.current;
+      // Supersede any obsolete in-flight equity work before this decision.
+      service.cancelPending();
+      const signal = { aborted: false };
+      decisionAbortRef.current = signal;
+      decisionPendingRef.current = true;
+      const source = runner;
+      const stillActive = () => !signal.aborted && runnerRef.current === source;
+      applyHeroTournamentActionAsync(source, request, service.estimate, {
+        policy: { simulations: 60 },
+        signal,
+      })
+        .then((next) => {
+          if (!stillActive()) return;
+          commitHeroAdvance(source, next);
+        })
+        .catch((error) => {
+          if (
+            !stillActive() ||
+            error instanceof TournamentAdvanceAborted ||
+            error instanceof CancelledEquityRequestError ||
+            error instanceof StaleEquityRequestError
+          ) {
+            return;
+          }
+          // Fail safe: fall back to the deterministic synchronous path so an
+          // unexpected worker fault never strands the table mid-decision.
+          const next = applyHeroTournamentAction(source, request, {
+            policy: { simulations: 60 },
+          });
+          commitHeroAdvance(source, next);
+        })
+        .finally(() => {
+          decisionPendingRef.current = false;
+        });
+    },
+    [commitHeroAdvance, runner],
+  );
+
+  useEffect(() => {
+    runnerRef.current = runner;
+  }, [runner]);
+
+  useEffect(
+    () => () => {
+      if (decisionAbortRef.current) decisionAbortRef.current.aborted = true;
+      equityServiceRef.current?.dispose();
+      equityServiceRef.current = null;
+    },
+    [],
   );
 
   const handleTournamentPause = useCallback(
@@ -854,38 +952,75 @@ export default function App() {
 
   if (screen === "practice") {
     return (
-      <PokerTable
-        key={trainingScenario.id}
-        mode="training"
-        scenario={trainingScenario}
-        settings={effectiveSettings}
-        progress={progress}
-        onProgressChange={updateProgress}
-        onSettingsChange={updateSettings}
-        onNextScenario={advanceTrainingScenario}
-        onExit={() => setScreen("home")}
-      />
+      <Suspense
+        fallback={
+          <SceneLoadingFallback
+            label="Loading the training table…"
+            onCancel={() => setScreen("play")}
+          />
+        }
+      >
+        <PokerTable
+          key={trainingScenario.id}
+          mode="training"
+          scenario={trainingScenario}
+          settings={effectiveSettings}
+          progress={progress}
+          onProgressChange={updateProgress}
+          onSettingsChange={updateSettings}
+          onNextScenario={advanceTrainingScenario}
+          onExit={() => setScreen("home")}
+        />
+      </Suspense>
     );
   }
 
   if (screen === "tutorial") {
-    return <PlayableTutorial onExit={() => setScreen("play")} />;
+    return (
+      <Suspense
+        fallback={
+          <SceneLoadingFallback
+            label="Loading the tutorial…"
+            onCancel={() => setScreen("play")}
+          />
+        }
+      >
+        <PlayableTutorial onExit={() => setScreen("play")} />
+      </Suspense>
+    );
   }
 
   if (screen === "room-transition" && runner) {
     return (
-      <RoomFlythrough
-        eventName={runner.session.event.name}
-        modeLabel={
-          runner.kind === "timed"
-            ? "Timed Table"
-            : runner.session.mode === "rational"
-              ? "Rational Circuit"
-              : "Normal Tour"
+      <Suspense
+        fallback={
+          <SceneLoadingFallback
+            label={`Entering ${runner.session.event.name}…`}
+            onCancel={() => {
+              activeReplayRef.current = undefined;
+              setRunner(null);
+              setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
+            }}
+          />
         }
-        settings={effectiveSettings}
-        onComplete={() => setScreen("tournament-table")}
-      />
+      >
+        <RoomFlythrough
+          eventName={runner.session.event.name}
+          modeLabel={
+            runner.kind === "timed"
+              ? "Timed Table"
+              : runner.session.mode === "rational"
+                ? "Rational Circuit"
+                : "Normal Tour"
+          }
+          settings={effectiveSettings}
+          onComplete={() => {
+            // Preload the table before the fly-through hands off to it.
+            void PokerTable.preload();
+            setScreen("tournament-table");
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -901,8 +1036,21 @@ export default function App() {
       handNumber > 1 && lastPresentedHand.current !== handPresentationKey;
     lastPresentedHand.current = handPresentationKey;
     return (
-      <PokerTable
-        key={[
+      <Suspense
+        fallback={
+          <SceneLoadingFallback
+            label="Loading the tournament table…"
+            onCancel={() => {
+              activeReplayRef.current = undefined;
+              persistBoundary("lifecycle", settings, progress);
+              setRunner(null);
+              setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
+            }}
+          />
+        }
+      >
+        <PokerTable
+          key={[
           snapshot.id,
           snapshot.street,
           snapshot.pot,
@@ -953,16 +1101,39 @@ export default function App() {
             return `${name}: ${decision.command.type}${amount}`;
           }),
           showArrival,
+          openingBigBlind:
+            runner.session.tournament.structure.levels[0]?.bigBlind,
+          qualifyingPlaces: runner.session.event.qualifyingPlaces,
         }}
-      />
+        />
+      </Suspense>
     );
   }
 
   if (tournamentResult) {
+    const completedReplay = lastPublicReplay ?? activeReplayRef.current;
     return (
       <TournamentCeremony
         result={tournamentResult}
+        {...(persistence && completedReplay
+          ? {
+              onExportReplay: async () => {
+                const result =
+                  await persistence.exportPublicReplay(completedReplay);
+                return result.ok
+                  ? {
+                      ok: true as const,
+                      ...(result.value.fileName
+                        ? { fileName: result.value.fileName }
+                        : {}),
+                    }
+                  : { ok: false as const, message: result.error.message };
+              },
+            }
+          : {})}
         onMenu={() => {
+          // Keep the completed-event replay in memory for export; only the
+          // resumable checkpoint is cleared on explicit leave.
           activeReplayRef.current = undefined;
           persistBoundary("lifecycle", settings, progress);
           setTournamentResult(null);
@@ -990,14 +1161,21 @@ export default function App() {
         onBack={() => navigate("home")}
         onSelect={(mode) => {
           if (mode === "tutorial") {
+            void PlayableTutorial.preload();
             setScreen("tutorial");
             gameAudio.play("deal");
           } else if (mode === "training") {
+            void PokerTable.preload();
             setScreen("practice");
             gameAudio.play("deal");
           } else if (mode === "timed") {
+            // Next likely scenes after setup: the room fly-through, then table.
+            void RoomFlythrough.preload();
+            void PokerTable.preload();
             navigate("timed-setup");
           } else {
+            void RoomFlythrough.preload();
+            void PokerTable.preload();
             setTourMode(mode);
             navigate("tour");
           }

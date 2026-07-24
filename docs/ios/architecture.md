@@ -59,6 +59,27 @@ This is a statement about the scaffold, not a permanent declaration for future b
 
 Mac validation still needs to cover the largest accessibility text sizes, VoiceOver reading/focus order, Voice Control names, Switch Control, Reduce Motion, Increase Contrast, iPad multitasking widths, rotation, and right-to-left layouts.
 
+## Orientation, safe areas, and size-class policy
+
+- Supported orientations are declared in `project.yml`: iPhone allows portrait plus both landscapes; iPad additionally allows portrait-upside-down. This lets iPad honor multitasking and Stage Manager while keeping iPhone away from the upside-down layout.
+- The app uses `NavigationStack` and adaptive layouts, so it never assumes a fixed width. It has no size-class lock and must remain usable in iPad split view and Slide Over, and across rotation, without a dedicated iPad-only code path.
+- Only decorative backgrounds use `.ignoresSafeArea()`; all interactive content stays inside SwiftUI-managed safe areas. Content is capped with `maxWidth` and centered so ultra-wide iPad widths do not stretch controls.
+- Mode selection uses an adaptive grid (`LazyVGrid` with `GridItem(.adaptive:)`), and the Training action row uses `ViewThatFits` to fall back from a horizontal row to a vertical stack when Dynamic Type or a narrow split-view width needs more room. Cards use `minimumScaleFactor` so ranks/suits never clip.
+
+## Timing model and background pausing
+
+- Opponent presentation delays come from the shared `decisionTiming` operation with `surface: "mobile"`, which applies a shorter animation budget than desktop. The user's **Table speed** preference (`settings.presentationRate`, 0.5x–3x) is passed as `presentationRate`; Reduce Motion biases the rate faster to shorten the wait and disables card/camera animation.
+- `TableTimingModel` freezes the *exact remaining* delay when `scenePhase` leaves `.active` and resumes from that frozen time on return, so inactive time is never counted against play and no timer runs away in the background. The countdown only advances on a display-cadence tick while the scene is active.
+
+## On-device bot math and simulation caps
+
+- All equity/range work runs in JavaScriptCore on device. `estimateEquity` and `botDecision` are hard-capped to a phone ceiling (`maximumSimulations = 600`, `maximumSimulationsPerSlice = 32`) that is well below the desktop ceiling of 1,200. Callers can lower the count but never raise it past the ceiling; the cap is a fixed simulation count, never a wall-clock budget.
+- Worst-case per-decision cost is measured by `scripts/benchmark-mobile-engine.mjs`, which evaluates the exact bundle in a Node VM. On one Windows/Node 24 host the observed worst case was an 8-way pot at the 600-simulation ceiling (~0.29 s); a default 2-opponent Normal decision was ~0.06 s. These are non-portable observations. On-device CPU, energy, thermal-state, and hang validation on target iPhones/iPads with Instruments remains macOS/Xcode work.
+
+## Cross-runtime verification (Windows)
+
+`src/modes/mobileEngineBridge.test.ts` loads the exact bundled `poker-engine.js` in a Node VM and asserts parity with the desktop TypeScript source for the hand evaluator, quiz parsing, Training grading, Elo, decision timing, and the Timed Table blind director, plus determinism and cap enforcement for equity/bot decisions. The Swift `SharedPokerEngineBridgeTests` mirror the same expectations against the bundle in the app target; they compile and run only on macOS/Xcode.
+
 ## State and evolution
 
 `LocalProgress` is versioned by its storage key (`localProgress.v1`) and decoded defensively. Invalid or missing state falls back to a safe empty value. A production migration should be added before changing the persisted schema.

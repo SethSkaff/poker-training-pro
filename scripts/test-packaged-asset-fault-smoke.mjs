@@ -8,9 +8,16 @@ import {
   assertNoUnexpectedRendererEvents,
   assertValidatedAssetFaultProfile,
   classifyAssetFaultRequest,
+  classifyExtendedAssetFaultRequest,
+  describeFaultMatrix,
   removeValidatedAssetFaultProfile,
+  slowDiskDelayForRequest,
+  validateAudioDeviceLossObservation,
+  validateFontFallbackObservation,
   validateRoomFallbackObservation,
+  validateSlowDiskObservation,
   validateStartMenuFallbackObservation,
+  validateVideoFallbackObservation,
 } from "./release/packaged-asset-fault-smoke-lib.mjs";
 
 const shared = {
@@ -136,4 +143,161 @@ test("validated cleanup removes exactly the isolated profile", async () => {
   assert.equal(assertValidatedAssetFaultProfile(profile), profile);
   await removeValidatedAssetFaultProfile(profile);
   await assert.rejects(stat(profile), { code: "ENOENT" });
+});
+
+test("the fault matrix enumerates every required fault class", () => {
+  const ids = describeFaultMatrix().map((entry) => entry.id);
+  for (const required of [
+    "corrupt-start-menu-image",
+    "missing-room-image",
+    "slow-disk-delayed-read",
+    "unsupported-or-corrupt-video",
+    "windows-font-load-failure",
+    "audio-device-loss",
+  ]) {
+    assert.ok(ids.includes(required), `fault matrix is missing ${required}`);
+  }
+  // Every entry declares its mechanism and package requirement.
+  for (const entry of describeFaultMatrix()) {
+    assert.equal(typeof entry.mechanism, "string");
+    assert.equal(typeof entry.needsFreshPackage, "boolean");
+  }
+});
+
+test("extended classification routes video, font, and image faults", () => {
+  assert.equal(
+    classifyExtendedAssetFaultRequest(
+      "poker-training-pro://app/start-menu-reference.png",
+    ),
+    "corrupt-start-menu",
+  );
+  assert.equal(
+    classifyExtendedAssetFaultRequest(
+      "poker-training-pro://app/start-menu-loop.webm",
+    ),
+    "corrupt-video",
+  );
+  assert.equal(
+    classifyExtendedAssetFaultRequest(
+      "poker-training-pro://app/assets/inter-latin.woff2",
+    ),
+    "missing-font",
+  );
+  assert.equal(
+    classifyExtendedAssetFaultRequest(
+      "poker-training-pro://app/index.html",
+    ),
+    "continue",
+  );
+});
+
+test("slow-disk model delays asset reads but not control requests", () => {
+  assert.equal(
+    slowDiskDelayForRequest("poker-training-pro://app/main.js", 500),
+    500,
+  );
+  assert.equal(
+    slowDiskDelayForRequest("poker-training-pro://app/font.woff2"),
+    750,
+  );
+  assert.equal(slowDiskDelayForRequest("poker-training-pro://app/", 500), 0);
+  assert.equal(slowDiskDelayForRequest("not a url", 500), 0);
+});
+
+const sharedFields = {
+  url: "poker-training-pro://app/index.html",
+  title: "Poker Training Pro",
+  rootChildCount: 1,
+  rootText: "Poker Training Pro Championship Room Play Settings",
+};
+
+test("slow-disk observation requires loading then recovery, never a hang", () => {
+  assert.deepEqual(
+    validateSlowDiskObservation({
+      ...sharedFields,
+      sawLoadingState: true,
+      eventuallyReady: true,
+      timedOut: false,
+    }),
+    [],
+  );
+  const failures = validateSlowDiskObservation({
+    ...sharedFields,
+    sawLoadingState: false,
+    eventuallyReady: false,
+    timedOut: true,
+  });
+  assert.match(failures.join("\n"), /loading state/);
+  assert.match(failures.join("\n"), /interactive screen/);
+  assert.match(failures.join("\n"), /permanently blocked/);
+});
+
+test("video observation requires a visible still fallback", () => {
+  assert.deepEqual(
+    validateVideoFallbackObservation({
+      ...sharedFields,
+      videoStatus: "failed",
+      stillFallbackVisible: true,
+      videoHidden: true,
+      playUsable: true,
+      settingsUsable: true,
+    }),
+    [],
+  );
+  const failures = validateVideoFallbackObservation({
+    ...sharedFields,
+    videoStatus: "ok",
+    stillFallbackVisible: false,
+    videoHidden: false,
+    playUsable: false,
+    settingsUsable: false,
+  });
+  assert.match(failures.join("\n"), /failed state/);
+  assert.match(failures.join("\n"), /still-image fallback/);
+  assert.match(failures.join("\n"), /Play and Settings/);
+});
+
+test("font observation requires a readable local fallback family", () => {
+  assert.deepEqual(
+    validateFontFallbackObservation({
+      ...sharedFields,
+      fontStatus: "failed",
+      usedFallbackFamily: true,
+      textReadable: true,
+    }),
+    [],
+  );
+  const failures = validateFontFallbackObservation({
+    ...sharedFields,
+    fontStatus: "ok",
+    usedFallbackFamily: false,
+    textReadable: false,
+  });
+  assert.match(failures.join("\n"), /failed state/);
+  assert.match(failures.join("\n"), /fallback family/);
+  assert.match(failures.join("\n"), /readable/);
+});
+
+test("audio-device loss keeps poker actions usable with a silent fallback", () => {
+  assert.deepEqual(
+    validateAudioDeviceLossObservation({
+      ...sharedFields,
+      audioContextFailed: true,
+      silentFallbackActive: true,
+      pokerActionUsable: true,
+      statusText: "Audio output unavailable; running silent.",
+    }),
+    [],
+  );
+  const failures = validateAudioDeviceLossObservation({
+    ...sharedFields,
+    audioContextFailed: false,
+    silentFallbackActive: false,
+    pokerActionUsable: false,
+    statusText: "",
+  });
+  assert.match(failures.join("\n"), /failed audio graph/);
+  assert.match(failures.join("\n"), /silent fallback/);
+  assert.match(failures.join("\n"), /poker actions/);
+  assert.match(failures.join("\n"), /audio-status/);
 });

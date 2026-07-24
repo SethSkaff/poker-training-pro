@@ -3,6 +3,11 @@ import type { TrainingScenario } from "../types/poker";
 export type ContextualPromptId =
   | "all-in"
   | "side-pot"
+  | "minimum-raise"
+  | "blind-increase"
+  | "elimination"
+  | "qualification"
+  | "elo-change"
   | "short-stack"
   | "decision-mistake";
 
@@ -33,6 +38,36 @@ export const CONTEXTUAL_PROMPTS: Record<
     message:
       "Each player can win only the chips they matched. Extra chips form a side pot contested by the deeper stacks.",
   },
+  "minimum-raise": {
+    id: "minimum-raise",
+    title: "Minimum raise",
+    message:
+      "A raise must add at least the size of the previous bet or raise. Smaller increases are illegal, which sets the floor on your raise slider.",
+  },
+  "blind-increase": {
+    id: "blind-increase",
+    title: "Blinds went up",
+    message:
+      "Every stack is now shorter measured in big blinds. Waiting for premium hands costs more each orbit, so wider aggression becomes correct.",
+  },
+  elimination: {
+    id: "elimination",
+    title: "A player busted",
+    message:
+      "The field is smaller. The blinds reach you more often and each remaining pot is worth a larger share of the payouts.",
+  },
+  qualification: {
+    id: "qualification",
+    title: "In the qualifying places",
+    message:
+      "Surviving now banks the result. Weigh tournament survival against raw chip expected value before committing a big stack.",
+  },
+  "elo-change": {
+    id: "elo-change",
+    title: "Your Elo moved",
+    message:
+      "Elo tracks decision and math skill against calibrated bots, not chips won. A single hand rarely swings it far, so keep playing your reads.",
+  },
   "short-stack": {
     id: "short-stack",
     title: "Short-stack pressure",
@@ -49,6 +84,24 @@ export const CONTEXTUAL_PROMPTS: Record<
 
 const PROMPT_KEY = "poker-training-pro:contextual-prompts:v1";
 const IDS = Object.keys(CONTEXTUAL_PROMPTS) as ContextualPromptId[];
+
+/**
+ * Priority order used when several first-occurrence events land at once. The
+ * rarer, more consequential table events surface ahead of the standing
+ * pressure reminders so a player is never shown a generic tip while a side pot
+ * or elimination just happened.
+ */
+export const CONTEXTUAL_PROMPT_ORDER: ContextualPromptId[] = [
+  "all-in",
+  "side-pot",
+  "minimum-raise",
+  "blind-increase",
+  "elimination",
+  "qualification",
+  "elo-change",
+  "short-stack",
+  "decision-mistake",
+];
 
 export function defaultContextualPromptState(): ContextualPromptState {
   return { enabled: true, seen: [] };
@@ -87,6 +140,14 @@ export function saveContextualPromptState(state: ContextualPromptState) {
   }
 }
 
+/**
+ * Clears the seen history and re-enables coaching so every first-occurrence
+ * prompt can appear again. Backs the "Replay contextual tips" control.
+ */
+export function resetContextualPromptState(): ContextualPromptState {
+  return { enabled: true, seen: [] };
+}
+
 export function nextContextualPrompt(
   state: ContextualPromptState,
   occurrences: readonly ContextualPromptId[],
@@ -105,10 +166,49 @@ export function markContextualPromptSeen(
     : { ...state, seen: [...state.seen, id] };
 }
 
-export function detectTablePromptOccurrences(
-  scenario: TrainingScenario,
-  actionHistory: readonly string[] = [],
+/**
+ * Signals gathered from the live table. Every field is optional so the same
+ * detector serves Training scenarios (scenario-only) and full tournaments
+ * (scenario plus tournament transition context). The consumer captures the
+ * numeric baselines it needs; this function stays pure and deterministic.
+ */
+export interface ContextualPromptSignals {
+  scenario: TrainingScenario;
+  actionHistory?: readonly string[];
+  /** True once a legal raise is offered, i.e. the minimum-raise rule applies. */
+  minimumRaiseAvailable?: boolean;
+  /** Big blind of the opening tournament level, for detecting an increase. */
+  openingBigBlind?: number;
+  /** Big blind currently in force. */
+  currentBigBlind?: number;
+  /** Total entrants in the tournament. */
+  fieldSize?: number;
+  /** Players still active. */
+  playersRemaining?: number;
+  /** Finishing places that qualify or cash. */
+  qualifyingPlaces?: number;
+  /** Combined Elo captured when the table was entered. */
+  eloBaseline?: number;
+  /** Combined Elo right now. */
+  eloCurrent?: number;
+}
+
+export function detectContextualPromptOccurrences(
+  signals: ContextualPromptSignals,
 ): ContextualPromptId[] {
+  const {
+    scenario,
+    actionHistory = [],
+    minimumRaiseAvailable,
+    openingBigBlind,
+    currentBigBlind,
+    fieldSize,
+    playersRemaining,
+    qualifyingPlaces,
+    eloBaseline,
+    eloCurrent,
+  } = signals;
+
   const occurrences: ContextualPromptId[] = [];
   const allInPlayers = scenario.players.filter(
     (player) => player.status === "all-in",
@@ -133,6 +233,44 @@ export function detectTablePromptOccurrences(
   ) {
     occurrences.push("side-pot");
   }
+  if (
+    minimumRaiseAvailable === true ||
+    copy.includes("minimum raise") ||
+    copy.includes("min raise") ||
+    copy.includes("min-raise")
+  ) {
+    occurrences.push("minimum-raise");
+  }
+  if (
+    typeof openingBigBlind === "number" &&
+    typeof currentBigBlind === "number" &&
+    currentBigBlind > openingBigBlind
+  ) {
+    occurrences.push("blind-increase");
+  }
+  if (
+    typeof fieldSize === "number" &&
+    typeof playersRemaining === "number" &&
+    playersRemaining < fieldSize
+  ) {
+    occurrences.push("elimination");
+  }
+  if (
+    typeof qualifyingPlaces === "number" &&
+    qualifyingPlaces > 0 &&
+    typeof playersRemaining === "number" &&
+    playersRemaining > 0 &&
+    playersRemaining <= qualifyingPlaces
+  ) {
+    occurrences.push("qualification");
+  }
+  if (
+    typeof eloBaseline === "number" &&
+    typeof eloCurrent === "number" &&
+    eloCurrent !== eloBaseline
+  ) {
+    occurrences.push("elo-change");
+  }
 
   const hero = scenario.players.find(
     (player) => player.seat === scenario.heroSeat,
@@ -144,5 +282,9 @@ export function detectTablePromptOccurrences(
   ) {
     occurrences.push("short-stack");
   }
-  return occurrences;
+
+  return occurrences.sort(
+    (a, b) =>
+      CONTEXTUAL_PROMPT_ORDER.indexOf(a) - CONTEXTUAL_PROMPT_ORDER.indexOf(b),
+  );
 }

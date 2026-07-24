@@ -1,6 +1,11 @@
 import { ArrowRight, FastForward, Spade } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useResilientAsset } from "../lib/useResilientAsset";
+import {
+  FreezableDelay,
+  realFreezableDelayHost,
+} from "../lib/freezableDelay";
+import { useAwayFreezeGroup } from "../lib/desktopLifecycle";
 import type { GameSettings } from "../types/poker";
 
 interface RoomFlythroughProps {
@@ -17,25 +22,36 @@ export function RoomFlythrough({
   onComplete,
 }: RoomFlythroughProps) {
   const [phase, setPhase] = useState<"loading" | "room" | "seat">("loading");
+  const freezeGroup = useAwayFreezeGroup();
   const backgroundArt = useResilientAsset(
     "/start-menu-room.png",
     "Championship-room background art",
   );
 
   useEffect(() => {
-    if (settings.reducedMotion) {
-      const reducedTimer = window.setTimeout(onComplete, 500);
-      return () => window.clearTimeout(reducedTimer);
-    }
-    const roomTimer = window.setTimeout(() => setPhase("room"), 650);
-    const seatTimer = window.setTimeout(() => setPhase("seat"), 2_450);
-    const completeTimer = window.setTimeout(onComplete, 4_300);
-    return () => {
-      window.clearTimeout(roomTimer);
-      window.clearTimeout(seatTimer);
-      window.clearTimeout(completeTimer);
+    // Freeze the exact remaining arrival delays if the window goes away
+    // mid-fly-through, then continue from that remainder rather than restarting
+    // the sequence or entering the seat while hidden.
+    const delays: FreezableDelay[] = [];
+    const schedule = (ms: number, callback: () => void) => {
+      const delay = new FreezableDelay(realFreezableDelayHost, ms, callback);
+      freezeGroup.add(delay);
+      delays.push(delay);
     };
-  }, [onComplete, settings.reducedMotion]);
+    if (settings.reducedMotion) {
+      schedule(500, onComplete);
+    } else {
+      schedule(650, () => setPhase("room"));
+      schedule(2_450, () => setPhase("seat"));
+      schedule(4_300, onComplete);
+    }
+    return () => {
+      for (const delay of delays) {
+        delay.cancel();
+        freezeGroup.remove(delay);
+      }
+    };
+  }, [freezeGroup, onComplete, settings.reducedMotion]);
 
   return (
     <main

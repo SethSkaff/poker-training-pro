@@ -48,8 +48,11 @@ import {
 } from "./normal";
 import {
   decideRationalAction,
+  decideRationalActionAsync,
+  type EquityEstimator,
   type RationalActionRole,
   type RationalDecision,
+  type RationalPolicyInput,
 } from "./rational";
 
 export const SESSION_TABLE_SIZE = 6;
@@ -1091,16 +1094,19 @@ function policyInformation(
   };
 }
 
-/**
- * Shared adapter for both AI modes. Rational supplies the information-set EV
- * baseline; Normal wraps the same distribution with bounded personality and
- * public-history deviations.
- */
-export function chooseTournamentSessionPolicyAction(
+interface SessionPolicyContext {
+  rationalInput: RationalPolicyInput;
+  hand: SessionHandState;
+  informationSet: PlayerInformationSet;
+  legalActions: LegalActionSet;
+  level: BlindLevel;
+}
+
+function sessionPolicyContext(
   session: TournamentSession,
   playerId: string,
-  options: SessionPolicyOptions = {},
-): SessionPolicyDecision {
+  options: SessionPolicyOptions,
+): SessionPolicyContext {
   const { hand, informationSet, legalActions, level } = policyInformation(
     session,
     playerId,
@@ -1108,7 +1114,7 @@ export function chooseTournamentSessionPolicyAction(
   const active = session.tournament.players.filter(
     (player) => player.status === "active",
   );
-  const rational = decideRationalAction({
+  const rationalInput: RationalPolicyInput = {
     informationSet,
     legalActions,
     bigBlind: level.bigBlind,
@@ -1122,8 +1128,17 @@ export function chooseTournamentSessionPolicyAction(
         active.reduce((sum, player) => sum + player.stack, 0) /
         Math.max(1, active.length),
     },
-  });
+  };
+  return { rationalInput, hand, informationSet, legalActions, level };
+}
 
+function assembleSessionPolicyDecision(
+  session: TournamentSession,
+  playerId: string,
+  rational: RationalDecision,
+  context: SessionPolicyContext,
+): SessionPolicyDecision {
+  const { hand, informationSet, legalActions, level } = context;
   if (session.mode === "rational") {
     return {
       mode: "rational",
@@ -1156,6 +1171,40 @@ export function chooseTournamentSessionPolicyAction(
     normal,
     rationalBaseline: rational,
   };
+}
+
+/**
+ * Shared adapter for both AI modes. Rational supplies the information-set EV
+ * baseline; Normal wraps the same distribution with bounded personality and
+ * public-history deviations.
+ */
+export function chooseTournamentSessionPolicyAction(
+  session: TournamentSession,
+  playerId: string,
+  options: SessionPolicyOptions = {},
+): SessionPolicyDecision {
+  const context = sessionPolicyContext(session, playerId, options);
+  const rational = decideRationalAction(context.rationalInput);
+  return assembleSessionPolicyDecision(session, playerId, rational, context);
+}
+
+/**
+ * Deterministic async counterpart used by the worker-backed live progression.
+ * The heavy equity Monte Carlo is delegated to `estimateEquity` (a worker),
+ * while the resulting session decision is bit-for-bit identical to the
+ * synchronous adapter for a fixed seed and work budget.
+ */
+export async function chooseTournamentSessionPolicyActionAsync(
+  session: TournamentSession,
+  playerId: string,
+  estimateEquity: EquityEstimator,
+  options: SessionPolicyOptions = {},
+): Promise<SessionPolicyDecision> {
+  const context = sessionPolicyContext(session, playerId, options);
+  const rational = await decideRationalActionAsync(context.rationalInput, {
+    estimateEquity,
+  });
+  return assembleSessionPolicyDecision(session, playerId, rational, context);
 }
 
 function tableOrderForSnapshot(

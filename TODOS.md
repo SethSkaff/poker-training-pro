@@ -171,10 +171,10 @@ requirements are added.
       without a dead end or placeholder.
 - [x] Add a first-run flow that offers accessibility and control setup before
       animation or timed interactions begin, then lets the player skip it.
-- [ ] Build a short playable tutorial that teaches card peeking, legal actions,
+- [x] Build a short playable tutorial that teaches card peeking, legal actions,
       bet sizing, hand flow, showdown, and the difference between chips, pot
       odds, equity, and expected value.
-- [ ] Add optional contextual prompts for the first occurrence of an all-in,
+- [x] Add optional contextual prompts for the first occurrence of an all-in,
       side pot, minimum raise, blind increase, elimination, qualification, and
       Elo change; keep them manually dismissible and replayable.
 - [x] Add an always-available poker reference with hand rankings, betting terms,
@@ -214,13 +214,13 @@ requirements are added.
 - [x] On table blur/document hiding, enter the explicit pause menu, stop the
       Training decision/math stopwatch, mute table audio, pause the arrival
       timeout, and block tournament action delivery until Resume.
-- [ ] Wire minimize/screen-lock/Windows suspend through Electron lifecycle,
+- [x] Wire minimize/screen-lock/Windows suspend through Electron lifecycle,
       freeze the exact remaining AI-presentation and animation delays rather
       than merely blocking/restarting them, and apply the same policy outside
       the table.
 - [x] Shift Timed Table's authoritative start clock by the inactive duration on
       explicit Resume and checkpoint the adjusted deterministic replay.
-- [ ] On resume, restore the exact decision state and camera position, show a
+- [x] On resume, restore the exact decision state and camera position, show a
       brief readable recap, and do not count inactive time against Training or
       Timed Table play.
 - [ ] Save at safe boundaries before close, Windows session end, suspend, and
@@ -279,7 +279,7 @@ requirements are added.
 - [x] Implement narrow desktop Export Save plus two-phase Import Save and Reset
       Progress backends with validation, redacted preview, one-use confirmation,
       TOCTOU protection, atomic commit, and retained valid generations.
-- [ ] Add player-visible Export Save, Import Save, and Reset Progress actions,
+- [x] Add player-visible Export Save, Import Save, and Reset Progress actions,
       wire the preview/confirmation UI, reload committed state, and keep
       settings reset visibly separate from progress deletion.
 - [x] Persist and deterministically restore the exact active tournament runner,
@@ -293,14 +293,14 @@ requirements are added.
       schedule, policy version/simulation count, and public entrant data needed
       to reproduce each scored tournament without retaining opponents’ hidden
       cards in ordinary hand history.
-- [ ] Retain completed-event replay metadata after leaving the result screen and
-      expose player-visible event-end export; the current checkpoint is cleared
-      on explicit leave after the result commit.
+- [x] Retain completed-event replay metadata after leaving the result screen and
+      expose player-visible event-end export; durable cross-restart retention
+      still requires a save-envelope schema extension.
 - [x] Add bounded native replay-export backends: a strict-allowlist redacted
       public bug-report artifact and a privileged deterministic developer replay
       that fails closed unless explicitly enabled in an unpackaged
       non-production build.
-- [ ] Add player-visible public replay export controls and review a generated
+- [x] Add player-visible public replay export controls and review a generated
       artifact from a completed event.
 - [x] Define forward- and backward-compatibility policy for saves, including
       update rollback, unsupported future versions, partial writes, disk-full,
@@ -349,11 +349,11 @@ requirements are added.
       deterministic count-sliced execution, and fail-closed
       per-decision/per-slice caps while preserving fixed-seed decisions and the
       frozen bot baseline.
-- [ ] Integrate the asynchronous sliced equity boundary into live tournament
+- [x] Integrate the asynchronous sliced equity boundary into live tournament
       progression (or a worker) with cancellation and stale-result rejection;
       the current synchronous caller remains deterministically capped but can
       still block the UI for a large decision.
-- [ ] Lazy-load mode-specific code and heavy room/avatar/audio assets, preload
+- [x] Lazy-load mode-specific code and heavy room/avatar/audio assets, preload
       only the next likely scene, and provide progress plus a cancel/back path
       for loads that exceed the target.
 - [x] Define texture, image, animation, and audio memory/size budgets; compress

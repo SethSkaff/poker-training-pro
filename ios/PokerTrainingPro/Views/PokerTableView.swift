@@ -8,8 +8,19 @@ struct PokerTableView: View {
     @State private var engineStatus = "Loading local engine"
     @State private var engineFailed = false
     @State private var heroCardsRevealed = false
+    @State private var opponentThinking = false
+    @State private var opponentActionText = ""
+    @State private var bridge: SharedPokerEngineBridge?
+
+    @StateObject private var timing = TableTimingModel()
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(SettingsKey.presentationRate) private var presentationRate = 1.0
     @ScaledMetric(relativeTo: .body) private var cardWidth = 48
+
+    // Drives the frozen-remaining-time countdown only while the scene is active.
+    private let ticker = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
 
     init(mode: TrainingMode, timedMinutes: Int? = nil) {
         self.mode = mode
@@ -33,8 +44,18 @@ struct PokerTableView: View {
         }
         .navigationTitle(mode.title)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            loadDeterministicDeal()
+        .task { loadDeterministicDeal() }
+        .onReceive(ticker) { _ in
+            if scenePhase == .active { timing.tick() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Freeze the exact remaining opponent delay on background/inactive;
+            // resume from that frozen time on return.
+            if phase == .active {
+                timing.resume()
+            } else {
+                timing.pause()
+            }
         }
     }
 
@@ -86,6 +107,10 @@ struct PokerTableView: View {
                 .foregroundStyle(BrandTheme.gold)
                 .accessibilityLabel("Pot, 1,200 chips")
 
+            if opponentThinking || !opponentActionText.isEmpty {
+                thinkingIndicator
+            }
+
             HStack {
                 PlayerBadge(name: "Lena", stack: "22,100", position: "Active", liveCards: true)
                 Spacer()
@@ -96,13 +121,7 @@ struct PokerTableView: View {
                 PlayerBadge(name: "You", stack: "20,000", position: "Big blind", liveCards: true)
                 Spacer(minLength: 8)
                 Button {
-                    if reduceMotion {
-                        heroCardsRevealed.toggle()
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.22)) {
-                            heroCardsRevealed.toggle()
-                        }
-                    }
+                    toggleHeroCards()
                 } label: {
                     HStack(spacing: 6) {
                         ForEach(deal.hero) { card in
@@ -148,17 +167,30 @@ struct PokerTableView: View {
         .accessibilityLabel("Poker table")
     }
 
+    private var thinkingIndicator: some View {
+        VStack(spacing: 4) {
+            if opponentThinking {
+                Text("Maya is thinking…")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ProgressView(value: timing.progress)
+                    .tint(BrandTheme.gold)
+                    .frame(maxWidth: 220)
+            } else {
+                Text(opponentActionText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.cream)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(opponentThinking ? "Opponent is thinking" : opponentActionText)
+    }
+
     private var controls: some View {
         HStack(spacing: 10) {
-            ActionButton(title: "Fold", tint: BrandTheme.danger) {
-                selectAction("Fold")
-            }
-            ActionButton(title: "Call 400", tint: BrandTheme.panel) {
-                selectAction("Call 400")
-            }
-            ActionButton(title: "Raise", tint: BrandTheme.gold, darkText: true) {
-                selectAction("Raise")
-            }
+            ActionButton(title: "Fold", tint: BrandTheme.danger) { selectAction("Fold") }
+            ActionButton(title: "Call 400", tint: BrandTheme.panel) { selectAction("Call 400") }
+            ActionButton(title: "Raise", tint: BrandTheme.gold, darkText: true) { selectAction("Raise") }
         }
     }
 
@@ -166,15 +198,80 @@ struct PokerTableView: View {
         cards.map { "\($0.rank) of \($0.suit)" }.joined(separator: ", ")
     }
 
+    private func toggleHeroCards() {
+        if reduceMotion {
+            heroCardsRevealed.toggle()
+        } else {
+            withAnimation(.easeInOut(duration: 0.22)) { heroCardsRevealed.toggle() }
+        }
+    }
+
     private func selectAction(_ action: String) {
         engineStatus = "\(action) selected for this preview"
         engineFailed = false
+        beginOpponentDecision()
+    }
+
+    /// Uses the shared decision-timing model with the mobile surface budget and
+    /// the user's speed preference. Reduce Motion further shortens the wait.
+    private func beginOpponentDecision() {
+        guard let bridge else { return }
+        opponentActionText = ""
+        // Reduce Motion trims the presentation budget by biasing the rate faster.
+        let rate = reduceMotion ? max(presentationRate, 2.5) : presentationRate
+        do {
+            let result = try bridge.decisionTiming(DecisionTimingInput(
+                seed: mode.deterministicSeed,
+                decisionId: "opp-\(UUID().uuidString)",
+                street: "flop",
+                action: "call",
+                cutoffCloseness: 0.4,
+                uncertainty: 0.5,
+                tempo: 0.1,
+                presentationRate: rate,
+                surface: "mobile"
+            ))
+            opponentThinking = true
+            timing.begin(seconds: result.delaySeconds) {
+                resolveOpponentDecision()
+            }
+        } catch {
+            resolveOpponentDecision()
+        }
+    }
+
+    private func resolveOpponentDecision() {
+        opponentThinking = false
+        guard let bridge, mode == .normal || mode == .rational else {
+            opponentActionText = "Maya checks."
+            return
+        }
+        do {
+            let decision = try bridge.botDecision(BotDecisionInput(
+                style: mode == .rational ? "rational" : "normal",
+                hero: deal.hero,
+                board: deal.board,
+                opponents: 1,
+                pot: 1200,
+                toCall: 0,
+                bigBlind: 200,
+                effectiveStack: 18_400,
+                legalRaiseTo: 800,
+                seed: "\(mode.deterministicSeed):maya",
+                simulations: nil
+            ))
+            let percent = Int((decision.equity * 100).rounded())
+            opponentActionText = "Maya \(decision.action)s. (est. equity \(percent)%)"
+        } catch {
+            opponentActionText = "Maya checks."
+        }
     }
 
     @MainActor
     private func loadDeterministicDeal() {
         do {
             let engine = try SharedPokerEngineBridge()
+            bridge = engine
             deal = try engine.dealPreview(seed: mode.deterministicSeed)
             engineStatus = "Local deterministic engine"
             engineFailed = false
@@ -221,60 +318,6 @@ private struct PlayerBadge: View {
         .accessibilityLabel(
             "\(name), \(stack) chips, \(position), \(liveCards ? "cards live" : "no cards")"
         )
-    }
-}
-
-private struct PlayingCardBackView: View {
-    let width: CGFloat
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 7)
-            .fill(
-                LinearGradient(
-                    colors: [Color.blue, Color.indigo],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(BrandTheme.cream.opacity(0.8), lineWidth: 2)
-                    .padding(3)
-            }
-            .frame(width: width, height: width * 1.38)
-            .accessibilityHidden(true)
-    }
-}
-
-private struct PlayingCardView: View {
-    let card: PokerCard
-    let width: CGFloat
-    @AppStorage("settings.colorAssist") private var colorAssist = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Text(card.rank)
-                .font(.headline.weight(.black))
-            Text(card.symbol)
-                .font(.title3)
-        }
-        .foregroundStyle(suitColor)
-        .frame(width: width, height: width * 1.38)
-        .background(BrandTheme.cream, in: RoundedRectangle(cornerRadius: 7))
-        .accessibilityHidden(true)
-    }
-
-    private var suitColor: Color {
-        guard colorAssist else {
-            return card.isRed ? BrandTheme.danger : Color.black
-        }
-
-        switch card.suit {
-        case "clubs": return Color(red: 0.0, green: 0.42, blue: 0.21)
-        case "diamonds": return Color(red: 0.05, green: 0.35, blue: 0.82)
-        case "hearts": return BrandTheme.danger
-        default: return Color.black
-        }
     }
 }
 

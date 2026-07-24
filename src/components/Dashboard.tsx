@@ -622,6 +622,9 @@ interface TournamentCeremonyProps {
   onMenu: () => void;
   onNext?: (eventId: string) => void;
   onReview?: () => void;
+  onExportReplay?: () => Promise<
+    { ok: true; fileName?: string } | { ok: false; message: string }
+  >;
 }
 
 export function TournamentCeremony({
@@ -629,7 +632,10 @@ export function TournamentCeremony({
   onMenu,
   onNext,
   onReview,
+  onExportReplay,
 }: TournamentCeremonyProps) {
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string>();
   const headline =
     result.finishPlace === 1
       ? "Champion"
@@ -690,10 +696,47 @@ export function TournamentCeremony({
               Review key hand
             </button>
           )}
+          {onExportReplay && (
+            <button
+              type="button"
+              disabled={exportBusy}
+              onClick={() => {
+                setExportBusy(true);
+                setExportStatus(undefined);
+                void onExportReplay()
+                  .then((outcome) => {
+                    if (outcome.ok) {
+                      setExportStatus(
+                        outcome.fileName
+                          ? `Redacted replay exported as ${outcome.fileName}.`
+                          : "Redacted replay exported.",
+                      );
+                    } else {
+                      setExportStatus(outcome.message);
+                    }
+                  })
+                  .finally(() => setExportBusy(false));
+              }}
+            >
+              Export event replay
+            </button>
+          )}
           <button type="button" onClick={onMenu}>
             Return to menu
           </button>
         </div>
+        {onExportReplay && (
+          <p
+            className="ceremony-board__export-status"
+            role="status"
+            aria-live="polite"
+          >
+            {exportBusy
+              ? "Preparing a redacted replay…"
+              : (exportStatus ??
+                "Export a redacted, play-safe replay of this event for a bug report.")}
+          </p>
+        )}
       </section>
     </main>
   );

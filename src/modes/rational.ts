@@ -1029,7 +1029,17 @@ function actionLabel(type: BettingActionType): string {
   return type === "all-in" ? "all-in" : type;
 }
 
-export function decideRationalAction(input: RationalPolicyInput): RationalDecision {
+type HeroInformationPlayer = PlayerInformationSet["players"][number];
+
+interface PreparedRationalDecision {
+  hero: HeroInformationPlayer;
+  heroCards: Card[];
+  opponents: PublicOpponent[];
+}
+
+function prepareRationalDecision(
+  input: RationalPolicyInput,
+): PreparedRationalDecision {
   if (!Number.isSafeInteger(input.bigBlind) || input.bigBlind <= 0) {
     throw new Error("Big blind must be a positive safe integer");
   }
@@ -1042,13 +1052,80 @@ export function decideRationalAction(input: RationalPolicyInput): RationalDecisi
     (player) => player.id === informationSet.viewerId,
   );
   if (!hero) throw new Error("Hero is missing");
+  return { hero, heroCards, opponents };
+}
+
+/**
+ * Fully serializable equity request. The async boundary (worker or injected
+ * scheduler) receives only public information, the policy seed, and the fixed
+ * deterministic work budget — never hidden deck state.
+ */
+export interface EquityRequest {
+  informationSet: PlayerInformationSet;
+  legalActions: LegalActionSet;
+  seed: DeckSeed;
+  simulations: number;
+  simulationsPerSlice?: number;
+}
+
+/**
+ * Produces a range equity estimate for a serialized request. Implementations
+ * (synchronous, sliced, or worker-backed) must return the bit-for-bit identical
+ * estimate for a fixed request because the sample stream is seed-derived and
+ * never reads elapsed time.
+ */
+export type EquityEstimator = (request: EquityRequest) => Promise<EquityEstimate>;
+
+export function equityRequestFromPolicyInput(
+  input: RationalPolicyInput,
+): EquityRequest {
+  return {
+    informationSet: input.informationSet,
+    legalActions: input.legalActions,
+    seed: input.seed,
+    simulations: input.simulations ?? DEFAULT_SIMULATIONS,
+    simulationsPerSlice: input.equitySimulationsPerSlice,
+  };
+}
+
+export function decideRationalAction(input: RationalPolicyInput): RationalDecision {
+  const prepared = prepareRationalDecision(input);
+  const request = equityRequestFromPolicyInput(input);
   const equity = estimateRangeEquity(
-    informationSet,
-    legalActions,
-    input.seed,
-    input.simulations ?? DEFAULT_SIMULATIONS,
-    { simulationsPerSlice: input.equitySimulationsPerSlice },
+    request.informationSet,
+    request.legalActions,
+    request.seed,
+    request.simulations,
+    { simulationsPerSlice: request.simulationsPerSlice },
   );
+  return assembleRationalDecision(input, prepared, equity);
+}
+
+/**
+ * Deterministic async counterpart to {@link decideRationalAction}. It delegates
+ * the heavy Monte Carlo work to an injected estimator (typically a worker) and
+ * then reconstructs the identical decision from the returned estimate. For a
+ * fixed seed and work budget the chosen action, distribution, metrics, ranges,
+ * and audit are identical to the synchronous path.
+ */
+export async function decideRationalActionAsync(
+  input: RationalPolicyInput,
+  options: { estimateEquity: EquityEstimator },
+): Promise<RationalDecision> {
+  const prepared = prepareRationalDecision(input);
+  const equity = await options.estimateEquity(
+    equityRequestFromPolicyInput(input),
+  );
+  return assembleRationalDecision(input, prepared, equity);
+}
+
+function assembleRationalDecision(
+  input: RationalPolicyInput,
+  prepared: PreparedRationalDecision,
+  equity: EquityEstimate,
+): RationalDecision {
+  const { informationSet, legalActions } = input;
+  const { hero, heroCards, opponents } = prepared;
   const potOdds =
     legalActions.toCall > 0
       ? legalActions.toCall /

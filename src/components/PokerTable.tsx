@@ -36,10 +36,11 @@ import type { LegalActionSet } from "../engine";
 import { cardAriaLabel, cardLabel, formatChips } from "../lib/format";
 import { gameAudio } from "../lib/audio";
 import {
-  detectTablePromptOccurrences,
+  detectContextualPromptOccurrences,
   loadContextualPromptState,
   markContextualPromptSeen,
   nextContextualPrompt,
+  resetContextualPromptState,
   saveContextualPromptState,
   type ContextualPrompt,
   type ContextualPromptId,
@@ -54,6 +55,17 @@ import {
 } from "../lib/trainingEngine";
 import type { HeroTournamentAction } from "../modes/tournamentRunner";
 import { calculateAiDecisionTiming } from "../modes/decisionTiming";
+import {
+  FreezableDelay,
+  realFreezableDelayHost,
+} from "../lib/freezableDelay";
+import {
+  DelayFreezeGroup,
+  LifecyclePauseCoordinator,
+  buildResumeRecap,
+  type LifecyclePauseReason,
+  type ResumeRecap,
+} from "../lib/lifecyclePause";
 import type {
   Card,
   GameMode,
@@ -75,6 +87,10 @@ interface TournamentTableControls {
   durationMs?: number;
   actionHistory: string[];
   showArrival: boolean;
+  /** Big blind of the opening level, used to detect a blind increase. */
+  openingBigBlind?: number;
+  /** Finishing places that qualify or cash in this event. */
+  qualifyingPlaces?: number;
 }
 
 interface PokerTableProps {
@@ -548,7 +564,14 @@ export function PokerTable({
   const [pausePage, setPausePage] = useState<
     "menu" | "controls" | "reference" | "settings"
   >("menu");
-  const pendingTournamentAction = useRef<number | null>(null);
+  const pendingTournamentAction = useRef<FreezableDelay | null>(null);
+  const arrivalDelayRef = useRef<FreezableDelay | null>(null);
+  const freezeGroupRef = useRef<DelayFreezeGroup>(new DelayFreezeGroup());
+  const pauseCoordinatorRef = useRef<LifecyclePauseCoordinator>(
+    new LifecyclePauseCoordinator(),
+  );
+  const pauseReasonRef = useRef<LifecyclePauseReason>("manual");
+  const [resumeRecap, setResumeRecap] = useState<ResumeRecap | null>(null);
   const pausedRef = useRef(false);
   const pauseDialogRef = useRef<HTMLElement | null>(null);
   const focusBeforePause = useRef<HTMLElement | null>(null);
@@ -557,6 +580,10 @@ export function PokerTable({
   const mathStartedAt = useRef<number | null>(null);
   const mathElapsedMs = useRef(0);
   const pauseStartedAt = useRef<number | null>(null);
+  // Combined Elo captured when this table was entered. The table remounts per
+  // scenario/hand, so this baseline is stable within a scenario and lets the
+  // coach detect the first Elo change once a graded attempt resolves.
+  const eloBaseline = useRef(progress.decisionElo + progress.mathElo);
   const ratedScenario = scenario as RatedTrainingScenario;
   const trainingMeta =
     "training" in scenario ? scenario.training : undefined;
@@ -583,29 +610,107 @@ export function PokerTable({
     if (activePrompt) return;
     const prompt = nextContextualPrompt(
       coachState,
-      detectTablePromptOccurrences(
+      detectContextualPromptOccurrences({
         scenario,
-        tournament?.actionHistory ?? [],
-      ),
+        actionHistory: tournament?.actionHistory ?? [],
+        minimumRaiseAvailable: Boolean(
+          tournament?.legalActions.raise ?? tournament?.legalActions.bet,
+        ),
+        openingBigBlind: tournament?.openingBigBlind,
+        currentBigBlind: scenario.blinds[1],
+        fieldSize: tournament?.fieldSize,
+        playersRemaining: tournament?.playersRemaining,
+        qualifyingPlaces: tournament?.qualifyingPlaces,
+        eloBaseline: eloBaseline.current,
+        eloCurrent: progress.decisionElo + progress.mathElo,
+      }),
     );
     if (prompt) setActivePrompt(prompt);
-  }, [activePrompt, coachState, scenario, tournament?.actionHistory]);
+  }, [
+    activePrompt,
+    coachState,
+    scenario,
+    tournament?.actionHistory,
+    tournament?.legalActions,
+    tournament?.openingBigBlind,
+    tournament?.fieldSize,
+    tournament?.playersRemaining,
+    tournament?.qualifyingPlaces,
+    progress.decisionElo,
+    progress.mathElo,
+  ]);
 
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
 
+  // Latest public decision state for the resume recap, kept in a ref so the
+  // pause bookkeeping effect below stays keyed only on the paused flag and never
+  // re-runs (and re-stamps the inactive clock) on unrelated re-renders.
+  const recapDataRef = useRef<{
+    pot: number;
+    amountToCall: number;
+    street: string;
+    playersRemaining?: number;
+    handNumber?: number;
+    lastAction?: string;
+  }>({ pot: scenario.pot, amountToCall: scenario.amountToCall, street: scenario.street });
+  recapDataRef.current = {
+    pot: scenario.pot,
+    amountToCall: scenario.amountToCall,
+    street: scenario.street,
+    ...(tournament ? { playersRemaining: tournament.playersRemaining } : {}),
+    ...(tournament ? { handNumber: tournament.handNumber } : {}),
+    ...(tournament?.actionHistory.at(-1)
+      ? { lastAction: tournament.actionHistory.at(-1) }
+      : {}),
+  };
+
   useEffect(() => {
     gameAudio.setFocusMuted(paused);
     onPauseChange?.(paused);
+    const coordinator = pauseCoordinatorRef.current;
     if (paused) {
+      // Freeze the exact remaining AI-presentation and animation delays so the
+      // remainder resumes precisely rather than restarting or draining while
+      // hidden/minimized/suspended/locked.
+      freezeGroupRef.current.freezeAll();
+      coordinator.setReason(pauseReasonRef.current, true);
       pauseStartedAt.current = performance.now();
-    } else if (pauseStartedAt.current !== null) {
-      const inactiveMs = performance.now() - pauseStartedAt.current;
-      if (mathStartedAt.current !== null) {
-        mathStartedAt.current += inactiveMs;
+    } else {
+      const transition = coordinator.setReason(pauseReasonRef.current, false);
+      if (pauseStartedAt.current !== null) {
+        const inactiveMs = performance.now() - pauseStartedAt.current;
+        if (mathStartedAt.current !== null) {
+          mathStartedAt.current += inactiveMs;
+        }
+        pauseStartedAt.current = null;
       }
-      pauseStartedAt.current = null;
+      freezeGroupRef.current.resumeAll();
+      if (transition.justResumed && transition.inactiveMs >= 400) {
+        const data = recapDataRef.current;
+        setResumeRecap(
+          buildResumeRecap({
+            reason: pauseReasonRef.current,
+            inactiveMs: transition.inactiveMs,
+            potChips: data.pot,
+            ...(data.playersRemaining !== undefined
+              ? { playersRemaining: data.playersRemaining }
+              : {}),
+            ...(data.lastAction ? { lastAction: data.lastAction } : {}),
+            currentDecision:
+              data.amountToCall > 0
+                ? `Call ${data.amountToCall.toLocaleString()} to continue, raise, or fold.`
+                : "Check, bet, or fold.",
+            ...(data.handNumber !== undefined
+              ? { handNumber: data.handNumber }
+              : {}),
+            street: data.street,
+            // Training and Timed Table pauses never count against the player.
+            countsAgainstPlay: false,
+          }),
+        );
+      }
     }
     return () => gameAudio.setFocusMuted(false);
   }, [onPauseChange, paused]);
@@ -672,36 +777,65 @@ export function PokerTable({
     return () => window.clearInterval(timer);
   }, [action, elapsedMs, paused]);
 
-  useEffect(() => {
-    const pauseForInactiveWindow = () => setPaused(true);
-    const pauseForHiddenDocument = () => {
-      if (document.hidden) setPaused(true);
-    };
-    window.addEventListener("blur", pauseForInactiveWindow);
-    document.addEventListener("visibilitychange", pauseForHiddenDocument);
-    return () => {
-      window.removeEventListener("blur", pauseForInactiveWindow);
-      document.removeEventListener("visibilitychange", pauseForHiddenDocument);
-    };
+  const requestPause = useCallback((reason: LifecyclePauseReason) => {
+    pauseReasonRef.current = reason;
+    setResumeRecap(null);
+    setPaused(true);
   }, []);
 
   useEffect(() => {
-    if (!arrivalVisible || paused) return;
-    const timer = window.setTimeout(
-      () => setArrivalVisible(false),
-      settings.reducedMotion ? 450 : 1_650,
-    );
-    return () => window.clearTimeout(timer);
-  }, [arrivalVisible, paused, settings.reducedMotion]);
-
-  useEffect(
-    () => () => {
-      if (pendingTournamentAction.current !== null) {
-        window.clearTimeout(pendingTournamentAction.current);
+    const pauseForInactiveWindow = () => requestPause("window-blurred");
+    const pauseForHiddenDocument = () => {
+      if (document.hidden) requestPause("document-hidden");
+    };
+    window.addEventListener("blur", pauseForInactiveWindow);
+    document.addEventListener("visibilitychange", pauseForHiddenDocument);
+    // Minimize, Windows suspend, and screen lock arrive from the Electron main
+    // process via a narrow preload bridge. They freeze the same delays and use
+    // the same explicit-resume policy as blur/hidden.
+    const unsubscribe = window.desktop?.onLifecycleEvent?.((event) => {
+      if (event.kind === "window-minimized" && event.minimized) {
+        requestPause("window-minimized");
+      } else if (event.kind === "system-suspend" && event.suspended) {
+        requestPause("system-suspended");
+      } else if (event.kind === "screen-lock" && event.locked) {
+        requestPause("screen-locked");
+      } else if (event.kind === "window-focus" && !event.focused) {
+        requestPause("window-blurred");
       }
-    },
-    [],
-  );
+    });
+    return () => {
+      window.removeEventListener("blur", pauseForInactiveWindow);
+      document.removeEventListener("visibilitychange", pauseForHiddenDocument);
+      unsubscribe?.();
+    };
+  }, [requestPause]);
+
+  useEffect(() => {
+    if (!arrivalVisible) return;
+    const group = freezeGroupRef.current;
+    const delay = new FreezableDelay(
+      realFreezableDelayHost,
+      settings.reducedMotion ? 450 : 1_650,
+      () => setArrivalVisible(false),
+    );
+    arrivalDelayRef.current = delay;
+    group.add(delay);
+    return () => {
+      delay.cancel();
+      group.remove(delay);
+      if (arrivalDelayRef.current === delay) arrivalDelayRef.current = null;
+    };
+  }, [arrivalVisible, settings.reducedMotion]);
+
+  useEffect(() => {
+    const group = freezeGroupRef.current;
+    return () => {
+      pendingTournamentAction.current?.cancel();
+      pendingTournamentAction.current = null;
+      group.cancelAll();
+    };
+  }, []);
 
   const resetHand = useCallback(() => {
     setPeeked(false);
@@ -841,21 +975,18 @@ export function PokerTable({
           presentationRate: speed,
           surface: "desktop",
         }).delayMs;
-        const deliverAction = () => {
-          if (pausedRef.current) {
-            pendingTournamentAction.current = window.setTimeout(
-              deliverAction,
-              200,
-            );
-            return;
-          }
-          pendingTournamentAction.current = null;
-          tournament.onAction(request);
-        };
-        pendingTournamentAction.current = window.setTimeout(
-          deliverAction,
+        // Freeze this exact presentation remainder if the app is paused mid-wait
+        // instead of letting it drain in real time or restarting it on resume.
+        const delay = new FreezableDelay(
+          realFreezableDelayHost,
           presentationDelay,
+          () => {
+            pendingTournamentAction.current = null;
+            tournament.onAction(request);
+          },
         );
+        pendingTournamentAction.current = delay;
+        freezeGroupRef.current.add(delay);
       }
     },
     [
@@ -897,6 +1028,8 @@ export function PokerTable({
         } else if (raiseOpen) {
           setRaiseOpen(false);
         } else {
+          pauseReasonRef.current = "manual";
+          setResumeRecap(null);
           setPaused(true);
         }
         return;
@@ -1189,6 +1322,8 @@ export function PokerTable({
             type="button"
             aria-label="Pause table"
             onClick={() => {
+              pauseReasonRef.current = "manual";
+              setResumeRecap(null);
               setPausePage("menu");
               setPaused(true);
             }}
@@ -1577,6 +1712,25 @@ export function PokerTable({
         </aside>
       ) : null}
 
+      {resumeRecap && !paused ? (
+        <aside
+          className="resume-recap"
+          role="status"
+          aria-live="polite"
+          aria-labelledby="resume-recap-title"
+        >
+          <h2 id="resume-recap-title">{resumeRecap.title}</h2>
+          <ul>
+            {resumeRecap.lines.map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => setResumeRecap(null)}>
+            Continue
+          </button>
+        </aside>
+      ) : null}
+
       {paused && (
         <div className="pause-scrim" role="presentation">
           <section
@@ -1633,7 +1787,7 @@ export function PokerTable({
                 <button
                   type="button"
                   onClick={() => {
-                    updateCoachState({ enabled: true, seen: [] });
+                    updateCoachState(resetContextualPromptState());
                     setActivePrompt(null);
                     setPaused(false);
                   }}

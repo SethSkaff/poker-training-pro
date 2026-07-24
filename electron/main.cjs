@@ -3,6 +3,7 @@ const {
   BrowserWindow,
   dialog,
   ipcMain,
+  powerMonitor,
   protocol,
   session,
 } = require("electron");
@@ -51,6 +52,28 @@ let failureDialogOpen = false;
 let isQuitting = false;
 let saveTransferController;
 let replayExportController;
+let mainWindow = null;
+let closeConfirmed = false;
+let awaitingCloseDecision = false;
+let nextCloseRequestId = 1;
+const pendingCloseDecisions = new Map();
+
+/**
+ * Forward an OS/lifecycle signal to the renderer so it can freeze the exact
+ * remaining AI-presentation and animation delays, pause its play clocks, and
+ * decide when its Ready recap is required. Delivery is best-effort: a missing
+ * or destroyed window must never crash the main process.
+ */
+function broadcastLifecycle(payload) {
+  const target = mainWindow;
+  if (!target || target.isDestroyed()) return;
+  try {
+    target.webContents.send("lifecycle:event", payload);
+  } catch {
+    // Lifecycle hints are advisory; failure to deliver must not crash.
+  }
+  diagnosticLogger.log("info", "lifecycle-event", { kind: payload.kind });
+}
 
 function createWindow() {
   let healthySessionTimer;
@@ -109,14 +132,99 @@ function createWindow() {
   window.on("responsive", () => {
     diagnosticLogger.log("info", "window-responsive");
   });
-  window.on("closed", () => clearTimeout(healthySessionTimer));
+  window.on("minimize", () =>
+    broadcastLifecycle({ kind: "window-minimized", minimized: true }),
+  );
+  window.on("restore", () =>
+    broadcastLifecycle({ kind: "window-minimized", minimized: false }),
+  );
+  window.on("blur", () =>
+    broadcastLifecycle({ kind: "window-focus", focused: false }),
+  );
+  window.on("focus", () =>
+    broadcastLifecycle({ kind: "window-focus", focused: true }),
+  );
+  window.on("close", (event) => {
+    if (isQuitting || closeConfirmed) return;
+    event.preventDefault();
+    void beginCloseHandshake(window);
+  });
+  window.on("closed", () => {
+    clearTimeout(healthySessionTimer);
+    if (mainWindow === window) mainWindow = null;
+  });
   window.once("ready-to-show", () => window.show());
+  mainWindow = window;
 
   if (isDevelopment) {
     window.loadURL("http://127.0.0.1:5173");
   } else {
     window.loadURL(`${APP_PROTOCOL}://app/index.html`);
   }
+}
+
+/**
+ * Give the renderer a chance to commit a lifecycle save at a safe boundary and
+ * report whether scored progress would be abandoned, then confirm before an
+ * unsaved-progress close. The handshake fails open on timeout so a stuck
+ * renderer can never trap the window.
+ */
+async function beginCloseHandshake(window) {
+  if (awaitingCloseDecision) return;
+  awaitingCloseDecision = true;
+  try {
+    const decision = await requestRendererCloseState(window, "close");
+    if (window.isDestroyed()) return;
+    if (decision && decision.hasUnsavedScoredProgress) {
+      const choice = await dialog.showMessageBox(window, {
+        type: "warning",
+        title: "Leave Poker Training Pro?",
+        message: "You have scored progress that has not finished saving.",
+        detail:
+          "Quitting now may lose the most recent scored result. Wait a moment and try again, or leave without saving.",
+        buttons: ["Keep playing", "Leave without saving"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      if (window.isDestroyed()) return;
+      if (choice.response !== 1) return;
+    }
+    closeConfirmed = true;
+    isQuitting = true;
+    diagnosticLogger.log("info", "close-confirmed", {
+      unsavedScoredProgress: Boolean(decision?.hasUnsavedScoredProgress),
+    });
+    window.close();
+  } finally {
+    awaitingCloseDecision = false;
+  }
+}
+
+function requestRendererCloseState(window, cause) {
+  return new Promise((resolve) => {
+    if (!window || window.isDestroyed()) {
+      resolve(undefined);
+      return;
+    }
+    const requestId = nextCloseRequestId++;
+    const timer = setTimeout(() => {
+      if (pendingCloseDecisions.delete(requestId)) resolve(undefined);
+    }, 1500);
+    timer.unref?.();
+    pendingCloseDecisions.set(requestId, (state) => {
+      clearTimeout(timer);
+      resolve(state);
+    });
+    try {
+      window.webContents.send("lifecycle:prepare-close", { requestId, cause });
+    } catch {
+      if (pendingCloseDecisions.delete(requestId)) {
+        clearTimeout(timer);
+        resolve(undefined);
+      }
+    }
+  });
 }
 
 app.whenReady().then(() => {
@@ -388,11 +496,49 @@ app.whenReady().then(() => {
     return result;
   });
 
+  ipcMain.handle("lifecycle:reportCloseState", (event, requestId, state) => {
+    assertTrustedSender(event);
+    if (!Number.isInteger(requestId)) {
+      throw new TypeError("Close request id must be an integer");
+    }
+    const resolver = pendingCloseDecisions.get(requestId);
+    if (!resolver) return { ok: false };
+    pendingCloseDecisions.delete(requestId);
+    resolver({
+      hasUnsavedScoredProgress: Boolean(
+        state && state.hasUnsavedScoredProgress,
+      ),
+    });
+    return { ok: true };
+  });
+
+  powerMonitor.on("suspend", () =>
+    broadcastLifecycle({ kind: "system-suspend", suspended: true }),
+  );
+  powerMonitor.on("resume", () =>
+    broadcastLifecycle({ kind: "system-suspend", suspended: false }),
+  );
+  powerMonitor.on("lock-screen", () =>
+    broadcastLifecycle({ kind: "screen-lock", locked: true }),
+  );
+  powerMonitor.on("unlock-screen", () =>
+    broadcastLifecycle({ kind: "screen-lock", locked: false }),
+  );
+
   createWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+// Windows delivers `session-end` on logoff/shutdown/update-driven restart. This
+// is a last safe boundary to flush a lifecycle save before the OS tears the
+// process down; delivery is best-effort because the window may already be gone.
+app.on("session-end", () => {
+  isQuitting = true;
+  broadcastLifecycle({ kind: "session-end" });
+  diagnosticLogger.log("warn", "session-end");
 });
 
 app.on("window-all-closed", () => {
@@ -404,6 +550,7 @@ app.on("before-quit", () => {
     crashLoopController.recordNormalQuit();
   }
   isQuitting = true;
+  broadcastLifecycle({ kind: "before-quit" });
   diagnosticLogger.log("info", "application-before-quit");
 });
 

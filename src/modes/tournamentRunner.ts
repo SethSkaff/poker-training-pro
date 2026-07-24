@@ -11,6 +11,7 @@ import {
   applyTournamentSessionAction,
   beginTournamentSessionHand,
   chooseTournamentSessionPolicyAction,
+  chooseTournamentSessionPolicyActionAsync,
   createTournamentSession,
   progressTournamentSessionHand,
   type CreateTournamentSessionOptions,
@@ -18,6 +19,7 @@ import {
   type TournamentSession,
   type TournamentSessionEntrant,
 } from "./tournamentSession";
+import type { EquityEstimator } from "./rational";
 import {
   directTimedBlinds,
   type TimedBlindDecision,
@@ -326,6 +328,99 @@ export function advanceTournamentRunnerToHero(
   throw new Error(`Tournament runner exceeded ${maxSteps} automatic steps`);
 }
 
+/** Thrown by the async advance loop when its abort signal fires. */
+export class TournamentAdvanceAborted extends Error {
+  constructor() {
+    super("Tournament advance was aborted");
+    this.name = "TournamentAdvanceAborted";
+  }
+}
+
+export interface AsyncAdvanceTournamentRunnerOptions
+  extends AdvanceTournamentRunnerOptions {
+  /** Aborts the loop between steps; pair with an equity service cancel. */
+  signal?: { readonly aborted: boolean };
+}
+
+/**
+ * Deterministic async counterpart to {@link advanceTournamentRunnerToHero}. It
+ * offloads the Rational equity Monte Carlo to `estimateEquity` (typically a
+ * worker) so a large decision cannot block the UI thread. For a fixed seed and
+ * work budget the resulting runner is bit-for-bit identical to the synchronous
+ * loop. The sync loop is retained unchanged for replay, tests, and the iOS
+ * bundle.
+ */
+export async function advanceTournamentRunnerToHeroAsync(
+  source: TournamentRunner,
+  estimateEquity: EquityEstimator,
+  options: AsyncAdvanceTournamentRunnerOptions = {},
+): Promise<TournamentRunner> {
+  const maxSteps = options.maxSteps ?? 2_500;
+  const nowMs = options.nowMs ?? Date.now();
+  let runner = source;
+
+  for (let step = 0; step < maxSteps; step += 1) {
+    if (options.signal?.aborted) throw new TournamentAdvanceAborted();
+    runner = sanitizeTimedCompletion(runner);
+    if (runner.session.status === "complete") return runner;
+
+    if (!runner.session.activeHand) {
+      runner = applyTimedBlindLevel(runner, nowMs);
+      runner = {
+        ...runner,
+        session: beginTournamentSessionHand(runner.session),
+      };
+      continue;
+    }
+
+    const hand = runner.session.activeHand;
+    if (hand.betting.complete) {
+      runner = {
+        ...runner,
+        session: progressTournamentSessionHand(runner.session),
+      };
+      continue;
+    }
+
+    const actor = nextToAct(hand.betting);
+    if (!actor) {
+      throw new Error("Incomplete betting round has no actor");
+    }
+    if (actor === runner.session.heroId) return runner;
+
+    const policy = await chooseTournamentSessionPolicyActionAsync(
+      runner.session,
+      actor,
+      estimateEquity,
+      options.policy,
+    );
+    if (options.signal?.aborted) throw new TournamentAdvanceAborted();
+    const nextSession = applyTournamentSessionAction(
+      runner.session,
+      actor,
+      policy.command,
+    );
+    const elapsed = 1_500 + ((runner.sequence * 977) % 2_750);
+    runner = {
+      ...runner,
+      sequence: runner.sequence + 1,
+      session: advanceTournamentSessionClock(nextSession, elapsed),
+      decisions: [
+        ...runner.decisions.slice(-79),
+        {
+          sequence: runner.sequence,
+          handId: hand.handId,
+          playerId: actor,
+          command: { ...policy.command },
+          policy: policy.mode,
+        },
+      ],
+    };
+  }
+
+  throw new Error(`Tournament runner exceeded ${maxSteps} automatic steps`);
+}
+
 export function applyHeroTournamentAction(
   source: TournamentRunner,
   request: HeroTournamentAction,
@@ -363,6 +458,55 @@ export function applyHeroTournamentAction(
     ],
   };
   return advanceTournamentRunnerToHero(runner, { ...options, nowMs });
+}
+
+/**
+ * Async counterpart to {@link applyHeroTournamentAction}. It applies the hero's
+ * committed action synchronously (no simulation), then advances through the
+ * opponents off-thread via the equity worker. Deterministic and identical to
+ * the synchronous path for a fixed seed.
+ */
+export async function applyHeroTournamentActionAsync(
+  source: TournamentRunner,
+  request: HeroTournamentAction,
+  estimateEquity: EquityEstimator,
+  options: AsyncAdvanceTournamentRunnerOptions = {},
+): Promise<TournamentRunner> {
+  const legal = heroTournamentLegalActions(source);
+  if (!legal) throw new Error("The tournament is not waiting for the hero");
+  const nowMs = options.nowMs ?? Date.now();
+  const command = tournamentCommandForHeroAction(legal, request);
+  const handId = source.session.activeHand?.handId;
+  if (!handId) throw new Error("The tournament hand is missing");
+  const acted = applyTournamentSessionAction(
+    source.session,
+    source.session.heroId,
+    command,
+  );
+  const elapsed = Math.max(0, request.decisionElapsedMs ?? 0);
+  const runner: TournamentRunner = {
+    ...source,
+    sequence: source.sequence + 1,
+    session: advanceTournamentSessionClock(acted, elapsed),
+    decisions: [
+      ...source.decisions.slice(-79),
+      {
+        sequence: source.sequence,
+        handId,
+        playerId: source.session.heroId,
+        command,
+        policy: source.session.mode,
+      },
+    ],
+    replayActions: [
+      ...source.replayActions,
+      { request: { ...request }, nowMs },
+    ],
+  };
+  return advanceTournamentRunnerToHeroAsync(runner, estimateEquity, {
+    ...options,
+    nowMs,
+  });
 }
 
 export interface TournamentRunnerReplay {

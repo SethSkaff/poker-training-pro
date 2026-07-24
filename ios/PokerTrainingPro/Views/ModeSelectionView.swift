@@ -12,11 +12,7 @@ struct ModeSelectionView: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 18) {
                     ForEach(TrainingMode.allCases) { mode in
-                        NavigationLink(
-                            value: mode == .timedTable
-                                ? AppDestination.timedTableSetup
-                                : AppDestination.table(mode, timedMinutes: nil)
-                        ) {
+                        NavigationLink(value: destination(for: mode)) {
                             ModeCard(mode: mode)
                         }
                         .buttonStyle(.plain)
@@ -30,6 +26,14 @@ struct ModeSelectionView: View {
         }
         .navigationTitle("Choose a Mode")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func destination(for mode: TrainingMode) -> AppDestination {
+        switch mode {
+        case .timedTable: return .timedTableSetup
+        case .training: return .training
+        case .normal, .rational: return .table(mode, timedMinutes: nil)
+        }
     }
 }
 

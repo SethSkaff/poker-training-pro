@@ -14,6 +14,8 @@ struct RootView: View {
                         SettingsView()
                     case .timedTableSetup:
                         TimedTableSetupView()
+                    case .training:
+                        TrainingQuizView()
                     case let .table(mode, timedMinutes):
                         PokerTableView(mode: mode, timedMinutes: timedMinutes)
                     }

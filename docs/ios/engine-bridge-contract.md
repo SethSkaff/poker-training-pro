@@ -17,7 +17,7 @@ The production shared-engine build must:
 7. Be bundled at build time. The app must not fetch or replace it at runtime.
 8. Avoid native Swift callbacks. This keeps the JavaScript capability surface limited to JSON input and output.
 
-The checked-in `poker-engine.js` is an executable scaffold adapter mirroring the TypeScript deck's FNV-1a seed hash and Mulberry32 shuffle. Replace it with the production shared-engine IIFE once an explicit browserless export exists.
+The checked-in `poker-engine.js` is an executable browserless IIFE that mirrors the deterministic desktop TypeScript primitives (FNV-1a seed hash, Mulberry32 RNG, the hand evaluator, the quiz answer parser, Training grading and Elo, the AI decision-timing model, the Timed Table blind director, and capped on-device range equity). It is byte-for-byte parity-tested against the TypeScript source of truth on Windows by `src/modes/mobileEngineBridge.test.ts`, which evaluates the exact bundle in a Node VM the same way JavaScriptCore evaluates it on device. A full production build should still replace the hand-maintained bot heuristics with the exported desktop Rational/Normal policies and run the cross-runtime conformance corpus below on a Mac.
 
 ## Global shape
 
@@ -83,42 +83,68 @@ Failure:
 
 Swift rejects missing JSON, malformed envelopes, contract mismatches, unsuccessful responses, and malformed typed results.
 
-## Scaffold operations
+## Operations
+
+Ranks are `2` through `9`, then `T`, `J`, `Q`, `K`, `A`. Suits are `clubs`, `diamonds`, `hearts`, and `spades`. A card is `{ "rank": "A", "suit": "spades" }`.
 
 ### `health`
 
-Input: no seed required.
-
-Result:
+Input: no seed required. Result reports determinism, the engine version, the supported operation list, and the on-device equity caps:
 
 ```json
 {
   "deterministic": true,
-  "engineVersion": "scaffold-1"
+  "engineVersion": "mobile-engine-1",
+  "contractVersion": "1.0.0",
+  "operations": ["health", "dealPreview", "evaluateHand", "..."],
+  "equityCaps": {
+    "defaultSimulations": 240,
+    "maximumSimulations": 600,
+    "defaultSimulationsPerSlice": 16,
+    "maximumSimulationsPerSlice": 32
+  }
 }
 ```
 
 ### `dealPreview`
 
-Input: non-empty `seed`.
+Input: non-empty `seed`. Result: `{ "hero": [card, card], "board": [card, card, card] }`. Deterministic per seed.
 
-Result:
+### `evaluateHand`
 
-```json
-{
-  "hero": [
-    { "rank": "A", "suit": "spades" },
-    { "rank": "K", "suit": "hearts" }
-  ],
-  "board": [
-    { "rank": "T", "suit": "clubs" },
-    { "rank": "7", "suit": "diamonds" },
-    { "rank": "2", "suit": "spades" }
-  ]
-}
-```
+Input: `payload.cards` (five to seven cards). Result mirrors the desktop `HandValue`: `{ category, categoryName, displayName, tiebreak, cards }`.
 
-Ranks are `2` through `9`, then `T`, `J`, `Q`, `K`, `A`. Suits are `clubs`, `diamonds`, `hearts`, and `spades`.
+### `compareHands`
+
+Input: `payload.left`, `payload.right` (each five to seven cards). Result: `{ "result": -1 | 0 | 1 }`.
+
+### `parseMathAnswer`
+
+Input: `payload.input` (string), `payload.unit` (`"%" | "chips" | "outs" | "ratio"`). Result: `{ "value": number | null }`. Accepts the table forms `33%`, `0.33`, `1/3`, and `2:1` (odds-against for percentage questions). Mirrors `parseQuizMathAnswer` for the en-US numeric locale.
+
+### `gradeTraining`
+
+Input: an action, a raw `mathInput` string (or parsed `mathAnswer`), the scenario grading parameters (`actionEvs`, `actionEpsilon`, `partialCreditRegret`, `acceptableActions`, `correctValue`, `tolerance`, `unit`, difficulties, targets), the current `decisionElo`/`mathElo`, attempt counts, and elapsed times. Result: `{ action, math, timing, decisionEloDelta, mathEloDelta, decisionEloAfter, mathEloAfter, eloDelta, mathAnswer }`. Mirrors `gradeTrainingAttempt`.
+
+### `eloDelta`
+
+Input: `rating`, `difficulty`, `score`, `attempts`. Result: `{ delta, expected }`. Mirrors `calculateEloDelta`.
+
+### `decisionTiming`
+
+Input: `seed`, `decisionId`, `street`, `action`, `cutoffCloseness`, `uncertainty`, `tempo`, `presentationRate`, `surface`. Result: `{ delayMs, unscaledDelayMs, surface, presentationRate, antiTellNoiseMs, boundedDifficultyMs }`. Mirrors `calculateAiDecisionTiming`; `surface` defaults to `mobile`, which uses the shorter animation budget. The delay never encodes hand strength and must never advance while the app is inactive or backgrounded.
+
+### `timedBlinds`
+
+Input: `durationMinutes`, `elapsedMs`, `current` level, `players`, `startingTotalChips`. Result mirrors `directTimedBlinds` (`smallBlind`, `bigBlind`, `bigBlindAnte`, `phase`, `progress`, `livePlayers`, `nextReviewMs`, `forcedAllInStack`, `reason`).
+
+### `estimateEquity`
+
+Input: `seed`, `payload.hero`, `payload.board`, `payload.opponents` (1–8), optional `simulations`/`simulationsPerSlice`. Result: `{ equity, wins, ties, losses, simulations, work }`. Simulations are hard-capped to the phone ceiling (`maximumSimulations`); a caller can only lower the count. Deterministic per seed.
+
+### `botDecision`
+
+Input: `style` (`"normal" | "rational"`), `hero`, `board`, `opponents`, `pot`, `toCall`, `bigBlind`, optional `effectiveStack`, `legalRaiseTo`, `seed`, `simulations`. Result: `{ style, action, raiseTo, equity, potOdds, requiredEquity, effectiveStackBigBlinds, rationale, work }`. This is a phone-conservative equity-based decision built on `estimateEquity` with the same caps. It is a documented mobile adaptation, not byte-parity with the full desktop range-weighted Rational policy or Normal personality engine; a production build should bundle those exported policies.
 
 ## Production conformance gate
 
