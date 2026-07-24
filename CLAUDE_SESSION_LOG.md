@@ -28,17 +28,23 @@ Read together with `TODOS.md` (canonical backlog, kept current) and
 |---|---|
 | `7ee5017` | Snapshot of YOUR uncommitted 2026-07-24 pass, exactly as handed off |
 | `5adfaa2` | Wave A (4 agents): string-catalog migration, contrast-audit fix+extension, perf/flash instrumentation |
-| HEAD | Wave B (2 agents): OS reduced-motion, About/Support verification, string-extraction completion, pseudo/RTL sweeps + this log |
+| `1ca39c3` | Wave B (2 agents): OS reduced-motion, About/Support verification, string-extraction completion, pseudo/RTL sweeps |
+| `b690b74` | Wave C (2 agents): SR live announcements, RTL wiring completion, string-extraction verdict |
+| `e134de6` | Wave D (1 agent): rebuilt package, full release-verify + audit gate battery, flash-density fix |
 
 `git diff 7ee5017..HEAD` shows everything Claude changed this session.
+
+**Note on session continuity**: the spend limit mentioned above interrupted the
+session after Wave B; it was resumed later the same day (model switched to
+Sonnet 5) and Waves C, D, and E followed. Waves C–E are documented below the
+Wave A/B sections.
 
 ## Verified state at final commit
 
 - `tsc --noEmit`: clean.
-- Full Vitest: **77 files / 524 tests, all passing** (baseline at `7ee5017`
-  was 73/488 with 1 failure).
-- No TODOS items were checked without evidence; one item was checked (in-app
-  links — see below).
+- Full Vitest: **79 files / 560 tests, all passing** at `e134de6` (baseline at
+  `7ee5017` was 73/488 with 1 failure; Wave B ended at 77/524).
+- No TODOS items were checked without evidence.
 
 ## What was done
 
@@ -140,41 +146,125 @@ Read together with `TODOS.md` (canonical backlog, kept current) and
      `../locales/en-US.messages` inside the mock factory. That one line is the
      only code the coordinator wrote all session.
 
-## Known gaps for Codex to pick up (specific, in priority order)
+## Wave C (commit `b690b74`) — 2 agents
 
-1. **RTL/locale attributes not wired on two screens**: `SettingsPanel.tsx` and
-   `AboutSupport.tsx` do not spread `localeTextAttributes()` on their roots —
-   documented inside `RtlDirectionScreens.test.tsx` (last test is a
-   placeholder). Wire them and convert that placeholder into real assertions.
-   These files were excluded from the string agent's scope due to a concurrent
-   agent owning them; their UI strings ARE migrated.
-2. **String-extraction TODOS item**: near-complete but left unchecked. Before
-   checking: confirm the data-module decision (tournament event names/tiers
-   and Training scenario prompt/explanation content — the cut-off agent never
-   reported its keep/migrate verdict; scenario content is schema-governed in
-   `src/data/trainingScenarios.ts` and is arguably already a versioned
-   resource, but verify and document), then check the item with the
-   full-screen-visual-acceptance caveat kept in the pseudo/RTL item.
-3. **Pseudo/RTL TODOS item**: component-level completeness/direction tests now
-   exist; full-screen VISUAL acceptance (real layout, clipping, mirrored
-   rendering) remains before claiming another-language support.
-4. **Screen-reader announcements** (planned Wave C, never launched): extend
-   your table SR semantics to live announcements — actions, pot changes,
-   errors, timers, results — app-wide, without reading decorative scenery.
-   PokerTable is now quiet; strings for announcements should come from the
-   catalog.
-5. **Package freshness**: renderer source has changed substantially since your
-   2026-07-24 `outputs\desktop\` artifacts (catalog migration touched most
-   components; styles.css sizing fixes; OS reduced-motion in App). The
-   packaged artifacts are STALE for any renderer-behavior claims. Rebuild and
-   re-run your gate battery (input smoke, render smoke, offline, safe-mode,
-   collision geometry) before asserting anything about the packaged app. The
-   flash/profiler evidence above was captured against your still-fresh build
-   BEFORE these renderer changes landed in dist — treat it as
-   pre-migration evidence.
-6. **Flash-analysis sampling**: consider a denser-sampling mode (or an
-   accepted recognized tool) for the fast-motion sequences before using the
-   8/8 pass as release evidence.
+7. **Live screen-reader announcements** (was known-gap 4 below; now done)
+   - NEW `src/lib/tableAnnouncer.ts`: pure `deriveTableAnnouncements(prev,next)`
+     diff over a small snapshot type, plus a framework-free
+     `TableAnnouncerController` that coalesces same-transition text, and a
+     `useTableAnnouncer` hook. Because the snapshot only carries fields that
+     change on real game events, repeated identical snapshots return `[]` —
+     that is the no-spam guarantee, and it is what the tests assert.
+   - PokerTable gained two new `visually-hidden` regions beside the existing
+     status paragraph: `role="status"` polite for blind increases + hand
+     results/side pots, and `role="alert"` assertive for all-in. Errors are
+     deliberately NOT duplicated (already assertive via existing `role="alert"`).
+   - Announcements use REAL data, not guesses: `lastPotAwards` (engine
+     `PotAward[]`) and `lastHandHadSidePot` (`pot.kind === "side"`) were
+     threaded through `TournamentTableControls` from `src/App.tsx`.
+   - 7 new catalog keys in `en-US.messages.gameplay.ts`. Tests:
+     `src/lib/tableAnnouncer.test.ts` (15, incl. an explicit assertion that no
+     output ever mentions suit/rank/hidden-hand words) and
+     `src/components/PokerTable.liveAnnouncer.test.tsx` (4).
+   - **Limitation stated by the agent**: this repo has no jsdom/testing-library
+     (every test uses `renderToStaticMarkup` or source scanning), so there is
+     no true mount→re-render→observe-live-region test; that transition
+     behavior is proven by the framework-free controller unit tests instead.
+     Real Narrator/NVDA speech is NOT verified anywhere.
+
+8. **RTL wiring + string-extraction verdict** (was known-gaps 1–3)
+   - `localeTextAttributes()` now spread on **10** screen roots: the 2 assigned
+     (`SettingsPanel`, `AboutSupport`) plus 8 more found with the same gap
+     (`TimedSetup`, `TourLobby`, `PlayerRecord`, `TournamentCeremony`,
+     `RecoveryScreen`, `PlayChipAcknowledgment`, `SaveDataControls`,
+     `RoomFlythrough`). The `RtlDirectionScreens.test.tsx` placeholder is gone;
+     that file now asserts `dir`/`lang` on **16** screens.
+   - **Verdict on the two open data-module questions** (this was the explicit
+     ask in old known-gap 2):
+     - `src/data/trainingScenarios.ts` → **EXEMPT, correctly not migrated.** It
+       is governed by its own `schemaVersion`/`contentVersion` schema with
+       `source`/`review` metadata, a CLI validator, human-review gate, and
+       duplicate detection. It is calibrated poker CONTENT (wording tied to
+       exact EVs/tolerances), not UI chrome; migrating it would break its
+       independent authoring/review pipeline for no localization benefit.
+     - Tournament event names/tiers → **MIGRATED** (plain UI labels, 5 names +
+       5 tiers) into `en-US.messages.shell.ts` as `career.event.*`,
+       `career.tier.*`, `career.qualification.*`, `career.result.*`, consumed
+       from `tournamentSession.ts` and `Dashboard.tsx`. This also caught two
+       further real leaks: Dashboard's ceremony
+       `qualificationLabel`/`placementLabel` raw literals, and `App.tsx`'s
+       `RoomFlythrough` `modeLabel` ternary building "Timed Table"/"Rational
+       Circuit"/"Normal Tour" as literals when exact catalog keys existed.
+   - Pseudo-locale and RTL sweeps extended to 8 more screens (16 total).
+
+## Wave D (commit `e134de6`) — 1 verification agent
+
+9. **Package rebuilt and full gate battery re-run** (was known-gap 5; resolved)
+   - Two REAL staleness bugs found and fixed while running the pipeline:
+     - `ios/.../tournament-session-engine.js` was a checked-in esbuild output
+       nobody had regenerated since engine source changed → regenerated with
+       the project's own `scripts/export-ios-tournament-engine.mjs`.
+     - `scripts/audit-play-chip-boundary.mjs` hard-pinned its source check to a
+       literal in `Dashboard.tsx`, but Wave A's catalog migration moved the
+       "Play chips only"/"No real-money wagering" text into the locale files.
+       `dist/**` and `app.asar` checks already passed; only the source-pinned
+       check was stale → broadened to any real production source file, matching
+       the rule already used for the build/asar checks. `--self-test` 9/9.
+   - `npm run release:verify`: **30/30 stages pass** (integrity, dep-security,
+     secret scan, worktree hygiene, release-docs, tsc, full Vitest, frozen
+     Training-calibration gate, production build, …).
+   - `npm run package:win`: fresh NSIS + portable rebuilt.
+     `win-unpacked\Poker Training Pro.exe` 14:59, sha256 `db18139b2b8c…`;
+     Setup 14:59; Portable 15:00. (electron-builder logged `signtool.exe`
+     lines; the agent made NO Authenticode/publisher claim — still blocked.)
+   - Packaged audits vs the fresh build, all PASS: render smoke, network
+     deny-proxy through representative play (0 connections, all 5 modes),
+     safe-mode, mode-completion, save-recovery, lifecycle-bridge security,
+     Electron fuses (8/8), ASAR tamper-rejection, static budgets,
+     production-composition (0 violations), play-chip boundary.
+   - **Flash/luminance** re-run fresh: 8/8 sequences pass. Sampling density
+     genuinely improved (was known-gap 6) — root cause was Chromium's
+     screenshot encode, not the PNG decode; adding CDP `optimizeForSpeed`
+     (probe-once with silent fallback) took worst-case from ~1392ms to
+     **284.4ms/frame** (~1.76fps). Still sparse for sub-second flashing and
+     still not a certified tool → TODOS item stays unchecked.
+   - **Profiler** re-run fresh, superseding Wave A's pre-migration numbers:
+     **492.8ms** cold launch to recognized renderer, **355 MiB** peak
+     process-tree working set, 4.735% peak normalized CPU, **0** startup long
+     tasks, 2.4 MiB JS heap. First paint/FCP still not exposed by the custom
+     `poker-training-pro://` protocol (pre-existing, documented).
+
+## NEW open finding from Wave D (highest-priority pickup)
+
+**The packaged input smoke is intermittently flaky.** Across 4 consecutive runs
+against the fresh build: 2 passed cleanly (47/47), 2 failed at *different
+unrelated* steps — (a) `raise mouse input: no enabled target found` (raising was
+genuinely not legal at that decision point; `.action-button--raise`'s
+`disabled={!canRaise}` is correct poker logic, not a regression), and (b)
+`keyboard pause input: .pause-menu was not present` (Escape didn't open the
+pause menu inside the 4s poll). Two unrelated failure sites points to real
+unseeded gameplay/timing variance in the harness, not a selector/product bug.
+This is annotated in `TODOS.md`. **Do not treat a single green run of this smoke
+as reliable evidence until it is fixed** (deterministic seeding, or robust
+wait-for-state instead of fixed polls). A Wave E agent was dispatched at this
+exact problem; check `git log` for whether it landed.
+
+## Wave E — dispatched at session end (verify before trusting)
+
+Three agents were launched on the last locally-actionable work; if the session
+ended before they reported, their work may be partially present in the tree.
+Check `git status` / `git log` and re-run `tsc` + Vitest before building on it:
+1. Packaged input-smoke flakiness (above) — harness-layer fix, required ≥5
+   consecutive clean runs as proof; explicitly forbidden from adding production
+   debug backdoors or weakening what the smoke verifies.
+2. Residual string migrations — the last three known unmigrated surfaces:
+   `src/lib/durablePersistence.ts` failure messages, `src/lib/creditsData.ts`
+   chrome (NOT the verbatim bundled license text), and `tournamentSession.ts`
+   synthesized scenario `title`/`prompt`/`actionReason`.
+3. Playlist-engine verification — audit shuffle / no-repeat / crossfade /
+   pause-focus / ducking / separate volumes for implemented-tested-wired, and
+   rigorously verify the dormant-without-manifest contract (no audio graph
+   constructed, no playback attempted).
 
 ## Unchanged blocked list
 
