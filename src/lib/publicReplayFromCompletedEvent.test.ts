@@ -6,6 +6,7 @@ import {
   createCareerTournamentRunner,
   createTournamentRunnerReplay,
   heroTournamentLegalActions,
+  restoreTournamentRunnerReplay,
 } from "../modes/tournamentRunner";
 
 const require = createRequire(import.meta.url);
@@ -57,6 +58,14 @@ function completeEventReplay(): Record<string, unknown> {
 }
 
 describe("public replay export from a completed event", () => {
+  it("keeps a completed runner replay restorable for post-restart export", () => {
+    const source = completeEventReplay();
+    const restored = restoreTournamentRunnerReplay(source as never);
+
+    expect(restored.session.status).toBe("complete");
+    expect(restored.session.result).toBeDefined();
+  }, 15_000);
+
   it("produces a redacted artifact that omits the seed and any hidden cards", () => {
     const source = completeEventReplay();
     // The source checkpoint intentionally carries the deterministic seed so the

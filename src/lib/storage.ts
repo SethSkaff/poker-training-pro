@@ -14,6 +14,15 @@ export const defaultSettings: GameSettings = {
   reducedMotion: false,
   dealSpeed: "standard",
   colorAssist: false,
+  cameraSensitivity: "standard",
+  cameraView: "standard",
+  autoCameraMovement: true,
+  menuMotion: "full",
+  roomMotion: "full",
+  cameraMotion: "full",
+  tableMotion: "full",
+  transitionMotion: "full",
+  interfaceScale: "standard",
   // No control remaps by default; the action map supplies built-in bindings.
 };
 

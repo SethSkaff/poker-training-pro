@@ -42,8 +42,14 @@ import {
   useDesktopSaveHandshake,
 } from "./lib/desktopLifecycle";
 import { createSaveEnvelope } from "./lib/saveMigration";
+import { formatChips } from "./lib/format";
 import { deriveSafeModeSettings } from "./lib/safeMode";
 import { selectNearTransferScenario } from "./lib/trainingEngine";
+import {
+  createTrainingCheckpoint,
+  restoreTrainingCheckpoint,
+  type TrainingPresentationCheckpoint,
+} from "./lib/trainingCheckpoint";
 import {
   advanceTournamentRunnerToHero,
   applyHeroTournamentAction,
@@ -70,6 +76,7 @@ import type {
   TournamentSessionResult,
 } from "./modes/tournamentSession";
 import { createPokerTableSnapshot } from "./modes/tournamentSession";
+import type { BettingActionType } from "./engine";
 import type { GameSettings, PlayerProgress } from "./types/poker";
 
 // Mode-specific heavy scenes are code-split so the initial bundle stays small.
@@ -223,6 +230,12 @@ export default function App() {
   const [timedMinutes, setTimedMinutes] = useState(30);
   const [runner, setRunner] = useState<TournamentRunner | null>(null);
   const [resumeCandidate, setResumeCandidate] = useState<TournamentRunner | null>(null);
+  const [trainingResumeScenarioId, setTrainingResumeScenarioId] = useState<
+    string | null
+  >(null);
+  const [trainingPresentation, setTrainingPresentation] = useState<
+    TrainingPresentationCheckpoint | undefined
+  >(undefined);
   const activeReplayRef = useRef<Record<string, unknown> | undefined>(
     undefined,
   );
@@ -290,12 +303,33 @@ export default function App() {
       if (replay) {
         try {
           const restored = restoreTournamentRunnerReplay(replay);
+          // A completed runner is not resumable play, but its redacted replay
+          // must remain available after a normal app restart. Keep the raw
+          // checkpoint only in the private ref; the player-visible export
+          // path stays redacted by the native backend.
+          activeReplayRef.current = loaded.replay;
           if (restored.session.status === "playing") {
-            activeReplayRef.current = loaded.replay;
             setResumeCandidate(restored);
+          } else if (restored.session.status === "complete") {
+            setLastPublicReplay(loaded.replay);
           }
         } catch {
           setStartupError("The saved tournament checkpoint could not be replayed. Your ratings and training progress are still safe.");
+        }
+      } else {
+        const trainingCheckpoint = restoreTrainingCheckpoint(
+          loaded.replay,
+          new Set(trainingScenarios.map((scenario) => scenario.id)),
+        );
+        if (trainingCheckpoint) {
+          activeReplayRef.current = trainingCheckpoint;
+          setTrainingScenario(
+            trainingScenarios.find(
+              (scenario) => scenario.id === trainingCheckpoint.scenarioId,
+            ) ?? trainingScenarios[0],
+          );
+          setTrainingPresentation(trainingCheckpoint.presentation);
+          setTrainingResumeScenarioId(trainingCheckpoint.scenarioId);
         }
       }
     } else if (loaded.kind === "first-run") {
@@ -380,6 +414,30 @@ export default function App() {
     screen !== "practice" && screen !== "tournament-table",
   );
 
+  // Chromium's CSS zoom scales the entire application—including the dense
+  // table HUD and action targets—rather than merely changing prose font sizes.
+  // It is deliberately applied at the root so every screen responds together.
+  useEffect(() => {
+    document.documentElement.dataset.interfaceScale = settings.interfaceScale;
+    return () => {
+      delete document.documentElement.dataset.interfaceScale;
+    };
+  }, [settings.interfaceScale]);
+
+  // Safe mode is deliberately a renderer-wide presentation guard, not merely
+  // a preferences adjustment. It stops decorative CSS motion even on screens
+  // that do not receive the settings object as a prop.
+  useEffect(() => {
+    if (safeMode?.active) {
+      document.documentElement.dataset.safeMode = "true";
+    } else {
+      delete document.documentElement.dataset.safeMode;
+    }
+    return () => {
+      delete document.documentElement.dataset.safeMode;
+    };
+  }, [safeMode?.active]);
+
   // Background music playlist engine. DORMANT: the production manifest ships no
   // licensed masters, so `createMusicPlaylist` builds no audio graph and makes
   // no sound. The duck-under-feedback bridge is wired here but a dormant
@@ -459,6 +517,37 @@ export default function App() {
     effectiveSettings.musicVolume,
     effectiveSettings.muted,
     effectiveSettings.reducedMotion,
+  ]);
+
+  // Per-surface motion preferences are renderer-wide data attributes so every
+  // decorative screen can honor them without threading settings through each
+  // component. The global Reduce motion toggle and Safe Mode still win.
+  useEffect(() => {
+    const root = document.documentElement;
+    const forcedOff = effectiveSettings.reducedMotion;
+    const preferences = {
+      menu: effectiveSettings.menuMotion,
+      room: effectiveSettings.roomMotion,
+      camera: effectiveSettings.cameraMotion,
+      table: effectiveSettings.tableMotion,
+      transition: effectiveSettings.transitionMotion,
+    } as const;
+    for (const [surface, preference] of Object.entries(preferences)) {
+      root.dataset[`motion${surface[0].toUpperCase()}${surface.slice(1)}`] =
+        forcedOff ? "off" : preference;
+    }
+    return () => {
+      for (const surface of Object.keys(preferences)) {
+        delete root.dataset[`motion${surface[0].toUpperCase()}${surface.slice(1)}`];
+      }
+    };
+  }, [
+    effectiveSettings.cameraMotion,
+    effectiveSettings.menuMotion,
+    effectiveSettings.reducedMotion,
+    effectiveSettings.roomMotion,
+    effectiveSettings.tableMotion,
+    effectiveSettings.transitionMotion,
   ]);
 
   useEffect(() => {
@@ -718,6 +807,12 @@ export default function App() {
     (isPaused: boolean) => {
       const nowMs = Date.now();
       if (isPaused) {
+        // A hidden/minimized table must not keep running Rational equity work
+        // in the background. The runner is intentionally left untouched, so
+        // resume returns to the exact same hero decision rather than silently
+        // applying an action that completed off-screen.
+        if (decisionAbortRef.current) decisionAbortRef.current.aborted = true;
+        equityServiceRef.current?.cancelPending();
         tournamentPausedAtRef.current ??= nowMs;
         return;
       }
@@ -749,6 +844,16 @@ export default function App() {
     [persistBoundary, progress, settings],
   );
 
+  const beginTraining = useCallback(() => {
+    const checkpoint = createTrainingCheckpoint(trainingScenario.id);
+    activeReplayRef.current = checkpoint;
+    setTrainingPresentation(checkpoint.presentation);
+    persistBoundary("action", settings, progress, checkpoint);
+    void PokerTable.preload();
+    setScreen("practice");
+    gameAudio.play("deal");
+  }, [persistBoundary, progress, settings, trainingScenario.id]);
+
   const advanceTrainingScenario = useCallback(
     (scenarioId: string) => {
       const completedScenarioIds = progress.results.map(
@@ -757,10 +862,27 @@ export default function App() {
       const next =
         selectNearTransferScenario(scenarioId, { completedScenarioIds }) ??
         trainingScenarios[0];
+      const checkpoint = createTrainingCheckpoint(next.id);
+      activeReplayRef.current = checkpoint;
+      setTrainingPresentation(checkpoint.presentation);
       setTrainingScenario(next);
+      persistBoundary("action", settings, progress, checkpoint);
       gameAudio.play("deal");
+  },
+    [persistBoundary, progress, progress.results, settings],
+  );
+
+  const updateTrainingPresentation = useCallback(
+    (presentation: TrainingPresentationCheckpoint) => {
+      const checkpoint = createTrainingCheckpoint(trainingScenario.id, presentation);
+      activeReplayRef.current = checkpoint;
+      // A newly paused table is a durable boundary: preserve its exact frozen
+      // clock before the user can close, suspend, or background the app.
+      if (presentation.paused) {
+        persistBoundary("lifecycle", settings, progress, checkpoint);
+      }
     },
-    [progress.results],
+    [persistBoundary, progress, settings, trainingScenario.id],
   );
 
   if ((persistence && startup.kind === "loading") || !safeModeReady) {
@@ -1006,6 +1128,46 @@ export default function App() {
     );
   }
 
+  if (trainingResumeScenarioId) {
+    const scenario = trainingScenarios.find(
+      (candidate) => candidate.id === trainingResumeScenarioId,
+    );
+    return (
+      <main className="startup-gate" aria-labelledby="resume-training-title">
+        <section className="startup-gate__panel">
+          <p className="startup-gate__eyebrow">Training checkpoint</p>
+          <h1 id="resume-training-title">Return to your saved scenario?</h1>
+          <p>
+            {scenario?.title ?? "Your saved Training scenario"} is ready at the
+            table. Your answer and score have not been submitted yet.
+          </p>
+          <div className="startup-gate__actions">
+            <button
+              type="button"
+              onClick={() => {
+                setTrainingResumeScenarioId(null);
+                void PokerTable.preload();
+                setScreen("practice");
+              }}
+            >
+              Resume Training
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                activeReplayRef.current = undefined;
+                setTrainingResumeScenarioId(null);
+                persistBoundary("lifecycle", settings, progress);
+              }}
+            >
+              Abandon scenario and go to menu
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   if (screen === "practice") {
     return (
       <Suspense
@@ -1024,8 +1186,14 @@ export default function App() {
           progress={progress}
           onProgressChange={updateProgress}
           onSettingsChange={updateSettings}
+          initialTrainingPresentation={trainingPresentation}
+          onTrainingPresentationChange={updateTrainingPresentation}
           onNextScenario={advanceTrainingScenario}
-          onExit={() => setScreen("home")}
+          onExit={() => {
+            activeReplayRef.current = undefined;
+            persistBoundary("lifecycle", settings, progress);
+            setScreen("home");
+          }}
         />
       </Suspense>
     );
@@ -1091,6 +1259,7 @@ export default function App() {
     const showArrival =
       handNumber > 1 && lastPresentedHand.current !== handPresentationKey;
     lastPresentedHand.current = handPresentationKey;
+    const lastPublicAction = runner.decisions.at(-1);
     return (
       <Suspense
         fallback={
@@ -1153,10 +1322,25 @@ export default function App() {
             const amount =
               decision.command.to === undefined
                 ? ""
-                : ` to ${decision.command.to.toLocaleString()}`;
+                : ` to ${formatChips(decision.command.to)}`;
             return `${name}: ${decision.command.type}${amount}`;
           }),
           showArrival,
+          lastPotWinnerIds: Array.from(
+            new Set(
+              (runner.session.lastHand?.awards ?? []).map(
+                (award) => award.playerId,
+              ),
+            ),
+          ),
+          ...(lastPublicAction
+            ? {
+                lastPublicAction: {
+                  playerId: lastPublicAction.playerId,
+                  type: lastPublicAction.command.type as BettingActionType,
+                },
+              }
+            : {}),
           openingBigBlind:
             runner.session.tournament.structure.levels[0]?.bigBlind,
           qualifyingPlaces: runner.session.event.qualifyingPlaces,
@@ -1188,9 +1372,9 @@ export default function App() {
             }
           : {})}
         onMenu={() => {
-          // Keep the completed-event replay in memory for export; only the
-          // resumable checkpoint is cleared on explicit leave.
-          activeReplayRef.current = undefined;
+          // Keep the completed-event replay through ordinary navigation and
+          // restart. Starting another event replaces it at that new safe
+          // boundary; only an explicit reset/import removes it.
           persistBoundary("lifecycle", settings, progress);
           setTournamentResult(null);
           setRunner(null);
@@ -1198,8 +1382,7 @@ export default function App() {
         }}
         onNext={
           tournamentResult.nextEventId
-              ? () => {
-                activeReplayRef.current = undefined;
+            ? () => {
                 persistBoundary("lifecycle", settings, progress);
                 setTournamentResult(null);
                 setRunner(null);
@@ -1239,9 +1422,7 @@ export default function App() {
             setScreen("tutorial");
             gameAudio.play("deal");
           } else if (mode === "training") {
-            void PokerTable.preload();
-            setScreen("practice");
-            gameAudio.play("deal");
+            beginTraining();
           } else if (mode === "timed") {
             // Next likely scenes after setup: the room fly-through, then table.
             void RoomFlythrough.preload();

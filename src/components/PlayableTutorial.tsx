@@ -8,6 +8,7 @@ import {
   TUTORIAL_STEP_ORDER,
   type TutorialStep,
 } from "../lib/playableTutorial";
+import { formatFixedDecimal } from "../lib/format";
 
 const STEP_COPY: Record<
   TutorialStep,
@@ -296,7 +297,7 @@ export function PlayableTutorial({ onExit }: { onExit: () => void }) {
                 })
               }
             />
-            <output>{state.presentationSpeed.toFixed(1)}×</output>
+            <output>{formatFixedDecimal(state.presentationSpeed, 1)}×</output>
           </label>
         ) : null}
 

@@ -38,8 +38,16 @@ export function RoomFlythrough({
       freezeGroup.add(delay);
       delays.push(delay);
     };
-    if (settings.reducedMotion) {
+    if (
+      settings.reducedMotion ||
+      settings.roomMotion === "off" ||
+      !settings.autoCameraMovement
+    ) {
       schedule(500, onComplete);
+    } else if (settings.roomMotion === "reduced") {
+      schedule(320, () => setPhase("room"));
+      schedule(900, () => setPhase("seat"));
+      schedule(1_450, onComplete);
     } else {
       schedule(650, () => setPhase("room"));
       schedule(2_450, () => setPhase("seat"));
@@ -51,7 +59,13 @@ export function RoomFlythrough({
         freezeGroup.remove(delay);
       }
     };
-  }, [freezeGroup, onComplete, settings.reducedMotion]);
+  }, [
+    freezeGroup,
+    onComplete,
+    settings.autoCameraMovement,
+    settings.roomMotion,
+    settings.reducedMotion,
+  ]);
 
   return (
     <main

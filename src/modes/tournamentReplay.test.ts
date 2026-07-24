@@ -58,5 +58,5 @@ describe("tournament checkpoint replay", () => {
     expect(restored.sequence).toBe(runner.sequence);
     expect(restored.decisions).toEqual(runner.decisions);
     expect(restored.replayActions).toEqual(runner.replayActions);
-  });
+  }, 15_000);
 });

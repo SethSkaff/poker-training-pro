@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDateTime } from "../lib/format";
 import type {
   DurableResult,
   DurableSaveReceipt,
@@ -100,7 +101,7 @@ export function RecoveryScreen({
               <dt>Saved</dt>
               <dd>
                 {recommended.savedAt
-                  ? new Date(recommended.savedAt).toLocaleString()
+                  ? formatDateTime(recommended.savedAt)
                   : "Recovery copy"}
               </dd>
             </div>

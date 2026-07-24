@@ -139,3 +139,84 @@ struct TimedBlindDecision: Codable, Equatable, Sendable {
     let forcedAllInStack: Int?
     let reason: String
 }
+
+/// Hero-safe state returned by the shared tournament runner. `replay` is an
+/// opaque local checkpoint; Swift never decodes or edits hidden game state.
+struct MobileTournamentSessionResponse: Codable, Equatable, Sendable {
+    let replay: JSONValue
+    let complete: Bool
+    let table: MobileTournamentTable?
+    let legalActions: MobileLegalActions?
+    let result: MobileTournamentResult?
+}
+
+struct MobileTournamentTable: Codable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let street: String
+    let blinds: [Int]
+    let pot: Int
+    let amountToCall: Int
+    let heroCards: [PokerCard]
+    let board: [PokerCard]
+    let players: [MobileTournamentPlayer]
+    let prompt: String
+}
+
+struct MobileTournamentPlayer: Codable, Equatable, Sendable, Identifiable {
+    let id: String
+    let name: String
+    let stack: Int
+    let status: String
+    let bet: Int
+    let cards: [PokerCard]?
+}
+
+struct MobileLegalActions: Codable, Equatable, Sendable {
+    let check: Bool
+    let fold: Bool
+    let call: Bool
+    let callAmount: Int
+    let bet: MobileBetRange?
+    let raise: MobileRaiseRange?
+    let allIn: Bool
+    let allInTo: Int
+}
+
+struct MobileBetRange: Codable, Equatable, Sendable {
+    let min: Int
+    let max: Int
+}
+
+struct MobileRaiseRange: Codable, Equatable, Sendable {
+    let minTo: Int
+    let maxTo: Int
+}
+
+/// Public completion data needed by the native shell. It deliberately omits
+/// replay internals, action history, and every opponent's hole cards.
+struct MobileTournamentResult: Codable, Equatable, Sendable {
+    let eventId: String
+    let finishPlace: Int
+    let fieldSize: Int
+    let sourceFieldSize: Int
+    let qualifyingPlaces: Int
+    let qualified: Bool
+    let tournamentEloDelta: Int
+    let eventName: String
+    let handNumber: Int
+    let placementLabel: String
+    let qualificationLabel: String
+}
+
+/// Public career state sent into a fresh shared-engine session so native
+/// qualification persists without Swift inspecting an opaque replay.
+struct MobileCareerResult: Codable, Equatable, Sendable {
+    let eventId: String
+    let finishPlace: Int
+    let fieldSize: Int
+    let sourceFieldSize: Int
+    let qualifyingPlaces: Int
+    let qualified: Bool
+    let tournamentEloDelta: Int
+}

@@ -5,7 +5,7 @@ import Foundation
 /// the bundled engine grades the same way the desktop does. This bundled subset
 /// keeps the scaffold self-contained; the production build should export the
 /// full validated bank rather than hand-maintaining it here.
-struct MobileScenario: Identifiable, Equatable, Sendable {
+struct MobileScenario: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let title: String
     let prompt: String
@@ -29,7 +29,30 @@ struct MobileScenario: Identifiable, Equatable, Sendable {
     let tolerance: Double
     let mathExplanation: String
 
-    static let bank: [MobileScenario] = [
+    /// Production content is exported from the validated desktop bank during
+    /// release. Keep the compact fallback only for a malformed or missing
+    /// bundle resource so a local Training screen never crashes at launch.
+    static let bank: [MobileScenario] = loadBundledBank() ?? fallbackBank
+
+    private struct Resource: Codable {
+        let schemaVersion: Int
+        let scenarios: [MobileScenario]
+    }
+
+    private static func loadBundledBank(bundle: Bundle = .main) -> [MobileScenario]? {
+        guard
+            let url = bundle.url(forResource: "training-scenarios", withExtension: "json"),
+            let data = try? Data(contentsOf: url),
+            let resource = try? JSONDecoder().decode(Resource.self, from: data),
+            resource.schemaVersion == 1,
+            !resource.scenarios.isEmpty
+        else {
+            return nil
+        }
+        return resource.scenarios
+    }
+
+    private static let fallbackBank: [MobileScenario] = [
         MobileScenario(
             id: "preflop-pot-odds-ak",
             title: "Big Slick at a short table",

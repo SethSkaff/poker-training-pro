@@ -108,6 +108,11 @@ export interface PlayerProgress {
 export type { ControlBindingOverrides } from "../lib/actionMap";
 import type { ControlBindingOverrides } from "../lib/actionMap";
 
+/** Per-surface motion intensity. The global reduced-motion control remains an
+ * emergency override, while these preferences let players keep only the motion
+ * they find useful. */
+export type MotionIntensity = "full" | "reduced" | "off";
+
 export interface GameSettings {
   masterVolume: number;
   muted: boolean;
@@ -117,5 +122,23 @@ export interface GameSettings {
   reducedMotion: boolean;
   dealSpeed: "cinematic" | "standard" | "quick";
   colorAssist: boolean;
+  /** How far one look-left/right command moves the seated table camera. */
+  cameraSensitivity: "low" | "standard" | "high";
+  /** A compact, standard, or wider seated-table field of view. */
+  cameraView: "close" | "standard" | "wide";
+  /** Enables room travel and automatically recenters at a new hand. */
+  autoCameraMovement: boolean;
+  /** Decorative title/menu movement. */
+  menuMotion: MotionIntensity;
+  /** Championship-room arrival movement. */
+  roomMotion: MotionIntensity;
+  /** Automatic camera pans and the eased seated-view response. */
+  cameraMotion: MotionIntensity;
+  /** Card, chip, timer, and opponent-action flourish. */
+  tableMotion: MotionIntensity;
+  /** Screen and between-hand transition intensity. */
+  transitionMotion: MotionIntensity;
+  /** Applies a readable desktop interface scale without changing game rules. */
+  interfaceScale: "compact" | "standard" | "large" | "extra-large";
   controlBindings?: ControlBindingOverrides;
 }

@@ -303,6 +303,9 @@ function normalizeFatalEvent(message) {
         .map((argument) => argument?.description ?? argument?.value ?? "")
         .join(" ")
         .slice(0, 500),
+      ...(typeof message.params?.stackTrace?.callFrames?.[0]?.url === "string"
+        ? { sourceUrl: message.params.stackTrace.callFrames[0].url }
+        : {}),
     };
   }
   if (
@@ -313,6 +316,12 @@ function normalizeFatalEvent(message) {
       kind: "console-error",
       level: "error",
       description: String(message.params?.entry?.text ?? "").slice(0, 500),
+      ...(typeof message.params?.entry?.url === "string"
+        ? { sourceUrl: message.params.entry.url }
+        : {}),
+      ...(typeof message.params?.entry?.source === "string"
+        ? { source: message.params.entry.source }
+        : {}),
     };
   }
   return undefined;

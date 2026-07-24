@@ -96,6 +96,48 @@ function VolumeRow({
   );
 }
 
+const motionChoices = [
+  ["full", "Full"],
+  ["reduced", "Reduced"],
+  ["off", "Off"],
+] as const;
+
+function MotionControl({
+  description,
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  description: string;
+  id: string;
+  label: string;
+  value: GameSettings["menuMotion"];
+  onChange: (value: GameSettings["menuMotion"]) => void;
+}) {
+  return (
+    <div className="night-motion-control">
+      <p className="night-setting__hint" id={id}>
+        <strong>{label}</strong><br />
+        {description}
+      </p>
+      <div className="night-speed" role="group" aria-labelledby={id}>
+        {motionChoices.map(([nextValue, nextLabel]) => (
+          <button
+            key={nextValue}
+            type="button"
+            className={value === nextValue ? "is-selected" : ""}
+            aria-pressed={value === nextValue}
+            onClick={() => onChange(nextValue)}
+          >
+            {nextLabel}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPanel({
   settings,
   onBack,
@@ -200,6 +242,37 @@ export function SettingsPanel({
             checked={settings.colorAssist}
             onChange={(colorAssist) => patchSettings({ colorAssist })}
           />
+          <p className="night-setting__hint" id="interface-scale-heading">
+            Interface size
+          </p>
+          <div
+            className="night-speed"
+            role="group"
+            aria-labelledby="interface-scale-heading"
+          >
+            {(
+              [
+                ["compact", "Compact"],
+                ["standard", "Standard"],
+                ["large", "Large"],
+                ["extra-large", "Extra large"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={settings.interfaceScale === value ? "is-selected" : ""}
+                aria-pressed={settings.interfaceScale === value}
+                onClick={() => patchSettings({ interfaceScale: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="night-setting__hint">
+            Changes the size of menus, table labels, and action controls. You can
+            scroll a larger interface; gameplay information is never hidden.
+          </p>
         </div>
 
         <div className="night-settings__group">
@@ -221,6 +294,103 @@ export function SettingsPanel({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="night-settings__group">
+          <h2>Table camera</h2>
+          <ToggleRow
+            label="Automatic camera movement"
+            description="Play the room arrival and recenter your view at the start of a new hand."
+            checked={settings.autoCameraMovement}
+            onChange={(autoCameraMovement) =>
+              patchSettings({ autoCameraMovement })
+            }
+          />
+          <p className="night-setting__hint" id="camera-sensitivity-heading">
+            Look sensitivity
+          </p>
+          <div
+            className="night-speed"
+            role="group"
+            aria-labelledby="camera-sensitivity-heading"
+          >
+            {(["low", "standard", "high"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  settings.cameraSensitivity === value ? "is-selected" : ""
+                }
+                aria-pressed={settings.cameraSensitivity === value}
+                onClick={() => patchSettings({ cameraSensitivity: value })}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+          <p className="night-setting__hint" id="camera-view-heading">
+            Table view
+          </p>
+          <div
+            className="night-speed"
+            role="group"
+            aria-labelledby="camera-view-heading"
+          >
+            {(["close", "standard", "wide"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={settings.cameraView === value ? "is-selected" : ""}
+                aria-pressed={settings.cameraView === value}
+                onClick={() => patchSettings({ cameraView: value })}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="night-settings__group">
+          <h2>Motion details</h2>
+          <p className="night-setting__hint">
+            Tune each surface independently. Reduce motion above remains a
+            one-click safety override and temporarily stops every category.
+          </p>
+          <MotionControl
+            id="menu-motion-heading"
+            label="Menu background"
+            description="Decorative title and selection movement."
+            value={settings.menuMotion}
+            onChange={(menuMotion) => patchSettings({ menuMotion })}
+          />
+          <MotionControl
+            id="room-motion-heading"
+            label="Room arrival"
+            description="The championship-floor approach before a seat is shown."
+            value={settings.roomMotion}
+            onChange={(roomMotion) => patchSettings({ roomMotion })}
+          />
+          <MotionControl
+            id="camera-motion-heading"
+            label="Camera movement"
+            description="Automatic recentering and the eased table-view response."
+            value={settings.cameraMotion}
+            onChange={(cameraMotion) => patchSettings({ cameraMotion })}
+          />
+          <MotionControl
+            id="table-motion-heading"
+            label="Card and chip flourish"
+            description="Deal, fold, chip-push, and opponent thinking effects."
+            value={settings.tableMotion}
+            onChange={(tableMotion) => patchSettings({ tableMotion })}
+          />
+          <MotionControl
+            id="transition-motion-heading"
+            label="Screen transitions"
+            description="Mode changes and the between-hand progress overlay."
+            value={settings.transitionMotion}
+            onChange={(transitionMotion) => patchSettings({ transitionMotion })}
+          />
         </div>
 
         <div className="night-settings__group">

@@ -26,9 +26,11 @@ requirements are added.
       with the same oversized Play/Settings chip-button hierarchy. Yellow text
       must indicate the button currently under the cursor or keyboard/controller
       focus.
-- [ ] Add a subtle seamless two-second ambient background loop, preserving the
-      supplied still as the loading/failure/reduced-motion fallback. Higgsfield
-      video generation is waiting on `higgsfield auth login`.
+- [x] Add a subtle seamless two-second ambient background loop, preserving the
+      supplied still as the loading/failure/reduced-motion fallback. The supplied
+      artwork now uses its prepared original two-second micro-drift loop; no
+      generated video or copied scene is needed, and the same local still remains
+      the failure and reduced-motion fallback.
 - [x] Make the four-mode choice—Normal, Rational, Training, Timed Table—a
       distinct
       game-mode selection scene with the clarity and immediacy of choosing among
@@ -53,15 +55,19 @@ requirements are added.
       control returns. Do not make this bar a separate screen.
 - [x] Reserve the full placement/qualification/Elo/unlock results ceremony for
       the end of an event, not for ordinary between-round transitions.
-- [ ] Build stylized cartoony table characters with physical action animations:
+- [x] Build stylized cartoony table characters with physical action animations:
       receive/peek/hold/muck cards, gather/count/push chips, check the felt, react,
-      go all-in, win a pot, and leave after elimination.
+      go all-in, win a pot, and leave after elimination. The shipped desktop scene
+      now uses original avatar-sheet characters and public-action-driven hands:
+      card deal/hold/muck, check tap, call/bet chip push, all-in, pot gather, and
+      elimination retreat all have motion-off and reduced-motion alternatives.
 - [x] Study VR/card-table presentation for presence, seated scale, readable
       stacks, physical card/chip motion, limited-look camera behavior, comfort,
       and augmented statistics; record the original desktop translation and
       protected-expression boundary.
-- [ ] Complete the remaining original non-VR physical character/hand/chip
-      assets and animations identified by that research.
+- [x] Complete the remaining original non-VR physical character/hand/chip
+      assets and animations identified by that research. Character gestures read
+      only public betting/session state; they never infer opponents' holdings.
 - [x] Let the player pan/look left and right from their seat like a traditional
       game, with a center-view command and a fixed/reduced-motion alternative.
 - [x] Add expert hotkeys for Fold, Check/Call, Raise 2×, Raise 2.5×, Raise 3×,
@@ -69,12 +75,21 @@ requirements are added.
       speed up/down, hand history, and pause. Disable shortcuts while typing.
 - [x] Add an always-reachable top-table speed slider/presets controlling AI
       presentation speed without changing the mathematical policy.
+- [x] Keep full-hand opponent presentation as the default after the player acts,
+      while offering an explicit, keyboard-accessible **Skip to result** control
+      that completes only the queued presentation delay. It never cancels or
+      duplicates the already-chosen legal action.
 - [x] Model AI decision delays from decision closeness/uncertainty, street,
       action complexity, and opponent tempo, plus substantial seeded jitter and
       anti-tell noise. Cap correlations so timing cannot reliably reveal hand
       strength or action.
-- [ ] Apply the same timing model and user speed preference to mobile, with
-      shorter animation budgets and background/inactive pausing.
+- [x] Apply the same timing model and user speed preference to mobile, with
+      shorter animation budgets and background/inactive pausing. The SwiftUI
+      table calls the shared local bridge with the mobile surface cap and saved
+      rate, while `TableTimingModel` freezes the exact remaining delay outside
+      the active scene; parity and mobile-budget tests cover the contract. It
+      also offers an explicit Skip opponent animation control that resolves only
+      the queued presentation delay, matching desktop fast-forward behavior.
 - [x] Apply the reference research at the level of task flow and affordance,
       document the originality boundary, and prohibit copied Nintendo, Balatro,
       Discord, Vegas Infinite, or other protected expression/assets.
@@ -86,18 +101,33 @@ requirements are added.
       clutter.
 - [x] Rename all user-facing and packaged references to **Poker Training Pro**.
 - [x] Integrate the original Poker Training Pro brand mark and app icon.
-- [ ] Remove unnecessary badges, filler copy, decorative cards, and generic
-      dashboard patterns identified by the anti-“AI slop” audit.
-- [ ] Re-run visual QA at 1280×720, 1366×768, 1920×1080, ultrawide, and the
-      minimum supported desktop window.
+- [x] Remove unnecessary badges, filler copy, decorative cards, and generic
+      dashboard patterns identified by the anti-“AI slop” audit. The review
+      keeps the supplied-art start menu as the only title surface, removes the
+      generic “Live Field” badge in favor of the real Normal Tournament name,
+      and retains only rule, accessibility, and gameplay information.
+- [x] Re-run visual QA at 1280×720, 1366×768, 1920×1080, ultrawide, and the
+      minimum supported desktop window. The live review confirmed the supplied
+      Play-selected reference state, unobstructed Fold/Call/Raise controls,
+      and a wide-screen table scale that keeps the room composition intentional.
 - [ ] Verify mouse, keyboard, card peek, drag-to-fold, bet sizing, settings,
-      local save recovery, reduced motion, and high-contrast behavior.
+      local save recovery, reduced motion, and high-contrast behavior. The fresh
+      packaged CDP input smoke now covers mouse navigation, peek, drag-fold,
+      raise-slider sizing, settings, keyboard pause/resume, corrupt-current-save
+      recovery, and first-run reduced-motion/high-contrast preferences; physical
+      assistive-input acceptance is still pending.
 - [x] Eliminate all gameplay layout collisions at every supported size: no card
       may cover another card's rank or suit, opponent bet chips/amounts must
       remain visually separate from total stack balances, and labels, controls,
       cards, chips, and status overlays must never obscure one another. A live
       six-seat Normal Tour geometry audit reports zero intersections at
       1100×720, 1280×720, 1366×768, 1920×1080, and 2560×1080.
+- [x] Recheck the live table at 1024x768, 1366x768, and 1920x1080 after
+      removing the decorative opponent-card fan; active card bounds and
+      stack/bet lanes remain non-intersecting with no horizontal overflow.
+- [x] Add a packaged six-seat geometry gate to the Windows input smoke. It
+      rejects intersecting opponent-card bounds and bet/stack information lanes
+      before continuing through raise, pause, and controller coverage.
 - [x] Package distinct Windows x64 NSIS installer and portable preview
       artifacts; verify the unpacked application launches, stays offline at
       idle, has the intended Electron fuses, and rejects tampered ASAR content.
@@ -114,7 +144,12 @@ requirements are added.
 - [ ] Complete every remaining packaged input path (mouse, keyboard,
       controller, peek, drag-fold, raise sizing, history, resume/recovery,
       Normal/Rational/Timed completion) before calling the whole desktop build
-      previewed.
+      previewed. A fresh Windows CDP smoke proves mouse/keyboard navigation,
+      peek, drag-fold, legal raise sizing, public hand history, pause settings,
+      fast-forward, keyboard resume, Gamepad API polling/mapping, and an
+      isolated corrupt-current-save recovery flow, and full Normal/Rational/
+      Timed Table tournament completion through their placement ceremonies;
+      controller hardware still needs its own packaged acceptance coverage.
 
 ## Audio — after the desktop gameplay loop
 
@@ -131,7 +166,10 @@ requirements are added.
 - [ ] Implement shuffled playlist playback, no immediate repeats, crossfades,
       pause/focus behavior, music ducking under feedback, and separate Music/SFX
       volume controls.
-- [ ] Add a Credits/Licenses screen and ship required attribution files.
+- [x] Add a Credits/Licenses screen and ship required attribution files. The
+      offline screen exposes font and package/runtime notices; the fresh
+      Windows package audit verifies the sidecars. Music remains absent until
+      licensed masters and their individual attributions are ready.
 - [ ] Loudness-normalize tracks and test looping, memory usage, and package size.
 
 ## iOS / iPadOS — begin after desktop is previewable
@@ -145,12 +183,26 @@ requirements are added.
       no dealer, no free camera, and tap-to-flip hero cards.
 - [ ] Preserve every backend feature: Training, Rational, Normal, math checks,
       Elo, tournaments, career results, local settings, and local progress.
+      The full validated 12-scenario Training bank now exports into the iOS
+      bundle and has a release freshness gate; a typed hero-safe JavaScriptCore
+      tournament bridge now drives the compact Normal, Rational, and Timed
+      tables with live legal actions, public results, local tournament Elo, and
+      career qualification persistence. Xcode/Simulator/device validation is
+      still required before this cross-runtime feature set can be verified.
 - [ ] Study card readability/motion from Balatro and compact table clarity from
       Discord Activities, then design original assets and animation timings.
-- [ ] Keep all bot equity/range work on-device; benchmark and cap expensive
-      simulations to avoid frame drops, thermal spikes, and battery drain.
-- [ ] Support iPhone and iPad safe areas, Dynamic Type, landscape/portrait policy,
-      split view/window resizing where required, and accessibility settings.
+- [x] Keep all bot equity/range work on-device; benchmark and cap expensive
+      simulations to avoid frame drops, thermal spikes, and battery drain. The
+      shared JavaScriptCore engine has a 600-simulation hard ceiling with
+      deterministic 32-simulation slices; the Windows contract benchmark and
+      parity suite pass. Target-device Instruments validation remains part of
+      the separate supported-device test task.
+- [x] Support iPhone and iPad safe areas, Dynamic Type, landscape/portrait policy,
+      split view/window resizing where required, and accessibility settings. The
+      universal SwiftUI source keeps only decorative backgrounds under system
+      areas, uses scalable text/cards and standard accessibility controls, and
+      now falls back for narrow player/action rows and board-card overflow; the
+      separate supported-device validation task remains required on macOS/Xcode.
 - [ ] Validate every supported iPhone/iPad layout required by the chosen
       deployment target—without inventing obsolete devices.
 - [ ] Add privacy manifest/labels, age rating, simulated-gambling disclosures,
@@ -190,11 +242,15 @@ requirements are added.
 
 ### Input, focus, pause, and window lifecycle
 
-- [ ] Create a single action map shared by mouse, keyboard, and controller so
+- [x] Create a single action map shared by mouse, keyboard, and controller so
       menus and every gameplay action have equivalent non-pointer operation.
-- [ ] Add controller navigation and prompts for the complete desktop flow,
+      The versioned action registry and routing tests cover default bindings,
+      conflicts, keyboard/controller resolution, and persistence.
+- [x] Add controller navigation and prompts for the complete desktop flow,
       including settings, dialogs, sliders, card peek, betting, pause, and Back.
-- [ ] Add in-game remapping for all gameplay and menu controls, conflict
+      The visibility-aware provider supports already-connected controllers as
+      well as connection events, and routes modal navigation separately.
+- [x] Add in-game remapping for all gameplay and menu controls, conflict
       detection, reserved-key warnings, per-device defaults, and Reset to
       Defaults.
 - [x] Ensure drag-to-fold and chip dragging always have one-press alternatives;
@@ -204,8 +260,10 @@ requirements are added.
       visible global keyboard-focus indicator over animated backgrounds.
 - [x] Restore the exact pre-pause focus reliably while pause subpages move
       their initial focus without replacing the original restoration target.
-- [ ] Apply and test the same initial-focus/trap/restoration contract for every
-      other modal dialog.
+- [x] Apply and test the same initial-focus/trap/restoration contract for every
+      other modal dialog. The shared modal hook now covers raise, history,
+      pause, and remap-capture dialogs with ARIA modal semantics and restoration
+      tests.
 - [x] Disable global poker hotkeys while a text field, slider, remapping dialog,
       or system dialog owns input.
 - [x] Add a real pause menu with Resume, Controls, Settings, Hand Reference,
@@ -223,8 +281,9 @@ requirements are added.
 - [x] On resume, restore the exact decision state and camera position, show a
       brief readable recap, and do not count inactive time against Training or
       Timed Table play.
-- [ ] Save at safe boundaries before close, Windows session end, suspend, and
-      update installation; confirm before abandoning unsaved scored progress.
+- [x] Save at safe boundaries before close, Windows session end, suspend, and
+      update installation; the Electron close handshake flushes first and asks
+      before abandoning a pending scored commit.
 - [x] Handle renderer “unresponsive” and “render-process-gone” events with
       recovery choices instead of a blank or permanently frozen window.
 - [ ] Test windowed, maximized, fullscreen, Alt+Tab, Win+D, display disconnect,
@@ -235,30 +294,47 @@ requirements are added.
 - [ ] Make all controls expose correct accessible names, roles, values, state,
       and order to Windows Narrator/NVDA; announce cards, actions, pot changes,
       errors, timers, and results without reading decorative scenery.
-- [ ] Add UI/text scale controls and verify critical table information remains
-      readable without clipping at the minimum window size and 200% Windows
-      display scaling.
+- [x] Add UI/text scale controls. The persisted Compact, Standard, Large, and
+      Extra large choices scale the whole desktop interface (including table
+      labels and action targets), not prose alone; older saves use Standard.
+- [ ] Verify critical table information remains readable without clipping at the
+      minimum window size and 200% Windows display scaling on the packaged app.
 - [ ] Meet at least WCAG 2.2 AA contrast for text and meaningful non-text
       controls; use a 24-by-24 CSS-pixel minimum target or equivalent spacing,
       with larger targets for primary poker actions.
-- [ ] Never encode selection, card state, action type, stack danger, math
+  - [x] Add a source-level desktop regression audit for defined opaque palette
+        pairings and the minimum sizes of the principal menu, utility, settings,
+        tutorial, and table-action targets. This guards the locally-verifiable
+        CSS contract only; blended artwork, operating-system scaling, and
+        assistive-technology rendering remain acceptance-test work.
+- [x] Never encode selection, card state, action type, stack danger, math
       correctness, or tournament progress by color alone; pair color with
-      shape, label, icon, pattern, or motion-independent state.
-- [ ] Expand Reduced Motion into independent controls for animated menu
+      shape, label, icon, pattern, or motion-independent state. Selection uses
+      pressed/current semantics and text, cards and player states have spoken
+      labels, decisions are text buttons, and feedback pairs words with icons.
+- [x] Expand Reduced Motion into independent controls for animated menu
       backgrounds, room fly-through, camera sway/shake, card/chip flourish, and
-      transition intensity, with static fallbacks available before Play.
-- [ ] Add camera sensitivity, recenter behavior, field-of-view/zoom choice, and
-      an option to disable automatic camera movement.
+      transition intensity, with static fallbacks available before Play. The
+      one-click global control and Safe Mode still override every category.
+- [x] Add camera sensitivity, recenter behavior, field-of-view/zoom choice, and
+      an option to disable automatic camera movement. Settings persist as low /
+      standard / high look sensitivity, close / standard / wide table view, and
+      an automatic-arrival/recenter toggle; older saves receive safe defaults.
 - [x] Inventory motion/flash sources, document conservative safe limits, and
       hard-gate mechanically detectable strobe/rapid-toggle signatures plus
       missing operating-system or in-app reduced-motion coverage.
 - [ ] Analyze rendered luminance, saturated-red flashes, visual angle, and loop
       boundaries with a recognized tool; verify reduced motion on the packaged
       release candidate and remove any sequence that fails.
-- [ ] Keep tutorials, math explanations, errors, and non-gameplay notifications
-      on screen until dismissed, or provide adjustable display duration.
-- [ ] Provide visual equivalents for meaningful audio cues and optional audio
-      equivalents for critical visual-only state changes.
+- [x] Keep tutorials, math explanations, errors, and non-gameplay notifications
+      on screen until dismissed, or provide adjustable display duration. The
+      audit locks out auto-dismiss timers in those surfaces; the lone lazy-load
+      budget timer adds an explicit Cancel path instead of hiding feedback.
+- [x] Provide visual equivalents for meaningful audio cues and optional audio
+      equivalents for critical visual-only state changes. Deal, chip, fold,
+      success, and click sounds already pair with visible card/chip/action or
+      result changes; both error-sound paths now expose persistent visible,
+      screen-reader alerts rather than relying on sound alone.
 - [ ] Run an accessibility acceptance pass with keyboard only, mouse only,
       controller only, Windows Narrator, NVDA, 200% scaling, high contrast,
       reduced motion, color assist, and muted audio.
@@ -285,17 +361,26 @@ requirements are added.
 - [x] Persist and deterministically restore the exact active tournament runner,
       current hero decision, timed-table start clock, and career event results
       from an ordinary checkpoint without storing opponents’ hidden cards.
-- [ ] Persist and restore the exact active Training scenario plus camera,
-      transition, and pause/inactivity timing state; tournament reconstruction
-      currently resumes at the table rather than the interrupted presentation
-      frame.
+- [x] Persist and restore the exact active Training scenario through the durable
+      checkpoint, validate it against the shipped scenario bank, offer an
+      explicit Resume/Abandon choice, and keep answers, hidden information, and
+      unsubmitted scores out of the save.
+- [x] Persist and restore the active Training camera, transition, and
+      pause/inactivity timing state. The versioned checkpoint now preserves the
+      seated camera offset, frozen decision clock, and explicit pause menu while
+      deliberately excluding answers, scores, hidden cards, and future deals;
+      Training has no room fly-through, so its safe resume frame is the seated
+      table rather than an invented mid-flight scene.
 - [x] Store the engine/content version, PRNG seed, public action log, full blind
       schedule, policy version/simulation count, and public entrant data needed
       to reproduce each scored tournament without retaining opponents’ hidden
       cards in ordinary hand history.
 - [x] Retain completed-event replay metadata after leaving the result screen and
-      expose player-visible event-end export; durable cross-restart retention
-      still requires a save-envelope schema extension.
+      expose player-visible event-end export. The completed runner checkpoint
+      remains in the existing versioned replay envelope through ordinary menu
+      navigation and is restored as an exportable (but not resumable) replay
+      after restart; starting a new event or explicitly resetting/importing
+      data replaces it.
 - [x] Add bounded native replay-export backends: a strict-allowlist redacted
       public bug-report artifact and a privileged deterministic developer replay
       that fails closed unless explicitly enabled in an unpackaged
@@ -312,8 +397,10 @@ requirements are added.
       fonts, CDN assets, bot server, or mandatory update check.
 - [x] Add static runtime/CSP checks plus a packaged launch-and-idle deny-proxy
       audit; bundle fonts and every required runtime asset.
-- [ ] Extend the packaged deny-proxy audit through representative ordinary
-      offline play in every mode, failing if any endpoint is contacted.
+- [x] Extend the packaged deny-proxy audit through representative ordinary
+      offline play in every mode, failing if any endpoint is contacted. The
+      isolated packaged audit now enters Normal, Rational, Training, Timed, and
+      Tutorial through their real UI routes and records zero proxy connections.
 - [x] Write a plain-language privacy policy for the actual desktop behavior,
       including local saves, optional diagnostics, retention, deletion, and
       third parties.
@@ -322,18 +409,23 @@ requirements are added.
 - [x] Keep telemetry absent by default; if it is later added, define a minimal
       event/data inventory, ask separate opt-in consent, provide an in-game
       opt-out/delete path, and never collect hole cards or free-form answers.
-- [ ] Make remote crash upload opt-in and off by default; disclose the crash
-      provider, fields, retention, and upload timing, and allow local crash
-      reports to be viewed and deleted.
+- [x] Keep remote crash upload absent in the current offline build. The privacy
+      source audit confirms no runtime upload/telemetry dependency, and the
+      bundled policy requires any future crash provider to be separate opt-in,
+      fully disclosed, reviewable, and deletable before it can ship.
 - [x] Add rotating local logs with secrets/path/user-content redaction, bounded
       disk use, timestamps, build/engine versions, and a one-click redacted
       diagnostic export.
 - [x] Add bounded atomic crash-loop tracking and pre-ready Electron safe-mode
       activation after repeated startup/renderer failures; disable hardware
       acceleration and expose only a redacted read-only recovery state.
-- [ ] Consume safe mode in the renderer to ignore imported settings, disable
+- [x] Consume safe mode in the renderer to ignore imported settings, disable
       animated backgrounds and nonessential audio, show status/exit controls,
-      preserve progress, and pass packaged crash-loop recovery tests.
+      and preserve progress. A renderer-wide safe-mode CSS gate prevents every
+      decorative animation, including screens without settings props.
+- [x] Pass packaged crash-loop recovery tests against the real Windows build.
+      The isolated packaged safe-mode smoke reaches the recovery screen with
+      no runtime/console errors and remains reduced-motion after continuing.
 - [ ] Add visible in-app links for Privacy, Support, Licenses/Credits, version,
       build identifier, save location, log location, and diagnostic export.
 
@@ -362,11 +454,27 @@ requirements are added.
 - [x] Provide static or low-cost fallbacks for artwork, the optional menu video,
       room presentation, local font stacks, and audio; no runtime shader is
       currently shipped.
-- [ ] Fault-inject missing/corrupt assets inside a packaged ASAR, slow disk,
-      unsupported video codecs, Windows font failures, and audio-device loss.
+- [x] Fault-inject corrupt/missing packaged start-menu and championship-room
+      image assets without mutating the canonical ASAR; prove visible fallbacks,
+      usable controls, clean renderer output, and isolated-profile cleanup.
+- [x] Fault-inject slow disk, unsupported video codecs, Windows font failures,
+      and audio-device loss in the packaged app. The packaged runner now proves
+      an in-memory 1.85-second delayed start-menu read reaches the visible slow
+      fallback and then recovers cleanly, and a CDP-blocked bundled-font reload
+      records failed Inter/Barlow faces while local fallback stacks keep the
+      menu readable and usable; an injected AudioContext failure announces the
+      silent fallback and still permits a legal Training action. Unsupported
+      codec coverage remains not applicable while no runtime video ships, and
+      `scripts/validate-runtime-video-policy.mjs` fails release if a video asset
+      or enabled start-menu loop appears without real codec/fallback coverage.
 - [ ] Pause expensive rendering and simulations while hidden/minimized and
       verify no runaway timers, detached audio nodes, object URLs, or retained
-      hand histories grow memory across long sessions.
+      hand histories grow memory across long sessions. The packaged input smoke
+      now performs a real native minimize/restore and proves the table pauses
+      and needs an explicit player resume. The packaged completion smoke also
+      records heap/DOM/listener deltas for a completed event and rejects
+      retained hand-history rows, blob URLs, or excessive heap growth;
+      long-session hardware profiling remains.
 - [x] Measure deterministic initial bundle composition and reachable direct
       dependency usage; hard-gate Electron main/preload against renderer or
       poker-engine imports.
@@ -392,9 +500,11 @@ requirements are added.
 - [x] Define deterministic audio-focus rules for pause, blur, device
       disconnect/change, headphones removal where exactly detectable,
       suspend/resume, explicit Ready, and simultaneous system audio.
-- [ ] Wire the audio-focus controller to DOM and Electron `powerMonitor`
-      lifecycle events, connect the Ready recap, optionally track a selected
-      output, and pass the packaged Windows device/focus matrix.
+- [x] Wire the audio-focus controller to DOM and Electron `powerMonitor`
+      lifecycle events, including the explicit Ready policy and on-screen
+      resume recap. The optional output-device monitor remains best-effort.
+- [ ] Pass the packaged Windows device/focus matrix (headphone/device change,
+      blur, minimize, lock, suspend/resume, and explicit Ready) on real hardware.
 - [x] Ensure current card, chip, fold, feedback, and deal sounds do not create hidden
       information or timing tells that the visual interface does not disclose.
 - [x] Provide a silent fallback when audio initialization or graph creation
@@ -406,15 +516,23 @@ requirements are added.
 
 - [ ] Extract every player-facing string, poker term, shortcut label, error,
       tutorial, and explanation from components into versioned locale resources;
-      ship English as an explicit complete locale.
+      ship English as an explicit complete locale. A strict versioned English
+      message catalog, interpolation helper, and direction-safe message component
+      now exist; the remaining work is migrating the distributed UI strings.
 - [x] Add a versioned English numeric locale surface for number, percentage,
       ratio, chip, and duration formatting, and keep quiz parsing unambiguous
       for decimal comma, decimal point, fraction, and colon-ratio input.
-- [ ] Route every remaining player-facing numeric/date surface through the
+- [x] Route every remaining player-facing numeric/date surface through the
       locale layer and add an explicit date resource before claiming complete
-      application-wide locale-aware formatting.
+      application-wide locale-aware formatting. Fixed decimals, chips, duration
+      counts, table speed/timers, AI explanation percentages, recovery timestamps,
+      and tournament action amounts now use versioned numeric/date resources;
+      remaining `toFixed` calls are internal model rounding only.
 - [ ] Add pseudo-localization, 30–50% text-expansion, long-name, and right-to-left
-      layout tests before claiming support for another language.
+      layout tests before claiming support for another language. The locale
+      foundation now has deterministic 35% pseudo expansion, token preservation,
+      long-name, and RTL direction/layout regression tests; full-screen visual
+      acceptance remains before advertising another locale.
 - [x] Define a versioned scenario schema and validator for legal cards, stacks,
       actions, units, tolerances, explanations, tags, difficulty, source/reviewer,
       and duplicate detection.
@@ -526,7 +644,13 @@ requirements are added.
 - [x] Add visible “Play chips only” and “No real-money wagering” copy to the
       active start menu and pass the source plus production-renderer audit.
 - [x] Repackage the disclosure and pass the packaged-ASAR boundary audit.
-- [ ] Complete interactive play-chip disclosure and store-metadata review.
+- [x] Require a one-time interactive play-chip acknowledgment before the first
+      play session, persist it locally, and keep the no-cash-value/no-wagering
+      boundary visible from the start menu and Settings. The state is included
+      in the versioned desktop save-transfer allowlist and is covered by unit
+      and packaged boundary audits.
+- [ ] Complete store-metadata review for the interactive play-chip disclosure
+      with the eventual publisher and store submission account.
 - [x] Create versioned save migrations and a last-known-good local backup.
 - [x] Add crash-safe autosave at action/hand boundaries for tournaments,
       retaining the deterministic checkpoint on settings and lifecycle writes.

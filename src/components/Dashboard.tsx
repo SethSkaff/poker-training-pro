@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, LockKeyhole, Trophy } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatClock, formatChips } from "../lib/format";
+import { formatMessage } from "../lib/localeMessages";
 import { useResilientAsset } from "../lib/useResilientAsset";
 import {
   listTournamentSessionEvents,
@@ -179,22 +180,21 @@ export function HomeView({
           className="home-reference__hit home-reference__hit--play"
           type="button"
           onClick={onPlay}
-          aria-label="Play"
-          autoFocus
+          aria-label={formatMessage("common.play")}
           onMouseEnter={() => setSelectedAction("play")}
           onFocus={() => setSelectedAction("play")}
         >
-          <span className="visually-hidden">Play</span>
+          <span className="visually-hidden">{formatMessage("common.play")}</span>
         </button>
         <button
           className="home-reference__hit home-reference__hit--settings"
           type="button"
           onClick={onSettings}
-          aria-label="Settings"
+          aria-label={formatMessage("common.settings")}
           onMouseEnter={() => setSelectedAction("settings")}
           onFocus={() => setSelectedAction("settings")}
         >
-          <span className="visually-hidden">Settings</span>
+          <span className="visually-hidden">{formatMessage("common.settings")}</span>
         </button>
       </nav>
 
@@ -239,25 +239,6 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
         </header>
 
         <div className="mode-stage__choices">
-          <button
-            className="mode-stage__choice mode-stage__choice--tutorial"
-            type="button"
-            onClick={() => onSelect("tutorial")}
-          >
-            <span className="mode-stage__number">00</span>
-            <span className="mode-stage__symbol" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span className="mode-stage__copy">
-              <small>Six guided table interactions</small>
-              <strong>Tutorial</strong>
-              <span>Learn cards, legal actions, sizing, showdown math, and speed at an unscored table.</span>
-            </span>
-            <ArrowRight size={21} />
-          </button>
-
           <button
             className="mode-stage__choice mode-stage__choice--normal"
             type="button"
@@ -334,6 +315,14 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
             <ArrowRight size={21} />
           </button>
         </div>
+        <button
+          className="mode-stage__tutorial-link"
+          type="button"
+          onClick={() => onSelect("tutorial")}
+        >
+          New to the table? <strong>Learn the basics</strong>
+          <ArrowRight size={16} aria-hidden="true" />
+        </button>
       </section>
     </main>
   );
@@ -479,6 +468,7 @@ export function TourLobby({
                   type="button"
                   disabled={!event.unlocked}
                   className={selected.id === event.id ? "is-selected" : ""}
+                  aria-current={selected.id === event.id ? "true" : undefined}
                   onClick={() => setSelectedId(event.id)}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>

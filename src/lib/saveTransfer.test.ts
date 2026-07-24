@@ -272,6 +272,49 @@ describe("two-phase save import", () => {
     });
   });
 
+  it("fills camera and motion comfort defaults for saves created before those controls", () => {
+    const directory = tempDirectory();
+    const importPath = path.join(directory, "pre-camera-controls.json");
+    const legacyCurrent = JSON.parse(save("Existing Player")) as {
+      data: { settings: Record<string, unknown> };
+    };
+    delete legacyCurrent.data.settings.cameraSensitivity;
+    delete legacyCurrent.data.settings.cameraView;
+    delete legacyCurrent.data.settings.autoCameraMovement;
+    delete legacyCurrent.data.settings.menuMotion;
+    delete legacyCurrent.data.settings.roomMotion;
+    delete legacyCurrent.data.settings.cameraMotion;
+    delete legacyCurrent.data.settings.tableMotion;
+    delete legacyCurrent.data.settings.transitionMotion;
+    delete legacyCurrent.data.settings.interfaceScale;
+    writeFileSync(importPath, JSON.stringify(legacyCurrent), "utf8");
+
+    const subject = controller(directory);
+    const preview = subject.prepareImportFromPath(importPath);
+    expect(preview).toMatchObject({
+      ok: true,
+      preview: { migratedFromVersion: 1 },
+    });
+    expect(subject.confirmImport(token(preview))).toMatchObject({ ok: true });
+    const loaded = saveStore.loadAutosaveGeneration(directory);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.record) throw new Error("Expected imported save");
+    const savedSettings = (JSON.parse(loaded.record.payload) as {
+      data: { settings: Record<string, unknown> };
+    }).data.settings;
+    expect(savedSettings).toMatchObject({
+      cameraSensitivity: "standard",
+      cameraView: "standard",
+      autoCameraMovement: true,
+      menuMotion: "full",
+      roomMotion: "full",
+      cameraMotion: "full",
+      tableMotion: "full",
+      transitionMotion: "full",
+      interfaceScale: "standard",
+    });
+  });
+
   it("expires confirmation tokens without committing", () => {
     const directory = tempDirectory();
     const importPath = path.join(directory, "incoming.json");

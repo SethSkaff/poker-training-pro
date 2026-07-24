@@ -134,7 +134,13 @@ export function useGamepadNavigation(
     }
     const resolved = resolveBindings(controlBindings);
     const pollState = createGamepadPollState();
-    let connectedCount = 0;
+    // `gamepadconnected` only fires for connections made after this component
+    // mounts. Count devices already connected before the renderer reaches the
+    // title screen as well, so a controller is usable from the very first menu
+    // without requiring a disconnect/reconnect cycle.
+    let connectedCount = Array.from(navigator.getGamepads?.() ?? []).filter(
+      Boolean,
+    ).length;
 
     const onConnect = () => {
       connectedCount += 1;

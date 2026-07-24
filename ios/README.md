@@ -1,17 +1,21 @@
 # Poker Training Pro for iPhone and iPad
 
-This directory is a source-complete SwiftUI scaffold for a universal iOS/iPadOS app. It is intentionally local-only: there is no account, server, web view, analytics SDK, advertising SDK, or network client. A bundled deterministic JavaScript artifact runs through JavaScriptCore.
+This directory is a source-controlled SwiftUI scaffold for a universal iOS/iPadOS app. It is intentionally local-only: there is no account, server, web view, analytics SDK, advertising SDK, or network client. Bundled deterministic JavaScript artifacts run through JavaScriptCore.
 
 ## What is implemented
 
 - One start menu: brand mark and title, then large **Play** and **Settings** actions. There is no disposable splash screen.
 - Four play modes: Normal, Rational, Training, and Timed
   Table. Timed Table asks for a 5–180 minute budget before seating the player.
-- A compact, adaptive green poker table using the bundled deterministic engine preview.
+- A compact, adaptive green poker table driven by hero-safe live tournament
+  snapshots for Normal, Rational, and Timed Table.
 - SwiftUI layouts that respect safe areas, system text styles, Dynamic Type, light/dark accessibility semantics, and VoiceOver labels.
 - Local preferences and progress storage (Decision/Math/Tournament Elo, streaks, career results, a Table-speed preference) with a privacy-manifest declaration for app-only `UserDefaults`.
 - A versioned JSON bridge around JavaScriptCore whose bundled engine mirrors the desktop primitives: hand evaluation, quiz answer parsing (`33%`, `0.33`, `1/3`, `2:1`), Training grading + Elo, the AI decision-timing model (mobile budget), the Timed Table blind director, and capped on-device range equity for Normal/Rational bot decisions.
 - A one-move Training flow that grades a decision and a math question on-device and persists Elo/progress.
+- A typed, hero-safe JavaScriptCore bridge for the shared Normal/Rational/Timed
+  tournament runner, including opaque replay checkpoints, live legal actions,
+  public event results, and persisted Tournament Elo/career qualification.
 - `scenePhase`-based freezing of the exact remaining opponent delay when backgrounded/inactive, and Reduce Motion handling.
 - Unit-test source for the expanded bridge operations and local persistence, plus a Windows-runnable cross-runtime parity test (`../src/modes/mobileEngineBridge.test.ts`) and a worst-case decision benchmark (`../scripts/benchmark-mobile-engine.mjs`).
 - An XcodeGen `project.yml` for iPhone and iPad targets.

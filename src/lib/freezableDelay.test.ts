@@ -123,6 +123,26 @@ describe("FreezableDelay", () => {
     expect(fired).toBe(0);
   });
 
+  it("finishes a pending or frozen delay exactly once on an explicit skip", () => {
+    const clock = new FakeClock();
+    let fired = 0;
+    const delay = new FreezableDelay(clock, 800, () => (fired += 1));
+    clock.advance(250);
+    delay.finish();
+    expect(fired).toBe(1);
+    expect(delay.remaining).toBe(0);
+    expect(delay.isPending).toBe(false);
+    // Neither a second skip nor the original scheduled deadline can replay it.
+    delay.finish();
+    clock.advance(1_000);
+    expect(fired).toBe(1);
+
+    const frozen = new FreezableDelay(clock, 800, () => (fired += 1));
+    frozen.freeze();
+    frozen.finish();
+    expect(fired).toBe(2);
+  });
+
   it("reports zero remaining once fired", () => {
     const clock = new FakeClock();
     const delay = new FreezableDelay(clock, 100, () => undefined);

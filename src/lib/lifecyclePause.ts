@@ -12,6 +12,7 @@
  */
 
 import { FreezableDelay } from "./freezableDelay";
+import { formatChips, formatNumber } from "./format";
 
 export type LifecyclePauseReason =
   | "manual"
@@ -240,7 +241,7 @@ export function buildResumeRecap(input: ResumeRecapInput): ResumeRecap {
       input.playersRemaining !== undefined
         ? ` · ${input.playersRemaining} players left`
         : "";
-    lines.push(`Pot: ${input.potChips.toLocaleString()} chips${players}`);
+    lines.push(`Pot: ${formatChips(input.potChips)} chips${players}`);
   }
   if (input.currentDecision) {
     lines.push(`Your decision: ${input.currentDecision}`);
@@ -264,10 +265,10 @@ export function buildResumeRecap(input: ResumeRecapInput): ResumeRecap {
 export function formatInactiveDuration(inactiveMs: number): string {
   const totalSeconds = Math.max(0, Math.round(inactiveMs / 1000));
   if (totalSeconds < 60) {
-    return `${totalSeconds} second${totalSeconds === 1 ? "" : "s"}`;
+    return `${formatNumber(totalSeconds)} second${totalSeconds === 1 ? "" : "s"}`;
   }
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  if (seconds === 0) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
-  return `${minutes} min ${seconds} s`;
+  if (seconds === 0) return `${formatNumber(minutes)} minute${minutes === 1 ? "" : "s"}`;
+  return `${formatNumber(minutes)} min ${formatNumber(seconds)} s`;
 }

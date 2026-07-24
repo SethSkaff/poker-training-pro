@@ -15,7 +15,15 @@
     "release:verify-fuses": "node scripts/verify-electron-fuses.mjs",
     "release:test-asar-integrity": "node scripts/test-asar-tamper-rejection.mjs",
     "release:audit-packaged-network": "node scripts/audit-packaged-network.mjs",
+    "release:audit-packaged-input": "node scripts/audit-packaged-input-smoke.mjs",
+    "release:audit-packaged-mode-completion": "node scripts/audit-packaged-mode-completion.mjs",
+    "release:audit-packaged-recovery": "node scripts/audit-packaged-save-recovery-smoke.mjs",
+    "release:audit-packaged-lifecycle-security": "node scripts/audit-packaged-lifecycle-bridge-security.mjs",
     "release:audit-packaged-licenses": "node scripts/audit-packaged-license-sidecars.mjs",
+    "release:verify-audio-rights": "node scripts/validate-audio-rights.mjs",
+    "release:verify-runtime-video-policy": "node scripts/validate-runtime-video-policy.mjs",
+    "release:verify-ios-training-bank": "vite-node scripts/export-ios-training-bank.ts --check",
+    "release:verify-ios-tournament-engine": "node scripts/export-ios-tournament-engine.mjs --check",
     "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs"
   },
   "engines": {

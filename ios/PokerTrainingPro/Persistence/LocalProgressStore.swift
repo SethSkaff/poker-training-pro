@@ -9,6 +9,52 @@ struct CareerEventResult: Codable, Equatable, Sendable, Identifiable {
     var entrants: Int
     var tournamentEloDelta: Int
     var completedAt: Date
+
+    // Optional to preserve the original local-save schema while adding enough
+    // public state to resume career qualification on a later launch.
+    var eventId: String?
+    var sourceFieldSize: Int?
+    var qualifyingPlaces: Int?
+    var qualified: Bool?
+
+    init(
+        id: String,
+        mode: TrainingMode,
+        placement: Int,
+        entrants: Int,
+        tournamentEloDelta: Int,
+        completedAt: Date,
+        eventId: String? = nil,
+        sourceFieldSize: Int? = nil,
+        qualifyingPlaces: Int? = nil,
+        qualified: Bool? = nil
+    ) {
+        self.id = id
+        self.mode = mode
+        self.placement = placement
+        self.entrants = entrants
+        self.tournamentEloDelta = tournamentEloDelta
+        self.completedAt = completedAt
+        self.eventId = eventId
+        self.sourceFieldSize = sourceFieldSize
+        self.qualifyingPlaces = qualifyingPlaces
+        self.qualified = qualified
+    }
+
+    func asMobileCareerResult() -> MobileCareerResult? {
+        guard let eventId, let sourceFieldSize, let qualifyingPlaces, let qualified else {
+            return nil
+        }
+        return MobileCareerResult(
+            eventId: eventId,
+            finishPlace: placement,
+            fieldSize: entrants,
+            sourceFieldSize: sourceFieldSize,
+            qualifyingPlaces: qualifyingPlaces,
+            qualified: qualified,
+            tournamentEloDelta: tournamentEloDelta
+        )
+    }
 }
 
 /// Local, on-device progress. All fields decode defensively so an older or

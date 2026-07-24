@@ -130,6 +130,8 @@ describe("versioned save migration", () => {
         effectsVolume: Number.NaN,
         reducedMotion: "yes",
         dealSpeed: "warp",
+        menuMotion: "warp",
+        roomMotion: "off",
       },
       {
         ...progressFixture(),
@@ -150,6 +152,8 @@ describe("versioned save migration", () => {
       effectsVolume: defaultSettings.effectsVolume,
       reducedMotion: defaultSettings.reducedMotion,
       dealSpeed: defaultSettings.dealSpeed,
+      menuMotion: defaultSettings.menuMotion,
+      roomMotion: "off",
     });
     expect(save.data.progress).toMatchObject({
       playerName: defaultProgress.playerName,

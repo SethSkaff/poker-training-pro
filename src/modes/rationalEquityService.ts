@@ -202,7 +202,14 @@ export function createRationalEquityService(
  * estimator when `Worker` is unavailable (tests, iOS bundle).
  */
 export function createDesktopEquityService(): RationalEquityService {
-  if (typeof Worker === "undefined") {
+  // Electron's hardened renderer uses Chromium's sandbox. Its module Worker
+  // bootstrap currently emits a sandbox_bundle startupData error in packaged
+  // builds (and then falls back anyway), so do not create that broken worker
+  // there. The in-thread path remains deterministic and strictly capped per
+  // decision; regular browser builds keep the worker-backed boundary.
+  const sandboxedElectronRenderer =
+    typeof window !== "undefined" && Boolean(window.desktop);
+  if (typeof Worker === "undefined" || sandboxedElectronRenderer) {
     return createRationalEquityService();
   }
   return createRationalEquityService({

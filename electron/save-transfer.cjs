@@ -38,10 +38,20 @@ const DEFAULT_SETTINGS = Object.freeze({
   reducedMotion: false,
   dealSpeed: "standard",
   colorAssist: false,
+  cameraSensitivity: "standard",
+  cameraView: "standard",
+  autoCameraMovement: true,
+  menuMotion: "full",
+  roomMotion: "full",
+  cameraMotion: "full",
+  tableMotion: "full",
+  transitionMotion: "full",
+  interfaceScale: "standard",
 });
 
 const DEFAULT_PROGRESS = Object.freeze({
   onboardingCompleted: false,
+  playChipsAcknowledged: false,
   playerName: "Player",
   decisionElo: 1000,
   mathElo: 1000,
@@ -433,6 +443,23 @@ function validateCurrentSettings(value) {
   if (!DEAL_SPEEDS.has(value.dealSpeed)) {
     return failure("invalid-payload", "The dealSpeed setting is invalid.");
   }
+  if (
+    (value.cameraSensitivity !== undefined &&
+      !["low", "standard", "high"].includes(value.cameraSensitivity)) ||
+    (value.cameraView !== undefined &&
+      !["close", "standard", "wide"].includes(value.cameraView)) ||
+    (value.autoCameraMovement !== undefined &&
+      typeof value.autoCameraMovement !== "boolean") ||
+    (["menuMotion", "roomMotion", "cameraMotion", "tableMotion", "transitionMotion"].some(
+      (key) => value[key] !== undefined && !["full", "reduced", "off"].includes(value[key]),
+    )) ||
+    (value.interfaceScale !== undefined &&
+      !["compact", "standard", "large", "extra-large"].includes(
+        value.interfaceScale,
+      ))
+  ) {
+    return failure("invalid-payload", "The camera settings are invalid.");
+  }
   return {
     ok: true,
     value: {
@@ -444,6 +471,31 @@ function validateCurrentSettings(value) {
       reducedMotion: value.reducedMotion,
       dealSpeed: value.dealSpeed,
       colorAssist: value.colorAssist,
+      // Camera comfort controls were introduced after the first v1 saves.
+      // Missing values therefore migrate safely to their defaults, while an
+      // explicitly supplied invalid value remains a rejected import.
+      cameraSensitivity: ["low", "standard", "high"].includes(
+        value.cameraSensitivity,
+      )
+        ? value.cameraSensitivity
+        : DEFAULT_SETTINGS.cameraSensitivity,
+      cameraView: ["close", "standard", "wide"].includes(value.cameraView)
+        ? value.cameraView
+        : DEFAULT_SETTINGS.cameraView,
+      autoCameraMovement:
+        typeof value.autoCameraMovement === "boolean"
+          ? value.autoCameraMovement
+          : DEFAULT_SETTINGS.autoCameraMovement,
+      menuMotion: normalizeMotionIntensity(value.menuMotion),
+      roomMotion: normalizeMotionIntensity(value.roomMotion),
+      cameraMotion: normalizeMotionIntensity(value.cameraMotion),
+      tableMotion: normalizeMotionIntensity(value.tableMotion),
+      transitionMotion: normalizeMotionIntensity(value.transitionMotion),
+      interfaceScale: ["compact", "standard", "large", "extra-large"].includes(
+        value.interfaceScale,
+      )
+        ? value.interfaceScale
+        : DEFAULT_SETTINGS.interfaceScale,
     },
   };
 }
@@ -451,6 +503,7 @@ function validateCurrentSettings(value) {
 function validateCurrentProgress(value) {
   if (
     typeof value.onboardingCompleted !== "boolean" ||
+    typeof value.playChipsAcknowledged !== "boolean" ||
     typeof value.playerName !== "string" ||
     value.playerName.trim().length === 0 ||
     value.playerName.length > 48
@@ -490,6 +543,7 @@ function validateCurrentProgress(value) {
     ok: true,
     value: {
       onboardingCompleted: value.onboardingCompleted,
+      playChipsAcknowledged: value.playChipsAcknowledged,
       playerName: value.playerName,
       decisionElo: value.decisionElo,
       mathElo: value.mathElo,
@@ -553,6 +607,31 @@ function normalizeLegacySettings(value) {
       ? source.dealSpeed
       : "standard",
     colorAssist: booleanOr(source.colorAssist, false),
+    cameraSensitivity:
+      source.cameraSensitivity === "low" ||
+      source.cameraSensitivity === "standard" ||
+      source.cameraSensitivity === "high"
+        ? source.cameraSensitivity
+        : "standard",
+    cameraView:
+      source.cameraView === "close" ||
+      source.cameraView === "standard" ||
+      source.cameraView === "wide"
+        ? source.cameraView
+        : "standard",
+    autoCameraMovement: booleanOr(source.autoCameraMovement, true),
+    menuMotion: normalizeMotionIntensity(source.menuMotion),
+    roomMotion: normalizeMotionIntensity(source.roomMotion),
+    cameraMotion: normalizeMotionIntensity(source.cameraMotion),
+    tableMotion: normalizeMotionIntensity(source.tableMotion),
+    transitionMotion: normalizeMotionIntensity(source.transitionMotion),
+    interfaceScale:
+      source.interfaceScale === "compact" ||
+      source.interfaceScale === "standard" ||
+      source.interfaceScale === "large" ||
+      source.interfaceScale === "extra-large"
+        ? source.interfaceScale
+        : "standard",
   };
 }
 
@@ -568,6 +647,7 @@ function normalizeLegacyProgress(value) {
   const currentStreak = nonNegativeInteger(source.currentStreak, 0);
   return {
     onboardingCompleted: booleanOr(source.onboardingCompleted, false),
+    playChipsAcknowledged: booleanOr(source.playChipsAcknowledged, false),
     playerName:
       typeof source.playerName === "string" &&
       source.playerName.trim().length > 0
@@ -828,6 +908,12 @@ function nonNegativeInteger(value, fallback) {
 
 function booleanOr(value, fallback) {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizeMotionIntensity(value) {
+  return ["full", "reduced", "off"].includes(value)
+    ? value
+    : "full";
 }
 
 function finiteBetween(value, minimum, maximum) {

@@ -126,7 +126,15 @@ try {
     const ok = await runStep(cdp, step, deadline);
     if (ok) {
       completedStepIds.push(step.id);
-      if (step.kind === "expectScreen" && step.mode) reachedModes.add(step.mode);
+      // Menu/home expectations prove routing, but only a real gameplay table
+      // or tutorial proves that a representative mode was actually exercised.
+      if (
+        step.kind === "expectScreen" &&
+        step.mode &&
+        ["poker-table", "tutorial"].includes(step.screen)
+      ) {
+        reachedModes.add(step.mode);
+      }
     }
   }
 } catch (error) {
@@ -183,7 +191,7 @@ async function runStep(client, step, deadline) {
     case "heroAction":
       return dispatchHeroAction(client, step.key);
     case "expectScreen":
-      return waitForScreen(client, step.screen, deadline);
+      return waitForScreen(client, step.screen, deadline, step.expectedText);
     case "settle":
       await delay(step.delayMs ?? 250);
       return true;
@@ -243,13 +251,14 @@ async function dispatchHeroAction(client, key) {
   return result.result?.value === true;
 }
 
-async function waitForScreen(client, screen, deadline) {
+async function waitForScreen(client, screen, deadline, expectedText) {
   const limit = Math.min(deadline, Date.now() + 6_000);
   while (Date.now() < limit) {
     if (child.exitCode !== null) return false;
     const result = await client.send("Runtime.evaluate", {
       expression: `(() => {
         if (document.querySelector('.home-reference')) return 'home';
+        if (document.querySelector('.mode-stage')) return 'mode-select';
         if (document.querySelector('.room-flight')) return 'room-flight';
         if (document.querySelector('.playable-tutorial')) return 'tutorial';
         if (document.querySelector('.poker-table')) return 'poker-table';
@@ -257,7 +266,16 @@ async function waitForScreen(client, screen, deadline) {
       })()`,
       returnByValue: true,
     });
-    if (result.result?.value === screen) return true;
+    if (result.result?.value !== screen) {
+      await delay(100);
+      continue;
+    }
+    if (!expectedText) return true;
+    const text = await client.send("Runtime.evaluate", {
+      expression: `(document.querySelector('#root')?.textContent || '')`,
+      returnByValue: true,
+    });
+    if (String(text.result?.value ?? "").includes(expectedText)) return true;
     await delay(100);
   }
   return false;

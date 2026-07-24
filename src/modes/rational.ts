@@ -1,4 +1,5 @@
 import type { Card } from "../types/poker";
+import { formatFixedDecimal, formatPercentage } from "../lib/format";
 import type {
   BettingActionCommand,
   BettingActionType,
@@ -891,22 +892,22 @@ function rationaleFor(
   const edge = equity - requiredEquity;
   if (role === "fold") {
     return edge < 0
-      ? `Estimated equity trails the risk-adjusted calling threshold by ${Math.abs(edge * 100).toFixed(1)} points.`
+      ? `Estimated equity trails the risk-adjusted calling threshold by ${formatFixedDecimal(Math.abs(edge * 100), 1)} points.`
       : "Folding preserves chips, but the modeled equity makes it a low-frequency option.";
   }
   if (candidate.command.type === "check") {
     return "Checking realizes equity without adding chips and protects the checking range.";
   }
   if (candidate.command.type === "call") {
-    return `Calling compares ${(equity * 100).toFixed(1)}% range equity with a ${(requiredEquity * 100).toFixed(1)}% risk-adjusted threshold.`;
+    return `Calling compares ${formatPercentage(equity * 100, undefined, 1)} range equity with a ${formatPercentage(requiredEquity * 100, undefined, 1)} risk-adjusted threshold.`;
   }
   if (role === "value") {
-    return `Value aggression leverages the equity edge at ${spr.toFixed(1)} SPR; modeled immediate fold equity is ${(foldEquity * 100).toFixed(1)}%.`;
+    return `Value aggression leverages the equity edge at ${formatFixedDecimal(spr, 1)} SPR; modeled immediate fold equity is ${formatPercentage(foldEquity * 100, undefined, 1)}.`;
   }
   if (role === "semi-bluff") {
-    return `The hand retains draw equity while fold equity of ${(foldEquity * 100).toFixed(1)}% can win the pot immediately.`;
+    return `The hand retains draw equity while fold equity of ${formatPercentage(foldEquity * 100, undefined, 1)} can win the pot immediately.`;
   }
-  return `This is a mathematically mixed bluff supported by blockers/range pressure and ${(foldEquity * 100).toFixed(1)}% modeled fold equity.`;
+  return `This is a mathematically mixed bluff supported by blockers/range pressure and ${formatPercentage(foldEquity * 100, undefined, 1)} modeled fold equity.`;
 }
 
 function scoreCandidates(
@@ -1225,7 +1226,7 @@ function assembleRationalDecision(
           rationale,
         }),
       ),
-      summary: `${actionLabel(best.command.type)} is the highest-frequency action at ${(best.probability * 100).toFixed(0)}%; estimated equity is ${(equity.equity * 100).toFixed(1)}% versus a ${(requiredEquity * 100).toFixed(1)}% risk-adjusted threshold.`,
+      summary: `${actionLabel(best.command.type)} is the highest-frequency action at ${formatPercentage(best.probability * 100, undefined, 0)}; estimated equity is ${formatPercentage(equity.equity * 100, undefined, 1)} versus a ${formatPercentage(requiredEquity * 100, undefined, 1)} risk-adjusted threshold.`,
     },
   };
 }

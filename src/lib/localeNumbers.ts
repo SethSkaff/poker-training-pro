@@ -37,6 +37,29 @@ export function formatChipCount(
   );
 }
 
+/** Formats a fixed-precision display number through the active numeric locale. */
+export function formatFixedDecimal(
+  value: number,
+  fractionDigits: number,
+  locale: NumericLocaleResource = EN_US_NUMERIC_LOCALE,
+): string {
+  if (
+    !Number.isInteger(fractionDigits) ||
+    fractionDigits < 0 ||
+    fractionDigits > 6
+  ) {
+    throw new RangeError("fractionDigits must be from 0 to 6.");
+  }
+  return formatNumber(
+    value,
+    {
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    },
+    locale,
+  );
+}
+
 /**
  * Formats percentage points, so `33.3` renders as `33.3%`.
  */

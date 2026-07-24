@@ -241,6 +241,43 @@ function normalizeSettings(value: unknown): GameSettings {
         ? source.dealSpeed
         : defaultSettings.dealSpeed,
     colorAssist: booleanOr(source.colorAssist, defaultSettings.colorAssist),
+    cameraSensitivity:
+      source.cameraSensitivity === "low" ||
+      source.cameraSensitivity === "standard" ||
+      source.cameraSensitivity === "high"
+        ? source.cameraSensitivity
+        : defaultSettings.cameraSensitivity,
+    cameraView:
+      source.cameraView === "close" ||
+      source.cameraView === "standard" ||
+      source.cameraView === "wide"
+        ? source.cameraView
+        : defaultSettings.cameraView,
+    autoCameraMovement: booleanOr(
+      source.autoCameraMovement,
+      defaultSettings.autoCameraMovement,
+    ),
+    menuMotion: motionIntensityOr(source.menuMotion, defaultSettings.menuMotion),
+    roomMotion: motionIntensityOr(source.roomMotion, defaultSettings.roomMotion),
+    cameraMotion: motionIntensityOr(
+      source.cameraMotion,
+      defaultSettings.cameraMotion,
+    ),
+    tableMotion: motionIntensityOr(
+      source.tableMotion,
+      defaultSettings.tableMotion,
+    ),
+    transitionMotion: motionIntensityOr(
+      source.transitionMotion,
+      defaultSettings.transitionMotion,
+    ),
+    interfaceScale:
+      source.interfaceScale === "compact" ||
+      source.interfaceScale === "standard" ||
+      source.interfaceScale === "large" ||
+      source.interfaceScale === "extra-large"
+        ? source.interfaceScale
+        : defaultSettings.interfaceScale,
     // Preserve remapped controls through the durable save path, validating the
     // untrusted persisted shape and dropping unknown ids/tokens.
     ...(normalizeControlBindingOverrides(source.controlBindings)
@@ -251,6 +288,15 @@ function normalizeSettings(value: unknown): GameSettings {
         }
       : {}),
   };
+}
+
+function motionIntensityOr(
+  value: unknown,
+  fallback: GameSettings["menuMotion"],
+): GameSettings["menuMotion"] {
+  return value === "full" || value === "reduced" || value === "off"
+    ? value
+    : fallback;
 }
 
 function normalizeProgress(value: unknown): PlayerProgress {

@@ -80,6 +80,30 @@ const stages = [
     ],
   },
   {
+    name: "Runtime music rights, provenance, and QA evidence gate",
+    command: node,
+    args: [join("scripts", "validate-audio-rights.mjs")],
+  },
+  {
+    name: "Runtime video policy and codec-test applicability gate",
+    command: node,
+    args: [join("scripts", "validate-runtime-video-policy.mjs")],
+  },
+  {
+    name: "iOS bundled Training bank parity gate",
+    command: node,
+    args: [
+      join("node_modules", "vite-node", "vite-node.mjs"),
+      join("scripts", "export-ios-training-bank.ts"),
+      "--check",
+    ],
+  },
+  {
+    name: "iOS bundled tournament-session engine parity gate",
+    command: node,
+    args: [join("scripts", "export-ios-tournament-engine.mjs"), "--check"],
+  },
+  {
     name: "Offline production bundle and CSP audit",
     command: node,
     args: [join("scripts", "audit-offline-build.mjs")],
@@ -143,6 +167,11 @@ const stages = [
     name: "Production source-map/debug/test-hook hygiene scan",
     command: node,
     args: [join("scripts", "release", "verify-production-artifacts.mjs")],
+  },
+  {
+    name: "Packaged lifecycle smoke bridge isolation audit",
+    command: node,
+    args: [join("scripts", "audit-packaged-lifecycle-bridge-security.mjs")],
   },
   {
     name: "Deterministic release manifest generation",

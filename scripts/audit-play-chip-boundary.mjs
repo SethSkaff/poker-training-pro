@@ -74,14 +74,14 @@ const prohibitedCapability = [
 ];
 
 const approvedDisclosureFragments = [
-  /\bplay chips only\b/gi,
-  /\bno real[- ]money wagering\b/gi,
-  /\bno cash value\b/gi,
-  /\bno deposits?\b/gi,
-  /\bno purchases?\b/gi,
-  /\bno withdrawals?\b/gi,
-  /\bno cash[- ]out path\b/gi,
-  /\bhas no\s+(?=real[- ]money wagering|cash value|deposits?|purchases?|withdrawals?|cash[- ]out path)/gi,
+  /\bplay\s+chips\s+only\b/gi,
+  /\bno\s+real[-\s]?money\s+wagering\b/gi,
+  /\bno\s+cash\s+value\b/gi,
+  /\bno\s+deposits?\b/gi,
+  /\bno\s+purchases?\b/gi,
+  /\bno\s+withdrawals?\b/gi,
+  /\bno\s+cash[-\s]?out\s+path\b/gi,
+  /\bhas\s+no\s+(?=real[-\s]?money\s+wagering|cash\s+value|deposits?|purchases?|withdrawals?|cash[-\s]?out\s+path)/gi,
 ];
 
 function walk(directory) {
@@ -345,6 +345,13 @@ function runSelfTests() {
     {
       name: "approved no-value disclosure passes",
       input: fixture('const copy = "Play chips only · No real-money wagering";'),
+      expected: true,
+    },
+    {
+      name: "wrapped approved no-value disclosure passes",
+      input: fixture(
+        ['const copy = "Chips have no', ' cash value.";'].join("\n"),
+      ),
       expected: true,
     },
     {

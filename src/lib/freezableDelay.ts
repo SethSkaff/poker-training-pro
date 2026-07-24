@@ -88,6 +88,20 @@ export class FreezableDelay {
     }
   }
 
+  /**
+   * Complete the delay immediately. This is intentionally separate from
+   * `cancel()`: a player-requested presentation skip still performs the queued
+   * game action, while lifecycle teardown must not.
+   */
+  finish(): void {
+    if (this.settled) return;
+    if (this.handle !== null) {
+      this.host.cancel(this.handle);
+      this.handle = null;
+    }
+    this.fire();
+  }
+
   private arm(): void {
     if (this.settled || this.frozen) return;
     this.runningSince = this.host.now();

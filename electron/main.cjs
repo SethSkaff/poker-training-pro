@@ -44,6 +44,7 @@ const {
 const { createLocalLogger } = require("./local-logger.cjs");
 
 const isDevelopment = !app.isPackaged;
+const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
 const APP_PROTOCOL = "poker-training-pro";
 protocol.registerSchemesAsPrivileged([
   {
@@ -107,6 +108,9 @@ function createWindow() {
       webSecurity: true,
       webviewTag: false,
       devTools: isDevelopment,
+      additionalArguments: lifecycleSmokeEnabled
+        ? ["--ptp-lifecycle-smoke"]
+        : [],
     },
   });
 
@@ -581,6 +585,21 @@ app.whenReady().then(() => {
     });
     return { ok: true };
   });
+
+  // A narrow package-only hook allows the Windows smoke to cause a real
+  // BrowserWindow minimize/restore. It is not registered for normal launches,
+  // and still validates the sender before touching native window state.
+  if (lifecycleSmokeEnabled) {
+    ipcMain.handle("test:lifecycleWindow", (event, action) => {
+      assertTrustedSender(event);
+      const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!sourceWindow || sourceWindow !== mainWindow) return { ok: false };
+      if (action === "minimize") sourceWindow.minimize();
+      else if (action === "restore") sourceWindow.restore();
+      else return { ok: false };
+      return { ok: true };
+    });
+  }
 
   powerMonitor.on("suspend", () =>
     broadcastLifecycle({ kind: "system-suspend", suspended: true }),

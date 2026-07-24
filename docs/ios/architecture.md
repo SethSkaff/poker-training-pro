@@ -33,7 +33,8 @@ There is no first-run splash layer. The brand mark, title, Play, and Settings ar
 The iOS target has no `Network`, `WebKit`, analytics, advertising, authentication, or backend dependency. Gameplay requests cross only this in-process path:
 
 ```text
-SwiftUI → SharedPokerEngineBridge → JavaScriptCore → bundled poker-engine.js
+SwiftUI → SharedPokerEngineBridge / SharedTournamentSessionBridge → JavaScriptCore
+→ bundled poker-engine.js / tournament-session-engine.js
 ```
 
 Settings and progress stay in the app's local container. The current privacy manifest declares:
@@ -64,12 +65,15 @@ Mac validation still needs to cover the largest accessibility text sizes, VoiceO
 - Supported orientations are declared in `project.yml`: iPhone allows portrait plus both landscapes; iPad additionally allows portrait-upside-down. This lets iPad honor multitasking and Stage Manager while keeping iPhone away from the upside-down layout.
 - The app uses `NavigationStack` and adaptive layouts, so it never assumes a fixed width. It has no size-class lock and must remain usable in iPad split view and Slide Over, and across rotation, without a dedicated iPad-only code path.
 - Only decorative backgrounds use `.ignoresSafeArea()`; all interactive content stays inside SwiftUI-managed safe areas. Content is capped with `maxWidth` and centered so ultra-wide iPad widths do not stretch controls.
-- Mode selection uses an adaptive grid (`LazyVGrid` with `GridItem(.adaptive:)`), and the Training action row uses `ViewThatFits` to fall back from a horizontal row to a vertical stack when Dynamic Type or a narrow split-view width needs more room. Cards use `minimumScaleFactor` so ranks/suits never clip.
+- Mode selection uses an adaptive grid (`LazyVGrid` with `GridItem(.adaptive:)`). The Training action row and compact table action row use `ViewThatFits` to fall back from horizontal to vertical stacks when Dynamic Type or a narrow split-view width needs more room; player pairs do the same. Community cards have a horizontal fallback scroll lane, so ranks/suits stay visible rather than clipping. Cards use `minimumScaleFactor` as an additional safeguard.
 
 ## Timing model and background pausing
 
 - Opponent presentation delays come from the shared `decisionTiming` operation with `surface: "mobile"`, which applies a shorter animation budget than desktop. The user's **Table speed** preference (`settings.presentationRate`, 0.5x–3x) is passed as `presentationRate`; Reduce Motion biases the rate faster to shorten the wait and disables card/camera animation.
 - `TableTimingModel` freezes the *exact remaining* delay when `scenePhase` leaves `.active` and resumes from that frozen time on return, so inactive time is never counted against play and no timer runs away in the background. The countdown only advances on a display-cadence tick while the scene is active.
+- The table also exposes **Skip opponent animation** while a presentation delay
+  is active. It completes only that visual wait and then resolves the already-
+  selected local action; it never changes the bot decision or poker math.
 
 ## On-device bot math and simulation caps
 
@@ -79,6 +83,21 @@ Mac validation still needs to cover the largest accessibility text sizes, VoiceO
 ## Cross-runtime verification (Windows)
 
 `src/modes/mobileEngineBridge.test.ts` loads the exact bundled `poker-engine.js` in a Node VM and asserts parity with the desktop TypeScript source for the hand evaluator, quiz parsing, Training grading, Elo, decision timing, and the Timed Table blind director, plus determinism and cap enforcement for equity/bot decisions. The Swift `SharedPokerEngineBridgeTests` mirror the same expectations against the bundle in the app target; they compile and run only on macOS/Xcode.
+
+`src/modes/iosTournamentEngineBridge.test.ts` separately evaluates the generated
+`tournament-session-engine.js` IIFE without `structuredClone`, creates Normal
+and Rational live sessions, applies a legal hero action, and rejects opponent
+hole cards at the Swift boundary. `PokerTableView` consumes that hero-safe
+snapshot for Normal, Rational, and Timed Table, while Training remains a
+separate scored one-move flow. The native XCTest remains Mac/Xcode validation.
+
+The native Training screen loads `Resources/training-scenarios.json`, a checked-in
+resource generated from the validated desktop scenario bank by
+`scripts/export-ios-training-bank.ts`. The release runner executes that script
+in check mode, so a changed desktop scenario cannot silently leave iOS with a
+hand-maintained subset. `MobileScenario` retains a compact fallback only to
+avoid crashing a locally malformed resource; a release must ship the generated
+resource.
 
 ## State and evolution
 

@@ -22,7 +22,10 @@ import {
   ASSET_FAULT_PROFILE_PREFIX,
   assertNoUnexpectedRendererEvents,
   removeValidatedAssetFaultProfile,
+  validateAudioDeviceLossObservation,
+  validateFontFallbackObservation,
   validateRoomFallbackObservation,
+  validateSlowDiskObservation,
   validateStartMenuFallbackObservation,
 } from "./release/packaged-asset-fault-smoke-lib.mjs";
 import { RenderSmokeFailure } from "./release/packaged-render-smoke-lib.mjs";
@@ -95,6 +98,9 @@ export async function runPackagedAssetFaultSmoke(options = {}) {
   let cdp;
   let startMenuObservation;
   let roomObservation;
+  let slowDiskObservation;
+  let fontFallbackObservation;
+  let audioDeviceLossObservation;
   let primaryError;
   let terminationError;
   let cleanupError;
@@ -145,6 +151,14 @@ export async function runPackagedAssetFaultSmoke(options = {}) {
     }
 
     await clickSelector(cdp, 'button[aria-label="Play"]', "Play");
+    await waitForSelectorAndClick(
+      cdp,
+      child,
+      processOutput,
+      deadline,
+      "#play-chip-ack-title ~ .startup-gate__actions button",
+      "play-chip acknowledgment",
+    );
     await waitForButtonAndClick(
       cdp,
       child,
@@ -175,6 +189,14 @@ export async function runPackagedAssetFaultSmoke(options = {}) {
         "The missing room source override was not applied.",
       );
     }
+    // Use a separate fresh process for the delayed-read case: the image-fault
+    // session intentionally makes the canonical artwork fail permanently, so
+    // it cannot also prove late recovery from a slow but successful read.
+    slowDiskObservation = await runSlowDiskFault({ appPath, timeoutMs });
+    // Font requests are cached per renderer, so this also uses a clean process
+    // and an isolated profile. The custom protocol package remains immutable.
+    fontFallbackObservation = await runFontFallbackFault({ appPath, timeoutMs });
+    audioDeviceLossObservation = await runAudioDeviceLossFault({ appPath, timeoutMs });
   } catch (error) {
     primaryError = error;
   } finally {
@@ -246,10 +268,27 @@ export async function runPackagedAssetFaultSmoke(options = {}) {
         overriddenSources:
           roomObservation.faultCounts.missingRoomResponses,
       },
+      slowDisk: {
+        path: "/start-menu-reference.png",
+        fault: "in-memory delayed image source assignment before decode",
+        delayMs: slowDiskObservation.delayMs,
+      },
+      fonts: {
+        paths: "all bundled .woff/.woff2/.ttf resources",
+        fault: "CDP Network.setBlockedURLs before a cache-disabled packaged reload",
+        failedFaces: fontFallbackObservation.failedFaces,
+      },
+      audioDeviceLoss: {
+        fault: "AudioContext constructor throws before the packaged renderer loads",
+        mechanism: "CDP new-document Web Audio override in an isolated profile",
+      },
     },
     observations: {
       startMenu: startMenuObservation,
       championshipRoom: roomObservation,
+      slowDisk: slowDiskObservation,
+      fontFallback: fontFallbackObservation,
+      audioDeviceLoss: audioDeviceLossObservation,
     },
     rendererFaults: {
       runtimeExceptions: 0,
@@ -263,14 +302,15 @@ export async function runPackagedAssetFaultSmoke(options = {}) {
       verified: [
         "corrupt start-menu image decode failure via in-memory source override",
         "missing championship-room image failure via in-memory source override",
+        "delayed start-menu asset read reaches a visible loading fallback then recovers",
+        "bundled font loading fails in an isolated renderer while declared local fallbacks keep critical text and controls readable",
+        "AudioContext failure leaves an announced silent fallback and a legal poker action usable",
         "visible CSS/DOM fallbacks",
         "usable Play, Settings, and Skip arrival controls",
         "nonblank packaged renderer root",
       ],
       notClaimed: [
-        "video decode or fallback",
-        "font load fallback",
-        "audio output or audio-device behavior",
+        "video decode or fallback (no runtime video is currently shipped)",
       ],
     },
   };
@@ -340,6 +380,42 @@ async function clickSelector(cdp, selector, label) {
   }
 }
 
+async function waitForSelectorAndClick(
+  cdp,
+  child,
+  output,
+  deadline,
+  selector,
+  label,
+) {
+  while (Date.now() < deadline) {
+    ensureProcessAlive(child, output);
+    const result = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const button = document.querySelector(${JSON.stringify(selector)});
+        if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+        button.click();
+        return true;
+      })()`,
+      returnByValue: true,
+      userGesture: true,
+    });
+    if (result.exceptionDetails) {
+      throw new RenderSmokeFailure(
+        "runtime-exception",
+        `Runtime.evaluate failed while clicking ${label}.`,
+      );
+    }
+    if (result.result?.value === true) return;
+    assertNoUnexpectedRendererEvents(cdp.takeFatalEvents());
+    await delay(50);
+  }
+  throw new RenderSmokeFailure(
+    "ui-timeout",
+    `Timed out waiting for the ${label} control.`,
+  );
+}
+
 async function waitForValidatedObservation(options) {
   const pollIntervalMs = options.pollIntervalMs ?? 50;
   let lastObservation;
@@ -356,6 +432,494 @@ async function waitForValidatedObservation(options) {
     "fallback-timeout",
     `Timed out waiting for ${options.label}: ${lastFailures.join("; ")}.`,
     { lastObservation },
+  );
+}
+
+/**
+ * Slow reads need a clean renderer because the primary image-fault session is
+ * deliberately terminal. The delay exists only in the CDP-injected document;
+ * neither the package nor its ASAR are modified.
+ */
+async function runSlowDiskFault({ appPath, timeoutMs }) {
+  const profile = await mkdtemp(join(tmpdir(), ASSET_FAULT_PROFILE_PREFIX));
+  const child = spawn(
+    appPath,
+    [
+      `--user-data-dir=${profile}`,
+      "--remote-debugging-port=0",
+      "--remote-allow-origins=*",
+      "--no-first-run",
+    ],
+    {
+      cwd: projectRoot,
+      detached: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false,
+    },
+  );
+  const output = captureBoundedOutput(child, 8_192);
+  let cdp;
+  let primaryError;
+  let observation;
+  try {
+    const deadline = Date.now() + Math.min(timeoutMs, 12_000);
+    const port = await waitForDevToolsPort(profile, child, deadline, output);
+    const target = await waitForPageTarget(port, child, deadline, output);
+    cdp = await CdpClient.connect(target.webSocketDebuggerUrl, deadline);
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: slowDiskBootstrapSource(),
+    });
+    await cdp.send("Page.reload", { ignoreCache: true });
+    await waitForButtonAndClick(
+      cdp,
+      child,
+      output,
+      deadline,
+      "Skip setup",
+    );
+
+    let sawLoadingState = false;
+    const delayMs = 1_850;
+    const loadingDeadline = Math.min(deadline, Date.now() + 4_500);
+    while (Date.now() < loadingDeadline) {
+      ensureProcessAlive(child, output);
+      assertNoUnexpectedRendererEvents(cdp.takeFatalEvents());
+      const current = await evaluateSlowDisk(cdp);
+      if (current.canonicalStatus === "slow") {
+        sawLoadingState = true;
+        break;
+      }
+      await delay(40);
+    }
+
+    const readyDeadline = Math.min(deadline, Date.now() + 5_500);
+    let eventuallyReady = false;
+    let current;
+    while (Date.now() < readyDeadline) {
+      ensureProcessAlive(child, output);
+      assertNoUnexpectedRendererEvents(cdp.takeFatalEvents());
+      current = await evaluateSlowDisk(cdp);
+      if (current.canonicalStatus === "ready" && current.screen === "home") {
+        eventuallyReady = true;
+        break;
+      }
+      await delay(40);
+    }
+    observation = {
+      ...(current ?? (await evaluateSlowDisk(cdp))),
+      delayMs,
+      sawLoadingState,
+      eventuallyReady,
+      timedOut: !eventuallyReady,
+    };
+    const failures = validateSlowDiskObservation(observation);
+    if (failures.length > 0) {
+      throw new RenderSmokeFailure(
+        "slow-disk-fallback-timeout",
+        `Slow-disk packaged fault failed: ${failures.join("; ")}. Last observation: ${JSON.stringify(observation)}`,
+        { observation },
+      );
+    }
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      cdp?.close();
+    } catch {
+      // Process-tree cleanup below remains authoritative.
+    }
+    try {
+      await terminateProcessTree(child);
+    } catch (error) {
+      primaryError ??= error;
+    }
+    try {
+      await removeValidatedAssetFaultProfile(profile);
+    } catch (error) {
+      primaryError ??= error;
+    }
+  }
+  if (primaryError) throw primaryError;
+  return observation;
+}
+
+/**
+ * Blocks only bundled font resources before a cache-disabled reload. Unlike a
+ * CSS override, this exercises Chromium's real failed-font path and the
+ * application's declared system fallback stacks. Network failures are expected
+ * in this deliberately isolated fault process; any runtime or console error
+ * remains a release failure.
+ */
+async function runFontFallbackFault({ appPath, timeoutMs }) {
+  const profile = await mkdtemp(join(tmpdir(), ASSET_FAULT_PROFILE_PREFIX));
+  const child = spawn(
+    appPath,
+    [
+      `--user-data-dir=${profile}`,
+      "--remote-debugging-port=0",
+      "--remote-allow-origins=*",
+      "--no-first-run",
+    ],
+    {
+      cwd: projectRoot,
+      detached: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false,
+    },
+  );
+  const output = captureBoundedOutput(child, 8_192);
+  let cdp;
+  let primaryError;
+  let observation;
+  try {
+    const deadline = Date.now() + Math.min(timeoutMs, 12_000);
+    const port = await waitForDevToolsPort(profile, child, deadline, output);
+    const target = await waitForPageTarget(port, child, deadline, output);
+    cdp = await CdpClient.connect(target.webSocketDebuggerUrl, deadline);
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+    await cdp.send("Network.enable");
+    await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+    await cdp.send("Network.setBlockedURLs", {
+      urls: ["*.woff2", "*.woff", "*.ttf"],
+    });
+    await cdp.send("Page.reload", { ignoreCache: true });
+    await waitForButtonAndClickWithoutNetworkAssertion(
+      cdp,
+      child,
+      output,
+      deadline,
+      "Skip setup",
+    );
+    const observationDeadline = Math.min(deadline, Date.now() + 4_000);
+    while (Date.now() < observationDeadline) {
+      ensureProcessAlive(child, output);
+      observation = await evaluateFontFallback(cdp);
+      if (observation.fontStatus === "failed") break;
+      await delay(40);
+    }
+    observation ??= await evaluateFontFallback(cdp);
+    const unexpected = cdp.takeFatalEvents().filter(
+      (event) => event.kind !== "network-loading-failed",
+    );
+    assertNoUnexpectedRendererEvents(unexpected);
+    const failures = validateFontFallbackObservation(observation);
+    if (failures.length > 0) {
+      throw new RenderSmokeFailure(
+        "font-fallback-timeout",
+        `Bundled-font packaged fault failed: ${failures.join("; ")}. Last observation: ${JSON.stringify(observation)}`,
+        { observation },
+      );
+    }
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      cdp?.close();
+    } catch {
+      // Exact process-tree termination remains authoritative.
+    }
+    try {
+      await terminateProcessTree(child);
+    } catch (error) {
+      primaryError ??= error;
+    }
+    try {
+      await removeValidatedAssetFaultProfile(profile);
+    } catch (error) {
+      primaryError ??= error;
+    }
+  }
+  if (primaryError) throw primaryError;
+  return observation;
+}
+
+/**
+ * A Web Audio constructor failure is the portable equivalent of an unavailable
+ * output device in a packaged automated run. The application must announce the
+ * silent fallback and still accept an ordinary poker decision.
+ */
+async function runAudioDeviceLossFault({ appPath, timeoutMs }) {
+  const profile = await mkdtemp(join(tmpdir(), ASSET_FAULT_PROFILE_PREFIX));
+  const child = spawn(
+    appPath,
+    [
+      `--user-data-dir=${profile}`,
+      "--remote-debugging-port=0",
+      "--remote-allow-origins=*",
+      "--no-first-run",
+    ],
+    {
+      cwd: projectRoot,
+      detached: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false,
+    },
+  );
+  const output = captureBoundedOutput(child, 8_192);
+  let cdp;
+  let primaryError;
+  let observation;
+  try {
+    const deadline = Date.now() + Math.min(timeoutMs, 15_000);
+    const port = await waitForDevToolsPort(profile, child, deadline, output);
+    const target = await waitForPageTarget(port, child, deadline, output);
+    cdp = await CdpClient.connect(target.webSocketDebuggerUrl, deadline);
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: audioDeviceLossBootstrapSource(),
+    });
+    await cdp.send("Page.reload", { ignoreCache: true });
+    await waitForButtonAndClick(cdp, child, output, deadline, "Skip setup");
+    await nativeClickSelector(
+      cdp,
+      child,
+      output,
+      deadline,
+      'button[aria-label="Settings"]',
+      "Settings",
+    );
+    await nativeClickSelector(
+      cdp,
+      child,
+      output,
+      deadline,
+      'button[aria-label^="Preview Master volume"]',
+      "audio preview",
+    );
+    const statusReady = await waitForValidatedObservation({
+      cdp,
+      child,
+      output,
+      deadline: Math.min(deadline, Date.now() + 3_000),
+      label: "audio unavailable status",
+      observe: () => evaluateAudioDeviceLoss(cdp, false),
+      validate: (value) =>
+        value.audioContextFailed && value.silentFallbackActive
+          ? []
+          : ["audio fallback status has not appeared"],
+    });
+    await waitForButtonAndClick(cdp, child, output, deadline, "Main menu");
+    await clickSelector(cdp, 'button[aria-label="Play"]', "Play");
+    await waitForSelectorAndClick(
+      cdp,
+      child,
+      output,
+      deadline,
+      "#play-chip-ack-title ~ .startup-gate__actions button",
+      "play-chip acknowledgment",
+    );
+    await waitForButtonAndClick(cdp, child, output, deadline, "Training");
+    await waitForValidatedObservation({
+      cdp,
+      child,
+      output,
+      deadline,
+      label: "training table under audio fault",
+      observe: () => evaluateByValue(cdp, "Boolean(document.querySelector('.poker-table'))"),
+      validate: (value) => (value ? [] : ["training table is not ready"]),
+    });
+    const pokerActionUsable = await clickFirstLegalPokerAction(
+      cdp,
+      child,
+      output,
+      deadline,
+    );
+    observation = await evaluateAudioDeviceLoss(cdp, pokerActionUsable);
+    // Preserve the proven status even after navigation from Settings: it is the
+    // player-facing acknowledgement that audio failure did not block play.
+    observation = {
+      ...observation,
+      silentFallbackActive: statusReady.silentFallbackActive,
+      statusText: statusReady.statusText,
+    };
+    assertNoUnexpectedRendererEvents(cdp.takeFatalEvents());
+    const failures = validateAudioDeviceLossObservation(observation);
+    if (failures.length > 0) {
+      throw new RenderSmokeFailure(
+        "audio-device-loss-fallback-failed",
+        `Audio-device packaged fault failed: ${failures.join("; ")}. Last observation: ${JSON.stringify(observation)}`,
+        { observation },
+      );
+    }
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      cdp?.close();
+    } catch {
+      // Exact process-tree termination remains authoritative.
+    }
+    try {
+      await terminateProcessTree(child);
+    } catch (error) {
+      primaryError ??= error;
+    }
+    try {
+      await removeValidatedAssetFaultProfile(profile);
+    } catch (error) {
+      primaryError ??= error;
+    }
+  }
+  if (primaryError) throw primaryError;
+  return observation;
+}
+
+async function clickFirstLegalPokerAction(cdp, child, output, deadline) {
+  while (Date.now() < deadline) {
+    ensureProcessAlive(child, output);
+    const result = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const button = [...document.querySelectorAll(".action-dock .action-button")]
+          .find((candidate) => candidate instanceof HTMLButtonElement && !candidate.disabled);
+        if (!(button instanceof HTMLButtonElement)) return false;
+        button.click();
+        return true;
+      })()`,
+      returnByValue: true,
+      userGesture: true,
+    });
+    if (result.exceptionDetails) {
+      throw new RenderSmokeFailure(
+        "runtime-exception",
+        "Runtime.evaluate failed while taking a poker action under audio fault.",
+      );
+    }
+    if (result.result?.value === true) return true;
+    assertNoUnexpectedRendererEvents(cdp.takeFatalEvents());
+    await delay(50);
+  }
+  return false;
+}
+
+async function nativeClickSelector(cdp, child, output, deadline, selector, label) {
+  while (Date.now() < deadline) {
+    ensureProcessAlive(child, output);
+    const result = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        if (!(element instanceof HTMLElement) || element.matches(":disabled")) return null;
+        const box = element.getBoundingClientRect();
+        return box.width > 2 && box.height > 2
+          ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+          : null;
+      })()`,
+      returnByValue: true,
+    });
+    const point = result.result?.value;
+    if (point) {
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mousePressed", x: point.x, y: point.y, button: "left", buttons: 1, clickCount: 1,
+      });
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased", x: point.x, y: point.y, button: "left", buttons: 0, clickCount: 1,
+      });
+      await delay(120);
+      return;
+    }
+    assertNoUnexpectedRendererEvents(cdp.takeFatalEvents());
+    await delay(50);
+  }
+  throw new RenderSmokeFailure("ui-timeout", `Timed out waiting for the ${label} control.`);
+}
+
+async function evaluateAudioDeviceLoss(cdp, pokerActionUsable) {
+  return evaluateByValue(
+    cdp,
+    `(() => ({
+      url: location.href,
+      title: document.title,
+      rootChildCount: document.querySelector("#root")?.childElementCount || 0,
+      rootText: (document.querySelector("#root")?.textContent || "").slice(0, 10000),
+      audioContextFailed: Number(window.__PTP_AUDIO_CONTEXT_FAILURES__ || 0) > 0,
+      silentFallbackActive: /audio preview is unavailable/i.test(
+        document.querySelector("#audio-preview-status")?.textContent || ""
+      ),
+      pokerActionUsable: ${Boolean(pokerActionUsable)},
+      statusText: document.querySelector("#audio-preview-status")?.textContent?.trim() || ""
+    }))()`,
+  );
+}
+
+async function waitForButtonAndClickWithoutNetworkAssertion(
+  cdp,
+  child,
+  output,
+  deadline,
+  buttonText,
+) {
+  while (Date.now() < deadline) {
+    ensureProcessAlive(child, output);
+    const result = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const label = ${JSON.stringify(buttonText)};
+        const button = [...document.querySelectorAll("button")].find(
+          (candidate) => (candidate.textContent || "").trim() === label
+        );
+        if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+        button.click();
+        return true;
+      })()`,
+      returnByValue: true,
+      userGesture: true,
+    });
+    if (result.exceptionDetails) {
+      throw new RenderSmokeFailure(
+        "runtime-exception",
+        `Runtime.evaluate failed while clicking ${buttonText}.`,
+      );
+    }
+    if (result.result?.value === true) return;
+    await delay(50);
+  }
+  throw new RenderSmokeFailure(
+    "ui-timeout",
+    `Timed out waiting for the ${buttonText} button under the font fault.`,
+  );
+}
+
+async function evaluateFontFallback(cdp) {
+  return evaluateByValue(
+    cdp,
+    `(() => {
+      const root = document.querySelector("#root");
+      const play = document.querySelector('button[aria-label="Play"]');
+      const settings = document.querySelector('button[aria-label="Settings"]');
+      const visible = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          Number(style.opacity) > 0 && box.width > 2 && box.height > 2;
+      };
+      const usable = (element) =>
+        element instanceof HTMLButtonElement && !element.disabled && visible(element);
+      const faces = [...document.fonts]
+        .filter((face) => /Inter|Barlow Condensed/i.test(face.family))
+        .map((face) => ({ family: face.family, status: face.status }));
+      const rootFamily = getComputedStyle(document.documentElement).fontFamily;
+      const titleFamily = getComputedStyle(document.documentElement).fontFamily;
+      return {
+        url: location.href,
+        title: document.title,
+        rootChildCount: root ? root.childElementCount : 0,
+        rootText: root ? (root.textContent || "").slice(0, 10000) : "",
+        fontStatus: faces.some((face) => face.status === "error") ? "failed" : "pending",
+        failedFaces: faces.filter((face) => face.status === "error").length,
+        usedFallbackFamily: /Segoe UI|Arial Narrow|sans-serif/i.test(String(rootFamily) + " " + String(titleFamily)),
+        textReadable: usable(play) && usable(settings) &&
+          (root?.textContent || "").includes("Play") &&
+          (root?.textContent || "").includes("Settings"),
+        rootFamily,
+        titleFamily,
+      };
+    })()`,
   );
 }
 
@@ -399,6 +963,24 @@ async function evaluateStartMenu(cdp) {
           corruptStartMenuResponses: 0,
           missingRoomResponses: 0
         }
+      };
+    })()`,
+  );
+}
+
+async function evaluateSlowDisk(cdp) {
+  return evaluateByValue(
+    cdp,
+    `(() => {
+      const root = document.querySelector("#root");
+      const media = document.querySelector(".home-reference__media");
+      return {
+        url: location.href,
+        title: document.title,
+        rootChildCount: root ? root.childElementCount : 0,
+        rootText: root ? (root.textContent || "").slice(0, 10000) : "",
+        screen: document.querySelector(".home-reference") ? "home" : "other",
+        canonicalStatus: media?.getAttribute("data-canonical-status") || null,
       };
     })()`,
   );
@@ -529,6 +1111,93 @@ function assetFaultBootstrapSource() {
           ? substitute(String(value))
           : value;
       return nativeSetAttribute.call(this, name, next);
+    };
+  })();`;
+}
+
+function audioDeviceLossBootstrapSource() {
+  return `(() => {
+    let failures = 0;
+    class UnavailableAudioContext {
+      constructor() {
+        failures += 1;
+        throw new Error("Injected audio output unavailable");
+      }
+    }
+    Object.defineProperty(window, "__PTP_AUDIO_CONTEXT_FAILURES__", {
+      get: () => failures,
+      configurable: false,
+      enumerable: false,
+    });
+    Object.defineProperty(window, "AudioContext", {
+      value: UnavailableAudioContext,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(window, "webkitAudioContext", {
+      value: UnavailableAudioContext,
+      configurable: true,
+      writable: true,
+    });
+    // CDP DOM activation is not always reflected by Chromium's
+    // navigator.userActivation flag. The production graph itself still only
+    // initializes after a real activation; this isolated fault harness marks
+    // the synthetic click as activated so its failure path can be exercised.
+    try {
+      Object.defineProperty(navigator, "userActivation", {
+        value: { hasBeenActive: true, isActive: true },
+        configurable: true,
+      });
+    } catch {
+      // Native user activation in the package is still sufficient on builds
+      // where the platform exposes a non-configurable UserActivation object.
+    }
+  })();`;
+}
+
+function slowDiskBootstrapSource() {
+  return `(() => {
+    const delayMs = 1850;
+    const delayedPath = "/start-menu-reference.png";
+    const shouldDelay = (value) => {
+      if (typeof value !== "string") return false;
+      try {
+        return new URL(value, location.href).pathname === delayedPath;
+      } catch {
+        return false;
+      }
+    };
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLImageElement.prototype,
+      "src"
+    );
+    if (descriptor?.get && descriptor?.set) {
+      Object.defineProperty(HTMLImageElement.prototype, "src", {
+        configurable: descriptor.configurable,
+        enumerable: descriptor.enumerable,
+        get: descriptor.get,
+        set(value) {
+          if (!shouldDelay(value)) return descriptor.set.call(this, value);
+          const element = this;
+          setTimeout(() => descriptor.set.call(element, value), delayMs);
+        }
+      });
+    }
+    const nativeSetAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function(name, value) {
+      if (
+        this instanceof HTMLImageElement &&
+        String(name).toLowerCase() === "src" &&
+        shouldDelay(String(value))
+      ) {
+        const element = this;
+        setTimeout(
+          () => nativeSetAttribute.call(element, name, value),
+          delayMs
+        );
+        return;
+      }
+      return nativeSetAttribute.call(this, name, value);
     };
   })();`;
 }

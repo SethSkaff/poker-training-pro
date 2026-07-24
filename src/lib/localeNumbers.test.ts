@@ -5,6 +5,7 @@ import {
   NUMERIC_LOCALE_RESOURCE_VERSION,
   formatChipCount,
   formatDuration,
+  formatFixedDecimal,
   formatNumber,
   formatPercentage,
   formatRatio,
@@ -36,6 +37,7 @@ describe("versioned English numeric locale", () => {
       "33.3%",
     );
     expect(formatRatio(2.5, 1, EN_US_NUMERIC_LOCALE)).toBe("2.5:1");
+    expect(formatFixedDecimal(33.333, 2, EN_US_NUMERIC_LOCALE)).toBe("33.33");
     expect(formatDuration(125_999, EN_US_NUMERIC_LOCALE)).toBe("2:05");
     expect(formatDuration(3_661_000, EN_US_NUMERIC_LOCALE)).toBe("61:01");
   });

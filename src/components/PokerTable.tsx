@@ -32,8 +32,13 @@ import {
   trainingScenarios,
   type RatedTrainingScenario,
 } from "../data/trainingScenarios";
-import type { LegalActionSet } from "../engine";
-import { cardAriaLabel, cardLabel, formatChips } from "../lib/format";
+import type { BettingActionType, LegalActionSet } from "../engine";
+import {
+  cardAriaLabel,
+  cardLabel,
+  formatChips,
+  formatFixedDecimal,
+} from "../lib/format";
 import { gameAudio } from "../lib/audio";
 import {
   detectContextualPromptOccurrences,
@@ -89,6 +94,7 @@ import type {
   SeatPlayer,
   TrainingScenario,
 } from "../types/poker";
+import type { TrainingPresentationCheckpoint } from "../lib/trainingCheckpoint";
 
 interface TournamentTableControls {
   legalActions: LegalActionSet;
@@ -105,6 +111,13 @@ interface TournamentTableControls {
   openingBigBlind?: number;
   /** Finishing places that qualify or cash in this event. */
   qualifyingPlaces?: number;
+  /** Actual prior-hand pot award recipients, never inferred from stack size. */
+  lastPotWinnerIds?: readonly string[];
+  /** The latest public table action, for a brief, truthful character gesture. */
+  lastPublicAction?: {
+    playerId: string;
+    type: BettingActionType;
+  };
 }
 
 interface PokerTableProps {
@@ -115,6 +128,8 @@ interface PokerTableProps {
   onProgressChange: (progress: PlayerProgress) => void;
   onSettingsChange: (settings: GameSettings) => void;
   onPauseChange?: (paused: boolean) => void;
+  initialTrainingPresentation?: TrainingPresentationCheckpoint;
+  onTrainingPresentationChange?: (presentation: TrainingPresentationCheckpoint) => void;
   onNextScenario: (scenarioId: string) => void;
   onExit: () => void;
   tournament?: TournamentTableControls;
@@ -136,6 +151,40 @@ const suitGlyph: Record<Card["suit"], string> = {
   spades: "♠",
 };
 
+/**
+ * A concise, player-relevant live announcement. It deliberately omits the
+ * dealer, room art, avatar animation, and other decorative scenery so a screen
+ * reader hears the same useful state that visual card/chip/audio feedback
+ * conveys without being flooded by presentation details.
+ */
+export function buildPokerTableAnnouncement({
+  action,
+  latestPublicAction,
+  scenario,
+}: {
+  action: PokerAction | null;
+  latestPublicAction?: string;
+  scenario: Pick<TrainingScenario, "amountToCall" | "board" | "pot" | "street">;
+}): string {
+  const street = `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`;
+  const board = scenario.board.length
+    ? `Board: ${scenario.board.map(cardAriaLabel).join(", ")}.`
+    : "No community cards yet.";
+  const decision = action
+    ? `You submitted ${action.replace("-", " ")}.`
+    : scenario.amountToCall > 0
+      ? `${formatChips(scenario.amountToCall)} to call.`
+      : "You may check or bet.";
+  return [
+    `${street}. Pot ${formatChips(scenario.pot)}.`,
+    board,
+    latestPublicAction ? `Latest public action: ${latestPublicAction}.` : "",
+    decision,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function PlayingCard({
   card,
   hidden = false,
@@ -149,6 +198,7 @@ function PlayingCard({
     return (
       <span
         className={`playing-card playing-card--back ${small ? "playing-card--small" : ""}`}
+        role="img"
         aria-label="Face-down card"
       >
         <i />
@@ -161,6 +211,7 @@ function PlayingCard({
       className={`playing-card playing-card--${card.suit} ${
         small ? "playing-card--small" : ""
       }`}
+      role="img"
       aria-label={cardAriaLabel(card)}
     >
       <b>{card.rank}</b>
@@ -185,6 +236,9 @@ interface PlayerSeatProps {
   isHero: boolean;
   player: SeatPlayer;
   position: (typeof seatPositions)[number];
+  wonPot?: boolean;
+  /** Only a public action can drive a character gesture; no card data is read. */
+  recentAction?: BettingActionType;
 }
 
 function PlayerSeat({
@@ -192,19 +246,44 @@ function PlayerSeat({
   isHero,
   player,
   position,
+  wonPot = false,
+  recentAction,
 }: PlayerSeatProps) {
   const isFolded = player.status === "folded";
+  const isAllIn = player.status === "all-in";
+  const isOut = player.status === "out";
+  const isShowingCards = !isHero && !isOut;
+  const shouldHoldCards = isShowingCards && player.status === "active";
+  const gesture = wonPot
+    ? "win"
+    : isAllIn
+      ? "all-in"
+      : isFolded
+        ? "fold"
+        : player.bet > 0
+          ? "bet"
+          : recentAction === "check"
+            ? "check"
+            : recentAction === "call"
+              ? "call"
+              : shouldHoldCards
+                ? "hold"
+                : undefined;
 
   return (
     <div
       className={`player-seat player-seat--${position} ${
         isHero ? "player-seat--hero" : ""
-      } ${isFolded ? "is-folded" : ""}`}
-      aria-label={`${player.name}, ${formatChips(player.stack)} chips, ${player.status}`}
+      } ${isFolded ? "is-folded" : ""} ${isAllIn ? "is-all-in" : ""} ${
+        isOut ? "is-out" : ""
+      } ${wonPot ? "is-winner" : ""}`}
+      role="group"
+      aria-label={`${isHero ? "You" : player.name}, ${formatChips(player.stack)} chips, ${player.status}${isShowingCards ? ", holding cards" : ""}${player.bet > 0 ? `, bet ${formatChips(player.bet)}` : ""}${dealer ? ", dealer button" : ""}`}
     >
-      {dealer && <span className="dealer-button">D</span>}
-      {!isHero && (
-        <div className="opponent-cards" aria-label="Two face-down cards">
+      {dealer && <span className="dealer-button" aria-hidden="true">D</span>}
+      {isShowingCards && (
+        <div className="opponent-cards" aria-hidden="true">
+          {shouldHoldCards && <i className="opponent-card-hand" aria-hidden="true" />}
           <PlayingCard
             card={{ rank: "A", suit: "spades" }}
             hidden
@@ -217,28 +296,36 @@ function PlayerSeat({
           />
         </div>
       )}
-      <div className="seat-avatar">
+      <div className="seat-avatar" aria-hidden="true">
         <span>{player.name.slice(0, 1)}</span>
         {player.status === "active" && player.id === "maya" && (
           <i className="thinking-ring" />
         )}
+        {!isHero && gesture && (
+          <i
+            className={`seat-action-hand seat-action-hand--${gesture}`}
+            aria-hidden="true"
+          />
+        )}
       </div>
-      <div className="seat-label">
+      <div className="seat-label" aria-hidden="true">
         <strong>{isHero ? "You" : player.name}</strong>
         <span>
           <ChipStack /> {formatChips(player.stack)}
         </span>
       </div>
       {player.bet > 0 && (
-        <div className="seat-bet">
+        <div className="seat-bet" aria-hidden="true">
           <ChipStack bet />
           <b>{formatChips(player.bet)}</b>
         </div>
       )}
-      {isFolded && <span className="seat-state">Folded</span>}
-      {player.status === "all-in" && (
-        <span className="seat-state seat-state--all-in">All-in</span>
+      {isFolded && <span className="seat-state" aria-hidden="true">Folded</span>}
+      {player.status === "all-in" && !wonPot && (
+        <span className="seat-state seat-state--all-in" aria-hidden="true">All-in</span>
       )}
+      {isOut && <span className="seat-state seat-state--out" aria-hidden="true">Out</span>}
+      {wonPot && <span className="seat-state seat-state--winner" aria-hidden="true">Won pot</span>}
     </div>
   );
 }
@@ -246,6 +333,7 @@ function PlayerSeat({
 interface MathPanelProps {
   scenario: RatedTrainingScenario;
   answer: string;
+  error?: string;
   result: MathEvaluation | null;
   mathElo: number;
   onAnswer: (answer: string) => void;
@@ -256,6 +344,7 @@ interface MathPanelProps {
 function MathPanel({
   scenario,
   answer,
+  error,
   result,
   mathElo,
   onAnswer,
@@ -320,6 +409,12 @@ function MathPanel({
         </div>
       </label>
 
+      {error ? (
+        <p className="math-input-error" role="alert">
+          <X size={15} aria-hidden="true" /> {error}
+        </p>
+      ) : null}
+
       {result ? (
         <div
           className={`math-result math-result--${resultClass}`}
@@ -335,7 +430,7 @@ function MathPanel({
                   : "Not quite"}
             </strong>
             <small>
-              Accepted estimate: {lower.toFixed(2)}–{upper.toFixed(2)}
+              Accepted estimate: {formatFixedDecimal(lower, 2)}–{formatFixedDecimal(upper, 2)}
               {question.unit}
             </small>
           </div>
@@ -425,12 +520,12 @@ function FeedbackPanel({
       <p className="feedback-lead">
         {actionCorrect || graded.action.close
           ? scenario.actionReason
-          : `You chose ${action.replace("-", " ")} and gave up ${graded.action.regret.toFixed(2)}bb versus the modeled best action, ${graded.action.bestAction}.`}
+          : `You chose ${action.replace("-", " ")} and gave up ${formatFixedDecimal(graded.action.regret, 2)}bb versus the modeled best action, ${graded.action.bestAction}.`}
       </p>
 
       <div className="feedback-math">
         <span className="feedback-math__formula">
-          <b>{scenario.mathQuestion.correctValue.toFixed(2)}</b>
+          <b>{formatFixedDecimal(scenario.mathQuestion.correctValue, 2)}</b>
           <i>±</i>
           <strong>
             {scenario.mathQuestion.tolerance}
@@ -448,7 +543,7 @@ function FeedbackPanel({
           Math: <b>{mathLabel}</b>
         </span>
         <span>
-          Time: <b>{(graded.timing.totalMs / 1000).toFixed(1)}s</b>
+          Time: <b>{formatFixedDecimal(graded.timing.totalMs / 1000, 1)}s</b>
         </span>
       </div>
 
@@ -548,6 +643,8 @@ export function PokerTable({
   onProgressChange,
   onSettingsChange,
   onPauseChange,
+  initialTrainingPresentation,
+  onTrainingPresentationChange,
   onNextScenario,
   onExit,
   tournament,
@@ -556,14 +653,20 @@ export function PokerTable({
   const [foldProgress, setFoldProgress] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [action, setAction] = useState<PokerAction | null>(null);
+  const [actionError, setActionError] = useState<string>();
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(scenario.minimumRaise);
   const [mathAnswer, setMathAnswer] = useState("");
+  const [mathError, setMathError] = useState<string>();
   const [mathResult, setMathResult] = useState<MathEvaluation | null>(null);
   const [gradedAttempt, setGradedAttempt] =
     useState<GradedTrainingAttempt | null>(null);
-  const [cameraPan, setCameraPan] = useState(0);
-  const [elapsedMs, setElapsedMs] = useState(0);
+  const [cameraPan, setCameraPan] = useState(
+    initialTrainingPresentation?.cameraPan ?? 0,
+  );
+  const [elapsedMs, setElapsedMs] = useState(
+    initialTrainingPresentation?.elapsedMs ?? 0,
+  );
   const [speed, setSpeed] = useState(1);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [coachState, setCoachState] = useState<ContextualPromptState>(
@@ -574,7 +677,9 @@ export function PokerTable({
   const [arrivalVisible, setArrivalVisible] = useState(
     Boolean(tournament?.showArrival),
   );
-  const [paused, setPaused] = useState(false);
+  const [paused, setPaused] = useState(
+    initialTrainingPresentation?.paused ?? false,
+  );
   const [pausePage, setPausePage] = useState<
     "menu" | "controls" | "reference" | "settings" | "remap"
   >("menu");
@@ -593,6 +698,7 @@ export function PokerTable({
   const gamepadActive = useIsGamepadActive();
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
+  const elapsedStartedAt = useRef<number | null>(null);
   const mathStartedAt = useRef<number | null>(null);
   const mathElapsedMs = useRef(0);
   const pauseStartedAt = useRef<number | null>(null);
@@ -603,6 +709,12 @@ export function PokerTable({
   const ratedScenario = scenario as RatedTrainingScenario;
   const trainingMeta =
     "training" in scenario ? scenario.training : undefined;
+  const cameraStep =
+    settings.cameraSensitivity === "low"
+      ? 0.6
+      : settings.cameraSensitivity === "high"
+        ? 1.4
+        : 1;
 
   const updateCoachState = useCallback(
     (next: ContextualPromptState) => {
@@ -660,6 +772,20 @@ export function PokerTable({
     pausedRef.current = paused;
   }, [paused]);
 
+  useEffect(() => {
+    if (
+      settings.autoCameraMovement &&
+      settings.cameraMotion !== "off" &&
+      tournament?.handNumber
+    ) {
+      setCameraPan(0);
+    }
+  }, [
+    settings.autoCameraMovement,
+    settings.cameraMotion,
+    tournament?.handNumber,
+  ]);
+
   // Latest public decision state for the resume recap, kept in a ref so the
   // pause bookkeeping effect below stays keyed only on the paused flag and never
   // re-runs (and re-stamps the inactive clock) on unrelated re-renders.
@@ -716,7 +842,7 @@ export function PokerTable({
             ...(data.lastAction ? { lastAction: data.lastAction } : {}),
             currentDecision:
               data.amountToCall > 0
-                ? `Call ${data.amountToCall.toLocaleString()} to continue, raise, or fold.`
+                ? `Call ${formatChips(data.amountToCall)} to continue, raise, or fold.`
                 : "Check, bet, or fold.",
             ...(data.handNumber !== undefined
               ? { handNumber: data.handNumber }
@@ -730,6 +856,18 @@ export function PokerTable({
     }
     return () => gameAudio.setFocusMuted(false);
   }, [onPauseChange, paused]);
+
+  // Keep the parent-owned durable checkpoint current without writing a save on
+  // every tenth-of-a-second clock tick. The app flushes this in-memory snapshot
+  // at its existing lifecycle boundaries; pausing also commits immediately.
+  useEffect(() => {
+    if (mode !== "training") return;
+    onTrainingPresentationChange?.({
+      cameraPan,
+      elapsedMs: Math.max(0, Math.round(elapsedMs)),
+      paused,
+    });
+  }, [cameraPan, elapsedMs, mode, onTrainingPresentationChange, paused]);
 
   // The shared modal focus contract: initial focus inside the dialog, a
   // wraparound Tab trap, and exact restoration of the pre-pause focus. Subpage
@@ -749,13 +887,20 @@ export function PokerTable({
 
   useEffect(() => {
     if (action || paused) return;
-    const startedAt = performance.now() - elapsedMs;
+    // Do not key this effect to elapsedMs: that would recreate the interval ten
+    // times a second. On each active/resume boundary derive a fresh base from
+    // the frozen elapsed value, so inactive wall-clock time never leaks into a
+    // player's decision time.
+    elapsedStartedAt.current = performance.now() - elapsedMs;
     const timer = window.setInterval(
-      () => setElapsedMs(performance.now() - startedAt),
+      () =>
+        setElapsedMs(
+          performance.now() - (elapsedStartedAt.current ?? performance.now()),
+        ),
       100,
     );
     return () => window.clearInterval(timer);
-  }, [action, elapsedMs, paused]);
+  }, [action, paused]);
 
   const requestPause = useCallback((reason: LifecyclePauseReason) => {
     pauseReasonRef.current = reason;
@@ -796,7 +941,11 @@ export function PokerTable({
     const group = freezeGroupRef.current;
     const delay = new FreezableDelay(
       realFreezableDelayHost,
-      settings.reducedMotion ? 450 : 1_650,
+      settings.reducedMotion || settings.transitionMotion === "off"
+        ? 450
+        : settings.transitionMotion === "reduced"
+          ? 900
+          : 1_650,
       () => setArrivalVisible(false),
     );
     arrivalDelayRef.current = delay;
@@ -806,7 +955,7 @@ export function PokerTable({
       group.remove(delay);
       if (arrivalDelayRef.current === delay) arrivalDelayRef.current = null;
     };
-  }, [arrivalVisible, settings.reducedMotion]);
+  }, [arrivalVisible, settings.reducedMotion, settings.transitionMotion]);
 
   useEffect(() => {
     const group = freezeGroupRef.current;
@@ -822,12 +971,15 @@ export function PokerTable({
     setFoldProgress(0);
     setDragging(false);
     setAction(null);
+    setActionError(undefined);
     setRaiseOpen(false);
     setRaiseAmount(scenario.minimumRaise);
     setMathAnswer("");
+    setMathError(undefined);
     setMathResult(null);
     setGradedAttempt(null);
     setElapsedMs(0);
+    elapsedStartedAt.current = performance.now();
     setSpeed(1);
     mathStartedAt.current = null;
     mathElapsedMs.current = 0;
@@ -840,9 +992,11 @@ export function PokerTable({
         mode === "training" &&
         trainingMeta?.actionEvs[nextAction] === undefined
       ) {
+        setActionError("That action is not available in this practice scenario.");
         gameAudio.play("error");
         return;
       }
+      setActionError(undefined);
       setAction(nextAction);
       setRaiseOpen(false);
       setPeeked(false);
@@ -1086,10 +1240,10 @@ export function PokerTable({
           submitPresetRaise("all-in");
           break;
         case "camera.left":
-          setCameraPan((value) => Math.max(-2, value - 1));
+          setCameraPan((value) => Math.max(-2, value - cameraStep));
           break;
         case "camera.right":
-          setCameraPan((value) => Math.min(2, value + 1));
+          setCameraPan((value) => Math.min(2, value + cameraStep));
           break;
         case "camera.center":
           setCameraPan(0);
@@ -1111,17 +1265,9 @@ export function PokerTable({
     const handleKeyDown = (event: KeyboardEvent) => {
       // The remapping capture dialog owns input exclusively while listening.
       if (isInputCaptureActive()) return;
-      const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement
-      ) {
-        return;
-      }
-
-      // Escape stays reserved: it always pauses/closes and must stop App's
-      // own Escape handler from double-firing.
+      // Escape is the one navigation key deliberately allowed through focused
+      // controls: a checked pause-menu setting must never trap the player in
+      // the dialog. Gameplay hotkeys below still remain blocked while editing.
       if (keyEventToken(event) === "escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -1135,6 +1281,14 @@ export function PokerTable({
           setResumeRecap(null);
           setPaused(true);
         }
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
         return;
       }
       if (paused) return;
@@ -1174,6 +1328,7 @@ export function PokerTable({
     settings.controlBindings,
     trainingMeta,
     tournament?.legalActions,
+    cameraStep,
   ]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1217,9 +1372,13 @@ export function PokerTable({
     if (mathAnswer.trim() === "" || mathResult) return;
     const value = parseMathAnswer(mathAnswer, scenario.mathQuestion.unit);
     if (value === undefined) {
+      setMathError(
+        `Enter a valid ${scenario.mathQuestion.unit === "%" ? "percentage, fraction, or ratio" : scenario.mathQuestion.unit} estimate.`,
+      );
       gameAudio.play("error");
       return;
     }
+    setMathError(undefined);
     const evaluation = evaluateMathAnswer(ratedScenario, value);
     const startedAt = mathStartedAt.current ?? performance.now();
     mathElapsedMs.current = Math.max(
@@ -1240,6 +1399,12 @@ export function PokerTable({
 
   const tableStyle = {
     "--camera-pan": `${cameraPan * -18}px`,
+    "--camera-zoom":
+      settings.cameraView === "close"
+        ? "1.06"
+        : settings.cameraView === "wide"
+          ? "0.94"
+          : "1",
     "--deal-multiplier":
       settings.dealSpeed === "cinematic"
         ? "1.35"
@@ -1253,7 +1418,7 @@ export function PokerTable({
       ? "Training Lab"
       : mode === "rational"
         ? "Rational Circuit"
-        : "Live Field";
+        : "Normal Tournament";
   const scenarioNumber =
     trainingScenarios.findIndex((item) => item.id === scenario.id) + 1;
   const heroStack =
@@ -1311,9 +1476,23 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
+  const tableAnnouncement = buildPokerTableAnnouncement({
+    action,
+    latestPublicAction: tournament?.actionHistory.at(-1),
+    scenario,
+  });
 
   return (
-    <div className="table-screen" style={tableStyle}>
+    <div
+      className="table-screen"
+      data-camera-motion={settings.cameraMotion}
+      data-table-motion={settings.tableMotion}
+      data-transition-motion={settings.transitionMotion}
+      style={tableStyle}
+    >
+      <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {tableAnnouncement}
+      </p>
       <header className="table-topbar">
         <button className="table-exit" type="button" onClick={onExit}>
           <ArrowLeft size={18} /> Leave table
@@ -1330,14 +1509,18 @@ export function PokerTable({
           </span>
         </div>
         <div className="table-tools">
-          <span className="decision-clock">
+          <span
+            className="decision-clock"
+            role="timer"
+            aria-label={`Decision time ${formatFixedDecimal(elapsedMs / 1000, 1)} seconds`}
+          >
             <Clock3 size={15} />
-            {(elapsedMs / 1000).toFixed(1)}s
+            {formatFixedDecimal(elapsedMs / 1000, 1)}s
           </span>
           {tournament && (
             <label className="table-speed-control">
               <FastForward size={15} />
-              <span>{speed.toFixed(1)}×</span>
+              <span>{formatFixedDecimal(speed, 1)}×</span>
               <input
                 type="range"
                 min="0.5"
@@ -1361,7 +1544,14 @@ export function PokerTable({
           >
             <Pause size={17} />
           </button>
-          <button type="button" aria-label="Toggle table audio">
+          <button
+            type="button"
+            aria-label={settings.muted ? "Unmute table audio" : "Mute table audio"}
+            aria-pressed={settings.muted}
+            onClick={() =>
+              onSettingsChange({ ...settings, muted: !settings.muted })
+            }
+          >
             <Volume2 size={17} />
           </button>
         </div>
@@ -1369,6 +1559,11 @@ export function PokerTable({
 
       <div className="table-layout">
         <section className="table-stage" aria-label="Six-seat poker table">
+          {actionError ? (
+            <p className="table-action-alert" role="alert">
+              <X size={16} aria-hidden="true" /> {actionError}
+            </p>
+          ) : null}
           {arrivalVisible && tournament && (
             <div className="room-progress-overlay" aria-live="polite">
               <div>
@@ -1401,7 +1596,9 @@ export function PokerTable({
           <div className="camera-controls">
             <button
               type="button"
-              onClick={() => setCameraPan((value) => Math.max(-2, value - 1))}
+              onClick={() =>
+                setCameraPan((value) => Math.max(-2, value - cameraStep))
+              }
               aria-label="Look one seat left"
             >
               <ChevronLeft size={17} />
@@ -1409,14 +1606,16 @@ export function PokerTable({
             <span>Table view</span>
             <button
               type="button"
-              onClick={() => setCameraPan((value) => Math.min(2, value + 1))}
+              onClick={() =>
+                setCameraPan((value) => Math.min(2, value + cameraStep))
+              }
               aria-label="Look one seat right"
             >
               <ChevronRight size={17} />
             </button>
           </div>
 
-          <div className="poker-scene">
+            <div className="poker-scene">
             <div className="poker-table">
               <div className="felt-ring">
                 <span className="felt-brand">PTP · CHAMPIONSHIP</span>
@@ -1435,7 +1634,11 @@ export function PokerTable({
                   </small>
                 </div>
 
-                <div className="community-cards" aria-label="Community cards">
+                <div
+                  className="community-cards"
+                  role="group"
+                  aria-label="Community cards"
+                >
                   {scenario.board.map((card, index) => (
                     <PlayingCard card={card} key={`${card.rank}-${index}`} />
                   ))}
@@ -1464,6 +1667,15 @@ export function PokerTable({
                 position={seatPositions[index]}
                 isHero={player.seat === scenario.heroSeat}
                 dealer={player.seat === scenario.buttonSeat}
+                wonPot={
+                  arrivalVisible &&
+                  Boolean(tournament?.lastPotWinnerIds?.includes(player.id))
+                }
+                recentAction={
+                  tournament?.lastPublicAction?.playerId === player.id
+                    ? tournament.lastPublicAction.type
+                    : undefined
+                }
               />
             ))}
 
@@ -1618,7 +1830,13 @@ export function PokerTable({
                 >
                   <FastForward size={15} /> {speed === 2 ? "Return to 1×" : "2×"}
                 </button>
-                <button type="button">Skip to result</button>
+                <button
+                  type="button"
+                  onClick={() => pendingTournamentAction.current?.finish()}
+                  aria-label="Skip opponent presentation and continue the hand"
+                >
+                  Skip to result
+                </button>
               </div>
             </div>
           )}
@@ -1706,9 +1924,13 @@ export function PokerTable({
           <MathPanel
             scenario={ratedScenario}
             answer={mathAnswer}
+            error={mathError}
             result={mathResult}
             mathElo={progress.mathElo}
-            onAnswer={setMathAnswer}
+            onAnswer={(nextAnswer) => {
+              setMathAnswer(nextAnswer);
+              if (mathError) setMathError(undefined);
+            }}
             onFocus={beginMath}
             onSubmit={submitMath}
           />

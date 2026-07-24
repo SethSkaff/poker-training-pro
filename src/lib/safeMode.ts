@@ -17,6 +17,12 @@ export function deriveSafeModeSettings(
     muted: true,
     reducedMotion: true,
     dealSpeed: "quick",
+    autoCameraMovement: false,
+    menuMotion: "off",
+    roomMotion: "off",
+    cameraMotion: "off",
+    tableMotion: "off",
+    transitionMotion: "off",
     // A safe launch never re-enters fullscreen, which can mask a wedged window.
     fullscreen: false,
   };
@@ -32,6 +38,12 @@ export function safeModeIgnoresImportedSettings(
     derived.muted &&
     derived.reducedMotion &&
     derived.dealSpeed === "quick" &&
+    !derived.autoCameraMovement &&
+    derived.menuMotion === "off" &&
+    derived.roomMotion === "off" &&
+    derived.cameraMotion === "off" &&
+    derived.tableMotion === "off" &&
+    derived.transitionMotion === "off" &&
     !derived.fullscreen
   );
 }

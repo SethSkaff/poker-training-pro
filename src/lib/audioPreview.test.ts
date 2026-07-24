@@ -72,8 +72,7 @@ describe("Settings audio preview coordination", () => {
       ),
     ).toEqual({
       result: "unavailable",
-      message: "Preview is unavailable on this device. Your settings were kept.",
+      message: "Audio preview is unavailable on this device. Your settings were kept.",
     });
   });
 });
-

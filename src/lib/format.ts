@@ -1,12 +1,17 @@
 import type { Card, Rank, Suit } from "../types/poker";
 import {
   formatChipCount,
+  formatFixedDecimal,
   formatDuration,
   formatNumber,
   formatPercentage,
   formatRatio,
   type NumericLocaleResource,
 } from "./localeNumbers";
+export {
+  formatDateTime,
+  type DateTimeLocaleResource,
+} from "./localeDateTime";
 
 const suitGlyphs: Record<Suit, string> = {
   clubs: "♣",
@@ -46,6 +51,7 @@ export function formatClock(
 }
 
 export {
+  formatFixedDecimal,
   formatNumber,
   formatPercentage,
   formatRatio,

@@ -8,6 +8,7 @@ const ALLOWED_DOCUMENT_IDS = new Set([
   "font-barlow",
 ]);
 const ALLOWED_FOLDER_TARGETS = new Set(["save", "log"]);
+const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
 
 contextBridge.exposeInMainWorld("desktop", {
   getVersion: () => ipcRenderer.invoke("app:getVersion"),
@@ -21,6 +22,11 @@ contextBridge.exposeInMainWorld("desktop", {
       ? ipcRenderer.invoke("shell:openFolder", target)
       : Promise.resolve({ ok: false, error: "unknown-target" }),
   quit: () => ipcRenderer.invoke("app:quit"),
+  // This bridge is absent from normal app windows. Electron's main process
+  // explicitly forwards the isolated package-smoke flag to the preload.
+  testLifecycleWindow: lifecycleSmokeEnabled
+    ? (action) => ipcRenderer.invoke("test:lifecycleWindow", action)
+    : undefined,
   setFullscreen: (fullscreen) =>
     ipcRenderer.invoke("window:setFullscreen", Boolean(fullscreen)),
   getSafeModeState: () =>

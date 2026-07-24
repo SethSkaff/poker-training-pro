@@ -31,6 +31,12 @@ describe("deriveSafeModeSettings", () => {
     expect(derived.muted).toBe(true);
     expect(derived.reducedMotion).toBe(true);
     expect(derived.dealSpeed).toBe("quick");
+    expect(derived.autoCameraMovement).toBe(false);
+    expect(derived.menuMotion).toBe("off");
+    expect(derived.roomMotion).toBe("off");
+    expect(derived.cameraMotion).toBe("off");
+    expect(derived.tableMotion).toBe("off");
+    expect(derived.transitionMotion).toBe("off");
     expect(derived.fullscreen).toBe(false);
     // Non-risky preferences are preserved rather than reset.
     expect(derived.masterVolume).toBe(88);

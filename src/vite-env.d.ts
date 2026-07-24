@@ -28,6 +28,10 @@ interface Window {
       target: "save" | "log",
     ) => Promise<{ ok: true } | { ok: false; error: string }>;
     quit: () => Promise<void>;
+    /** Present only in the isolated packaged lifecycle smoke. */
+    testLifecycleWindow?: (
+      action: "minimize" | "restore",
+    ) => Promise<{ ok: boolean }>;
     setFullscreen: (fullscreen: boolean) => Promise<boolean>;
     getSafeModeState: () => Promise<{
       readonly available: boolean;

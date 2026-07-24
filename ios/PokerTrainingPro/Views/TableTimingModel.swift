@@ -70,6 +70,15 @@ final class TableTimingModel: ObservableObject {
         lastTick = nil
     }
 
+    /// Completes an optional presentation wait immediately without cancelling
+    /// the already-selected poker action. This is the mobile equivalent of the
+    /// desktop table's explicit fast-forward control.
+    func finish() {
+        guard isRunning else { return }
+        remainingSeconds = 0
+        fire()
+    }
+
     private func fire() {
         isRunning = false
         isPaused = false
