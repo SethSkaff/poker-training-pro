@@ -31,6 +31,8 @@ Read together with `TODOS.md` (canonical backlog, kept current) and
 | `1ca39c3` | Wave B (2 agents): OS reduced-motion, About/Support verification, string-extraction completion, pseudo/RTL sweeps |
 | `b690b74` | Wave C (2 agents): SR live announcements, RTL wiring completion, string-extraction verdict |
 | `e134de6` | Wave D (1 agent): rebuilt package, full release-verify + audit gate battery, flash-density fix |
+| `d094c77` | Wave E (2 of 3): final string migrations, playlist wiring gaps closed |
+| HEAD | Wave E (3rd): input-smoke flakiness fixed + log/TODOS finalized |
 
 `git diff 7ee5017..HEAD` shows everything Claude changed this session.
 
@@ -42,9 +44,17 @@ Wave A/B sections.
 ## Verified state at final commit
 
 - `tsc --noEmit`: clean.
-- Full Vitest: **79 files / 560 tests, all passing** at `e134de6` (baseline at
-  `7ee5017` was 73/488 with 1 failure; Wave B ended at 77/524).
-- No TODOS items were checked without evidence.
+- Full Vitest: **80 files / 587 tests, all passing** (baseline at `7ee5017` was
+  73/488 with 1 failure; Wave B ended 77/524, Wave D 79/560).
+- Packaged artifacts in `outputs\desktop\` are FRESH as of Wave D
+  (`win-unpacked\Poker Training Pro.exe` sha256 `db18139b2b8c…`), but note
+  Wave E changed renderer source again (locale migration in
+  `durablePersistence`/`creditsData`/`tournamentSession`, audio wiring in
+  `App.tsx`/`audio.ts`). **Rebuild before any new packaged-behavior claim** —
+  the Wave D audit evidence predates those Wave E source changes.
+- No TODOS items were checked without evidence. Items checked this session:
+  in-app links (Wave B), string extraction (Wave E), playlist playback (Wave E,
+  with an explicit pending-licensed-masters caveat).
 
 ## What was done
 
@@ -234,37 +244,87 @@ Wave A/B sections.
      tasks, 2.4 MiB JS heap. First paint/FCP still not exposed by the custom
      `poker-training-pro://` protocol (pre-existing, documented).
 
-## NEW open finding from Wave D (highest-priority pickup)
+## Wave E (commits `d094c77`, `HEAD`) — 3 agents, all completed
 
-**The packaged input smoke is intermittently flaky.** Across 4 consecutive runs
-against the fresh build: 2 passed cleanly (47/47), 2 failed at *different
-unrelated* steps — (a) `raise mouse input: no enabled target found` (raising was
-genuinely not legal at that decision point; `.action-button--raise`'s
-`disabled={!canRaise}` is correct poker logic, not a regression), and (b)
-`keyboard pause input: .pause-menu was not present` (Escape didn't open the
-pause menu inside the 4s poll). Two unrelated failure sites points to real
-unseeded gameplay/timing variance in the harness, not a selector/product bug.
-This is annotated in `TODOS.md`. **Do not treat a single green run of this smoke
-as reliable evidence until it is fixed** (deterministic seeding, or robust
-wait-for-state instead of fixed polls). A Wave E agent was dispatched at this
-exact problem; check `git log` for whether it landed.
+10. **Packaged input-smoke flakiness — FIXED** (was the Wave D open finding)
+    - Both originally-reported causes root-caused with code-level evidence and
+      fixed **in `scripts/audit-packaged-input-smoke.mjs` only** (no product
+      change, no new debug backdoor, no weakened checks):
+      - *Raise-legality*: `.action-button--raise`'s `disabled={!canRaise}`
+        (`PokerTable.tsx:2077`) is correct poker legality. Tournaments seed
+        from `` `career:${eventId}:${Date.now()}` `` (`App.tsx:709`) —
+        wall-clock, not overridable, and no seed hook exists in
+        `main.cjs`/`preload.cjs` (the only precedent, `testLifecycleWindow`
+        behind `--ptp-lifecycle-smoke`, is lifecycle-only). So the harness now
+        polls for the raise control to be genuinely enabled and, when raising
+        is illegal, takes a legal call/check/fold and advances (bounded 12
+        hands / 45s) instead of clicking a disabled control.
+      - *Pause-menu*: Escape is a **toggle**, and `main.cjs:158-159`'s native
+        `window.on("blur")` → IPC → `requestPause("window-blurred")`
+        (`PokerTable.tsx:1093`) could pre-pause the game, so Escape *closed*
+        the menu — correct product behavior racing a harness assumption. The
+        harness now resumes to a known baseline first, with bounded retry.
+    - Three further latent races found and fixed: gamepad `detectContext()`
+      misrouting a press to "menu" under a stray auto-pause; a missing
+      `.action-dock` wait; an under-timed post-fast-forward wait. Poll timeout
+      4s→8s, session budget 35s→90s, plus `Page.bringToFront` at session start
+      and before keyboard/gamepad sections.
+    - **Verified across 30+ consecutive passing runs** (batches of 25/25,
+      10/10, 8/8 across fix iterations).
+    - **Honest residual**: under genuine host CPU contention, CDP *transport*
+      timeouts still occur — the agent reproduced them with the byte-identical
+      **original unmodified** script under the same load, correlating failures
+      with `Win32_Processor.LoadPercentage` spikes (25-37% vs 4-16% during
+      clean streaks). This machine runs concurrent agent sessions. This is
+      environment-level, not a harness defect: re-run a red result on a quiet
+      host before believing it.
+    - **Product-side option reported but deliberately NOT taken**: `main.cjs`
+      leaves Electron's default `backgroundThrottling: true`, which throttles
+      the rAF-driven gamepad polling when unfocused and is the likely
+      structural contributor to the residual gamepad flake. Setting it to
+      `false` is one gameplay-neutral line — but it **directly conflicts with
+      the "pause expensive rendering and simulations while hidden/minimized"
+      requirement**, i.e. it would trade real battery/power behavior for
+      test-harness convenience. Coordinator rejected it on that basis; revisit
+      only if the flake resurfaces on a quiet host.
 
-## Wave E — dispatched at session end (verify before trusting)
+11. **Residual string migrations — COMPLETE** (string-extraction TODOS item now
+    checked)
+    - Migrated: 39 `durablePersistence.ts` save/restore failure messages (all
+      static, verified no consumer compares `.message` by value), 17
+      `creditsData.ts` chrome strings, and `tournamentSession.ts` synthesized
+      `title`/`prompt`/`actionReason` with **real interpolation**
+      (`{eventName}`, `{handNumber}`, `{actorName}`), not concatenation.
+    - **Permanent documented exemptions, not gaps**: `trainingScenarios.ts`
+      (own versioned schema/review pipeline — calibrated content, not chrome);
+      verbatim bundled license/notice text; the two font
+      proper-noun+license labels; and `tournamentSession.ts`'s `disclosure` +
+      `mathQuestion.*` fields, each verified never rendered (Dashboard uses the
+      separate `dashboard.tour.disclosure`; `MathPanel`/`FeedbackPanel` render
+      only when `mode === "training"`, and tournaments are never that mode).
+    - Pseudo-locale sweep tightened: credits exemptions 18 → 2; new test drives
+      a **real** `DurablePersistence.restore()` failure through
+      `RecoveryScreen` to prove migrated text reaches that surface.
 
-Three agents were launched on the last locally-actionable work; if the session
-ended before they reported, their work may be partially present in the tree.
-Check `git status` / `git log` and re-run `tsc` + Vitest before building on it:
-1. Packaged input-smoke flakiness (above) — harness-layer fix, required ≥5
-   consecutive clean runs as proof; explicitly forbidden from adding production
-   debug backdoors or weakening what the smoke verifies.
-2. Residual string migrations — the last three known unmigrated surfaces:
-   `src/lib/durablePersistence.ts` failure messages, `src/lib/creditsData.ts`
-   chrome (NOT the verbatim bundled license text), and `tournamentSession.ts`
-   synthesized scenario `title`/`prompt`/`actionReason`.
-3. Playlist-engine verification — audit shuffle / no-repeat / crossfade /
-   pause-focus / ducking / separate volumes for implemented-tested-wired, and
-   rigorously verify the dormant-without-manifest contract (no audio graph
-   constructed, no playback attempted).
+12. **Playlist engine — COMPLETE** (item checked with pending-masters caveat)
+    - Audited all six behaviors for implemented/tested/**wired**. Shuffle,
+      no-immediate-repeat, crossfade and ducking were genuinely done already
+      (ducking verified to fire through real `gameAudio.play()` cues, not an
+      isolated utility). **Two real gaps closed**: engine `pause`/`resume` were
+      unit-tested but *never called by the app* → new
+      `GameAudio.observeFocusMuted()` observable subscribed in `App.tsx`, so
+      table pause / blur / minimize / suspend / lock now drive the bed, and the
+      first `start()` is gated on it (belt-and-braces on no-audio-before-input);
+      and Music volume/Mute never reached the engine → new pure
+      `musicVolumeFromSettings()` wired into the existing settings sync.
+    - **Dormancy contract rigorously verified**: new
+      `src/lib/musicPlaylistWiring.test.ts` reproduces the exact `App.tsx`
+      composition against the real *empty* production manifest and drives every
+      real signal (feedback cues, focus-mute churn, `suspendForLifecycle`,
+      volume changes, 500s of simulated ticks) asserting zero `createVoice`
+      calls, no playback, empty history, no throw.
+    - Still blocked on rights that do not exist: licensed masters, loudness
+      normalization, long-session leak/clipping/drift QA, Credits attribution.
 
 ## Unchanged blocked list
 

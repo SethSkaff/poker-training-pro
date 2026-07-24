@@ -151,14 +151,31 @@ requirements are added.
       isolated corrupt-current-save recovery flow, and full Normal/Rational/
       Timed Table tournament completion through their placement ceremonies;
       controller hardware still needs its own packaged acceptance coverage.
-      **New finding, not yet resolved**: the packaged input smoke is
-      intermittently flaky on the verification host — across 4 consecutive
-      runs against the fresh build, 2 passed cleanly (47/47) and 2 failed at
-      different unrelated steps (a raise-legality timing case, a pause-menu
-      poll timeout), pointing to real unseeded gameplay/timing variance rather
-      than a selector regression. Do not treat a single green run as reliable
-      evidence until this is investigated (deterministic seeding or
-      longer/retrying waits around the affected steps).
+      The two previously-reported flakiness causes are now **fixed with
+      root-cause evidence**, in the harness only (no product/gameplay change):
+      (1) the raise step clicked a control that was legitimately disabled when
+      raising was illegal — it now polls for the raise button to actually be
+      enabled and, if illegal, takes a legal call/check/fold and advances
+      (bounded 12 hands / 45s) instead of weakening the check; (2) Escape is a
+      pause *toggle*, and a stray native window blur (`main.cjs` blur → IPC →
+      `requestPause("window-blurred")`) could pre-pause the game so Escape
+      closed the menu — the harness now resumes to a known baseline before
+      pressing Escape, with bounded retry. Three further latent races were
+      found and fixed (gamepad context misrouting under a stray auto-pause, a
+      missing `.action-dock` wait, an under-timed post-fast-forward wait);
+      poll timeout raised 4s→8s and session budget 35s→90s. Verified across
+      30+ consecutive passing runs.
+      **Residual environment-level risk (not a harness defect)**: under real
+      host CPU contention, CDP transport timeouts still occur — reproduced
+      with the byte-identical *original unmodified* script under the same
+      load, correlated with `LoadPercentage` spikes. Treat an isolated
+      red run on a loaded machine as suspect; re-run on a quiet host.
+      **Product-side option deliberately NOT taken**: `main.cjs` does not set
+      `backgroundThrottling: false`, which would steady the rAF-driven gamepad
+      polling. It was rejected because it directly conflicts with the
+      "pause expensive rendering and simulations while hidden/minimized"
+      requirement below — trading real battery/power behavior for test-harness
+      convenience. Revisit only if the gamepad flake resurfaces on a quiet host.
 
 ## Audio — after the desktop gameplay loop
 

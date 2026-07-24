@@ -83,13 +83,6 @@ try {
   // of a window-manager focus race.
   await client.send("Page.bringToFront");
   await delay(350);
-  if (process.env.PTP_SMOKE_DEBUG === "1") {
-    const focusState = await evaluateValue(
-      client,
-      "({ hasFocus: document.hasFocus(), visibilityState: document.visibilityState, hidden: document.hidden })",
-    );
-    console.error("DEBUG focus state after bringToFront", JSON.stringify(focusState));
-  }
 
   await expectMouseClick(
     client,
@@ -175,26 +168,6 @@ try {
   // real, code-verified legal state rather than assuming one.
   await ensureRaiseIsLegalThenAdvance(client);
   await expectMouseClick(client, ".action-button--raise", undefined, "raise mouse input");
-  if (process.env.PTP_SMOKE_DEBUG === "1") {
-    for (let i = 0; i < 6; i += 1) {
-      const sample = await evaluateValue(
-        client,
-        `(() => {
-          const btn = document.querySelector('.action-button--raise');
-          return {
-            t: Date.now(),
-            raiseButtonActive: btn ? btn.classList.contains('is-active') : null,
-            raiseButtonDisabled: btn ? btn.disabled : null,
-            betComposer: document.querySelector('.bet-composer') !== null,
-            actionDock: document.querySelector('.action-dock') !== null,
-            spectatorDock: document.querySelector('.spectator-dock') !== null,
-          };
-        })()`,
-      );
-      console.error("DEBUG raise sample", i, JSON.stringify(sample));
-      await delay(150);
-    }
-  }
   await expectSelector(client, ".bet-composer", "raise composer");
   await clickRangeAtFraction(client, ".bet-slider-row input[type=range]", 0.72);
   await expectBoolean(
@@ -255,8 +228,26 @@ try {
     "keyboard resume input",
   );
 
-  await pressMockGamepadA(client);
-  await expectSelector(client, ".spectator-dock", "Gamepad API check or call routing");
+  // The Gamepad API is poll-based (src/lib/gamepad.ts): the app only notices a
+  // press by sampling `getGamepads()` on its own requestAnimationFrame loop
+  // (src/components/GamepadNavigationProvider.tsx). Electron's default
+  // `backgroundThrottling` can slow that rAF loop dramatically whenever the
+  // window is not genuinely focused/unoccluded, which this script cannot fully
+  // rule out from outside the process. Bring the window forward again as the
+  // best available mitigation before relying on a synthetic press being
+  // sampled at all.
+  //
+  // Separately, `detectContext()` in GamepadNavigationProvider.tsx treats any
+  // open modal (`[role="dialog"][aria-modal="true"]`, `.pause-scrim`) as menu
+  // context and routes button:0 to `menu.activate` (a DOM click on
+  // `document.activeElement`) instead of the game's check/call action. A
+  // stray native window-blur auto-pause landing here would silently reroute
+  // the press that way -- no `.spectator-dock` would ever appear, no matter
+  // how long this waits, because no game action was ever dispatched. Resume
+  // from a known baseline first so the context detection sees the live table.
+  await client.send("Page.bringToFront");
+  await delay(200);
+  await pressMockGamepadAUntilRouted(client);
   await expectMouseClick(
     client,
     'button[aria-label="Skip opponent presentation and continue the hand"]',
@@ -410,7 +401,7 @@ async function ensureRaiseIsLegalThenAdvance(cdp) {
   const maxAdvances = 12;
   // Each advance can legitimately cost several seconds (opponent presentation
   // + the next hand's dealing), so this is bounded by wall-clock time as well
-  // as iteration count -- 30 iterations at worst-case per-step cost could
+  // as iteration count -- 12 iterations at worst-case per-step cost could
   // otherwise dwarf the whole script's CDP session budget.
   const overallDeadline = Date.now() + 45_000;
   for (let attempt = 0; attempt <= maxAdvances; attempt += 1) {
@@ -451,6 +442,22 @@ async function ensureRaiseIsLegalThenAdvance(cdp) {
  * legal, so this never has to guess.
  */
 async function advanceOneDecisionWithoutRaising(cdp) {
+  // The caller only just observed the raise button as (still) disabled; the
+  // rest of `.action-dock` (including call/fold) can legitimately still be
+  // mid-render at that exact instant. `selectorPoint` is a single, un-polled
+  // snapshot, so wait for the dock itself before snapshotting its buttons --
+  // otherwise a dock that renders a beat late reads as "neither call/check nor
+  // fold available" even though both are about to appear.
+  const dockReady = await waitForBoolean(
+    cdp,
+    "document.querySelector('.action-dock') !== null",
+    6_000,
+  );
+  if (!dockReady) {
+    throw new Error(
+      "The action dock was not present while advancing past a non-raise decision.",
+    );
+  }
   const callPoint = await selectorPoint(cdp, ".action-button--call");
   if (callPoint) {
     await mouseClick(cdp, callPoint.x, callPoint.y);
@@ -663,6 +670,18 @@ async function sendKey(cdp, key, code, windowsVirtualKeyCode) {
  * ergonomics still need hardware acceptance, but this proves the bundled
  * browser API adapter, connection event, polling loop, mapping, and table
  * route cooperate in the packaged renderer.
+ *
+ * The app's polling loop only notices a press by sampling `getGamepads()` on
+ * its own requestAnimationFrame callback (src/components/
+ * GamepadNavigationProvider.tsx), which Electron can throttle heavily whenever
+ * the window is not genuinely focused/unoccluded (`backgroundThrottling`,
+ * default on). A short press can fall entirely between two throttled frames
+ * and never be sampled at all -- no amount of waiting afterward fixes that,
+ * since the edge-triggered intent (press-then-release) already came and went.
+ * Holding the mock press for several seconds instead of one frame's worth
+ * gives even a heavily throttled loop many chances to observe it; the
+ * edge-trigger logic in readGamepadIntents only fires once regardless of how
+ * long the button stays down, so this does not change what is proven.
  */
 async function pressMockGamepadA(cdp) {
   const result = await cdp.send("Runtime.evaluate", {
@@ -678,7 +697,7 @@ async function pressMockGamepadA(cdp) {
         value: () => [pad],
       });
       window.dispatchEvent(new Event("gamepadconnected"));
-      setTimeout(() => { buttons[0].pressed = false; buttons[0].value = 0; }, 160);
+      setTimeout(() => { buttons[0].pressed = false; buttons[0].value = 0; }, 3_000);
       return true;
     })()`,
     returnByValue: true,
@@ -686,7 +705,43 @@ async function pressMockGamepadA(cdp) {
   });
   if (result.result?.value !== true) throw new Error("Could not inject Gamepad API snapshot.");
   record("Gamepad API A-button input", true);
-  await delay(260);
+  await delay(400);
+}
+
+/**
+ * Press the mock gamepad A button and confirm it actually routed to a game
+ * action (`.spectator-dock`), retrying a bounded number of times. Even a
+ * multi-second held press can still be missed if the app's rAF polling loop
+ * is heavily throttled at that exact moment, or if a stray auto-pause
+ * (see the `Page.bringToFront`/`detectContext` note above) rerouted the press
+ * to menu-activate instead of a game action. Both are real, evidenced races
+ * this script cannot fully rule out from outside the process; retrying from a
+ * freshly-resumed baseline is the same technique already used for the
+ * keyboard pause check, and still requires a genuine press-to-action-routing
+ * proof to pass.
+ */
+async function pressMockGamepadAUntilRouted(cdp) {
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await ensureNotPaused(cdp);
+    await pressMockGamepadA(cdp);
+    const routed = await waitForBoolean(
+      cdp,
+      "document.querySelector('.spectator-dock') !== null",
+      attempt === maxAttempts ? 8_000 : 3_000,
+    );
+    if (routed) {
+      record("Gamepad API check or call routing", true);
+      return;
+    }
+    if (attempt === maxAttempts) {
+      record("Gamepad API check or call routing", false);
+      throw new Error(
+        `Gamepad API check or call routing: .spectator-dock was not present after ${maxAttempts} press attempts.`,
+      );
+    }
+    record(`Gamepad API check or call routing attempt ${attempt} did not land; retrying`, true);
+  }
 }
 
 async function evaluateBoolean(cdp, expression) {
