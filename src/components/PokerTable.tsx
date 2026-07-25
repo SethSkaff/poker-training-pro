@@ -1869,6 +1869,10 @@ export function PokerTable({
     return distance === 2 ? "HJ" : "MP";
   };
   const heroPositionLabel = positionLabelForSeat(scenario.heroSeat);
+  const dealerMoveEvent =
+    tournament?.presentationEvent?.kind === "button-moved"
+      ? tournament.presentationEvent
+      : undefined;
   const minimumRaise =
     mode !== "training" && tournament
       ? (tournament.legalActions.raise?.minTo ??
@@ -2175,6 +2179,9 @@ export function PokerTable({
           </div>
 
             <div className="poker-scene">
+              {dealerMoveEvent && (
+                <span className="dealer-button-travel" role="img" aria-label="Dealer button moves to its next seat">D</span>
+              )}
             <div
               className={`poker-table ${
                 tournament?.presentationEvent?.kind === "hole-cards-dealt"

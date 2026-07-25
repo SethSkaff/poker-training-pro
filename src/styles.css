@@ -3235,6 +3235,31 @@ input[type="range"]::-webkit-slider-thumb {
   box-shadow: 0 0 0 2px rgba(237, 189, 98, 0.25), 0 3px 8px rgba(0, 0, 0, 0.4);
 }
 
+.dealer-button-travel {
+  position: absolute;
+  z-index: 31;
+  top: 42%;
+  left: 50%;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(237, 189, 98, 0.9);
+  border-radius: 50%;
+  color: #1c1b18;
+  background: #fff1be;
+  box-shadow: 0 0 0 3px rgba(237, 189, 98, 0.22), 0 6px 15px rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+  font-weight: 900;
+  animation: dealer-button-travel 820ms cubic-bezier(.18,.78,.2,1) both;
+}
+
+@keyframes dealer-button-travel {
+  from { opacity: 0; transform: translate(-190%, 115%) scale(.7); }
+  70% { opacity: 1; transform: translate(-50%, -50%) scale(1.14); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
 .board-card-entering {
   display: inline-flex;
   animation: board-card-deal 440ms cubic-bezier(.18,.82,.22,1) both;
