@@ -318,6 +318,11 @@ export function decisionClockAriaLabel(elapsedMs: number): string {
   });
 }
 
+/** Accessible copy for the persistent stack HUD, announced when it changes. */
+export function heroStackAriaLabel(stack: number): string {
+  return `Your remaining stack: ${formatChips(stack)} chips`;
+}
+
 function PlayingCard({
   card,
   hidden = false,
@@ -2063,6 +2068,24 @@ export function PokerTable({
           className="table-stage"
           aria-label={formatMessage("table.stageAriaLabel")}
         >
+          {/*
+            The hero's physical cards occupy the near-camera table position.
+            Keep the stack in a fixed HUD lane so it never competes with those
+            cards or the action dock, while remaining available throughout
+            every tournament presentation state.
+          */}
+          <aside
+            className="hero-stack-hud"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            aria-label={heroStackAriaLabel(heroStack)}
+          >
+            <span>Your stack</span>
+            <strong>
+              <ChipStack /> {formatChips(heroStack)}
+            </strong>
+          </aside>
           {actionError ? (
             <p className="table-action-alert" role="alert">
               <X size={16} aria-hidden="true" /> {actionError}

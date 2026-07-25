@@ -2510,6 +2510,51 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 0 0 auto;
 }
 
+/* A fixed status lane for the player instead of a hidden near-camera seat.
+   It is deliberately outside the moving poker scene and well clear of the
+   central alert, right-side camera controls, bottom cards, and action dock. */
+.hero-stack-hud {
+  position: absolute;
+  z-index: 34;
+  top: clamp(16px, 2.1vh, 26px);
+  left: clamp(16px, 1.8vw, 28px);
+  display: grid;
+  min-width: 132px;
+  gap: 3px;
+  border: 1px solid rgba(237, 189, 98, 0.48);
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: #fff7df;
+  background: rgba(3, 13, 9, 0.91);
+  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.38);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-stack-hud > span {
+  color: var(--gold-soft);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.hero-stack-hud > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 23px;
+  line-height: 1;
+}
+
+.hero-stack-hud .chip-stack {
+  width: 16px;
+  height: 15px;
+  transform: scale(0.78);
+  transform-origin: left center;
+  margin-right: -4px;
+}
+
 .table-stage::before {
   position: absolute;
   right: 0;
@@ -2855,8 +2900,12 @@ input[type="range"]::-webkit-slider-thumb {
     filter 260ms ease;
 }
 
+/* The near-camera hero uses the dedicated, always-visible stack HUD below.
+   Keeping the avatar seat out of this layer prevents it overlapping the hero
+   cards while the HUD remains a real DOM/accessibility element. */
 .player-seat--hero {
-  display: none;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .player-seat--lower-left {
