@@ -1087,6 +1087,11 @@ export default function App() {
     const scenario = selectTrainingSessionStartScenario(
       progress.playerName,
       progress.results.map((result) => result.scenarioId),
+      trainingScenarios,
+      {
+        decisionElo: progress.decisionElo,
+        mathElo: progress.mathElo,
+      },
     ) ?? trainingScenario;
     setTrainingScenario(scenario);
     const checkpoint = createTrainingCheckpoint(scenario.id);
@@ -1107,6 +1112,8 @@ export default function App() {
         selectNearTransferScenario(scenarioId, {
           completedScenarioIds,
           recentScenarioIds: [...completedScenarioIds, scenarioId],
+          decisionElo: progress.decisionElo,
+          mathElo: progress.mathElo,
         }) ??
         trainingScenarios[0];
       const checkpoint = createTrainingCheckpoint(next.id);

@@ -1217,7 +1217,12 @@ before implementing.**
 
 ### E16-001 — Make Elo actually drive difficulty
 
-**Audit** — **Elo is write-only telemetry.** `decisionElo`/`mathElo` are read only
+**Status (2026-07-25)** — Implemented and covered by deterministic unit tests.
+`decisionElo` and `mathElo` now independently score authored decision/math
+difficulty during start and next-scenario selection; see
+`docs/training-adaptive-difficulty.md`.
+
+**Historical audit** — **Elo was write-only telemetry.** `decisionElo`/`mathElo` were read only
 as inputs to `calculateEloDelta`/`gradeTrainingAttempt`
 (`trainingEngine.ts:297-330`) and displayed on the Dashboard
 (`Dashboard.tsx:595-600`). Grep-confirmed: no file passes either into any
@@ -1237,13 +1242,13 @@ opponents; number of draws; stack depth; bet-sizing complexity; tournament
 pressure; side pots; street; required mathematical operations.
 
 **Acceptance criteria**
-- [ ] Decision Elo and Math Elo are inputs to selection.
-- [ ] Difficulty escalates as ratings rise and de-escalates on struggle.
-- [ ] Low-rated players are not given impossible spots; high-rated players are not given trivial ones.
-- [ ] The algorithm is documented, including the Elo→difficulty mapping.
-- [ ] Math difficulty and decision difficulty adapt independently.
+- [x] Decision Elo and Math Elo are inputs to selection.
+- [x] Difficulty escalates as ratings rise and de-escalates on struggle.
+- [x] Low-rated players are not given impossible spots; high-rated players are not given trivial ones.
+- [x] The algorithm is documented, including the Elo→difficulty mapping.
+- [x] Math difficulty and decision difficulty adapt independently.
 
-**Tests** — [ ] Unit: rising Elo yields measurably harder selections. [ ] Unit: a low-Elo player never receives the hardest tier. [ ] Unit: a high-Elo player never receives the most trivial tier. [ ] Unit: deterministic seeds reproduce selections.
+**Tests** — [x] Unit: rising Elo yields measurably harder selections. [x] Unit: a low-Elo player never receives the hardest tier. [x] Unit: a high-Elo player never receives the most trivial tier. [x] Unit: deterministic inputs reproduce selections.
 
 ---
 

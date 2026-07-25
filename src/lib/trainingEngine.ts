@@ -115,6 +115,18 @@ export interface NearTransferOptions {
   recentScenarioIds?: Iterable<string>;
   focusTopic?: MathTopic;
   preferDifferentStreet?: boolean;
+  /**
+   * The two ratings deliberately stay separate: a player can receive a more
+   * demanding decision while still practising approachable arithmetic, or the
+   * reverse. Omit both to use the bank's neutral, diverse ordering.
+   */
+  decisionElo?: number;
+  mathElo?: number;
+}
+
+export interface TrainingStartOptions {
+  decisionElo?: number;
+  mathElo?: number;
 }
 
 /**
@@ -392,6 +404,54 @@ function sharedTagCount(
   return second.tags.filter((tag) => tags.has(tag)).length;
 }
 
+const BEGINNER_ELO_CEILING = 1_100;
+const ADVANCED_ELO_FLOOR = 1_500;
+
+function assertOptionalRating(rating: number | undefined, label: string): void {
+  if (rating !== undefined) assertFinite(rating, label);
+}
+
+/**
+ * Returns a separate selection adjustment for decision and maths skill.
+ *
+ * The guardrails keep an early player away from the extreme end of the bank
+ * and keep an established player out of its introductory material. Within
+ * those bounds, distance from each authored Elo calibrates the ranking. The
+ * values are intentionally modest enough that the recent-history and
+ * near-transfer rules still prevent a mechanical loop.
+ */
+function adaptiveDifficultyAdjustment(
+  scenario: RatedTrainingScenario,
+  decisionElo: number | undefined,
+  mathElo: number | undefined,
+): number {
+  assertOptionalRating(decisionElo, "decisionElo");
+  assertOptionalRating(mathElo, "mathElo");
+
+  let score = 0;
+  if (decisionElo !== undefined) {
+    if (
+      (decisionElo <= BEGINNER_ELO_CEILING &&
+        scenario.training.decisionDifficulty > 1_340) ||
+      (decisionElo >= ADVANCED_ELO_FLOOR &&
+        scenario.training.decisionDifficulty < 1_210)
+    ) {
+      return -10_000;
+    }
+    score -= Math.abs(scenario.training.decisionDifficulty - decisionElo) / 16;
+  }
+  if (mathElo !== undefined) {
+    if (
+      (mathElo <= BEGINNER_ELO_CEILING && scenario.training.mathDifficulty > 1_230) ||
+      (mathElo >= ADVANCED_ELO_FLOOR && scenario.training.mathDifficulty < 1_160)
+    ) {
+      return -10_000;
+    }
+    score -= Math.abs(scenario.training.mathDifficulty - mathElo) / 16;
+  }
+  return score;
+}
+
 /**
  * Chooses a deterministic but deliberately diverse next problem. Near-transfer
  * is a small tie-breaker, never a dominant score: a training session must not
@@ -431,6 +491,11 @@ export function selectNearTransferScenario(
       score += sharedTagCount(current, scenario) * 2;
       score -= Math.abs(current.difficulty - scenario.difficulty) * 8;
       if (preferDifferentStreet && scenario.street !== current.street) score += 12;
+      score += adaptiveDifficultyAdjustment(
+        scenario,
+        options.decisionElo,
+        options.mathElo,
+      );
       return { scenario, score };
     })
     .sort((left, right) => {
@@ -446,6 +511,7 @@ export function selectTrainingSessionStartScenario(
   playerName: string,
   completedScenarioIds: Iterable<string> = [],
   pool: RatedTrainingScenario[] = trainingScenarios,
+  options: TrainingStartOptions = {},
 ): RatedTrainingScenario | undefined {
   if (pool.length === 0) return undefined;
   const completed = new Set(completedScenarioIds);
@@ -456,5 +522,22 @@ export function selectTrainingSessionStartScenario(
     hash ^= character.charCodeAt(0);
     hash = Math.imul(hash, 16777619);
   }
-  return source[(hash >>> 0) % source.length];
+  assertOptionalRating(options.decisionElo, "decisionElo");
+  assertOptionalRating(options.mathElo, "mathElo");
+  const adaptiveSource = source
+    .map((scenario) => ({
+      scenario,
+      score: adaptiveDifficultyAdjustment(
+        scenario,
+        options.decisionElo,
+        options.mathElo,
+      ),
+    }))
+    .filter(({ score }) => score > -10_000);
+  const ranked = adaptiveSource.length ? adaptiveSource : source.map((scenario) => ({ scenario, score: 0 }));
+  const highestScore = Math.max(...ranked.map(({ score }) => score));
+  const suitable = ranked
+    .filter(({ score }) => score >= highestScore - 10)
+    .map(({ scenario }) => scenario);
+  return suitable[(hash >>> 0) % suitable.length];
 }

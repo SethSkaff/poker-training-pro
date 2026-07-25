@@ -354,4 +354,41 @@ describe("near-transfer selection", () => {
     expect(new Set(starts).size).toBeGreaterThan(1);
     expect(starts.some((id) => id !== trainingScenarios[0]?.id)).toBe(true);
   });
+
+  it("uses decision Elo and math Elo independently when selecting the next scenario", () => {
+    const current = scenario("preflop-pot-odds-ak");
+    const lowDecision = selectNearTransferScenario(current, {
+      decisionElo: 1000,
+      mathElo: 1500,
+    });
+    const highDecision = selectNearTransferScenario(current, {
+      decisionElo: 1500,
+      mathElo: 1000,
+    });
+
+    expect(lowDecision?.training.decisionDifficulty).toBeLessThanOrEqual(1340);
+    expect(lowDecision?.training.mathDifficulty).toBeGreaterThanOrEqual(1160);
+    expect(highDecision?.training.decisionDifficulty).toBeGreaterThanOrEqual(1210);
+    expect(highDecision?.training.mathDifficulty).toBeLessThanOrEqual(1230);
+  });
+
+  it("keeps beginners out of the hardest bank tier and advanced players out of trivial tiers", () => {
+    const low = selectTrainingSessionStartScenario("Ada", [], trainingScenarios, {
+      decisionElo: 1000,
+      mathElo: 1000,
+    });
+    const high = selectTrainingSessionStartScenario("Ada", [], trainingScenarios, {
+      decisionElo: 1700,
+      mathElo: 1700,
+    });
+
+    expect(low?.training.decisionDifficulty).toBeLessThanOrEqual(1340);
+    expect(low?.training.mathDifficulty).toBeLessThanOrEqual(1230);
+    expect(high?.training.decisionDifficulty).toBeGreaterThanOrEqual(1210);
+    expect(high?.training.mathDifficulty).toBeGreaterThanOrEqual(1160);
+    expect(selectTrainingSessionStartScenario("Ada", [], trainingScenarios, {
+      decisionElo: 1700,
+      mathElo: 1700,
+    })?.id).toBe(high?.id);
+  });
 });
