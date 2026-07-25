@@ -5,6 +5,7 @@ import {
   buildPots,
   createBettingRound,
   createInformationSet,
+  createSeededRandom,
   createShuffledDeck,
   createTournament,
   currentBlindLevel,
@@ -189,38 +190,39 @@ export interface SessionPolicyOptions {
   temperature?: number;
 }
 
-const DEFAULT_OPPONENTS: readonly TournamentSessionEntrant[] = [
-  {
-    id: "maya-tempo",
-    name: "Maya Chen",
-    rating: 1_080,
-    normalProfile: "tempo",
-  },
-  {
-    id: "rafael-pressure",
-    name: "Rafael Torres",
-    rating: 1_125,
-    normalProfile: "pressure",
-  },
-  {
-    id: "adrian-anchor",
-    name: "Adrian Cole",
-    rating: 1_040,
-    normalProfile: "anchor",
-  },
-  {
-    id: "juno-mirror",
-    name: "Juno Pike",
-    rating: 1_095,
-    normalProfile: "mirror",
-  },
-  {
-    id: "lena-wide",
-    name: "Lena Ortiz",
-    rating: 1_060,
-    normalProfile: "wideLens",
-  },
+const OPPONENT_IDENTITIES = [
+  ["alex-moreno", "Alex Moreno"], ["blair-woods", "Blair Woods"],
+  ["casey-park", "Casey Park"], ["devon-ellis", "Devon Ellis"],
+  ["emery-ross", "Emery Ross"], ["frankie-vale", "Frankie Vale"],
+  ["gale-hart", "Gale Hart"], ["harper-stone", "Harper Stone"],
+  ["indigo-kim", "Indigo Kim"], ["jordan-reed", "Jordan Reed"],
+  ["kai-santos", "Kai Santos"], ["lennon-frost", "Lennon Frost"],
 ] as const;
+
+const ROSTER_PROFILES = Object.keys(NORMAL_OPPONENT_PROFILES) as NormalProfileKey[];
+
+/**
+ * Public, seed-derived entrants. Names/profiles/rating are replay data; visual
+ * appearance is derived separately from the resulting id in PokerTable.
+ */
+export function createSessionOpponents(
+  seed: DeckSeed,
+  eventId: string,
+  mode: TournamentPolicyMode,
+): TournamentSessionEntrant[] {
+  const random = createSeededRandom(deriveSeed(seed, eventId, mode, "roster"));
+  const identities = [...OPPONENT_IDENTITIES];
+  for (let index = identities.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    [identities[index], identities[swap]] = [identities[swap], identities[index]];
+  }
+  return identities.slice(0, SESSION_TABLE_SIZE - 1).map(([id, name], index) => ({
+    id,
+    name,
+    rating: 1_020 + Math.floor(random() * 150),
+    normalProfile: ROSTER_PROFILES[Math.floor(random() * ROSTER_PROFILES.length)],
+  }));
+}
 
 function sourceQualificationRate(event: CareerEventDefinition): number {
   switch (event.qualification.type) {
@@ -347,7 +349,7 @@ export function createTournamentSession(
 
   const entrants = assertEntrants(
     options.hero,
-    options.opponents ?? DEFAULT_OPPONENTS,
+    options.opponents ?? createSessionOpponents(options.seed, options.eventId, options.mode),
   );
   const tournament = createTournament(
     `${options.eventId}-session`,
