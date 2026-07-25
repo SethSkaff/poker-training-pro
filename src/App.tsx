@@ -1341,15 +1341,6 @@ export default function App() {
         }
       >
         <PokerTable
-          key={[
-          snapshot.id,
-          snapshot.street,
-          snapshot.pot,
-          snapshot.amountToCall,
-          runner.sequence,
-          runner.session.activeHand?.betting.currentBet ?? 0,
-          runner.session.activeHand?.betting.pending.join("-") ?? "",
-        ].join(":")}
         mode={runner.session.mode}
         scenario={snapshot}
         settings={effectiveSettings}
@@ -1368,6 +1359,7 @@ export default function App() {
           legalActions,
           onAction: actInTournament,
           kind: runner.kind,
+          sceneStateVersion: runner.sequence,
           handNumber,
           fieldSize: runner.session.entrants.length,
           playersRemaining: runner.session.tournament.players.filter(

@@ -144,6 +144,7 @@ try {
   await expectSelector(client, ".room-flight", "tournament arrival");
   await expectMouseClick(client, "button", "Skip arrival", "skip arrival mouse input");
   await expectSelector(client, ".poker-table", "live tournament table");
+  await captureStableTableScene(client);
   await expectClearTableInformationLanes(client);
   await expectMinimizePausesAndRestores(client);
   await expectMouseClick(client, ".action-context button", undefined, "hand-history mouse input");
@@ -154,6 +155,12 @@ try {
     "document.querySelector('.hand-history-popover') === null",
     "hand history closes cleanly",
   );
+  // Exercise one whole live decision before raise sizing. This is both a real
+  // action path and the packaged regression for E01-001: engine state must
+  // advance without replacing the table DOM node. `sceneStateVersion` changes
+  // on every runner action; the element reference must remain exact.
+  await advanceOneDecisionWithoutRaising(client);
+  await expectStableTableSceneAfterAdvance(client);
   // Raising is only sometimes legal on the very first live decision: opponent
   // stacks/actions vary with the wall-clock-derived tournament seed
   // (`career:${eventId}:${Date.now()}` in src/App.tsx), so hero may face a
@@ -316,6 +323,43 @@ async function expectBoolean(cdp, expression, label) {
   const value = await waitForBoolean(cdp, expression);
   record(label, value);
   if (!value) throw new Error(`${label} did not produce the expected state.`);
+}
+
+async function captureStableTableScene(cdp) {
+  const observation = await evaluateValue(cdp, `(() => {
+    const table = document.querySelector('.poker-table');
+    if (!(table instanceof HTMLElement)) return { ok: false };
+    window.__ptpStableTableScene = table;
+    window.__ptpStableTableSceneVersion = table.dataset.tableStateVersion;
+    return {
+      ok: Boolean(table.dataset.tableHandId) && Boolean(table.dataset.tableStateVersion),
+      handId: table.dataset.tableHandId,
+      stateVersion: table.dataset.tableStateVersion,
+    };
+  })()`);
+  const ok = observation?.ok === true;
+  record("capture stable live table scene", ok);
+  if (!ok) throw new Error(`Could not capture the live table scene: ${JSON.stringify(observation)}.`);
+}
+
+async function expectStableTableSceneAfterAdvance(cdp) {
+  const observation = await evaluateValue(cdp, `(() => {
+    const table = document.querySelector('.poker-table');
+    const original = window.__ptpStableTableScene;
+    return {
+      sameNode: table === original,
+      currentStateVersion: table instanceof HTMLElement ? table.dataset.tableStateVersion : undefined,
+      originalStateVersion: window.__ptpStableTableSceneVersion,
+    };
+  })()`);
+  const ok = observation?.sameNode === true &&
+    observation.currentStateVersion !== observation.originalStateVersion;
+  record("table remains mounted while authoritative action state advances", ok);
+  if (!ok) {
+    throw new Error(
+      `Table remounted or did not advance after a live action: ${JSON.stringify(observation)}.`,
+    );
+  }
 }
 
 /**

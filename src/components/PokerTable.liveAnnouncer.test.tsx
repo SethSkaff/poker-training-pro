@@ -127,6 +127,7 @@ describe("PokerTable live event-announcement regions", () => {
           },
           onAction: () => undefined,
           kind: "career",
+          sceneStateVersion: 1,
           handNumber: 3,
           fieldSize: 6,
           playersRemaining: 5,

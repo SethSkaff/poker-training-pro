@@ -90,6 +90,10 @@ import {
   type LifecyclePauseReason,
   type ResumeRecap,
 } from "../lib/lifecyclePause";
+import {
+  createTableActionGate,
+  planTableSceneUpdate,
+} from "../lib/tableSceneLifecycle";
 import type {
   Card,
   GameMode,
@@ -105,6 +109,8 @@ interface TournamentTableControls {
   legalActions: LegalActionSet;
   onAction: (request: HeroTournamentAction) => void;
   kind: "career" | "timed";
+  /** Monotonic authoritative state revision; never a React subtree key. */
+  sceneStateVersion: number;
   handNumber: number;
   fieldSize: number;
   playersRemaining: number;
@@ -847,6 +853,9 @@ export function PokerTable({
     "menu" | "controls" | "reference" | "settings" | "remap"
   >("menu");
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
+  const actionGateRef = useRef(createTableActionGate());
+  const previousSceneVersionRef = useRef(tournament?.sceneStateVersion);
+  const previousHandIdRef = useRef(scenario.id);
   const arrivalDelayRef = useRef<FreezableDelay | null>(null);
   const freezeGroupRef = useRef<DelayFreezeGroup>(new DelayFreezeGroup());
   const pauseCoordinatorRef = useRef<LifecyclePauseCoordinator>(
@@ -1148,11 +1157,56 @@ export function PokerTable({
     setSpeed(1);
     mathStartedAt.current = null;
     mathElapsedMs.current = 0;
+    actionGateRef.current.release();
   }, [scenario.minimumRaise]);
+
+  // Authoritative table state changes must update this mounted scene rather
+  // than recreate it. A hand transition clears only hand-specific visuals;
+  // camera and pause remain player-owned scene state across every update.
+  useEffect(() => {
+    if (!tournament) return;
+    const previousVersion = previousSceneVersionRef.current;
+    const previousHandId = previousHandIdRef.current;
+    const next = {
+      handId: scenario.id,
+      stateVersion: tournament.sceneStateVersion,
+    };
+    if (previousVersion === undefined) {
+      previousSceneVersionRef.current = next.stateVersion;
+      previousHandIdRef.current = next.handId;
+      return;
+    }
+    const update = planTableSceneUpdate(
+      { handId: previousHandId, stateVersion: previousVersion },
+      next,
+    );
+    previousSceneVersionRef.current = next.stateVersion;
+    previousHandIdRef.current = next.handId;
+    if (!update.changed) return;
+
+    if (update.clearDecisionTransientState) {
+      setAction(null);
+      setActionError(undefined);
+      setRaiseOpen(false);
+      setRaiseAmount(scenario.minimumRaise);
+      actionGateRef.current.release();
+    }
+    if (update.resetHandVisualState) {
+      setPeeked(false);
+      setFoldProgress(0);
+      setDragging(false);
+      setElapsedMs(0);
+      elapsedStartedAt.current = performance.now();
+    }
+  }, [scenario.id, scenario.minimumRaise, tournament]);
+
+  useEffect(() => {
+    if (tournament?.showArrival) setArrivalVisible(true);
+  }, [tournament?.showArrival]);
 
   const handleAction = useCallback(
     (nextAction: PokerAction, requestedRaiseTo = raiseAmount) => {
-      if (action || paused) return;
+      if (action || paused || actionGateRef.current.isLocked) return;
       if (
         mode === "training" &&
         trainingMeta?.actionEvs[nextAction] === undefined
@@ -1161,6 +1215,7 @@ export function PokerTable({
         gameAudio.play("error");
         return;
       }
+      if (!actionGateRef.current.tryBegin()) return;
       setActionError(undefined);
       setAction(nextAction);
       setRaiseOpen(false);
@@ -1862,7 +1917,13 @@ export function PokerTable({
           </div>
 
             <div className="poker-scene">
-            <div className="poker-table">
+            <div
+              className="poker-table"
+              data-table-hand-id={scenario.id}
+              {...(tournament
+                ? { "data-table-state-version": tournament.sceneStateVersion }
+                : {})}
+            >
               <div className="felt-ring">
                 <span className="felt-brand">{formatMessage("table.felt.brand")}</span>
                 <div className="dealer">
