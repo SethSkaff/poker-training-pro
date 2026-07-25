@@ -834,7 +834,7 @@ different events, across later career stages, and across sessions.
 **Audit**
 - Root cause: `DEFAULT_OPPONENTS` (`tournamentSession.ts:192-223`) is a hardcoded five-entrant constant (Maya Chen, Rafael Torres, Adrian Cole, Juno Pike, Lena Ortiz). `createTournamentSession` uses `options.opponents ?? DEFAULT_OPPONENTS` (`:350`) and the sole call site `App.tsx:734-745` **never passes `opponents`**.
 - Only the card/decision seed varies (`deriveSeed(seed, eventId, "tournament")`, `:356`).
-- Compounding defect: portraits are keyed to **seat slot** (`styles.css:3041-3064`), so as the same five rotate seats the face at a position never changes even though the occupant does.
+- Compounding defect: portraits are keyed to **seat slot** (`styles.css:3041-3064`), so as the same five rotate seats the face at a position never changes even though the occupant does. Stated the other way round — **the same named opponent shows a different face from hand to hand** as the button rotates and their seat relative to the hero changes. Portrait identity is not stable per opponent at all, only per seat.
 - Classification: **MISSING FEATURE** — no generation system exists to be reconnected.
 
 **Implementation notes — determinism is a hard constraint**
@@ -887,65 +887,124 @@ rather than leaving the table.
 
 ## Epic E11 — Normal AI behavior (P3)
 
-> **Note:** the statistical measurement agent for this epic had not reported when
-> this document was authored. E11-001 is therefore the mandatory first task, and
-> the numbers it produces must be pasted into this epic before any tuning begins.
-> Treat every playthrough complaint below as a **reproducible test case**, not an
-> opinion, until measurement says otherwise.
+### E11-001 — Measurement: complete, with results
 
-### E11-001 — Measure before tuning (blocking prerequisite)
+**Status:** Done. Measured against the **real production engine** headlessly
+(`tournamentSession.ts` + `tournament.ts` + `normal.ts`/`rational.ts`, using
+`App.tsx`'s exact call signatures: `simulations: 60`, `temperature: 0.48`,
+`DEFAULT_OPPONENTS`). 15 seeds × both policies, `local-qualifier` structure
+(300 BB start), **blind clock frozen** to isolate policy from pacing.
 
-**Reported behavior to confirm or refute**
-- Opponents continuously raised instead of calling.
-- Raise → reraise → reraise chains reached **~10-11 consecutive raises**.
-- An opponent committed **~60,000 chips preflop** holding pocket kings.
-- Multiple opponents went all-in against ordinary made hands.
-- Opponents appeared to overvalue any "good" hand.
-- The player could reliably **predict** bots would keep raising.
-- A six-player Normal tournament reached **heads-up by ~hand 16**; four of six busted very fast.
-- The user consistently won and did not find it challenging.
-- Rational showed the same raising pathology.
+| Metric | Normal (n=15) | Rational (n=15) |
+|---|---|---|
+| **Max consecutive-raise chain (one street)** | **660** | **595** |
+| Chains ≥4 / ≥8 / ≥10 | 120 / 75 / 64 (of 156) | 108 / 65 / 50 (of 393) |
+| VPIP / PFR | 54.9% / 45.6% | 65.1% / 47.8% |
+| 3-bet% / 4-bet% | 72.2% / 85.9% | 47.3% / 76.5% |
+| **Facing a bet: fold / call / raise-back** | 5.3% / 3.9% / **90.8%** (n=5,901) | 4.9% / 11.1% / **84.0%** (n=5,385) |
+| Preflop all-in hand-rate | 25.0% | 19.5% |
+| Postflop all-in hand-rate | 6.8% | 9.2% |
+| Preflop chips committed (BB) mean / median / max | 88.0 / 1.0 / **1,780** | 82.2 / 2.0 / **1,798** |
+| **Raise size ÷ pot: mean / median** | 0.36 / **0.01** | 0.64 / **0.01** |
+| Raise ÷ effective stack: mean / median | 0.03 / 0.01 | 0.04 / 0.01 |
+| Hands to first elimination: mean / median | 2.6 / 2 | 1.7 / 1 |
+| Hands to heads-up: mean / median | 12.0 / 13 | 9.7 / 7 |
+| **Total hands to finish a 6-max tournament** | 9.9 / **9** | 11.6 / **10** |
+
+**Complaint verdicts**
+
+| Complaint | Verdict |
+|---|---|
+| Opponents raise instead of calling | **CONFIRMED, worse than described** — 84-91% raise-back |
+| 10-11 consecutive raises | **CONFIRMED and vastly exceeded** — chains of 40-660; ≥10 is common, not an edge case |
+| ~60,000 preflop with a big pair | **CONFIRMED in spirit** — preflop commitments to 1,780-1,798 BB, a 489 BB all-in measured; 60,000 is exactly the national/world-championship starting stack (`engine/tournament.ts:221-246`) |
+| All-ins vs ordinary hands | **CONFIRMED** — 19.5-25% of hands have a preflop all-in |
+| Bots overvalue any good hand | **CONFIRMED** — `actionRole` treats ~0.58 equity as full "value" with no stack-at-risk discount |
+| Player could predict the raising | **CONFIRMED quantitatively** — a 84-91% single-action response is trivially exploitable |
+| Heads-up by ~hand 16 | **CONFIRMED, worse** — median *whole-field* elimination in 9-10 hands |
+| Rational shares the pathology | **CONFIRMED** — all headline metrics within noise of Normal |
+| Same roster everywhere | **CONFIRMED** — see E10-001 |
+| Renderer submits actions repeatedly | **RULED OUT** — `App.tsx:812-853` guards with `decisionPendingRef`; logged chains show **alternating distinct actor ids**, i.e. genuine multi-agent behavior, not a UI duplication |
+| User consistently won | Not directly testable without a human; plausible that bots bust each other via mutual over-aggression while a disciplined human survives by default |
+
+**Reproducing seeds** — ≥8-chain: `nlqnc-2` hand 4 preflop (length **120**);
+bot-vs-bot with no hero: `nlqnc-2` hand 5 (length 62), `rlqnc-1` hand 4 (length
+**102**). Deep-stack preflop all-in: `nlqnc-9` hand 12 (`juno-mirror`, 489.5 BB).
+Single-hand full-field collapse: `nlqnc-11`, `rlqnc-5`.
+
+**Critical pacing conclusion** — With the blind clock **completely frozen** at
+25/50, fields still collapsed in a median of 9-10 hands. A paired run on the
+`national-championship` 60,000-chip structure **with** the clock running finished
+in 12 hands vs 13 frozen. **Blind escalation is not the cause; the policy is.**
+This re-scopes E13.
+
+### E11-002 — Root causes (identified; fix these, do not scale a constant)
+
+**Cause 1 — minimum-raise sizing creates a linear, non-doubling raise war.**
+Highest confidence, primary cause. `rational.ts:796-815` (`buildCandidates`)
+always offers `legal.raise.minTo`. `betting.ts:253` computes
+`minRaiseTo = currentBet + lastFullRaise`, and `:362-363` updates
+`lastFullRaise` only to the new raise's *increment* — so a chain of minimum
+re-raises grows the bet **arithmetically, not geometrically**. At 300-500 BB
+depth that takes hundreds of iterations to exhaust a stack. The data proves this
+is what happens: **median raise ÷ pot = 0.01** in both modes, i.e. nearly all
+raises in a chain are minimum-legal, not the pot-fraction sizes
+(0.33/0.5/0.66/0.8/1.1×) the code also offers.
+
+**Cause 2 — the chip-utility formula rewards re-raising with a pot-scaled term
+against a flat marginal cost.** `rational.ts:963-967`:
+`chipUtility = foldEquity * pot + (1 - foldEquity) * (calledEquity * calledPot - wager)`.
+The "steal the pot" reward grows with the pot **the war itself created**, while
+`wager` grows only by the flat minimum-raise increment. The model never re-derives
+that after N consecutive min-raises the realistic continuation value of raising
+again is far lower than a single-shot model assumes.
+
+**Cause 3 — no real ICM / stack-preservation brake.**
+`tournamentRiskPremium` (`rational.ts:724-751`) is capped at 0.22-0.3 and
+typically computes to 0.04-0.07 in career play. `actionRole`
+(`rational.ts:867-882`) classifies anything ≥ ~0.58 equity as "value", and the
+utility function has no penalty for tournament-survival value lost when covering
+an opponent by 5-10×. This is the mechanism behind deep-stack shoves.
+
+**Cause 4 — Normal is a thin wrapper over Rational's numbers, not an independent
+human model.** `tournamentSession.ts:1161-1167` builds Normal's `evaluations`
+directly from `rational.distribution`. `normal.ts:105-109` caps `competenceRate`
+at 90-95% and `:625,637-641` bound any deviation to `maxEvLossBb` of only
+**0.12-0.32 BB**. Because Cause 2 makes "raise" the clear EV leader, there is
+essentially never an alternative action within 0.3 BB, so the personality layer
+has almost nothing to choose from and inherits Rational's raise addiction
+near-unmodified.
+
+**Ruled out with evidence — do not re-investigate without new information**
+- Renderer duplicate submission: `decisionPendingRef` guard in `App.tsx:812-853`; chains show alternating distinct actors.
+- Stale/async divergence: `decideRationalActionAsync` (`rational.ts:1121-1130`) reconstructs an identical decision; the sliced path never reads elapsed time and is tested bit-identical; each decision re-derives its own seed (`tournamentSession.ts:1130`).
+- `roundChips` unit interpretation: no recurrence. `additionalRisk` consistently means incremental chips and `command.to` consistently means the new street total (`betting.ts:326-337`).
 
 **Acceptance criteria**
-- [ ] A headless harness (reuse `src/modes/botLeague.ts` and `docs/bot-league-regression-harness.md` before writing anything new) measures, across many seeds and both policies: consecutive-raise-chain length distribution (max, and frequency ≥4/≥8/≥10); preflop and postflop all-in frequency; VPIP, PFR, 3-bet%, 4-bet%, fold-to-raise%, call%; hands to first elimination, to heads-up, and to completion; average pot vs. blinds; chips committed preflop; raise sizing vs. pot and effective stack.
-- [ ] Actual numbers are recorded in this epic.
-- [ ] Concrete reproducing seeds are recorded for a ≥8 raise chain and a deep-stack preflop all-in.
-- [ ] Each complaint is marked CONFIRMED or NOT REPRODUCED. **If chains do not reproduce, say so and investigate presentation-layer duplication instead** (see E11-002 last bullet) — the player may have observed one action rendered repeatedly.
+- [ ] Each of Causes 1-4 has a targeted fix with a before/after measurement from the E11-001 harness.
+- [ ] Raise-back-facing-a-bet falls from 84-91% into a documented plausible band.
+- [ ] Median raise ÷ pot moves off 0.01 — min-raise stops dominating.
+- [ ] Median hands to finish a 6-max tournament rises into the E13 target band.
 
-**Tests** — [ ] The harness itself is deterministic and committed so results are re-derivable.
+### E11-003 — Correct the action-comparison model (framing corrected by measurement)
 
-### E11-002 — Root-cause the raise pathology
-
-**Do not multiply aggression by a smaller constant.** Determine which of these is
-actually true, with file:line evidence:
-
-- [ ] Is a "should I continue?" evaluation being converted into a **raise** rather than compared against **call**? (See E11-003 — this is the leading hypothesis.)
-- [ ] Are bet amounts interpreted as **target totals** vs **increments** inconsistently anywhere? A prior fix addressed fractional targets in `roundChips` at 25-snapped career blinds; check for a surviving related unit/interpretation defect.
-- [ ] Does the policy correctly account for its own remaining stack, effective stack, and SPR?
-- [ ] Is minimum-raise handling creating a loop where a re-raise always looks marginally profitable?
-- [ ] Does each re-raise recompute state correctly, or is stale pot/`currentBet`/cached equity reused so the same verdict repeats?
-- [ ] For Rational: are Monte Carlo results stale or incorrectly reused/cancelled? Does the sliced/worker path ever differ in outcome from the synchronous path? (A determinism-equivalence test exists — confirm it covers re-raise sequences.)
-- [ ] Are personality/aggression modifiers unbounded or multiplicative in a compounding way?
-- [ ] Is there action-selection randomness/temperature, and is it calibrated?
-- [ ] **Could the renderer be submitting the same action repeatedly?** Check the submission path in `App.tsx` and `PokerTable.tsx` for re-entrancy. This is especially plausible given E01-001's remount defect and E01-002's batching, which could make one action appear many times.
+**Correction to an earlier assumption.** The review hypothesised the AI reasons
+*"hand is good enough to continue, therefore raise."* **Measurement shows this is
+not the defect.** `rational.ts` genuinely evaluates fold, check, call, and each
+raise size, and selects via a softmax over utilities
+(`normalizedDistribution`, `rational.ts:999-1018`). The architecture is correct;
+the **utility model is miscalibrated for repeated-raise sequences** (Cause 2) and
+the **candidate set is dominated by minimum raises** (Cause 1). Fix the model and
+the candidates — do not rewrite a working comparison framework.
 
 **Acceptance criteria**
-- [ ] A written root-cause statement with evidence and confidence, distinguishing incorrect math, wrong units, bad thresholds, excessive personality aggression, missing call behavior, a response-logic loop, poor ranges, blind pacing, renderer duplication, or a combination.
+- [ ] The utility model accounts for the realistic continuation cost of an ongoing raise war, so raising again stops being self-reinforcing.
+- [ ] Minimum-raise candidates no longer dominate; sizing is plausible relative to pot and effective stack.
+- [ ] Every raise still has an identifiable reason to outperform calling: value, protection, fold equity, range leverage, stack pressure, tournament pressure, exploitation, or a personality-consistent bluff.
+- [ ] Call frequency rises and raise frequency falls to calibrated levels.
+- [ ] The comparison stays inspectable, so a decision can be explained by the action values considered (feeds E17 and E18).
 
-### E11-003 — Separate "continue?" from "raise?"
-
-**Desired behavior**
-The AI must not reason *"my hand is good enough to continue, therefore raise."*
-It must compare the values of all legal actions — fold, check, call, each bet
-size, each raise size, all-in — and choose the best. A profitable call is not
-automatically a profitable raise.
-
-**Acceptance criteria**
-- [ ] Every raise has an identifiable reason to outperform calling: value, protection, fold equity, range leverage, stack pressure, tournament pressure, exploitation, or a personality-consistent bluff.
-- [ ] Call frequency rises to a plausible level; raise frequency falls to a plausible level.
-- [ ] The comparison is inspectable — a decision can be explained in terms of the action values considered (this also feeds E17 and E18).
-
-**Tests** — [ ] Unit: constructed spots where calling strictly beats raising produce a call. [ ] Statistical: call/raise mix within calibrated bounds.
+**Tests** — [ ] Unit: constructed spots where calling strictly beats raising produce a call. [ ] Unit: a 4-bet sequence does not produce an unbounded chain. [ ] Statistical: call/raise mix and chain-length distribution within gated bounds.
 
 ### E11-004 — Reach the Normal AI target
 
@@ -982,22 +1041,27 @@ single pattern.
 
 ## Epic E13 — Tournament pacing (P3)
 
-### E13-001 — Diagnose and fix the collapse to heads-up
+### E13-001 — Pacing is an AI problem, not a blind-structure problem
 
-**Observed problem** — Six players reached heads-up by ~hand 16; four busted very
-fast.
+**Observed problem** — Six players reached heads-up by ~hand 16.
 
-**Audit direction**
-Investigate whether the blind structure is simply far too fast for a six-player
-field **independent of AI aggression**. Report starting stack in big blinds and
-how quickly that decays through `src/engine/tournament.ts` (`scaledStructure`)
-and the timed director. Distinguish structural pacing from AI over-aggression —
-they require different fixes and may both be present.
+**Audit — measured, and the cause is now settled.** Worse than reported: median
+*whole-field* elimination in **9-10 hands**. Critically, this was measured with
+the **blind clock completely frozen** at 25/50 from a 300 BB start. A paired run
+on the `national-championship` 60,000-chip structure **with** the clock running
+finished in 12 hands versus 13 with it frozen — a negligible difference.
+
+**Therefore the blind schedule is not the cause.** Do not re-tune blinds hoping
+to fix pacing; that would slow the structure while leaving the real defect intact
+and would make later events feel wrong. The collapse is driven by E11-002's
+Causes 1-3, and pacing should be re-measured **after** those land.
 
 **Acceptance criteria**
+- [ ] Re-run the E11-001 harness after E11-002/E11-003 and record pacing again before changing any structure value.
 - [ ] Starting effective stack depth in BBs is documented per event tier.
-- [ ] A documented calibration target exists for a six-player format, justified rather than copied from a real-world statistic without regard to format, blind structure, and event design.
-- [ ] Median hands to first elimination and to heads-up fall within the target.
+- [ ] A documented calibration target exists for a six-player format, justified for this format, blind structure, and event design rather than copied from a real-world statistic.
+- [ ] Median hands to first elimination, to heads-up, and to completion fall within the target.
+- [ ] Any blind-structure change is justified by measurement taken *after* the policy fixes, not before.
 - [ ] Event tiers differ intentionally in pacing.
 
 ---
@@ -1006,10 +1070,25 @@ they require different fixes and may both be present.
 
 ### E14-001 — Gate the metrics that are currently ungated
 
-**Audit** — Existing gates: the frozen bot-league baseline
-(`src/modes/fixtures/bot-league-baseline.json`, `botLeague.test.ts`) and the
-Training calibration gate. E11-001 must report precisely which of its metrics are
-**not** currently gated; that gap list becomes this task.
+**Audit — the gap list is now known.** Existing gates are the frozen bot-league
+baseline (`src/modes/fixtures/bot-league-baseline.json`, `botLeague.test.ts`) and
+the Training calibration gate. **Critically, the bot-league harness evaluates
+isolated single decisions on a 36-cell matrix and never a sequence**, and its six
+frozen tournaments deliberately use a **6 BB** starting stack per
+`docs/bot-league-regression-harness.md`. Its current 3.17-8.67 mean hand count is
+therefore by design and **structurally cannot detect** a realistic-depth (300 BB)
+collapse like the one measured. Its only pacing assertions are
+`maxDecisions ≤ 2500` and that finish-place counts sum correctly.
+
+Not gated by anything today:
+- Consecutive-raise chain length (max, and frequency ≥4/≥8/≥10) — impossible to catch with single-decision evaluation.
+- Preflop / postflop all-in frequency.
+- VPIP, PFR, 3-bet%, 4-bet%, fold-to-raise%, call% over live sequential play.
+- Hands to first elimination, to heads-up, and to completion **at realistic stack depth**.
+- Average pot relative to blinds; average and median preflop chips committed.
+- Raise-size plausibility relative to pot and effective stack.
+- Aggregate behavioral divergence between Normal and Rational (only per-decision EV-loss budget and 86-98% `selectedBestRate` are gated).
+- Roster diversity and portrait-to-identity stability (no test exists at all).
 
 **Acceptance criteria**
 - [ ] Regression gates exist for: raise-chain frequency, preflop and postflop all-in frequency, VPIP, PFR, 3-bet%, 4-bet%, fold-to-raise%, call%, average tournament duration, median hands to first elimination, median hands to heads-up, finish distribution, EV loss, and timing leakage.
