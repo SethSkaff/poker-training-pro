@@ -379,6 +379,12 @@ function ChipStack({ bet = false }: { bet?: boolean }) {
   );
 }
 
+/** Compact visual scale for the central pot; the numeric pot remains exact. */
+export function potChipStackCount(pot: number): number {
+  if (!Number.isFinite(pot) || pot <= 0) return 0;
+  return Math.min(8, Math.max(1, Math.ceil(Math.log10(pot + 1))));
+}
+
 interface PlayerSeatProps {
   dealer: boolean;
   isHero: boolean;
@@ -2399,10 +2405,14 @@ export function PokerTable({
                   )}
                 </div>
 
-                <div className="center-pot" aria-hidden="true">
-                  <ChipStack bet />
-                  <ChipStack bet />
-                  <ChipStack bet />
+                <div
+                  className="center-pot"
+                  aria-hidden="true"
+                  data-chip-stacks={potChipStackCount(scenario.pot)}
+                >
+                  {Array.from({ length: potChipStackCount(scenario.pot) }).map(
+                    (_, index) => <ChipStack bet key={index} />,
+                  )}
                 </div>
               </div>
             </div>
