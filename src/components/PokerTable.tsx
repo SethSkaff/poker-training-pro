@@ -318,6 +318,7 @@ interface PlayerSeatProps {
   wonPot?: boolean;
   /** Only a public action can drive a character gesture; no card data is read. */
   recentAction?: BettingActionType;
+  cardsDealt: boolean;
 }
 
 const SEAT_STATUS_FRAGMENT_KEYS: Record<SeatPlayer["status"], string> = {
@@ -370,11 +371,12 @@ function PlayerSeat({
   position,
   wonPot = false,
   recentAction,
+  cardsDealt,
 }: PlayerSeatProps) {
   const isFolded = player.status === "folded";
   const isAllIn = player.status === "all-in";
   const isOut = player.status === "out";
-  const isShowingCards = !isHero && !isOut;
+  const isShowingCards = !isHero && !isOut && cardsDealt;
   const shouldHoldCards = isShowingCards && player.status === "active";
   const gesture = wonPot
     ? "win"
@@ -887,6 +889,9 @@ export function PokerTable({
   const [pausePage, setPausePage] = useState<
     "menu" | "controls" | "reference" | "settings" | "remap"
   >("menu");
+  const [cardsDealtHandId, setCardsDealtHandId] = useState<string | null>(
+    mode === "training" || !tournament ? scenario.id : null,
+  );
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
   const actionGateRef = useRef(createTableActionGate());
@@ -1273,6 +1278,18 @@ export function PokerTable({
       elapsedStartedAt.current = performance.now();
     }
   }, [scenario.id, scenario.minimumRaise, tournament]);
+
+  useEffect(() => {
+    if (mode === "training" || !tournament) {
+      setCardsDealtHandId(scenario.id);
+      return;
+    }
+    if (tournament.presentationEvent?.kind === "hole-cards-dealt") {
+      setCardsDealtHandId(scenario.id);
+    } else if (cardsDealtHandId !== scenario.id) {
+      setCardsDealtHandId(null);
+    }
+  }, [cardsDealtHandId, mode, scenario.id, tournament]);
 
   useEffect(() => {
     if (tournament?.showArrival) setArrivalVisible(true);
@@ -1775,6 +1792,7 @@ export function PokerTable({
             tournament?.legalActions.allIn,
         );
   const presentationActive = Boolean(tournament?.presentationEvent);
+  const cardsDealt = cardsDealtHandId === scenario.id;
   const heroDecisionActive =
     mode === "training" || tournament?.heroDecision !== false;
   const callAction = scenario.amountToCall > 0 ? "call" : "check";
@@ -2013,7 +2031,11 @@ export function PokerTable({
 
             <div className="poker-scene">
             <div
-              className="poker-table"
+              className={`poker-table ${
+                tournament?.presentationEvent?.kind === "hole-cards-dealt"
+                  ? "is-dealing-hole-cards"
+                  : ""
+              }`}
               data-table-hand-id={scenario.id}
               {...(tournament
                 ? { "data-table-state-version": tournament.sceneStateVersion }
@@ -2080,6 +2102,7 @@ export function PokerTable({
                     ? tournament.lastPublicAction.type
                     : undefined
                 }
+                cardsDealt={cardsDealt}
               />
             ))}
 
@@ -2117,7 +2140,7 @@ export function PokerTable({
                   ? formatMessage("table.holeCards.hide")
                   : formatMessage("table.holeCards.peek"),
               })}
-              disabled={Boolean(action)}
+              disabled={Boolean(action) || !cardsDealt}
             >
               <span className="hero-hole-cards__cards">
                 {scenario.heroCards.map((card, index) => (

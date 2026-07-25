@@ -3135,6 +3135,20 @@ input[type="range"]::-webkit-slider-thumb {
   animation: opponent-card-deal 360ms ease-out both;
 }
 
+.poker-table.is-dealing-hole-cards .opponent-cards {
+  animation: opponent-card-deal 620ms cubic-bezier(.18,.82,.22,1) both;
+  transform-origin: 50% -160px;
+}
+
+.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(2) .opponent-cards { animation-delay: 80ms; }
+.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(3) .opponent-cards { animation-delay: 150ms; }
+.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(4) .opponent-cards { animation-delay: 220ms; }
+.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(5) .opponent-cards { animation-delay: 290ms; }
+
+.poker-table.is-dealing-hole-cards .hero-hole-cards {
+  animation: hero-card-deal 620ms 360ms cubic-bezier(.18,.82,.22,1) both;
+}
+
 .player-seat.is-folded .opponent-cards {
   animation: opponent-card-muck 320ms ease-in both;
 }
@@ -3142,6 +3156,11 @@ input[type="range"]::-webkit-slider-thumb {
 @keyframes opponent-card-deal {
   from { opacity: 0; transform: translateY(-38px) scale(0.82) rotate(-7deg); }
   to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+
+@keyframes hero-card-deal {
+  from { opacity: 0; transform: translate(-50%, -250px) scale(.72) rotate(-7deg); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1) rotate(0); }
 }
 
 @keyframes opponent-card-muck {
