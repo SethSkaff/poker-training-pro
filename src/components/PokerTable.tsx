@@ -2130,6 +2130,21 @@ export function PokerTable({
             </span>
             {heroPositionLabel && <span className="hero-stack-hud__position">Position {heroPositionLabel}</span>}
           </aside>
+          {arrivalVisible && tournament?.lastPotAwards?.length ? (
+            <aside className="showdown-result-strip" role="status" aria-live="polite" aria-atomic="true">
+              <span>Previous hand result</span>
+              {tournament.lastPotAwards.map((award) => {
+                const winner = scenario.players.find((player) => player.id === award.playerId);
+                const winnerName = winner?.seat === scenario.heroSeat ? "You" : (winner?.name ?? award.playerId);
+                return (
+                  <p key={`${award.potId}:${award.playerId}`}>
+                    <b>{award.potId}</b> · <strong>{winnerName}</strong> wins {formatChips(award.amount)}
+                    {award.hand ? ` with ${award.hand.displayName}` : ""}
+                  </p>
+                );
+              })}
+            </aside>
+          ) : null}
           {actionError ? (
             <p className="table-action-alert" role="alert">
               <X size={16} aria-hidden="true" /> {actionError}
