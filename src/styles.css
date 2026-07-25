@@ -3288,8 +3288,8 @@ input[type="range"]::-webkit-slider-thumb {
 .dealer-button-travel {
   position: absolute;
   z-index: 31;
-  top: 0;
-  left: 0;
+  top: var(--dealer-from-y);
+  left: var(--dealer-from-x);
   display: grid;
   width: 28px;
   height: 28px;
@@ -3305,9 +3305,9 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 @keyframes dealer-button-travel {
-  from { opacity: 0.6; transform: translate(calc(var(--dealer-from-x) - 50%), calc(var(--dealer-from-y) - 50%)) scale(.7); }
-  70% { opacity: 1; transform: translate(calc(var(--dealer-to-x) - 50%), calc(var(--dealer-to-y) - 50%)) scale(1.14); }
-  to { opacity: 1; transform: translate(calc(var(--dealer-to-x) - 50%), calc(var(--dealer-to-y) - 50%)) scale(1); }
+  from { top: var(--dealer-from-y); left: var(--dealer-from-x); opacity: 0.6; transform: translate(-50%, -50%) scale(.7); }
+  70% { top: var(--dealer-to-y); left: var(--dealer-to-x); opacity: 1; transform: translate(-50%, -50%) scale(1.14); }
+  to { top: var(--dealer-to-y); left: var(--dealer-to-x); opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 .board-card-entering {
@@ -5391,6 +5391,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="off"] .player-seat.is-folded .opponent-cards,
 :root[data-motion-table="off"] .opponent-card-hand,
 :root[data-motion-table="off"] .seat-action-hand,
+:root[data-motion-table="off"] .dealer-button-travel,
 :root[data-motion-table="off"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="off"] .seat-state--winner {
   animation-duration: 120ms !important;
@@ -5405,6 +5406,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="reduced"] .player-seat.is-folded .opponent-cards,
 :root[data-motion-table="reduced"] .opponent-card-hand,
 :root[data-motion-table="reduced"] .seat-action-hand,
+:root[data-motion-table="reduced"] .dealer-button-travel,
 :root[data-motion-table="reduced"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="reduced"] .seat-state--winner {
   animation-duration: 140ms;
