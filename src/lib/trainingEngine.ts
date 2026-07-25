@@ -404,6 +404,92 @@ function sharedTagCount(
   return second.tags.filter((tag) => tags.has(tag)).length;
 }
 
+function cardSignature(cards: RatedTrainingScenario["heroCards"]): string {
+  return cards.map((card) => `${card.rank}-${card.suit}`).sort().join(",");
+}
+
+function boardTextureSignature(scenario: RatedTrainingScenario): string {
+  const suits = scenario.board.reduce<Record<string, number>>((counts, card) => {
+    counts[card.suit] = (counts[card.suit] ?? 0) + 1;
+    return counts;
+  }, {});
+  const ranks = scenario.board.reduce<Record<string, number>>((counts, card) => {
+    counts[card.rank] = (counts[card.rank] ?? 0) + 1;
+    return counts;
+  }, {});
+  return [
+    scenario.street,
+    Object.values(suits).sort((left, right) => right - left).join("-"),
+    Object.values(ranks).sort((left, right) => right - left).join("-"),
+  ].join(":");
+}
+
+function stackStructureSignature(scenario: RatedTrainingScenario): string {
+  const hero = scenario.players.find((player) => player.id === "hero");
+  const effectiveBigBlinds = hero ? hero.stack / scenario.blinds[1] : 0;
+  const band =
+    effectiveBigBlinds <= 12 ? "short" : effectiveBigBlinds <= 30 ? "medium" : "deep";
+  const livePlayers = scenario.players.filter((player) => player.status !== "folded").length;
+  return `${band}:${livePlayers}`;
+}
+
+function potOddsSignature(scenario: RatedTrainingScenario): string {
+  if (scenario.amountToCall === 0) return "free";
+  const requiredEquity = scenario.amountToCall / (scenario.pot + scenario.amountToCall);
+  return `${Math.round(requiredEquity * 10) * 10}%`;
+}
+
+function wordingSimilarity(first: string, second: string): number {
+  const words = (value: string) => new Set(value.toLowerCase().match(/[a-z]{4,}/g) ?? []);
+  const firstWords = words(first);
+  const secondWords = words(second);
+  if (firstWords.size === 0 || secondWords.size === 0) return 0;
+  let shared = 0;
+  for (const word of firstWords) if (secondWords.has(word)) shared += 1;
+  return shared / Math.min(firstWords.size, secondWords.size);
+}
+
+/** Reports the poker features selection treats as near-duplicates. */
+export function trainingScenarioHistorySimilarity(
+  candidate: RatedTrainingScenario,
+  recent: RatedTrainingScenario,
+): {
+  sameHeroCards: boolean;
+  sameBoardTexture: boolean;
+  sameStackStructure: boolean;
+  samePotOddsThreshold: boolean;
+  sameAction: boolean;
+  sameLesson: boolean;
+  wordingOverlap: number;
+} {
+  return {
+    sameHeroCards: cardSignature(candidate.heroCards) === cardSignature(recent.heroCards),
+    sameBoardTexture: boardTextureSignature(candidate) === boardTextureSignature(recent),
+    sameStackStructure: stackStructureSignature(candidate) === stackStructureSignature(recent),
+    samePotOddsThreshold: potOddsSignature(candidate) === potOddsSignature(recent),
+    sameAction: candidate.recommendedAction === recent.recommendedAction,
+    sameLesson: candidate.mathQuestion.topic === recent.mathQuestion.topic,
+    wordingOverlap: wordingSimilarity(candidate.prompt, recent.prompt),
+  };
+}
+
+function recentHistoryPenalty(
+  candidate: RatedTrainingScenario,
+  recentScenarios: readonly RatedTrainingScenario[],
+): number {
+  return recentScenarios.reduce((penalty, recent) => {
+    const similarity = trainingScenarioHistorySimilarity(candidate, recent);
+    return penalty +
+      (similarity.sameHeroCards ? 500 : 0) +
+      (similarity.sameBoardTexture ? 28 : 0) +
+      (similarity.sameStackStructure ? 12 : 0) +
+      (similarity.samePotOddsThreshold ? 14 : 0) +
+      (similarity.sameAction ? 32 : 0) +
+      (similarity.sameLesson ? 28 : 0) +
+      (similarity.wordingOverlap >= 0.45 ? 20 : 0);
+  }, 0);
+}
+
 const BEGINNER_ELO_CEILING = 1_100;
 const ADVANCED_ELO_FLOOR = 1_500;
 
@@ -472,12 +558,18 @@ export function selectNearTransferScenario(
   const completed = new Set(options.completedScenarioIds ?? []);
   const recent = [...(options.recentScenarioIds ?? [])].slice(-6);
   const recentSet = new Set([...recent, current.id]);
+  const recentScenarios = recent
+    .map((id) => pool.find((scenario) => scenario.id === id))
+    .filter((scenario): scenario is RatedTrainingScenario => scenario !== undefined);
   const preferDifferentStreet = options.preferDifferentStreet ?? true;
   const candidates = pool
     .filter((scenario) => scenario.id !== current.id)
     .map((scenario) => {
       let score = 0;
-      if (!completed.has(scenario.id)) score += 42;
+      // A fresh scenario always wins over a superficially similar repeat. This
+      // makes one complete bank pass the first priority; history similarity
+      // then determines the order within that pass.
+      if (!completed.has(scenario.id)) score += 1_000;
       if (recentSet.has(scenario.id)) score -= 10_000;
       if (scenario.mathQuestion.topic !== current.mathQuestion.topic) score += 28;
       if (scenario.training.transferGroup !== current.training.transferGroup) score += 16;
@@ -496,6 +588,7 @@ export function selectNearTransferScenario(
         options.decisionElo,
         options.mathElo,
       );
+      score -= recentHistoryPenalty(scenario, recentScenarios);
       return { scenario, score };
     })
     .sort((left, right) => {

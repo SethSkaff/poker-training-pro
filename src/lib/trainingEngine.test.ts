@@ -14,6 +14,7 @@ import {
   selectNearTransferScenario,
   selectTrainingSessionStartScenario,
   summarizeTiming,
+  trainingScenarioHistorySimilarity,
   validateTrainingScenario,
   validateTrainingScenarioBank,
 } from "./trainingEngine";
@@ -344,6 +345,33 @@ describe("near-transfer selection", () => {
         ).size,
       ).toBeGreaterThan(2);
     }
+  });
+
+  it("tracks the poker features needed to avoid near-duplicate recent prompts", () => {
+    const source = scenario("preflop-pot-odds-ak");
+    const lookalike: RatedTrainingScenario = {
+      ...source,
+      id: "preflop-pot-odds-ak-lookalike",
+      prompt: "Against the shown range, the small blind shoves and action returns to you.",
+    };
+    const similarity = trainingScenarioHistorySimilarity(lookalike, source);
+
+    expect(similarity).toMatchObject({
+      sameHeroCards: true,
+      sameBoardTexture: true,
+      sameStackStructure: true,
+      samePotOddsThreshold: true,
+      sameAction: true,
+      sameLesson: true,
+    });
+    expect(similarity.wordingOverlap).toBeGreaterThan(0);
+
+    const next = selectNearTransferScenario(
+      source,
+      { recentScenarioIds: [source.id] },
+      [source, lookalike, scenario("turn-semi-bluff-ev")],
+    );
+    expect(next?.id).toBe("turn-semi-bluff-ev");
   });
 
   it("selects reproducible starts that are not permanently the first scenario", () => {

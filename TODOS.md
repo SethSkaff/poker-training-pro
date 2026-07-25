@@ -1153,15 +1153,15 @@ calls, answerable by pressing the call hotkey repeatedly for "Strong decision".
 | river-icm-bubble-call | river | 5 | fold | tournament-pressure |
 
 **Acceptance criteria**
-- [ ] No fixed-point cycle exists from **any** starting scenario.
-- [ ] Over a session, coverage spans the bank rather than a 2-3 member subset.
-- [ ] The correct action varies — a player cannot answer correctly by repeating one input.
-- [ ] The starting scenario is not always index 0.
-- [ ] Recent-history avoidance covers scenario id, cards, board texture, stack structure, pot-odds threshold, correct action, wording, and lesson category.
-- [ ] Determinism is preserved where replay requires it.
-- [ ] The calibration baseline is re-derived so it no longer enshrines cycling, through the sanctioned workflow.
+- [x] No fixed-point cycle exists from **any** starting scenario.
+- [x] Over a session, coverage spans the bank rather than a 2-3 member subset.
+- [x] The correct action varies — a player cannot answer correctly by repeating one input.
+- [x] The starting scenario is not always index 0.
+- [x] Recent-history avoidance covers scenario id, cards, board texture, stack structure, pot-odds threshold, correct action, wording, and lesson category.
+- [x] Determinism is preserved where replay requires it.
+- [x] The calibration baseline is re-derived so it no longer enshrines cycling, through the sanctioned workflow.
 
-**Tests** — [ ] Unit: 100-draw simulation from every starting point shows no cycle and broad coverage. [ ] Unit: consecutive correct actions are not all identical. [ ] Unit: all 12 scenarios are reachable. [ ] Regression: a gate fails if selection coverage over N draws falls below a threshold.
+**Tests** — [x] Unit: 100-draw simulation from every starting point shows no cycle and broad coverage. [x] Unit: consecutive correct actions are not all identical. [x] Unit: all 12 scenarios are reachable. [x] Regression: a gate fails if selection coverage over N draws falls below a threshold.
 
 ### E15-002 — Move to constraint-driven selection and generation
 
