@@ -2240,7 +2240,7 @@ export function PokerTable({
             </button>
           </div>
 
-            <div className="poker-scene">
+            <div className="poker-scene motion-vestibular">
               {dealerMoveEvent && (
                 <span
                   className="dealer-button-travel"

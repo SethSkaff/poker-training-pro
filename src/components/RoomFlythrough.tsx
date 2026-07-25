@@ -70,7 +70,7 @@ export function RoomFlythrough({
 
   return (
     <main
-      className={`room-flight room-flight--${phase}`}
+      className={`room-flight motion-vestibular room-flight--${phase}`}
       data-background-status={backgroundArt.status}
       aria-labelledby="room-flight-title"
       aria-describedby="room-flight-mode"

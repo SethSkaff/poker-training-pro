@@ -4365,22 +4365,28 @@ input[type="range"]::-webkit-slider-thumb {
   color: #191919;
 }
 
-.reduced-motion *,
-.reduced-motion *::before,
-.reduced-motion *::after {
+/* Motion tiers: vestibular/decorative movement is optional; state-changing
+   card, chip, fold, award, and focus feedback remains perceptible. */
+.motion-vestibular,
+.motion-vestibular::before,
+.motion-vestibular::after {
+  scroll-behavior: auto;
+}
+
+.reduced-motion .motion-vestibular,
+.reduced-motion .motion-vestibular::before,
+.reduced-motion .motion-vestibular::after {
   scroll-behavior: auto !important;
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
+  animation: none !important;
   transition-duration: 0.01ms !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  .motion-vestibular,
+  .motion-vestibular::before,
+  .motion-vestibular::after {
     scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+    animation: none !important;
     transition-duration: 0.01ms !important;
   }
 }
@@ -5327,9 +5333,9 @@ input[type="range"]::-webkit-slider-thumb {
   scroll-behavior: auto !important;
 }
 
-/* Independent motion controls. The global reduced-motion and Safe Mode gates
-   above remain stronger; these selectors intentionally only quiet their named
-   visual surface, leaving gameplay input and state changes instantaneous. */
+/* Independent controls map onto the same tiers. Menu/room/camera/transition
+   quiet vestibular movement; table controls only shorten state feedback, never
+   suppress its labels, cards, chips, winner badge, or audio. */
 :root[data-motion-menu="off"] .night-scene *,
 :root[data-motion-menu="off"] .night-scene::before,
 :root[data-motion-menu="off"] .night-scene::after,
@@ -5376,7 +5382,10 @@ input[type="range"]::-webkit-slider-thumb {
   transition-duration: 120ms;
 }
 
-:root[data-motion-table="off"] .thinking-ring,
+:root[data-motion-table="off"] .thinking-ring {
+  animation: none !important;
+}
+
 :root[data-motion-table="off"] .seat-bet,
 :root[data-motion-table="off"] .opponent-cards,
 :root[data-motion-table="off"] .player-seat.is-folded .opponent-cards,
@@ -5384,7 +5393,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="off"] .seat-action-hand,
 :root[data-motion-table="off"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="off"] .seat-state--winner {
-  animation: none !important;
+  animation-duration: 120ms !important;
 }
 
 :root[data-motion-table="reduced"] .thinking-ring {
