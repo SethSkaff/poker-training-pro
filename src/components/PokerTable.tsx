@@ -318,6 +318,7 @@ interface PlayerSeatProps {
   wonPot?: boolean;
   /** Only a public action can drive a character gesture; no card data is read. */
   recentAction?: BettingActionType;
+  recentActionLabel?: string;
   cardsDealt: boolean;
 }
 
@@ -371,6 +372,7 @@ function PlayerSeat({
   position,
   wonPot = false,
   recentAction,
+  recentActionLabel,
   cardsDealt,
 }: PlayerSeatProps) {
   const isFolded = player.status === "folded";
@@ -413,6 +415,11 @@ function PlayerSeat({
       })}
     >
       {dealer && <span className="dealer-button" aria-hidden="true">D</span>}
+      {recentActionLabel && (
+        <span className="seat-action-label" aria-live="polite">
+          {recentActionLabel}
+        </span>
+      )}
       {isShowingCards && (
         <div className="opponent-cards" aria-hidden="true">
           {shouldHoldCards && <i className="opponent-card-hand" aria-hidden="true" />}
@@ -2130,6 +2137,11 @@ export function PokerTable({
                 recentAction={
                   tournament?.lastPublicAction?.playerId === player.id
                     ? tournament.lastPublicAction.type
+                    : undefined
+                }
+                recentActionLabel={
+                  tournament?.lastPublicAction?.playerId === player.id
+                    ? tournament.lastPublicAction.type.replace("-", " ")
                     : undefined
                 }
                 cardsDealt={cardsDealt}
