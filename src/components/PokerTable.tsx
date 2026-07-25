@@ -771,6 +771,32 @@ export interface FeedbackPanelProps {
   onReview: () => void;
 }
 
+export interface TrainingFeedbackMath {
+  potBefore: number;
+  costToCall: number;
+  potAfterCall: number;
+  requiredEquity?: number;
+  actionEvs: readonly [PokerAction, number][];
+}
+
+/** The public arithmetic behind the recommendation; no hidden-card data is used. */
+export function trainingFeedbackMath(
+  scenario: RatedTrainingScenario,
+): TrainingFeedbackMath {
+  const costToCall = scenario.amountToCall;
+  const potAfterCall = scenario.pot + costToCall;
+  return {
+    potBefore: scenario.pot,
+    costToCall,
+    potAfterCall,
+    requiredEquity:
+      costToCall > 0 ? (costToCall / potAfterCall) * 100 : undefined,
+    actionEvs: Object.entries(scenario.training.actionEvs)
+      .filter((entry): entry is [PokerAction, number] => Number.isFinite(entry[1]))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  };
+}
+
 /** Exported so its rendered markup (not raw source copy) can be asserted directly. */
 export function FeedbackPanel({
   action,
@@ -795,6 +821,19 @@ export function FeedbackPanel({
       : graded.math.close
         ? formatMessage("table.feedback.math.nearMiss")
         : formatMessage("table.feedback.math.incorrect");
+  const math = trainingFeedbackMath(scenario);
+  const actionGap = Number.isFinite(graded.action.regret)
+    ? `${formatFixedDecimal(graded.action.regret, 2)} bb`
+    : formatMessage("table.feedback.notAvailable");
+  const closeDecision =
+    graded.action.close ||
+    (graded.action.regret > Number.EPSILON &&
+      graded.action.regret <= scenario.training.partialCreditRegret);
+  const assumptionCopy = math.requiredEquity !== undefined
+    ? formatMessage("table.feedback.assumptionCall", {
+        requiredEquity: formatFixedDecimal(math.requiredEquity, 1),
+      })
+    : formatMessage("table.feedback.assumptionAggression");
 
   return (
     <aside className="feedback-panel" aria-live="polite">
@@ -847,6 +886,61 @@ export function FeedbackPanel({
         </span>
         <p>{scenario.mathQuestion.explanation}</p>
       </div>
+
+      <section
+        className="feedback-analysis"
+        aria-label={formatMessage("table.feedback.analysisAriaLabel")}
+      >
+        <h3>{formatMessage("table.feedback.analysisHeading")}</h3>
+        <dl>
+          <div>
+            <dt>{formatMessage("table.feedback.potBefore")}</dt>
+            <dd>{formatChips(math.potBefore)}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.costToCall")}</dt>
+            <dd>{formatChips(math.costToCall)}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.potAfter")}</dt>
+            <dd>{formatChips(math.potAfterCall)}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.requiredEquity")}</dt>
+            <dd>
+              {math.requiredEquity === undefined
+                ? formatMessage("table.feedback.notApplicable")
+                : `${formatFixedDecimal(math.requiredEquity, 1)}%`}
+            </dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.chosenAction")}</dt>
+            <dd>{action}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.recommendedAction")}</dt>
+            <dd>{graded.action.bestAction}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.evRegret")}</dt>
+            <dd>{actionGap}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.closeDecisionLabel")}</dt>
+            <dd>{closeDecision ? formatMessage("table.feedback.yes") : formatMessage("table.feedback.no")}</dd>
+          </div>
+        </dl>
+        <h4>{formatMessage("table.feedback.actionEvs")}</h4>
+        <ul className="feedback-analysis__evs">
+          {math.actionEvs.map(([candidateAction, ev]) => (
+            <li key={candidateAction}>
+              <span>{candidateAction}</span>
+              <b>{formatFixedDecimal(ev, 2)} bb</b>
+            </li>
+          ))}
+        </ul>
+        <p className="feedback-analysis__assumption">{assumptionCopy}</p>
+      </section>
 
       <div className="feedback-tags">
         <span>
