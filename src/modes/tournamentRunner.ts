@@ -101,6 +101,8 @@ export type TournamentPresentationEvent =
       id: string;
       kind: "showdown";
       handId: string;
+      /** Only non-folded players are eligible for a public showdown reveal. */
+      playerIds: readonly string[];
     }
   | {
       id: string;
@@ -451,6 +453,9 @@ function progressHandPresentationEvents(
       id: presentationEventId(source, result.handId, "showdown"),
       kind: "showdown",
       handId: result.handId,
+      playerIds: previousHand.betting.players
+        .filter((player) => player.status !== "folded")
+        .map((player) => player.id),
     });
   }
   result.pots
