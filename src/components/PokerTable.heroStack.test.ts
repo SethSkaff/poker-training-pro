@@ -9,8 +9,15 @@ const componentDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 describe("persistent hero stack HUD", () => {
   it("uses the live stack value in visible and accessible status copy", () => {
-    expect(heroStackAriaLabel(3_600)).toBe(
-      `Your remaining stack: ${formatChips(3_600)} chips`,
+    expect(heroStackAriaLabel({
+      stack: 3_600,
+      streetCommitted: 200,
+      totalCommitted: 800,
+      position: "BB",
+    })).toBe(
+      `Your remaining stack: ${formatChips(3_600)} chips. ` +
+        `Committed this round: ${formatChips(200)} chips. ` +
+        `Total committed this hand: ${formatChips(800)} chips. Position: BB.`,
     );
 
     const source = readFileSync(
@@ -18,7 +25,9 @@ describe("persistent hero stack HUD", () => {
       "utf8",
     );
     expect(source).toContain('className="hero-stack-hud"');
-    expect(source).toContain("aria-label={heroStackAriaLabel(heroStack)}");
+    expect(source).toContain("aria-label={heroStackAriaLabel({");
+    expect(source).toContain("streetCommitted: heroStreetCommitted");
+    expect(source).toContain("totalCommitted: heroTotalCommitted");
     expect(source).toContain("{formatChips(heroStack)}");
     expect(source).toContain('role="status"');
     expect(source).toContain('aria-live="polite"');

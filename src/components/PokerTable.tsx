@@ -326,9 +326,26 @@ export function decisionClockAriaLabel(elapsedMs: number): string {
   });
 }
 
+export interface HeroStackAccessibleState {
+  stack: number;
+  streetCommitted: number;
+  totalCommitted: number;
+  position?: string;
+}
+
 /** Accessible copy for the persistent stack HUD, announced when it changes. */
-export function heroStackAriaLabel(stack: number): string {
-  return `Your remaining stack: ${formatChips(stack)} chips`;
+export function heroStackAriaLabel({
+  stack,
+  streetCommitted,
+  totalCommitted,
+  position,
+}: HeroStackAccessibleState): string {
+  const positionSummary = position ? ` Position: ${position}.` : "";
+  return [
+    `Your remaining stack: ${formatChips(stack)} chips.`,
+    `Committed this round: ${formatChips(streetCommitted)} chips.`,
+    `Total committed this hand: ${formatChips(totalCommitted)} chips.`,
+  ].join(" ") + positionSummary;
 }
 
 function PlayingCard({
@@ -2219,7 +2236,12 @@ export function PokerTable({
             role="status"
             aria-live="polite"
             aria-atomic="true"
-            aria-label={heroStackAriaLabel(heroStack)}
+            aria-label={heroStackAriaLabel({
+              stack: heroStack,
+              streetCommitted: heroStreetCommitted,
+              totalCommitted: heroTotalCommitted,
+              position: heroPositionLabel || undefined,
+            })}
           >
             <span>{formatMessage("table.heroStack.label")}</span>
             <strong>

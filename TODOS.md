@@ -380,7 +380,7 @@ readability defect found.
 - [ ] Distinct from the amount currently committed.
 - [ ] Never obscured by cards, chips, controls, overlays, or avatars.
 - [ ] Readable at 1100×720 through 2560×1080 and at every interface scale.
-- [ ] Exposed to screen readers with a correct label, announced on change.
+- [x] Exposed to screen readers with a correct label, announced on change.
 - [ ] Not conveyed by color alone.
 - [ ] Updates at the correct presentation moment (after chips visibly leave, per E05-001).
 
