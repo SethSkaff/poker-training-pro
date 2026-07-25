@@ -136,6 +136,8 @@ interface PendingTournamentPresentation {
   next: TournamentRunner;
   events: readonly TournamentPresentationEvent[];
   index: number;
+  /** A single result beat retained after an explicit fast-forward. */
+  skipResultVisible?: boolean;
 }
 
 const emptyTourResults: Record<
@@ -886,7 +888,7 @@ export default function App() {
 
   const skipTournamentPresentation = useCallback(() => {
     const pending = pendingPresentationRef.current;
-    if (!pending) return;
+    if (!pending || pending.skipResultVisible) return;
     // Skipping is a presentation-only operation. Resume authoritative play
     // from the already-computed current transition, then use the retained
     // synchronous run-to-hero path to reach the exact state the event queue
@@ -894,6 +896,35 @@ export default function App() {
     const fastForwarded = advanceTournamentRunnerToHero(pending.next, {
       policy: { simulations: 60 },
     });
+    const skippedHandId = pending.events[pending.index]?.handId;
+    const result = fastForwarded.session.lastHand;
+    if (result && result.handId === skippedHandId) {
+      // Keep one public, card-safe result beat on screen. The engine has
+      // already progressed deterministically, but committing it waits until
+      // this event has been readable so the next hand cannot replace a win.
+      const resultBeat: PendingTournamentPresentation = {
+        source: pending.source,
+        next: fastForwarded,
+        events: [
+          {
+            id: `skip:${result.handId}:hand-result`,
+            kind: "hand-result",
+            handId: result.handId,
+            awards: result.awards.map((award) => ({
+              potId: award.potId,
+              playerId: award.playerId,
+              amount: award.amount,
+              ...(award.hand ? { hand: award.hand } : {}),
+            })),
+          },
+        ],
+        index: 0,
+        skipResultVisible: true,
+      };
+      pendingPresentationRef.current = resultBeat;
+      setPendingPresentation(resultBeat);
+      return;
+    }
     pendingPresentationRef.current = null;
     setPendingPresentation(null);
     commitTournamentAdvance(pending.source, fastForwarded);
