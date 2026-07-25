@@ -3135,6 +3135,17 @@ input[type="range"]::-webkit-slider-thumb {
   animation: opponent-card-deal 360ms ease-out both;
 }
 
+.board-card-entering {
+  display: inline-flex;
+  animation: board-card-deal 440ms cubic-bezier(.18,.82,.22,1) both;
+  transform-origin: 50% -130px;
+}
+
+@keyframes board-card-deal {
+  from { opacity: 0; transform: translateY(-150px) scale(.68) rotate(-9deg); }
+  to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+
 .poker-table.is-dealing-hole-cards .opponent-cards {
   animation: opponent-card-deal 620ms cubic-bezier(.18,.82,.22,1) both;
   transform-origin: 50% -160px;

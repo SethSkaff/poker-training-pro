@@ -892,6 +892,9 @@ export function PokerTable({
   const [cardsDealtHandId, setCardsDealtHandId] = useState<string | null>(
     mode === "training" || !tournament ? scenario.id : null,
   );
+  const [stagedBoard, setStagedBoard] = useState<Card[]>(() =>
+    scenario.board.map((card) => ({ ...card })),
+  );
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
   const actionGateRef = useRef(createTableActionGate());
@@ -1290,6 +1293,23 @@ export function PokerTable({
       setCardsDealtHandId(null);
     }
   }, [cardsDealtHandId, mode, scenario.id, tournament]);
+
+  useEffect(() => {
+    const event = tournament?.presentationEvent;
+    if (event?.kind === "board-card-dealt") {
+      setStagedBoard((current) =>
+        current.length > event.cardIndex
+          ? current
+          : [...current, { ...event.card }],
+      );
+      return;
+    }
+    setStagedBoard((current) =>
+      current.length === scenario.board.length
+        ? current
+        : scenario.board.map((card) => ({ ...card })),
+    );
+  }, [scenario.board, tournament?.presentationEvent]);
 
   useEffect(() => {
     if (tournament?.showArrival) setArrivalVisible(true);
@@ -2065,10 +2085,20 @@ export function PokerTable({
                   role="group"
                   aria-label={formatMessage("table.communityCards.ariaLabel")}
                 >
-                  {scenario.board.map((card, index) => (
-                    <PlayingCard card={card} key={`${card.rank}-${index}`} />
+                  {stagedBoard.map((card, index) => (
+                    <span
+                      className={
+                        tournament?.presentationEvent?.kind === "board-card-dealt" &&
+                        tournament.presentationEvent.cardIndex === index
+                          ? "board-card-entering"
+                          : undefined
+                      }
+                      key={`${card.rank}-${index}`}
+                    >
+                      <PlayingCard card={card} />
+                    </span>
                   ))}
-                  {Array.from({ length: 5 - scenario.board.length }).map(
+                  {Array.from({ length: 5 - stagedBoard.length }).map(
                     (_, index) => (
                       <span
                         className="community-placeholder"

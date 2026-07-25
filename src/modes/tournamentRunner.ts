@@ -5,7 +5,7 @@ import {
   type DeckSeed,
   type LegalActionSet,
 } from "../engine";
-import type { PokerAction } from "../types/poker";
+import type { Card, PokerAction } from "../types/poker";
 import {
   advanceTournamentSessionClock,
   applyTournamentSessionAction,
@@ -84,6 +84,7 @@ export type TournamentPresentationEvent =
       handId: string;
       street: "flop" | "turn" | "river";
       cardIndex: number;
+      card: Card;
     }
   | {
       id: string;
@@ -417,6 +418,7 @@ function progressHandPresentationEvents(
       handId: previousHand.handId,
       street: nextHand.street as "flop" | "turn" | "river",
       cardIndex: previousHand.board.length + index,
+      card: { ...nextHand.board[previousHand.board.length + index] },
       })),
     ];
   }
