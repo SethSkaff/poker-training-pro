@@ -2510,6 +2510,18 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 0 0 auto;
 }
 
+/* Tier changes are procedural atmosphere layers, not copied venue art. */
+.room-flight[data-event-tier="regional"] .venue-lights i:nth-child(odd) { background: #78d8ff; }
+.room-flight[data-event-tier="circuit"] .venue-lights i:nth-child(3n) { background: #d58cff; }
+.room-flight[data-event-tier="circuit"] .venue-table { filter: saturate(1.1); }
+.room-flight[data-event-tier="national"] .venue-marquee { border-color: rgba(255, 210, 112, .9); transform: scale(1.08); }
+.room-flight[data-event-tier="national"] .venue-table { filter: saturate(1.15) brightness(1.08); }
+.room-flight[data-event-tier="championship"] .venue-marquee { border-color: rgba(255, 210, 112, .9); transform: scale(1.1); }
+.room-flight[data-event-tier="championship"] .venue-table { filter: saturate(1.2) brightness(1.12); }
+.room-flight[data-event-tier="world"] .venue-lights i { background: #ffe39b; box-shadow: 0 0 22px rgba(255, 192, 78, .85); }
+.room-flight[data-event-tier="world"] .venue-table { transform: scale(1.1); filter: saturate(1.25) brightness(1.14); }
+.room-flight[data-event-tier="world"] .venue-guest:nth-child(odd) { transform: scale(1.14); }
+
 /* A fixed status lane for the player instead of a hidden near-camera seat.
    It is deliberately outside the moving poker scene and well clear of the
    central alert, right-side camera controls, bottom cards, and action dock. */

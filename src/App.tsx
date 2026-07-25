@@ -1468,6 +1468,7 @@ export default function App() {
       >
         <RoomFlythrough
           eventName={runner.session.event.name}
+          tier={runner.session.event.tier}
           modeLabel={
             runner.kind === "timed"
               ? formatMessage("modes.timed.name")

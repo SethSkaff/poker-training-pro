@@ -8,10 +8,12 @@ import {
 } from "../lib/freezableDelay";
 import { useAwayFreezeGroup } from "../lib/desktopLifecycle";
 import type { GameSettings } from "../types/poker";
+import type { CareerTier } from "../engine";
 
 interface RoomFlythroughProps {
   eventName: string;
   modeLabel: string;
+  tier?: CareerTier;
   settings: GameSettings;
   onComplete: () => void;
 }
@@ -19,6 +21,7 @@ interface RoomFlythroughProps {
 export function RoomFlythrough({
   eventName,
   modeLabel,
+  tier = "local",
   settings,
   onComplete,
 }: RoomFlythroughProps) {
@@ -72,6 +75,7 @@ export function RoomFlythrough({
     <main
       className={`room-flight motion-vestibular room-flight--${phase}`}
       data-background-status={backgroundArt.status}
+      data-event-tier={tier}
       aria-labelledby="room-flight-title"
       aria-describedby="room-flight-mode"
       {...localeTextAttributes()}
