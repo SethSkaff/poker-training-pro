@@ -14,7 +14,10 @@ tournament No-Limit Hold'em through four distinct modes, backed by a
 deterministic poker engine and two different opponent AI philosophies. It tracks
 two separate skill ratings — one for poker decisions, one for the underlying
 math — and presents everything inside a stylized "championship room" with a
-seated first-person view, animated characters, cards and chips. It is
+table-focused presentation. The current desktop room, camera, character, card,
+and chip treatment is a 2.5D prototype rather than a literal first-person 3D
+environment; the roadmap tracks the remaining work to make it spatial and
+continuous. It is
 **play-chips-only with no real-money wagering**, runs entirely offline with no
 account, analytics, ads, or server, and stores all progress locally. A companion
 iOS/iPadOS app reuses the same game logic behind a deliberately simplified
@@ -33,8 +36,8 @@ native UI.
 
 ### Career (Grand Prix-style progression)
 
-Career is a **play-through mode with event progression**, deliberately *not* a
-dashboard tab. There are five tiered events:
+Career is presented as a **play-through mode with event progression**,
+deliberately *not* a dashboard tab. There are five tiered events:
 
 1. Local Qualifier
 2. Regional Open
@@ -43,7 +46,9 @@ dashboard tab. There are five tiered events:
 5. World Championship
 
 You select an event, play the tournament, and receive a results ceremony
-covering placement, qualification, unlocks, and Elo change. The full ceremony is
+covering placement, qualification, unlocks, and Elo change. The current event
+progress state is session-only and resets on application restart; durable career
+continuity remains roadmap work. The full ceremony is
 reserved for the **end of an event** — ordinary between-round table moves
 instead keep you inside the room, moving the camera toward your next seat behind
 a slim, faded progress bar showing completed rounds, current progress, and the
@@ -140,24 +145,23 @@ presentation. Explicitly *not* copying protected expression from any other game.
 - **Start menu**: opens directly on the supplied poker artwork, with an
   oversized Play/Settings chip-button hierarchy. Play turns yellow when hovered
   or focused; Settings is white otherwise. No separate splash screen.
-- **Room arrival**: a short loading transition, then an authored camera
-  fly-through of the Poker Training Pro Championship room, traveling past the
-  venue, tables, dealer area, players, and stacks before settling into the
-  hero's seated first-person view.
-- **Camera**: limited left/right look from your seat, with a center-view command
-  and a fixed/reduced-motion alternative. Not a free camera.
-- **Characters**: original stylized avatar-sheet characters with physical
-  action animations — receiving, peeking, holding and mucking cards, gathering
-  and pushing chips, checking the felt, going all-in, winning a pot, and leaving
-  after elimination. Gestures are driven **only by public betting/session
-  state**; they never encode private information.
+- **Room arrival**: a short loading transition using an authored 2D room scene.
+  A true camera fly-through between venue, dealer, players, and stacks is still
+  roadmap work.
+- **Camera**: a deliberately limited 2D left/right pan with a center-view
+  command and a fixed/reduced-motion alternative. It is not a free or 3D camera.
+- **Characters**: stylized seat portraits and public-state gesture cues for
+  actions. Full identity-specific characters that visibly receive, hold, muck,
+  gather, and push physical cards and chips are roadmap work. Gestures are
+  driven **only by public betting/session state**; they never encode private
+  information.
 - **Palette**: deep emerald felt, ivory card stock, black lacquer and brass as
   the base; vivid cyan, coral, warm yellow, sky blue and clay-chip red for mode
   identity, selection, progress and motion.
-- **Layout integrity**: a live six-seat geometry audit enforces zero collisions
-  at 1100×720, 1280×720, 1366×768, 1920×1080 and 2560×1080 — no card may cover
-  another card's rank or suit, opponent bet chips must stay visually separate
-  from stack balances, and no label, control or overlay may obscure another.
+- **Layout integrity**: a one-time six-seat bounding-box capture was recorded
+  at common desktop sizes. It is not yet a live geometry gate and does not cover
+  every visual lane; the repeatable collision and perceptual checks are tracked
+  in the release backlog.
 
 ---
 
@@ -226,8 +230,8 @@ Treated as a first-class product requirement rather than a checkbox:
 - **Contextual prompts** fire once on the first occurrence of an all-in, side
   pot, minimum raise, blind increase, elimination, qualification, and Elo
   change. They are manually dismissible and fully replayable from the pause menu.
-- An always-available **poker reference** covers hand rankings, betting terms,
-  probability shortcuts, tournament terms, and worked examples.
+- A limited glossary is currently available inside the playable tutorial and
+  live math HUD. A standalone, always-available poker reference is planned.
 - Each mode explains **what it actually optimizes** before you select it —
   including that Rational opponents use only information legally available to
   their seat.

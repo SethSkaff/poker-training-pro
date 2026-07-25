@@ -105,9 +105,9 @@ player cannot perceive. Verified findings:
 | Deterministic engine, side pots, information-set redaction | Real, well-tested, richer than the UI exposes | ACCURATE |
 
 **Acceptance criteria**
-- [ ] `APP_OVERVIEW.md` is corrected so no claim above overstates the build. It is a briefing document given to third parties; leaving it inaccurate is a correctness problem.
-- [ ] Part II's poker-reference item is un-checked or re-scoped to match reality (see E21-003).
-- [ ] Part II's collision-audit claim is re-worded and superseded by E25-002.
+- [x] `APP_OVERVIEW.md` is corrected so no claim above overstates the build. It is a briefing document given to third parties; leaving it inaccurate is a correctness problem. Verified by direct comparison with the 2026-07-25 code audit.
+- [x] Part II's poker-reference item is un-checked or re-scoped to match reality (see E21-003).
+- [x] Part II's collision-audit claim is re-worded and superseded by E25-002.
 
 ### E00-002 — Two global suppressors explain most "nothing animates" reports
 
@@ -1927,12 +1927,12 @@ overlap.
       raise-slider sizing, settings, keyboard pause/resume, corrupt-current-save
       recovery, and first-run reduced-motion/high-contrast preferences; physical
       assistive-input acceptance is still pending.
-- [x] Eliminate all gameplay layout collisions at every supported size: no card
-      may cover another card's rank or suit, opponent bet chips/amounts must
-      remain visually separate from total stack balances, and labels, controls,
-      cards, chips, and status overlays must never obscure one another. A live
-      six-seat Normal Tour geometry audit reports zero intersections at
-      1100×720, 1280×720, 1366×768, 1920×1080, and 2560×1080.
+- [ ] Establish a re-runnable gameplay layout-collision gate at every supported
+      size: no card may cover another card's rank or suit, opponent bet
+      chips/amounts must remain visually separate from total stack balances, and
+      labels, controls, cards, chips, and status overlays must never obscure one
+      another. The prior six-seat Normal Tour result was a one-time static
+      bounding-box capture, not a live gate; E25-002 supersedes it.
 - [x] Recheck the live table at 1024x768, 1366x768, and 1920x1080 after
       removing the decorative opponent-card fan; active card bounds and
       stack/bet lanes remain non-intersecting with no horizontal overflow.
