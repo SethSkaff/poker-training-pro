@@ -16,6 +16,8 @@ import {
   validateTrainingScenario,
   validateTrainingScenarioBank,
 } from "./trainingEngine";
+import { defaultProgress, defaultSettings } from "./storage";
+import { createSaveEnvelope, restoreSaveBackup } from "./saveMigration";
 
 describe("table-style math answer parsing", () => {
   it("accepts percentages, decimals, and literal fractions", () => {
@@ -189,6 +191,60 @@ describe("separate Elo changes", () => {
     expect(graded.result.mathCorrect).toBe(false);
     expect(graded.result.elapsedMs).toBe(21_000);
     expect(graded.result.completedAt).toBe("2026-07-22T12:00:00.000Z");
+  });
+
+  it("moves math Elo in the expected direction for blank, wrong, and correct attempts", () => {
+    const base = {
+      scenario: "preflop-pot-odds-ak",
+      action: "call" as const,
+      decisionElo: 1000,
+      mathElo: 1000,
+      actionElapsedMs: 1000,
+      mathElapsedMs: 1000,
+    };
+
+    expect(gradeTrainingAttempt(base).mathEloDelta).toBeLessThan(0);
+    expect(gradeTrainingAttempt({ ...base, mathAnswer: 10 }).mathEloDelta).toBeLessThan(0);
+    expect(
+      gradeTrainingAttempt({
+        ...base,
+        mathAnswer: scenario("preflop-pot-odds-ak").mathQuestion.correctValue,
+      }).mathEloDelta,
+    ).toBeGreaterThan(0);
+  });
+
+  it("persists both independently updated ratings in a Training save", () => {
+    const graded = gradeTrainingAttempt({
+      scenario: "preflop-pot-odds-ak",
+      action: "call",
+      mathAnswer: 10,
+      decisionElo: defaultProgress.decisionElo,
+      mathElo: defaultProgress.mathElo,
+      actionElapsedMs: 1000,
+      mathElapsedMs: 1000,
+    });
+    const restored = restoreSaveBackup(
+      JSON.stringify(
+        createSaveEnvelope(defaultSettings, {
+          ...defaultProgress,
+          decisionElo: graded.decisionEloAfter,
+          mathElo: graded.mathEloAfter,
+          results: [graded.result],
+        }),
+      ),
+    );
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) throw new Error(restored.error.message);
+    const persisted = restored.save;
+
+    expect(persisted.data.progress.decisionElo).toBe(
+      graded.decisionEloAfter,
+    );
+    expect(persisted.data.progress.mathElo).toBe(graded.mathEloAfter);
+    expect(persisted.data.progress.results[0]).toMatchObject({
+      mathAnswer: 10,
+      mathCorrect: false,
+    });
   });
 });
 

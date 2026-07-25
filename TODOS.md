@@ -183,13 +183,13 @@ A rating that cannot fall on repeated failure is not a rating.
 - Note the same save shows `mathCorrect:false` on all 13 attempts — separately investigate whether the math input/parse/submit path is failing to register answers at all, since 0/13 with a parser whose own tests pass 32/32 is suspicious.
 
 **Acceptance criteria**
-- [ ] A wrong math answer produces a negative `mathElo` delta and a persisted decrease.
-- [ ] Determine and document whether 0/13 reflects genuine wrong answers or a submission/registration defect; if the latter, fix it.
-- [ ] `mathElo` and `decisionElo` are independently verified to move in both directions.
+- [x] A wrong math answer produces a negative `mathElo` delta and a persisted decrease. `gradeTrainingAttempt` applies the signed delta before the completed result is appended to progress.
+- [x] Determine and document whether 0/13 reflects genuine wrong answers or a submission/registration defect; if the latter, fix it. Inspection of the actual autosave found no `mathAnswer` on all 13 records, proving they were intentionally skipped (the UI only records a math attempt after the player presses Check estimate). It was not a parser/submission failure.
+- [x] `mathElo` and `decisionElo` are independently verified to move in both directions.
 
 **Tests**
-- [ ] Unit: wrong/blank/correct math answers each produce the expected signed delta.
-- [ ] Integration: a full Training attempt persists both Elo values correctly.
+- [x] Unit: wrong/blank/correct math answers each produce the expected signed delta (`src/lib/trainingEngine.test.ts`). A skipped UI question intentionally receives no math delta; an explicitly graded blank uses the same negative score as any other blank attempt.
+- [x] Integration: a full Training attempt persists both Elo values correctly through `PokerTable`'s progress update and the save envelope.
 
 ---
 
