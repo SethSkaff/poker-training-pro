@@ -1983,10 +1983,11 @@ export function PokerTable({
   // engine pot-award data the "Won pot" seat badge already uses -- never
   // guessed from a stack-size delta. Undefined until a hand has resolved.
   const potResultSnapshot: TableAnnouncerSnapshot["potResult"] =
-    tournament?.lastPotAwards?.length
+    showdownAwards.length
       ? {
+          id: showdownEvent?.handId ?? `previous-${tournament?.handNumber ?? 0}`,
           winnerNames: Array.from(
-            new Set(tournament.lastPotAwards.map((award) => award.playerId)),
+            new Set(showdownAwards.map((award) => award.playerId)),
           ).map((playerId) => {
             const winner = scenario.players.find(
               (player) => player.id === playerId,
@@ -1996,11 +1997,13 @@ export function PokerTable({
               ? formatMessage("table.seat.you")
               : winner.name;
           }),
-          amount: tournament.lastPotAwards.reduce(
+          amount: showdownAwards.reduce(
             (sum, award) => sum + award.amount,
             0,
           ),
-          hadSidePot: Boolean(tournament.lastHandHadSidePot),
+          hadSidePot:
+            Boolean(tournament?.lastHandHadSidePot) ||
+            new Set(showdownAwards.map((award) => award.potId)).size > 1,
         }
       : undefined;
 
