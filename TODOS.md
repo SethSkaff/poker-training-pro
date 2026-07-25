@@ -570,7 +570,7 @@ Never show chips at a seat while simultaneously presenting them as fully
 collected into the centre without a clear reason.
 
 **Acceptance criteria**
-- [ ] The chosen contract is written down in `docs/` and referenced from the code.
+- [x] The chosen contract is written down in `docs/` and referenced from the code.
 - [ ] Chips visibly move from the stack area into a committed-bet area on bet/raise/call/blind.
 - [ ] Committed chips remain visually separate from the remaining stack.
 - [ ] Opponent bet chips never overlap stack labels (add these elements to the geometry gate, E25-002).

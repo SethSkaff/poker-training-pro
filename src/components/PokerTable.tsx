@@ -406,7 +406,11 @@ export function avatarVariantForPlayerId(playerId: string): number {
   return (hash >>> 0) % 6;
 }
 
-/** Compact visual scale for the central pot; the numeric pot remains exact. */
+/**
+ * Compact visual scale for the central pot; the numeric pot remains exact.
+ * See docs/table-presentation-contract.md for the inclusive-pot convention
+ * shared by seat wagers, central chips, and transient travel tokens.
+ */
 export function potChipStackCount(pot: number): number {
   if (!Number.isFinite(pot) || pot <= 0) return 0;
   return Math.min(8, Math.max(1, Math.ceil(Math.log10(pot + 1))));
