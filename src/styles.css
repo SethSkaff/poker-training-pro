@@ -3238,8 +3238,8 @@ input[type="range"]::-webkit-slider-thumb {
 .dealer-button-travel {
   position: absolute;
   z-index: 31;
-  top: 42%;
-  left: 50%;
+  top: 0;
+  left: 0;
   display: grid;
   width: 28px;
   height: 28px;
@@ -3255,9 +3255,9 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 @keyframes dealer-button-travel {
-  from { opacity: 0; transform: translate(-190%, 115%) scale(.7); }
-  70% { opacity: 1; transform: translate(-50%, -50%) scale(1.14); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  from { opacity: 0.6; transform: translate(calc(var(--dealer-from-x) - 50%), calc(var(--dealer-from-y) - 50%)) scale(.7); }
+  70% { opacity: 1; transform: translate(calc(var(--dealer-to-x) - 50%), calc(var(--dealer-to-y) - 50%)) scale(1.14); }
+  to { opacity: 1; transform: translate(calc(var(--dealer-to-x) - 50%), calc(var(--dealer-to-y) - 50%)) scale(1); }
 }
 
 .board-card-entering {

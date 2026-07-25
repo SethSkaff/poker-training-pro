@@ -1873,6 +1873,11 @@ export function PokerTable({
     tournament?.presentationEvent?.kind === "button-moved"
       ? tournament.presentationEvent
       : undefined;
+  const dealerMoveCoordinates = [
+    [50, 86], [12, 73], [18, 30], [50, 12], [82, 30], [88, 73],
+  ];
+  const dealerMoveFrom = dealerMoveCoordinates[scenario.buttonSeat] ?? dealerMoveCoordinates[0];
+  const dealerMoveTo = dealerMoveCoordinates[dealerMoveEvent?.buttonSeat ?? scenario.buttonSeat] ?? dealerMoveFrom;
   const minimumRaise =
     mode !== "training" && tournament
       ? (tournament.legalActions.raise?.minTo ??
@@ -2180,7 +2185,17 @@ export function PokerTable({
 
             <div className="poker-scene">
               {dealerMoveEvent && (
-                <span className="dealer-button-travel" role="img" aria-label="Dealer button moves to its next seat">D</span>
+                <span
+                  className="dealer-button-travel"
+                  role="img"
+                  aria-label="Dealer button moves to its next seat"
+                  style={{
+                    "--dealer-from-x": `${dealerMoveFrom[0]}%`,
+                    "--dealer-from-y": `${dealerMoveFrom[1]}%`,
+                    "--dealer-to-x": `${dealerMoveTo[0]}%`,
+                    "--dealer-to-y": `${dealerMoveTo[1]}%`,
+                  } as CSSProperties}
+                >D</span>
               )}
             <div
               className={`poker-table ${
