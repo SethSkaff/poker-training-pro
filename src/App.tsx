@@ -54,6 +54,10 @@ import {
   readOsReducedMotionPreference,
   subscribeOsReducedMotionPreference,
 } from "./lib/motionPreference";
+import {
+  completeFirstRunSettings,
+  skipFirstRunSettings,
+} from "./lib/firstRunSettings";
 import { selectNearTransferScenario } from "./lib/trainingEngine";
 import {
   createTrainingCheckpoint,
@@ -159,6 +163,7 @@ function FirstRunSetup({
   onComplete(settings: GameSettings): void;
 }) {
   const [draft, setDraft] = useState(initialSettings);
+  const [motionChoiceTouched, setMotionChoiceTouched] = useState(false);
   const patch = (next: Partial<GameSettings>) =>
     setDraft((current) => ({ ...current, ...next }));
 
@@ -173,9 +178,10 @@ function FirstRunSetup({
             <input
               type="checkbox"
               checked={draft.reducedMotion}
-              onChange={(event) =>
-                patch({ reducedMotion: event.target.checked })
-              }
+              onChange={(event) => {
+                setMotionChoiceTouched(true);
+                patch({ reducedMotion: event.target.checked });
+              }}
             />
             <span>
               <strong>{formatMessage("shell.firstRun.reduceMotion.label")}</strong>
@@ -225,22 +231,20 @@ function FirstRunSetup({
           <button
             type="button"
             onClick={() =>
-              // Completing setup via Save is an explicit motion choice, even
-              // if the player left the OS-derived pre-selection untouched:
-              // it always wins over the OS preference from now on.
-              onComplete({ ...draft, reducedMotionExplicit: true })
+              onComplete(
+                completeFirstRunSettings(
+                  initialSettings,
+                  draft,
+                  motionChoiceTouched,
+                ),
+              )
             }
           >
             {formatMessage("shell.firstRun.saveButton")}
           </button>
           <button
             type="button"
-            onClick={() =>
-              // Skip makes no motion choice, so the app keeps following the
-              // live OS reduced-motion preference (initialSettings already
-              // reflects it and reducedMotionExplicit stays false).
-              onComplete(initialSettings)
-            }
+            onClick={() => onComplete(skipFirstRunSettings(initialSettings))}
           >
             {formatMessage("shell.firstRun.skipButton")}
           </button>

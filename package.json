@@ -24,7 +24,8 @@
     "release:verify-runtime-video-policy": "node scripts/validate-runtime-video-policy.mjs",
     "release:verify-ios-training-bank": "vite-node scripts/export-ios-training-bank.ts --check",
     "release:verify-ios-tournament-engine": "node scripts/export-ios-tournament-engine.mjs --check",
-    "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs"
+    "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs",
+    "diagnose:motion": "node scripts/diagnose-motion.mjs"
   },
   "engines": {
     "node": ">=22.12.0",

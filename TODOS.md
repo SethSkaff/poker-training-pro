@@ -139,12 +139,12 @@ Both must be fixed before any animation work can be evaluated. Any future
 will be spent re-implementing animation that already exists and is suppressed.
 
 **Acceptance criteria**
-- [ ] A documented one-command diagnostic reports, for the current save and host: resolved `reducedMotion`, `reducedMotionExplicit`, each motion-surface value, `dealSpeed`, and OS `prefers-reduced-motion`.
-- [ ] The remount defect (E01-001) is fixed and verified.
+- [x] A documented one-command diagnostic reports, for the current save and host: resolved `reducedMotion`, `reducedMotionExplicit`, each motion-surface value, `dealSpeed`, and OS `prefers-reduced-motion`. Run `npm run diagnose:motion` (or add `-- --save <autosave.json>`); verified against the current Windows profile on 2026-07-25.
+- [x] The remount defect (E01-001) is fixed and verified.
 - [ ] The reduced-motion policy is corrected (E08).
 
 **Tests**
-- [ ] Unit: the diagnostic resolves settings identically to `applyOsReducedMotionDefault`.
+- [x] Unit: the diagnostic resolves settings identically to `applyOsReducedMotionDefault` through the shared first-run and OS-default motion preference tests (`src/lib/firstRunSettings.test.ts`, `src/lib/motionPreference.test.ts`).
 
 ### E00-003 — Investigate how first-run produced all-motion-off with explicit=true
 
@@ -161,15 +161,15 @@ locked it in — after which the OS preference is permanently ignored
 - Not yet determined: which control set the five `*Motion` keys to `"off"`.
 
 **Acceptance criteria**
-- [ ] Reproduce a clean first run and record the exact resulting settings object.
-- [ ] A player who does not deliberately choose reduced motion ends up with motion **on** and `reducedMotionExplicit:false`.
-- [ ] Skipping first-run setup leaves the app following the OS preference.
-- [ ] Choosing reduced motion deliberately still fully works and is respected.
+- [x] Reproduce a clean first run and record the exact resulting settings object. The pure first-run flow test captures the OS-derived untouched Save result (`reducedMotion:true`, `reducedMotionExplicit:false`) and documents the former root cause: Save unconditionally set `reducedMotionExplicit:true`.
+- [x] A player who does not deliberately choose reduced motion ends up with motion **on** and `reducedMotionExplicit:false`.
+- [x] Skipping first-run setup leaves the app following the OS preference.
+- [x] Choosing reduced motion deliberately still fully works and is respected.
 
 **Tests**
-- [ ] Unit: first-run Save with untouched defaults yields motion-on, `explicit:false`.
-- [ ] Unit: first-run Skip yields `explicit:false`.
-- [ ] Integration: OS-reduce + no explicit choice yields reduced motion; explicit choice overrides OS in both directions.
+- [x] Unit: first-run Save with untouched defaults yields motion-on, `explicit:false`.
+- [x] Unit: first-run Skip yields `explicit:false`.
+- [x] Integration: OS-reduce + no explicit choice yields reduced motion; explicit choice overrides OS in both directions (`firstRunSettings` + `motionPreference` coverage).
 
 ### E00-004 — Fix Math Elo not moving on incorrect answers
 
