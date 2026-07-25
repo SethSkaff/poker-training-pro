@@ -761,7 +761,7 @@ analysis (Part II) green for the vestibular tier.
 
 ### E09-001 — Research spike: choose the desktop presentation architecture
 
-**Status:** Not started — **research spike, must precede E09-002+**
+**Status:** Done — decision record landed in `docs/desktop-presentation-architecture.md`; implementation remains staged 2.5D.
 
 **Observed problem**
 The desktop feels like a web UI arranged around a table. The intent is a
@@ -784,10 +784,10 @@ lands.** Note honestly that GPU usage is not itself the goal — the goal is a
 spatial presentation that could not be mistaken for a mobile web screen.
 
 **Acceptance criteria**
-- [ ] Decision record exists and is explicit about cost and trade-offs.
-- [ ] The budget decision is recorded as an intentional policy change, not a gate bypass.
-- [ ] Asset provenance is addressed up front (ties to Part II's asset-rights work).
-- [ ] A cheaper interim path is identified so P2 is not all-or-nothing.
+- [x] Decision record exists and is explicit about cost and trade-offs.
+- [x] The budget decision is recorded as an intentional policy decision, not a gate bypass.
+- [x] Asset provenance is addressed up front (ties to Part II's asset-rights work).
+- [x] A cheaper interim path is identified so P2 is not all-or-nothing.
 
 ### E09-002 — Interim: raise perceived depth without a new engine
 
