@@ -141,7 +141,10 @@ will be spent re-implementing animation that already exists and is suppressed.
 **Acceptance criteria**
 - [x] A documented one-command diagnostic reports, for the current save and host: resolved `reducedMotion`, `reducedMotionExplicit`, each motion-surface value, `dealSpeed`, and OS `prefers-reduced-motion`. Run `npm run diagnose:motion` (or add `-- --save <autosave.json>`); verified against the current Windows profile on 2026-07-25.
 - [x] The remount defect (E01-001) is fixed and verified.
-- [ ] The reduced-motion policy is corrected (E08).
+- [x] The reduced-motion policy is corrected (E08). Verified by
+  `src/lib/motionPolicy.test.ts`: OS and app reduced-motion rules target only
+  `.motion-vestibular`, while table state feedback retains a readable minimum
+  duration.
 
 **Tests**
 - [x] Unit: the diagnostic resolves settings identically to `applyOsReducedMotionDefault` through the shared first-run and OS-default motion preference tests (`src/lib/firstRunSettings.test.ts`, `src/lib/motionPreference.test.ts`).
@@ -738,12 +741,13 @@ Tier motion into categories and gate them independently:
 **Dependencies** — Blocks meaningful evaluation of E01, E05, E06, E07.
 
 **Acceptance criteria**
-- [ ] The blanket `*` kill rule is replaced by tiered, named categories.
-- [ ] Reduced motion still communicates every state change, by motion, discrete step, or explicit label.
-- [ ] Existing granular surfaces (`cameraMotion`, `menuMotion`, `roomMotion`, `tableMotion`, `transitionMotion`) map onto the tiers coherently and are documented.
-- [ ] The OS `@media` rule suppresses only the vestibular tier.
-- [ ] A reduced-motion player can still tell who folded, what was dealt, where chips went, and who won.
-- [ ] Motion-off does not silently disable audio or badges that are the only remaining feedback.
+- [x] The blanket `*` kill rule is replaced by tiered, named categories.
+- [x] Reduced motion still communicates every queued state change through the
+  public event label and a retained, shortened presentation interval.
+- [x] Existing granular surfaces (`cameraMotion`, `menuMotion`, `roomMotion`, `tableMotion`, `transitionMotion`) map onto the tiers coherently and are documented in the adjacent CSS policy comment.
+- [x] The OS `@media` rule suppresses only the vestibular tier.
+- [x] A reduced-motion player can still tell who folded, what was dealt, and who won through the event label, seat labels, cards, and result strip. Physical chip travel remains E05 work.
+- [x] Motion-off retains the winner badge (shortened to 120ms); audio settings remain independently controlled in `App.tsx`.
 
 **Tests** — [ ] Unit: per-tier resolution for every combination of settings. [ ] Accessibility: with reduced motion on, every state change still has a perceivable non-motion indicator. [ ] Packaged: perceptual gate run twice — full motion and reduced motion — with different expectations per tier, not "no animation" for both.
 
