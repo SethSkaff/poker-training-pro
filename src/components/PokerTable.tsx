@@ -560,10 +560,10 @@ function PlayerSeat({
           <ChipStack /> {formatChips(player.stack)}
         </span>
       </div>
-      {!isHero && (
+      {!isHero && player.bet > 0 && (
         <div className="seat-bet" aria-hidden="true">
           <ChipStack bet />
-          <span>In</span>
+          <span>{formatMessage("table.seat.committed")}</span>
           <b>{formatChips(player.bet)}</b>
         </div>
       )}

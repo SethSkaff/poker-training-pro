@@ -219,6 +219,7 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.seat.statusFragment.out": "out",
   "table.seat.holdingCardsFragment": ", holding cards",
   "table.seat.betFragment": ", bet {amount}",
+  "table.seat.committed": "In",
   "table.seat.dealerFragment": ", dealer button",
 
   "table.math.ariaLabel": "Training math question",

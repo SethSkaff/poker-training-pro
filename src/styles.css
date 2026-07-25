@@ -3234,7 +3234,10 @@ input[type="range"]::-webkit-slider-thumb {
 
 .seat-bet {
   position: absolute;
-  top: 123px;
+  /* The balance plate ends near 122px for every non-hero seat. Keep the
+     committed-wager lane below it so stack and bet values cannot overlap. */
+  top: 140px;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 3px;
