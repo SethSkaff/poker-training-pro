@@ -329,12 +329,12 @@ for the viewer (`tournamentSession.ts:1276-1294`). The muck animation exists but
 is defeated by E01-001.
 
 **Acceptance criteria**
-- [ ] Fold, check, call, bet, raise, all-in, and any forced action are each visibly and distinctly communicated at the acting seat.
-- [ ] An opponent fold shows a physical/animated muck toward the muck pile plus a readable label.
-- [ ] Eliminations and pot/side-pot awards are visibly communicated.
-- [ ] The player never has to infer an action from a later stack change.
+- [x] Fold, check, call, bet, raise, all-in, and any forced action are each visibly and distinctly communicated at the acting seat.
+- [x] An opponent fold shows a physical/animated muck toward the muck pile plus a readable label.
+- [x] Eliminations and pot/side-pot awards are visibly communicated.
+- [x] The player never has to infer an action from a later stack change.
 
-**Tests** — [ ] Unit: each action type produces a distinct presentation event. [ ] Accessibility: each is announced without leaking hidden information.
+**Tests** — [x] Unit: each action type produces a distinct presentation event. [x] Accessibility: each is announced without leaking hidden information.
 
 ### E01-006 — Add a real "currently acting" indicator
 
@@ -345,12 +345,12 @@ There is no `actingPlayerId`/`toAct` concept surfaced to the UI at all.
 Classification: **STATE-SYNC BUG** over a **MISSING FEATURE**.
 
 **Acceptance criteria**
-- [ ] The seat to act is unmistakably indicated, by more than color.
-- [ ] The indicator is driven by real engine state, not a hardcoded id.
-- [ ] Action order is discoverable.
-- [ ] The hero's own turn is clearly distinguished from waiting.
+- [x] The seat to act is unmistakably indicated, by more than color.
+- [x] The indicator is driven by real engine state, not a hardcoded id.
+- [x] Action order is discoverable.
+- [x] The hero's own turn is clearly distinguished from waiting.
 
-**Tests** — [ ] Unit: indicator follows `actingPlayerId` across a betting round. [ ] Regression: no hardcoded player id remains in render conditions (add a lint/grep gate).
+**Tests** — [x] Unit: indicator follows `actingPlayerId` across a betting round. [x] Regression: no hardcoded player id remains in render conditions (add a lint/grep gate).
 
 ---
 

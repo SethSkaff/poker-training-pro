@@ -171,6 +171,30 @@ describe("six-seat tournament session", () => {
     );
   });
 
+  it("surfaces the engine's acting player through each betting transition", () => {
+    const dealt = beginTournamentSessionHand(createSession("normal", "acting-seat"));
+    const firstHand = dealt.activeHand;
+    if (!firstHand) throw new Error("Expected a hand");
+    const firstActor = nextToAct(firstHand.betting);
+    if (!firstActor) throw new Error("Expected an actor");
+
+    expect(createPokerTableSnapshot(dealt).actingPlayerId).toBe(firstActor);
+    const legal = getLegalActions(firstHand.betting, firstActor);
+    const command: BettingActionCommand = legal.check
+      ? { type: "check" }
+      : legal.call
+        ? { type: "call" }
+        : { type: "fold" };
+    const advanced = applyTournamentSessionAction(dealt, firstActor, command);
+    const nextHand = advanced.activeHand;
+    if (!nextHand) throw new Error("Expected the hand to continue");
+
+    expect(createPokerTableSnapshot(advanced).actingPlayerId).toBe(
+      nextToAct(nextHand.betting),
+    );
+    expect(nextToAct(nextHand.betting)).not.toBe(firstActor);
+  });
+
   it("advances blind levels with residual time through the core clock", () => {
     let session = createSession();
     const first = currentBlindLevel(session.tournament);

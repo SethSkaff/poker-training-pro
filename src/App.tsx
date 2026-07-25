@@ -89,7 +89,6 @@ import type {
   TournamentSessionResult,
 } from "./modes/tournamentSession";
 import { createPokerTableSnapshot } from "./modes/tournamentSession";
-import type { BettingActionType } from "./engine";
 import type { GameSettings, PlayerProgress } from "./types/poker";
 
 // Mode-specific heavy scenes are code-split so the initial bundle stays small.
@@ -1478,10 +1477,6 @@ export default function App() {
       handNumber > 1 && lastPresentedHand.current !== handPresentationKey;
     lastPresentedHand.current = handPresentationKey;
     const presentationEvent = pendingPresentation?.events[pendingPresentation.index];
-    const lastPublicAction =
-      presentationEvent?.kind === "action"
-        ? presentationEvent
-        : runner.decisions.at(-1);
     return (
       <Suspense
         fallback={
@@ -1557,14 +1552,6 @@ export default function App() {
           lastHandHadSidePot: Boolean(
             runner.session.lastHand?.pots.some((pot) => pot.kind === "side"),
           ),
-          ...(lastPublicAction
-            ? {
-                lastPublicAction: {
-                  playerId: lastPublicAction.playerId,
-                  type: lastPublicAction.command.type as BettingActionType,
-                },
-              }
-            : {}),
           openingBigBlind:
             runner.session.tournament.structure.levels[0]?.bigBlind,
           qualifyingPlaces: runner.session.event.qualifyingPlaces,

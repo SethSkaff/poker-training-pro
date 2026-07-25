@@ -63,7 +63,12 @@ export type TournamentPresentationEvent =
       id: string;
       kind: "blinds-posted";
       handId: string;
-      playerIds: readonly string[];
+      /** Public forced posts, kept separate from voluntary betting actions. */
+      posts: readonly {
+        playerId: string;
+        type: "small-blind" | "big-blind" | "big-blind-ante";
+        amount: number;
+      }[];
     }
   | {
       id: string;
@@ -356,13 +361,17 @@ function beginHandPresentationEvents(
   const activePlayerIds = hand.information.players
     .filter((player) => player.status !== "folded")
     .map((player) => player.id);
-  const blindPlayerIds = hand.information.actions
+  const blindPosts = hand.information.actions
     .filter(
       (action) =>
         action.type === "small-blind" || action.type === "big-blind" ||
         action.type === "big-blind-ante",
     )
-    .map((action) => action.playerId);
+    .map((action) => ({
+      playerId: action.playerId,
+      type: action.type as "small-blind" | "big-blind" | "big-blind-ante",
+      amount: action.amount ?? 0,
+    }));
   return [
     {
       id: presentationEventId(source, handId, "button-moved"),
@@ -374,7 +383,7 @@ function beginHandPresentationEvents(
       id: presentationEventId(source, handId, "blinds-posted"),
       kind: "blinds-posted",
       handId,
-      playerIds: blindPlayerIds,
+      posts: blindPosts,
     },
     {
       id: presentationEventId(source, handId, "hole-cards-dealt"),

@@ -147,14 +147,10 @@ interface TournamentTableControls {
    * pot-building result.
    */
   lastHandHadSidePot?: boolean;
-  /** The latest public table action, for a brief, truthful character gesture. */
-  lastPublicAction?: {
-    playerId: string;
-    type: BettingActionType;
-  };
 }
 
-function presentationEventLabel(event: TournamentPresentationEvent): string {
+/** Human-readable, public-only event copy shared by the HUD and live region. */
+export function presentationEventLabel(event: TournamentPresentationEvent): string {
   switch (event.kind) {
     case "button-moved":
       return "Dealer button moves";
@@ -163,7 +159,7 @@ function presentationEventLabel(event: TournamentPresentationEvent): string {
     case "hole-cards-dealt":
       return "Cards dealt";
     case "action":
-      return `${event.command.type.replace("-", " ")} in progress`;
+      return `${publicActionLabel(event.command.type)} in progress`;
     case "board-card-dealt":
       return `${event.street} card dealt`;
     case "bets-collected":
@@ -171,12 +167,70 @@ function presentationEventLabel(event: TournamentPresentationEvent): string {
     case "showdown":
       return "Showdown";
     case "side-pot-formed":
-      return "Side pot formed";
+      return `Side pot formed: ${formatChips(event.amount)}`;
     case "pot-awarded":
-      return "Pot awarded";
+      return `Pot awarded: ${formatChips(event.amount)}`;
     case "eliminated":
       return "Player eliminated";
   }
+}
+
+/** Labels for every public voluntary action; never contains card information. */
+export function publicActionLabel(action: BettingActionType): string {
+  switch (action) {
+    case "fold":
+      return "Folds";
+    case "check":
+      return "Checks";
+    case "call":
+      return "Calls";
+    case "bet":
+      return "Bets";
+    case "raise":
+      return "Raises";
+    case "all-in":
+      return "All in";
+  }
+}
+
+export interface SeatPresentationUpdate {
+  action?: BettingActionType;
+  label?: string;
+  wonPot?: boolean;
+  eliminated?: boolean;
+}
+
+/**
+ * Projects one renderer-safe tournament event onto an individual seat. The
+ * projection deliberately reads no scenario cards, so it is safe for every
+ * opponent as well as the hero.
+ */
+export function seatPresentationUpdate(
+  event: TournamentPresentationEvent | undefined,
+  playerId: string,
+): SeatPresentationUpdate {
+  if (!event) return {};
+  if (event.kind === "action" && event.playerId === playerId) {
+    return { action: event.command.type, label: publicActionLabel(event.command.type) };
+  }
+  if (event.kind === "blinds-posted") {
+    const post = event.posts.find((entry) => entry.playerId === playerId);
+    if (!post) return {};
+    const label =
+      post.type === "small-blind"
+        ? "Posts small blind"
+        : post.type === "big-blind"
+          ? "Posts big blind"
+          : "Posts big blind ante";
+    return { action: "bet", label: `${label} ${formatChips(post.amount)}` };
+  }
+  if (event.kind === "pot-awarded" && event.playerId === playerId) {
+    return { label: `Wins ${formatChips(event.amount)}`, wonPot: true };
+  }
+  if (event.kind === "eliminated" && event.playerId === playerId) {
+    return { label: "Eliminated", eliminated: true };
+  }
+  return {};
 }
 
 interface PokerTableProps {
@@ -321,6 +375,7 @@ interface PlayerSeatProps {
   recentActionLabel?: string;
   cardsDealt: boolean;
   isActing: boolean;
+  eliminated?: boolean;
 }
 
 const SEAT_STATUS_FRAGMENT_KEYS: Record<SeatPlayer["status"], string> = {
@@ -376,19 +431,28 @@ function PlayerSeat({
   recentActionLabel,
   cardsDealt,
   isActing,
+  eliminated = false,
 }: PlayerSeatProps) {
-  const isFolded = player.status === "folded";
-  const isAllIn = player.status === "all-in";
-  const isOut = player.status === "out";
+  const isMucking = player.status === "folded" || recentAction === "fold";
+  const isFolded = isMucking;
+  const isAllIn = player.status === "all-in" || recentAction === "all-in";
+  const isOut = player.status === "out" || eliminated;
+  const seatStatus = isOut
+    ? "out"
+    : isAllIn
+      ? "all-in"
+      : isFolded
+        ? "folded"
+        : player.status;
   const isShowingCards = !isHero && !isOut && cardsDealt;
-  const shouldHoldCards = isShowingCards && player.status === "active";
+  const shouldHoldCards = isShowingCards && player.status === "active" && !isMucking;
   const gesture = wonPot
     ? "win"
     : isAllIn
       ? "all-in"
       : isFolded
         ? "fold"
-        : player.bet > 0
+        : player.bet > 0 || recentAction === "bet" || recentAction === "raise"
           ? "bet"
           : recentAction === "check"
             ? "check"
@@ -410,7 +474,7 @@ function PlayerSeat({
         isHero,
         name: player.name,
         stack: player.stack,
-        status: player.status,
+        status: seatStatus,
         showingCards: isShowingCards,
         bet: player.bet,
         dealer,
@@ -2125,31 +2189,31 @@ export function PokerTable({
               </div>
             </div>
 
-            {tablePlayers.slice(0, 6).map((player, index) => (
-              <PlayerSeat
-                key={player.id}
-                player={player}
-                position={seatPositions[index]}
-                isHero={player.seat === scenario.heroSeat}
-                dealer={player.seat === scenario.buttonSeat}
-                wonPot={
-                  arrivalVisible &&
-                  Boolean(tournament?.lastPotWinnerIds?.includes(player.id))
-                }
-                recentAction={
-                  tournament?.lastPublicAction?.playerId === player.id
-                    ? tournament.lastPublicAction.type
-                    : undefined
-                }
-                recentActionLabel={
-                  tournament?.lastPublicAction?.playerId === player.id
-                    ? tournament.lastPublicAction.type.replace("-", " ")
-                    : undefined
-                }
-                cardsDealt={cardsDealt}
-                isActing={scenario.actingPlayerId === player.id}
-              />
-            ))}
+            {tablePlayers.slice(0, 6).map((player, index) => {
+              const presentation = seatPresentationUpdate(
+                tournament?.presentationEvent,
+                player.id,
+              );
+              return (
+                <PlayerSeat
+                  key={player.id}
+                  player={player}
+                  position={seatPositions[index]}
+                  isHero={player.seat === scenario.heroSeat}
+                  dealer={player.seat === scenario.buttonSeat}
+                  wonPot={
+                    presentation.wonPot ||
+                    (arrivalVisible &&
+                      Boolean(tournament?.lastPotWinnerIds?.includes(player.id)))
+                  }
+                  recentAction={presentation.action}
+                  recentActionLabel={presentation.label}
+                  cardsDealt={cardsDealt}
+                  isActing={scenario.actingPlayerId === player.id}
+                  eliminated={presentation.eliminated}
+                />
+              );
+            })}
 
             {foldProgress > 10 && !action && (
               <div
