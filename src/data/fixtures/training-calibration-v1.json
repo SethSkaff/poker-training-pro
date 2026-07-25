@@ -1,5 +1,5 @@
 {
-  "calibrationVersion": "training-calibration-1.0.0",
+  "calibrationVersion": "training-calibration-1.1.0",
   "scenarioSchemaVersion": "1.0.0",
   "scenarioContentVersion": "2026.07.23.1",
   "evidenceKind": "synthetic-regression-only",
@@ -718,7 +718,7 @@
   "nearTransferPairs": [
     {
       "from": "flop-defense-frequency",
-      "to": "preflop-button-shove-fold-equity"
+      "to": "river-bluff-catch-price"
     },
     {
       "from": "flop-dirty-straight-outs",
@@ -726,43 +726,43 @@
     },
     {
       "from": "flop-flush-draw-all-in",
-      "to": "turn-close-flush-price"
-    },
-    {
-      "from": "preflop-button-shove-fold-equity",
-      "to": "river-blocker-bluff"
-    },
-    {
-      "from": "preflop-implied-odds-pair",
       "to": "turn-spr-commitment"
     },
     {
+      "from": "preflop-button-shove-fold-equity",
+      "to": "flop-dirty-straight-outs"
+    },
+    {
+      "from": "preflop-implied-odds-pair",
+      "to": "flop-defense-frequency"
+    },
+    {
       "from": "preflop-pot-odds-ak",
-      "to": "river-bluff-catch-price"
+      "to": "turn-spr-commitment"
     },
     {
       "from": "river-blocker-bluff",
-      "to": "turn-semi-bluff-ev"
+      "to": "flop-dirty-straight-outs"
     },
     {
       "from": "river-bluff-catch-price",
-      "to": "preflop-pot-odds-ak"
+      "to": "flop-defense-frequency"
     },
     {
       "from": "river-icm-bubble-call",
-      "to": "turn-close-flush-price"
+      "to": "turn-semi-bluff-ev"
     },
     {
       "from": "turn-close-flush-price",
-      "to": "flop-flush-draw-all-in"
+      "to": "flop-defense-frequency"
     },
     {
       "from": "turn-semi-bluff-ev",
-      "to": "river-blocker-bluff"
+      "to": "flop-dirty-straight-outs"
     },
     {
       "from": "turn-spr-commitment",
-      "to": "preflop-implied-odds-pair"
+      "to": "preflop-pot-odds-ak"
     }
   ],
   "archetypes": [

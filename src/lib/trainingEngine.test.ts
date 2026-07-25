@@ -12,6 +12,7 @@ import {
   measureAttemptTiming,
   parseMathAnswer,
   selectNearTransferScenario,
+  selectTrainingSessionStartScenario,
   summarizeTiming,
   validateTrainingScenario,
   validateTrainingScenarioBank,
@@ -302,12 +303,12 @@ describe("timing metrics", () => {
 });
 
 describe("near-transfer selection", () => {
-  it("deterministically chooses the same math skill on a different street", () => {
+  it("deterministically chooses a different skill and action rather than cycling on one topic", () => {
     const next = selectNearTransferScenario("preflop-pot-odds-ak");
 
-    expect(next?.id).toBe("river-bluff-catch-price");
-    expect(next?.mathQuestion.topic).toBe("pot-odds");
-    expect(next?.street).not.toBe("preflop");
+    expect(next?.id).not.toBe("river-bluff-catch-price");
+    expect(next?.mathQuestion.topic).not.toBe("pot-odds");
+    expect(next?.recommendedAction).not.toBe("call");
   });
 
   it("deprioritizes completed scenarios and honors a focus topic", () => {
@@ -318,5 +319,39 @@ describe("near-transfer selection", () => {
 
     expect(next?.id).not.toBe("river-bluff-catch-price");
     expect(next?.mathQuestion.topic).toBe("equity");
+  });
+
+  it("covers the full bank without a fixed cycle from every starting scenario", () => {
+    for (const start of trainingScenarios) {
+      const ids = [start.id];
+      let current = start;
+      for (let draw = 0; draw < 100; draw += 1) {
+        const next = selectNearTransferScenario(current, {
+          completedScenarioIds: ids,
+          recentScenarioIds: ids,
+        });
+        if (!next) throw new Error("Expected a training scenario");
+        ids.push(next.id);
+        current = next;
+      }
+      expect(new Set(ids).size).toBe(trainingScenarios.length);
+      expect(new Set(ids.slice(-6)).size).toBe(6);
+      expect(
+        new Set(
+          ids.map(
+            (id) => trainingScenarios.find((scenario) => scenario.id === id)?.recommendedAction,
+          ),
+        ).size,
+      ).toBeGreaterThan(2);
+    }
+  });
+
+  it("selects reproducible starts that are not permanently the first scenario", () => {
+    const starts = ["Ada", "Ben", "Cleo", "Drew"].map((name) =>
+      selectTrainingSessionStartScenario(name)?.id,
+    );
+    expect(selectTrainingSessionStartScenario("Ada")?.id).toBe(starts[0]);
+    expect(new Set(starts).size).toBeGreaterThan(1);
+    expect(starts.some((id) => id !== trainingScenarios[0]?.id)).toBe(true);
   });
 });

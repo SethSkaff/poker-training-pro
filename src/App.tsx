@@ -58,7 +58,10 @@ import {
   completeFirstRunSettings,
   skipFirstRunSettings,
 } from "./lib/firstRunSettings";
-import { selectNearTransferScenario } from "./lib/trainingEngine";
+import {
+  selectNearTransferScenario,
+  selectTrainingSessionStartScenario,
+} from "./lib/trainingEngine";
 import {
   createTrainingCheckpoint,
   restoreTrainingCheckpoint,
@@ -1081,14 +1084,19 @@ export default function App() {
   );
 
   const beginTraining = useCallback(() => {
-    const checkpoint = createTrainingCheckpoint(trainingScenario.id);
+    const scenario = selectTrainingSessionStartScenario(
+      progress.playerName,
+      progress.results.map((result) => result.scenarioId),
+    ) ?? trainingScenario;
+    setTrainingScenario(scenario);
+    const checkpoint = createTrainingCheckpoint(scenario.id);
     activeReplayRef.current = checkpoint;
     setTrainingPresentation(checkpoint.presentation);
     persistBoundary("action", settings, progress, checkpoint);
     void PokerTable.preload();
     setScreen("practice");
     gameAudio.play("deal");
-  }, [persistBoundary, progress, settings, trainingScenario.id]);
+  }, [persistBoundary, progress, settings, trainingScenario]);
 
   const advanceTrainingScenario = useCallback(
     (scenarioId: string) => {
@@ -1096,7 +1104,10 @@ export default function App() {
         (result) => result.scenarioId,
       );
       const next =
-        selectNearTransferScenario(scenarioId, { completedScenarioIds }) ??
+        selectNearTransferScenario(scenarioId, {
+          completedScenarioIds,
+          recentScenarioIds: [...completedScenarioIds, scenarioId],
+        }) ??
         trainingScenarios[0];
       const checkpoint = createTrainingCheckpoint(next.id);
       activeReplayRef.current = checkpoint;

@@ -111,6 +111,8 @@ export interface TimingSummary {
 
 export interface NearTransferOptions {
   completedScenarioIds?: Iterable<string>;
+  /** Most recent completed/current ids, newest last. Kept out of the next draw. */
+  recentScenarioIds?: Iterable<string>;
   focusTopic?: MathTopic;
   preferDifferentStreet?: boolean;
 }
@@ -391,9 +393,9 @@ function sharedTagCount(
 }
 
 /**
- * Chooses a deterministic near-transfer problem. The selector prioritizes the
- * same mathematical operation on a changed surface/street, then the same
- * transfer group, similar difficulty, and shared vocabulary.
+ * Chooses a deterministic but deliberately diverse next problem. Near-transfer
+ * is a small tie-breaker, never a dominant score: a training session must not
+ * collapse into a two-card cycle merely because two prompts share a topic.
  */
 export function selectNearTransferScenario(
   currentScenario: RatedTrainingScenario | string,
@@ -408,21 +410,25 @@ export function selectNearTransferScenario(
   if (!current) return undefined;
 
   const completed = new Set(options.completedScenarioIds ?? []);
+  const recent = [...(options.recentScenarioIds ?? [])].slice(-6);
+  const recentSet = new Set([...recent, current.id]);
   const preferDifferentStreet = options.preferDifferentStreet ?? true;
   const candidates = pool
     .filter((scenario) => scenario.id !== current.id)
     .map((scenario) => {
       let score = 0;
-      if (!completed.has(scenario.id)) score += 40;
-      if (scenario.mathQuestion.topic === current.mathQuestion.topic) score += 100;
-      if (scenario.training.transferGroup === current.training.transferGroup) score += 65;
+      if (!completed.has(scenario.id)) score += 42;
+      if (recentSet.has(scenario.id)) score -= 10_000;
+      if (scenario.mathQuestion.topic !== current.mathQuestion.topic) score += 28;
+      if (scenario.training.transferGroup !== current.training.transferGroup) score += 16;
+      if (scenario.recommendedAction !== current.recommendedAction) score += 24;
       if (
         options.focusTopic &&
         scenario.mathQuestion.topic === options.focusTopic
       ) {
         score += 120;
       }
-      score += sharedTagCount(current, scenario) * 6;
+      score += sharedTagCount(current, scenario) * 2;
       score -= Math.abs(current.difficulty - scenario.difficulty) * 8;
       if (preferDifferentStreet && scenario.street !== current.street) score += 12;
       return { scenario, score };
@@ -433,4 +439,22 @@ export function selectNearTransferScenario(
     });
 
   return candidates[0]?.scenario;
+}
+
+/** A reproducible initial prompt that cannot always be the first bank entry. */
+export function selectTrainingSessionStartScenario(
+  playerName: string,
+  completedScenarioIds: Iterable<string> = [],
+  pool: RatedTrainingScenario[] = trainingScenarios,
+): RatedTrainingScenario | undefined {
+  if (pool.length === 0) return undefined;
+  const completed = new Set(completedScenarioIds);
+  const candidates = pool.filter((scenario) => !completed.has(scenario.id));
+  const source = candidates.length ? candidates : pool;
+  let hash = 2166136261;
+  for (const character of `${playerName}:${completed.size}`) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return source[(hash >>> 0) % source.length];
 }
