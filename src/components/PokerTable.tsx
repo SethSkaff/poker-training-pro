@@ -1963,6 +1963,31 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
+  const tableSeatCoordinates = [
+    [50, 86], [12, 73], [18, 30], [50, 12], [82, 30], [88, 73],
+  ] as const;
+  const tablePotCoordinate = [50, 58] as const;
+  const chipTravel = (() => {
+    const event = tournament?.presentationEvent;
+    if (!event) return undefined;
+    const playerIndex = (playerId: string) =>
+      tablePlayers.findIndex((player) => player.id === playerId);
+    if (
+      event.kind === "action" &&
+      ["bet", "raise", "call", "all-in"].includes(event.command.type)
+    ) {
+      const index = playerIndex(event.playerId);
+      if (index >= 0) return { from: tableSeatCoordinates[index] ?? tablePotCoordinate, to: tablePotCoordinate, direction: "to-pot" as const };
+    }
+    if (event.kind === "bets-collected") {
+      return { from: [50, 78] as const, to: tablePotCoordinate, direction: "to-pot" as const };
+    }
+    if (event.kind === "pot-awarded") {
+      const index = playerIndex(event.playerId);
+      if (index >= 0) return { from: tablePotCoordinate, to: tableSeatCoordinates[index] ?? tablePotCoordinate, direction: "to-winner" as const };
+    }
+    return undefined;
+  })();
   const showdownEvent =
     tournament?.presentationEvent?.kind === "showdown"
       ? tournament.presentationEvent
@@ -2262,6 +2287,21 @@ export function PokerTable({
           </div>
 
             <div className="poker-scene motion-vestibular">
+              {chipTravel && (
+                <span
+                  key={tournament?.presentationEvent?.id}
+                  className={`chip-travel chip-travel--${chipTravel.direction}`}
+                  aria-hidden="true"
+                  style={{
+                    "--chip-from-x": `${chipTravel.from[0]}%`,
+                    "--chip-from-y": `${chipTravel.from[1]}%`,
+                    "--chip-to-x": `${chipTravel.to[0]}%`,
+                    "--chip-to-y": `${chipTravel.to[1]}%`,
+                  } as CSSProperties}
+                >
+                  <ChipStack bet />
+                </span>
+              )}
               {dealerMoveEvent && (
                 <span
                   className="dealer-button-travel"

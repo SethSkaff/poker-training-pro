@@ -3307,6 +3307,28 @@ input[type="range"]::-webkit-slider-thumb {
   animation: dealer-button-travel 820ms cubic-bezier(.18,.78,.2,1) both;
 }
 
+/* A renderer-only token for the public event queue. It travels independently
+   of authoritative stack/pot numbers, so skipping cannot affect chip totals. */
+.chip-travel {
+  position: absolute;
+  z-index: 30;
+  top: var(--chip-from-y);
+  left: var(--chip-from-x);
+  pointer-events: none;
+  animation: chip-travel 560ms cubic-bezier(.18,.82,.22,1) both;
+}
+
+.chip-travel .chip-stack {
+  transform: translate(-50%, -50%) scale(1.2);
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .45));
+}
+
+@keyframes chip-travel {
+  from { top: var(--chip-from-y); left: var(--chip-from-x); opacity: .5; transform: scale(.7); }
+  72% { top: var(--chip-to-y); left: var(--chip-to-x); opacity: 1; transform: scale(1.12); }
+  to { top: var(--chip-to-y); left: var(--chip-to-x); opacity: 0; transform: scale(.94); }
+}
+
 @keyframes dealer-button-travel {
   from { top: var(--dealer-from-y); left: var(--dealer-from-x); opacity: 0.6; transform: translate(-50%, -50%) scale(.7); }
   70% { top: var(--dealer-to-y); left: var(--dealer-to-x); opacity: 1; transform: translate(-50%, -50%) scale(1.14); }
@@ -5395,6 +5417,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="off"] .opponent-card-hand,
 :root[data-motion-table="off"] .seat-action-hand,
 :root[data-motion-table="off"] .dealer-button-travel,
+:root[data-motion-table="off"] .chip-travel,
 :root[data-motion-table="off"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="off"] .seat-state--winner {
   animation-duration: 120ms !important;
@@ -5410,6 +5433,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="reduced"] .opponent-card-hand,
 :root[data-motion-table="reduced"] .seat-action-hand,
 :root[data-motion-table="reduced"] .dealer-button-travel,
+:root[data-motion-table="reduced"] .chip-travel,
 :root[data-motion-table="reduced"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="reduced"] .seat-state--winner {
   animation-duration: 140ms;
