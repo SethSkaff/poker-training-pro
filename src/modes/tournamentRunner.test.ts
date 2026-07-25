@@ -130,6 +130,11 @@ describe("tournament runner", () => {
     ]);
     expect(events.some((event) => event.kind === "action")).toBe(true);
     expect(events.some((event) => event.kind === "pot-awarded")).toBe(true);
+    const sidePot = events.find((event) => event.kind === "side-pot-formed");
+    if (sidePot?.kind === "side-pot-formed") {
+      expect(sidePot.potId).toBeTruthy();
+      expect(Array.isArray(sidePot.eligiblePlayerIds)).toBe(true);
+    }
     expect(new Set(events.map((event) => event.id)).size).toBe(events.length);
     const firstAward = events.findIndex((event) => event.kind === "pot-awarded");
     const firstAction = events.findIndex((event) => event.kind === "action");

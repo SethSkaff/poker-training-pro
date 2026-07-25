@@ -2603,6 +2603,26 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 10px;
 }
 
+.side-pot-strip {
+  position: absolute;
+  z-index: 35;
+  top: clamp(74px, 9vh, 104px);
+  left: 50%;
+  min-width: 180px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(99, 192, 226, .5);
+  border-radius: 10px;
+  padding: 7px 11px;
+  color: #e4fbff;
+  background: rgba(5, 30, 39, .94);
+  box-shadow: 0 7px 18px rgba(0, 0, 0, .35);
+  text-align: center;
+}
+
+.side-pot-strip > span { color: var(--cyan); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.side-pot-strip > strong { margin-left: 6px; font-size: 14px; }
+.side-pot-strip p { margin: 3px 0 0; color: #c9e9ee; font-size: 9px; }
+
 .showdown-result-strip p + p {
   border-top: 1px solid rgba(255, 255, 255, .1);
   padding-top: 3px;

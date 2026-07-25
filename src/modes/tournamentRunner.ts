@@ -135,7 +135,10 @@ export type TournamentPresentationEvent =
       id: string;
       kind: "side-pot-formed";
       handId: string;
+      potId: string;
       amount: number;
+      /** Players still eligible to win this specific public pot. */
+      eligiblePlayerIds: readonly string[];
     }
   | {
       id: string;
@@ -517,7 +520,9 @@ function progressHandPresentationEvents(
         id: presentationEventId(source, result.handId, "side-pot-formed", index),
         kind: "side-pot-formed",
         handId: result.handId,
+        potId: pot.id,
         amount: pot.amount,
+        eligiblePlayerIds: [...pot.eligiblePlayerIds],
       });
     });
   result.awards.forEach((award, index) => {

@@ -1997,6 +1997,10 @@ export function PokerTable({
       ? tournament.presentationEvent
       : undefined;
   const resultEvent = showdownEvent ?? handResultEvent;
+  const sidePotEvent =
+    tournament?.presentationEvent?.kind === "side-pot-formed"
+      ? tournament.presentationEvent
+      : undefined;
   const revealedCardsByPlayer = new Map(
     showdownEvent?.reveals.map((reveal) => [reveal.playerId, reveal.cards]) ?? [],
   );
@@ -2225,6 +2229,19 @@ export function PokerTable({
                   </p>
                 );
               })}
+            </aside>
+          ) : null}
+          {sidePotEvent ? (
+            <aside className="side-pot-strip" role="status" aria-live="polite" aria-atomic="true">
+              <span>{formatMessage("table.sidePot.label")}</span>
+              <strong>{formatChips(sidePotEvent.amount)}</strong>
+              <p>
+                {formatMessage("table.sidePot.eligible", {
+                  players: sidePotEvent.eligiblePlayerIds
+                    .map((playerId) => scenario.players.find((player) => player.id === playerId)?.name ?? playerId)
+                    .join(", "),
+                })}
+              </p>
             </aside>
           ) : null}
           {actionError ? (

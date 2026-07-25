@@ -308,6 +308,8 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.readout.potLabel": "Pot",
   "table.readout.blinds": "Blinds {smallBlind}/{bigBlind}",
   "table.communityCards.ariaLabel": "Community cards",
+  "table.sidePot.label": "Side pot",
+  "table.sidePot.eligible": "Eligible: {players}",
   "table.heroStack.label": "Your stack",
   "table.heroStack.commitment": "In this round {street} · Total this hand {total}",
   "table.heroStack.position": "Position {position}",
