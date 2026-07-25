@@ -179,6 +179,11 @@ describe("six-seat tournament session", () => {
     if (!firstActor) throw new Error("Expected an actor");
 
     expect(createPokerTableSnapshot(dealt).actingPlayerId).toBe(firstActor);
+    expect(
+      createPokerTableSnapshot(dealt).players.every(
+        (player) => player.totalCommitted !== undefined,
+      ),
+    ).toBe(true);
     const legal = getLegalActions(firstHand.betting, firstActor);
     const command: BettingActionCommand = legal.check
       ? { type: "check" }

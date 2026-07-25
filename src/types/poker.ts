@@ -39,6 +39,8 @@ export interface SeatPlayer {
   seat: number;
   status: "active" | "folded" | "all-in" | "out";
   bet: number;
+  /** Total chips committed to this hand, including prior streets and antes. */
+  totalCommitted?: number;
   cards?: Card[];
   personality?: "solver" | "balanced" | "aggressive" | "patient" | "tricky";
 }

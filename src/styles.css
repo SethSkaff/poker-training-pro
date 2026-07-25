@@ -2547,6 +2547,18 @@ input[type="range"]::-webkit-slider-thumb {
   line-height: 1;
 }
 
+.hero-stack-hud__commitment {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.hero-stack-hud__commitment b {
+  color: #fff2c4;
+  font-variant-numeric: tabular-nums;
+}
+
 .hero-stack-hud .chip-stack {
   width: 16px;
   height: 15px;
@@ -3182,6 +3194,14 @@ input[type="range"]::-webkit-slider-thumb {
 
 .opponent-cards {
   animation: opponent-card-deal 360ms ease-out both;
+}
+
+.seat-bet > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .board-card-entering {

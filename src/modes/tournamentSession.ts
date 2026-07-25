@@ -1287,6 +1287,7 @@ export function createPokerTableSnapshot(
           ? "out"
           : (handPlayer?.status ?? "out"),
       bet: handPlayer?.streetCommitted ?? 0,
+      totalCommitted: handPlayer?.totalCommitted ?? 0,
       ...(tournamentPlayer.id === viewerId
         ? { cards: viewerHoleCards.map((card) => ({ ...card })) }
         : {}),

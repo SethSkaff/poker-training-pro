@@ -402,6 +402,7 @@ export function playerSeatAriaLabel({
   status,
   showingCards,
   bet,
+  totalCommitted,
   dealer,
 }: {
   isHero: boolean;
@@ -410,6 +411,7 @@ export function playerSeatAriaLabel({
   status: SeatPlayer["status"];
   showingCards: boolean;
   bet: number;
+  totalCommitted?: number;
   dealer: boolean;
 }): string {
   return [
@@ -421,6 +423,9 @@ export function playerSeatAriaLabel({
     showingCards ? formatMessage("table.seat.holdingCardsFragment") : "",
     bet > 0
       ? formatMessage("table.seat.betFragment", { amount: formatChips(bet) })
+      : "",
+    totalCommitted !== undefined
+      ? `, total invested ${formatChips(totalCommitted)}`
       : "",
     dealer ? formatMessage("table.seat.dealerFragment") : "",
   ].join("");
@@ -482,6 +487,7 @@ function PlayerSeat({
         status: seatStatus,
         showingCards: isShowingCards,
         bet: player.bet,
+        totalCommitted: player.totalCommitted,
         dealer,
       })}
     >
@@ -524,9 +530,10 @@ function PlayerSeat({
           <ChipStack /> {formatChips(player.stack)}
         </span>
       </div>
-      {player.bet > 0 && (
+      {!isHero && (
         <div className="seat-bet" aria-hidden="true">
           <ChipStack bet />
+          <span>In</span>
           <b>{formatChips(player.bet)}</b>
         </div>
       )}
@@ -1842,9 +1849,12 @@ export function PokerTable({
         : formatMessage("table.modeTitle.normal");
   const scenarioNumber =
     trainingScenarios.findIndex((item) => item.id === scenario.id) + 1;
-  const heroStack =
-    scenario.players.find((player) => player.seat === scenario.heroSeat)?.stack ??
-    scenario.minimumRaise;
+  const heroPlayer = scenario.players.find(
+    (player) => player.seat === scenario.heroSeat,
+  );
+  const heroStack = heroPlayer?.stack ?? scenario.minimumRaise;
+  const heroStreetCommitted = heroPlayer?.bet ?? 0;
+  const heroTotalCommitted = heroPlayer?.totalCommitted ?? heroStreetCommitted;
   const minimumRaise =
     mode !== "training" && tournament
       ? (tournament.legalActions.raise?.minTo ??
@@ -2085,6 +2095,10 @@ export function PokerTable({
             <strong>
               <ChipStack /> {formatChips(heroStack)}
             </strong>
+            <span className="hero-stack-hud__commitment">
+              In this round <b>{formatChips(heroStreetCommitted)}</b> · Total this hand{" "}
+              <b>{formatChips(heroTotalCommitted)}</b>
+            </span>
           </aside>
           {actionError ? (
             <p className="table-action-alert" role="alert">
