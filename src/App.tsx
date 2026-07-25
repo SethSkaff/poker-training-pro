@@ -61,9 +61,10 @@ import {
   type TrainingPresentationCheckpoint,
 } from "./lib/trainingCheckpoint";
 import {
+  advanceTournamentRunnerOneStep,
+  advanceTournamentRunnerOneStepAsync,
   advanceTournamentRunnerToHero,
-  applyHeroTournamentAction,
-  applyHeroTournamentActionAsync,
+  applyHeroTournamentActionOneStep,
   createCareerTournamentRunner,
   createTimedTournamentRunner,
   createTournamentRunnerReplay,
@@ -71,6 +72,8 @@ import {
   restoreTournamentRunnerReplay,
   TournamentAdvanceAborted,
   type HeroTournamentAction,
+  type TournamentPresentationEvent,
+  type TournamentPresentationStep,
   type TournamentRunner,
   type TournamentRunnerReplay,
 } from "./modes/tournamentRunner";
@@ -124,6 +127,13 @@ type DesktopScreen =
 type SafeModeState = Awaited<
   ReturnType<NonNullable<Window["desktop"]>["getSafeModeState"]>
 >;
+
+interface PendingTournamentPresentation {
+  source: TournamentRunner;
+  next: TournamentRunner;
+  events: readonly TournamentPresentationEvent[];
+  index: number;
+}
 
 const emptyTourResults: Record<
   TournamentPolicyMode,
@@ -251,6 +261,8 @@ export default function App() {
   const [tourMode, setTourMode] = useState<TournamentPolicyMode>("normal");
   const [timedMinutes, setTimedMinutes] = useState(30);
   const [runner, setRunner] = useState<TournamentRunner | null>(null);
+  const [pendingPresentation, setPendingPresentation] =
+    useState<PendingTournamentPresentation | null>(null);
   const [resumeCandidate, setResumeCandidate] = useState<TournamentRunner | null>(null);
   const [trainingResumeScenarioId, setTrainingResumeScenarioId] = useState<
     string | null
@@ -290,6 +302,13 @@ export default function App() {
   const decisionAbortRef = useRef<{ aborted: boolean } | null>(null);
   const decisionPendingRef = useRef(false);
   const runnerRef = useRef<TournamentRunner | null>(null);
+  const pendingPresentationRef = useRef<PendingTournamentPresentation | null>(
+    null,
+  );
+  const presentationAdvancePendingRef = useRef(false);
+  const lastTournamentSnapshotRef = useRef<ReturnType<
+    typeof createPokerTableSnapshot
+  > | null>(null);
   // Live OS default layered under any explicit player choice; Safe Mode is
   // applied last and always wins over both.
   const osResolvedSettings: GameSettings = applyOsReducedMotionDefault(
@@ -742,11 +761,20 @@ export default function App() {
         seed: `career:${eventId}:${Date.now()}`,
         careerResults: tourResults[tourMode],
       });
-      const ready = advanceTournamentRunnerToHero(created, {
+      const opening = advanceTournamentRunnerOneStep(created, {
         policy: { simulations: 60 },
       });
+      const ready = opening.runner;
       const replay = createTournamentRunnerReplay(ready, 60);
       activeReplayRef.current = replay as unknown as Record<string, unknown>;
+      const openingPresentation: PendingTournamentPresentation = {
+        source: created,
+        next: ready,
+        events: opening.events,
+        index: 0,
+      };
+      pendingPresentationRef.current = openingPresentation;
+      setPendingPresentation(openingPresentation);
       setRunner(ready);
       setScreen("room-transition");
       persistBoundary(
@@ -771,11 +799,20 @@ export default function App() {
         },
         seed: `timed:${minutes}:${Date.now()}`,
       });
-      const ready = advanceTournamentRunnerToHero(created, {
+      const opening = advanceTournamentRunnerOneStep(created, {
         policy: { simulations: 60 },
       });
+      const ready = opening.runner;
       const replay = createTournamentRunnerReplay(ready, 60);
       activeReplayRef.current = replay as unknown as Record<string, unknown>;
+      const openingPresentation: PendingTournamentPresentation = {
+        source: created,
+        next: ready,
+        events: opening.events,
+        index: 0,
+      };
+      pendingPresentationRef.current = openingPresentation;
+      setPendingPresentation(openingPresentation);
       setTimedMinutes(minutes);
       setRunner(ready);
       setScreen("room-transition");
@@ -790,7 +827,7 @@ export default function App() {
     [persistBoundary, progress, settings],
   );
 
-  const commitHeroAdvance = useCallback(
+  const commitTournamentAdvance = useCallback(
     (previous: TournamentRunner, next: TournamentRunner) => {
       const replay = createTournamentRunnerReplay(next, 60);
       activeReplayRef.current = replay as unknown as Record<string, unknown>;
@@ -809,54 +846,155 @@ export default function App() {
     [finishRunner, persistBoundary, progress, settings],
   );
 
-  const actInTournament = useCallback(
-    (request: HeroTournamentAction) => {
-      if (!runner) return;
-      // Ignore re-entrant input while the previous decision resolves off-thread.
-      if (decisionPendingRef.current) return;
+  const publishTournamentPresentation = useCallback(
+    (source: TournamentRunner, transition: TournamentPresentationStep) => {
+      if (transition.runner === source && transition.events.length === 0) {
+        return;
+      }
+      if (transition.events.length === 0) {
+        commitTournamentAdvance(source, transition.runner);
+        return;
+      }
+      const next: PendingTournamentPresentation = {
+        source,
+        next: transition.runner,
+        events: transition.events,
+        index: 0,
+      };
+      pendingPresentationRef.current = next;
+      setPendingPresentation(next);
+    },
+    [commitTournamentAdvance],
+  );
+
+  const completeTournamentPresentationEvent = useCallback(() => {
+    const pending = pendingPresentationRef.current;
+    if (!pending) return;
+    if (pending.index + 1 < pending.events.length) {
+      const next = { ...pending, index: pending.index + 1 };
+      pendingPresentationRef.current = next;
+      setPendingPresentation(next);
+      return;
+    }
+    pendingPresentationRef.current = null;
+    setPendingPresentation(null);
+    commitTournamentAdvance(pending.source, pending.next);
+  }, [commitTournamentAdvance]);
+
+  const skipTournamentPresentation = useCallback(() => {
+    const pending = pendingPresentationRef.current;
+    if (!pending) return;
+    // Skipping is a presentation-only operation. Resume authoritative play
+    // from the already-computed current transition, then use the retained
+    // synchronous run-to-hero path to reach the exact state the event queue
+    // would otherwise have produced without replaying a submitted action.
+    const fastForwarded = advanceTournamentRunnerToHero(pending.next, {
+      policy: { simulations: 60 },
+    });
+    pendingPresentationRef.current = null;
+    setPendingPresentation(null);
+    commitTournamentAdvance(pending.source, fastForwarded);
+  }, [commitTournamentAdvance]);
+
+  const advanceTournamentPresentation = useCallback(() => {
+    const source = runnerRef.current;
+    if (
+      !source ||
+      source.session.status === "complete" ||
+      heroTournamentLegalActions(source) ||
+      pendingPresentationRef.current ||
+      presentationAdvancePendingRef.current
+    ) {
+      return;
+    }
+    presentationAdvancePendingRef.current = true;
+    const settle = (transition: TournamentPresentationStep) => {
+      if (runnerRef.current === source) {
+        publishTournamentPresentation(source, transition);
+      }
+    };
+    if (source.session.mode === "rational") {
       equityServiceRef.current ??= createDesktopEquityService();
       const service = equityServiceRef.current;
-      // Supersede any obsolete in-flight equity work before this decision.
       service.cancelPending();
       const signal = { aborted: false };
       decisionAbortRef.current = signal;
-      decisionPendingRef.current = true;
-      const source = runner;
-      const stillActive = () => !signal.aborted && runnerRef.current === source;
-      applyHeroTournamentActionAsync(source, request, service.estimate, {
+      void advanceTournamentRunnerOneStepAsync(source, service.estimate, {
         policy: { simulations: 60 },
         signal,
       })
-        .then((next) => {
-          if (!stillActive()) return;
-          commitHeroAdvance(source, next);
+        .then((transition) => {
+          if (!signal.aborted) settle(transition);
         })
         .catch((error) => {
           if (
-            !stillActive() ||
+            signal.aborted ||
             error instanceof TournamentAdvanceAborted ||
             error instanceof CancelledEquityRequestError ||
             error instanceof StaleEquityRequestError
           ) {
             return;
           }
-          // Fail safe: fall back to the deterministic synchronous path so an
-          // unexpected worker fault never strands the table mid-decision.
-          const next = applyHeroTournamentAction(source, request, {
-            policy: { simulations: 60 },
-          });
-          commitHeroAdvance(source, next);
+          settle(
+            advanceTournamentRunnerOneStep(source, {
+              policy: { simulations: 60 },
+            }),
+          );
         })
         .finally(() => {
-          decisionPendingRef.current = false;
+          presentationAdvancePendingRef.current = false;
         });
+      return;
+    }
+    try {
+      settle(
+        advanceTournamentRunnerOneStep(source, {
+          policy: { simulations: 60 },
+        }),
+      );
+    } finally {
+      presentationAdvancePendingRef.current = false;
+    }
+  }, [publishTournamentPresentation]);
+
+  const actInTournament = useCallback(
+    (request: HeroTournamentAction) => {
+      if (!runner) return;
+      if (decisionPendingRef.current || pendingPresentationRef.current) return;
+      decisionPendingRef.current = true;
+      try {
+        publishTournamentPresentation(
+          runner,
+          applyHeroTournamentActionOneStep(runner, request, {
+            policy: { simulations: 60 },
+          }),
+        );
+      } finally {
+        decisionPendingRef.current = false;
+      }
     },
-    [commitHeroAdvance, runner],
+    [publishTournamentPresentation, runner],
   );
 
   useEffect(() => {
     runnerRef.current = runner;
   }, [runner]);
+
+  // The renderer receives one public milestone at a time. It requests the
+  // next engine transition only after the prior event has been presented, so
+  // opponents can never collapse into a single invisible state update.
+  useEffect(() => {
+    if (
+      screen !== "tournament-table" ||
+      !runner ||
+      runner.session.status === "complete" ||
+      pendingPresentation
+    ) {
+      return;
+    }
+    if (heroTournamentLegalActions(runner)) return;
+    advanceTournamentPresentation();
+  }, [advanceTournamentPresentation, pendingPresentation, runner, screen]);
 
   useEffect(
     () => () => {
@@ -1316,16 +1454,34 @@ export default function App() {
 
   if (screen === "tournament-table" && runner && !tournamentResult) {
     const legalActions = heroTournamentLegalActions(runner);
-    if (!legalActions) {
-      throw new Error("Playable tournament table is not waiting for the hero");
+    const snapshot = runner.session.activeHand
+      ? createPokerTableSnapshot(runner.session)
+      : lastTournamentSnapshotRef.current;
+    if (!snapshot) {
+      throw new Error("Tournament presentation has no table snapshot");
     }
-    const snapshot = createPokerTableSnapshot(runner.session);
+    if (runner.session.activeHand) lastTournamentSnapshotRef.current = snapshot;
+    const spectatorLegalActions = {
+      playerId: runner.session.heroId,
+      toCall: 0,
+      check: false,
+      fold: false,
+      call: false,
+      callAmount: 0,
+      allIn: false,
+      allInTo: 0,
+      raisingReopened: false,
+    };
     const handNumber = runner.session.tournament.tables[0]?.handNumber ?? 1;
     const handPresentationKey = `${runner.session.id}:${handNumber}`;
     const showArrival =
       handNumber > 1 && lastPresentedHand.current !== handPresentationKey;
     lastPresentedHand.current = handPresentationKey;
-    const lastPublicAction = runner.decisions.at(-1);
+    const presentationEvent = pendingPresentation?.events[pendingPresentation.index];
+    const lastPublicAction =
+      presentationEvent?.kind === "action"
+        ? presentationEvent
+        : runner.decisions.at(-1);
     return (
       <Suspense
         fallback={
@@ -1356,8 +1512,12 @@ export default function App() {
           setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
         }}
         tournament={{
-          legalActions,
+          legalActions: legalActions ?? spectatorLegalActions,
           onAction: actInTournament,
+          heroDecision: Boolean(legalActions),
+          presentationEvent,
+          onPresentationEventComplete: completeTournamentPresentationEvent,
+          onSkipPresentation: skipTournamentPresentation,
           kind: runner.kind,
           sceneStateVersion: runner.sequence,
           handNumber,

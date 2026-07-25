@@ -144,6 +144,11 @@ try {
   await expectSelector(client, ".room-flight", "tournament arrival");
   await expectMouseClick(client, "button", "Skip arrival", "skip arrival mouse input");
   await expectSelector(client, ".poker-table", "live tournament table");
+  // E01-002 presents forced posts/deals and each opponent action as a public
+  // queue. Wait for the first *legal hero decision* instead of assuming the
+  // table becomes interactive in the same renderer tick as room arrival.
+  await expectHeroDecisionAfterPresentation(client, 20_000);
+  await dismissContextCoachIfPresent(client);
   await captureStableTableScene(client);
   await expectClearTableInformationLanes(client);
   await expectMinimizePausesAndRestores(client);
@@ -325,6 +330,42 @@ async function expectBoolean(cdp, expression, label) {
   if (!value) throw new Error(`${label} did not produce the expected state.`);
 }
 
+/** Contextual teaching is optional and intentionally modal; clear it before
+ * asserting physical table controls beneath it so this smoke measures input
+ * routing rather than a coach-overlay flow. */
+async function dismissContextCoachIfPresent(cdp) {
+  const appeared = await waitForBoolean(
+    cdp,
+    "document.querySelector('.context-coach button') !== null",
+    500,
+  );
+  if (!appeared) return;
+  await expectMouseClick(
+    cdp,
+    ".context-coach button",
+    undefined,
+    "dismiss contextual table tip",
+  );
+}
+
+async function expectHeroDecisionAfterPresentation(cdp, timeout) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const dock = await waitForBoolean(
+      cdp,
+      "document.querySelector('.action-dock') !== null",
+      Math.min(5_000, Math.max(250, deadline - Date.now())),
+    );
+    if (dock) {
+      record("public presentation queue reaches the first hero decision", true);
+      return;
+    }
+    await ensureNotPaused(cdp);
+  }
+  record("public presentation queue reaches the first hero decision", false);
+  throw new Error("public presentation queue did not reach a hero decision.");
+}
+
 async function captureStableTableScene(cdp) {
   const observation = await evaluateValue(cdp, `(() => {
     const table = document.querySelector('.poker-table');
@@ -479,11 +520,11 @@ async function ensureRaiseIsLegalThenAdvance(cdp) {
 }
 
 /**
- * Take whichever legal, non-raise action `.action-dock` currently offers
- * (call/check first, fold as a fallback), then fast-forward through the
- * opponent presentation back to the next decision. Whenever `.action-dock` is
- * rendered at all, the product guarantees at least one of fold/call/check is
- * legal, so this never has to guess.
+ * Take a legal, non-raise action then fast-forward through the opponent
+ * presentation back to the next decision. Prefer fold: an unseeded packaged
+ * run can make call a stack-committing all-in, which turns an input smoke into
+ * a random tournament-bust test rather than a queue test. Fold is legal at
+ * every hero decision and guarantees the next hand can be reached.
  */
 async function advanceOneDecisionWithoutRaising(cdp) {
   // The caller only just observed the raise button as (still) disabled; the
@@ -502,19 +543,19 @@ async function advanceOneDecisionWithoutRaising(cdp) {
       "The action dock was not present while advancing past a non-raise decision.",
     );
   }
-  const callPoint = await selectorPoint(cdp, ".action-button--call");
-  if (callPoint) {
-    await mouseClick(cdp, callPoint.x, callPoint.y);
-    record("advance past non-raise decision: call/check mouse input", true);
-  } else {
-    const foldPoint = await selectorPoint(cdp, ".action-button--fold");
-    if (!foldPoint) {
-      throw new Error(
-        "Neither call/check nor fold was an enabled target while advancing past a non-raise decision.",
-      );
-    }
+  const foldPoint = await selectorPoint(cdp, ".action-button--fold");
+  if (foldPoint) {
     await mouseClick(cdp, foldPoint.x, foldPoint.y);
     record("advance past non-raise decision: fold mouse input", true);
+  } else {
+    const callPoint = await selectorPoint(cdp, ".action-button--call");
+    if (!callPoint) {
+      throw new Error(
+        "Neither fold nor call/check was an enabled target while advancing past a non-raise decision.",
+      );
+    }
+    await mouseClick(cdp, callPoint.x, callPoint.y);
+    record("advance past non-raise decision: call/check mouse input", true);
   }
   await delay(200);
 
@@ -529,19 +570,33 @@ async function advanceOneDecisionWithoutRaising(cdp) {
     const fastForwardPoint = await selectorPoint(cdp, fastForwardSelector);
     if (fastForwardPoint) {
       await mouseClick(cdp, fastForwardPoint.x, fastForwardPoint.y);
+      record("queue fast-forward mouse input", true);
       await delay(150);
     }
   }
 
-  const dockReturned = await waitForBoolean(
-    cdp,
-    "document.querySelector('.action-dock') !== null",
-    8_000,
-  );
+  const returnDeadline = Date.now() + 30_000;
+  let dockReturned = false;
+  while (Date.now() < returnDeadline) {
+    dockReturned = await waitForBoolean(
+      cdp,
+      "document.querySelector('.action-dock') !== null",
+      Math.min(5_000, Math.max(250, returnDeadline - Date.now())),
+    );
+    if (dockReturned) break;
+    // Packaging/CDP focus changes can correctly pause the table mid-queue.
+    // Resume through the same visible player confirmation used elsewhere in
+    // this audit, then continue waiting for the queued hand to reach hero.
+    await ensureNotPaused(cdp);
+  }
   if (!dockReturned) {
+    const tableState = await evaluateValue(
+      cdp,
+      "document.querySelector('.table-screen')?.innerText?.slice(0, 2000)",
+    );
     throw new Error(
       "The table did not return to a new decision after advancing past a non-raise decision " +
-        "(the tournament may have ended, e.g. hero busted); the raise-legality poll cannot continue.",
+        `(the tournament may have ended, e.g. hero busted); the raise-legality poll cannot continue. State: ${JSON.stringify(tableState)}`,
     );
   }
 }

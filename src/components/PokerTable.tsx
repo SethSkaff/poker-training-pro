@@ -63,7 +63,10 @@ import {
   type GradedTrainingAttempt,
   type MathEvaluation,
 } from "../lib/trainingEngine";
-import type { HeroTournamentAction } from "../modes/tournamentRunner";
+import type {
+  HeroTournamentAction,
+  TournamentPresentationEvent,
+} from "../modes/tournamentRunner";
 import { calculateAiDecisionTiming } from "../modes/decisionTiming";
 import {
   keyEventToken,
@@ -94,6 +97,7 @@ import {
   createTableActionGate,
   planTableSceneUpdate,
 } from "../lib/tableSceneLifecycle";
+import { createPresentationEventDelay } from "../lib/tournamentPresentationClock";
 import type {
   Card,
   GameMode,
@@ -108,6 +112,12 @@ import type { TrainingPresentationCheckpoint } from "../lib/trainingCheckpoint";
 interface TournamentTableControls {
   legalActions: LegalActionSet;
   onAction: (request: HeroTournamentAction) => void;
+  /** True only while the engine is waiting for a legal hero action. */
+  heroDecision?: boolean;
+  /** The one public event currently being presented, if the table is busy. */
+  presentationEvent?: TournamentPresentationEvent;
+  onPresentationEventComplete?: () => void;
+  onSkipPresentation?: () => void;
   kind: "career" | "timed";
   /** Monotonic authoritative state revision; never a React subtree key. */
   sceneStateVersion: number;
@@ -142,6 +152,31 @@ interface TournamentTableControls {
     playerId: string;
     type: BettingActionType;
   };
+}
+
+function presentationEventLabel(event: TournamentPresentationEvent): string {
+  switch (event.kind) {
+    case "button-moved":
+      return "Dealer button moves";
+    case "blinds-posted":
+      return "Blinds posted";
+    case "hole-cards-dealt":
+      return "Cards dealt";
+    case "action":
+      return `${event.command.type.replace("-", " ")} in progress`;
+    case "board-card-dealt":
+      return `${event.street} card dealt`;
+    case "bets-collected":
+      return "Bets collected";
+    case "showdown":
+      return "Showdown";
+    case "side-pot-formed":
+      return "Side pot formed";
+    case "pot-awarded":
+      return "Pot awarded";
+    case "eliminated":
+      return "Player eliminated";
+  }
 }
 
 interface PokerTableProps {
@@ -853,6 +888,7 @@ export function PokerTable({
     "menu" | "controls" | "reference" | "settings" | "remap"
   >("menu");
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
+  const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
   const actionGateRef = useRef(createTableActionGate());
   const previousSceneVersionRef = useRef(tournament?.sceneStateVersion);
   const previousHandIdRef = useRef(scenario.id);
@@ -1131,11 +1167,49 @@ export function PokerTable({
     };
   }, [arrivalVisible, settings.reducedMotion, settings.transitionMotion]);
 
+  // Consume exactly one public runner event at a time. The delay is registered
+  // with the same freeze group as arrival/action delays, so pause/resume keeps
+  // its exact remaining duration instead of replaying or skipping the event.
+  useEffect(() => {
+    const event = tournament?.presentationEvent;
+    const onComplete = tournament?.onPresentationEventComplete;
+    if (!event || !onComplete) return;
+    const group = freezeGroupRef.current;
+    const delay = createPresentationEventDelay(
+      realFreezableDelayHost,
+      event,
+      speed,
+      settings,
+      () => {
+        if (pendingPresentationEvent.current === delay) {
+          pendingPresentationEvent.current = null;
+        }
+        onComplete();
+      },
+    );
+    pendingPresentationEvent.current = delay;
+    group.add(delay);
+    return () => {
+      delay.cancel();
+      group.remove(delay);
+      if (pendingPresentationEvent.current === delay) {
+        pendingPresentationEvent.current = null;
+      }
+    };
+  }, [
+    settings,
+    speed,
+    tournament?.onPresentationEventComplete,
+    tournament?.presentationEvent,
+  ]);
+
   useEffect(() => {
     const group = freezeGroupRef.current;
     return () => {
       pendingTournamentAction.current?.cancel();
       pendingTournamentAction.current = null;
+      pendingPresentationEvent.current?.cancel();
+      pendingPresentationEvent.current = null;
       group.cancelAll();
     };
   }, []);
@@ -1206,7 +1280,15 @@ export function PokerTable({
 
   const handleAction = useCallback(
     (nextAction: PokerAction, requestedRaiseTo = raiseAmount) => {
-      if (action || paused || actionGateRef.current.isLocked) return;
+      if (
+        action ||
+        paused ||
+        tournament?.presentationEvent ||
+        (tournament !== undefined && tournament.heroDecision === false) ||
+        actionGateRef.current.isLocked
+      ) {
+        return;
+      }
       if (
         mode === "training" &&
         trainingMeta?.actionEvs[nextAction] === undefined
@@ -1692,6 +1774,9 @@ export function PokerTable({
             tournament?.legalActions.bet ||
             tournament?.legalActions.allIn,
         );
+  const presentationActive = Boolean(tournament?.presentationEvent);
+  const heroDecisionActive =
+    mode === "training" || tournament?.heroDecision !== false;
   const callAction = scenario.amountToCall > 0 ? "call" : "check";
   const tablePlayers = [...scenario.players].sort((left, right) => {
     if (left.seat === scenario.heroSeat) return -1;
@@ -1753,6 +1838,16 @@ export function PokerTable({
     >
       <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {tableAnnouncement}
+      </p>
+      <p
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {presentationActive
+          ? presentationEventLabel(tournament?.presentationEvent as TournamentPresentationEvent)
+          : ""}
       </p>
       {/*
         Discrete LIVE event announcements (timers/blind changes, hand
@@ -2094,7 +2189,7 @@ export function PokerTable({
             </aside>
           )}
 
-          {!action ? (
+          {!action && !presentationActive && heroDecisionActive ? (
             <div className="action-dock">
               <button
                 className="action-button action-button--fold"
@@ -2102,7 +2197,7 @@ export function PokerTable({
                 disabled={
                   mode === "training"
                     ? trainingMeta?.actionEvs.fold === undefined
-                    : !tournament?.legalActions.fold
+                    : !tournament?.legalActions.fold || presentationActive
                 }
                 onClick={() => handleAction("fold")}
               >
@@ -2116,8 +2211,8 @@ export function PokerTable({
                   mode === "training"
                     ? trainingMeta?.actionEvs[callAction] === undefined
                     : callAction === "call"
-                      ? !tournament?.legalActions.call
-                      : !tournament?.legalActions.check
+                      ? !tournament?.legalActions.call || presentationActive
+                      : !tournament?.legalActions.check || presentationActive
                 }
                 onClick={() => handleAction(callAction)}
               >
@@ -2135,7 +2230,7 @@ export function PokerTable({
                   raiseOpen ? "is-active" : ""
                 }`}
                 type="button"
-                disabled={!canRaise}
+                disabled={!canRaise || presentationActive}
                 onClick={() => setRaiseOpen((value) => !value)}
               >
                 <span>R</span>
@@ -2146,7 +2241,11 @@ export function PokerTable({
             <div className="spectator-dock">
               <span>
                 <Check size={16} />{" "}
-                {formatMessage("table.spectator.actionLocked", { action })}
+                {presentationActive
+                  ? presentationEventLabel(tournament?.presentationEvent as TournamentPresentationEvent)
+                  : action
+                    ? formatMessage("table.spectator.actionLocked", { action })
+                    : "Waiting for opponent action"}
               </span>
               <div>
                 <button
@@ -2161,7 +2260,31 @@ export function PokerTable({
                 </button>
                 <button
                   type="button"
-                  onClick={() => pendingTournamentAction.current?.finish()}
+                  onPointerDown={() => {
+                    // CDP/gamepad-style input can release after the current
+                    // queue item completes. Start the deterministic skip on
+                    // press so the button cannot turn into a later event's
+                    // click target during that release.
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                    }
+                  }}
+                  onMouseDown={() => {
+                    // Electron's low-level CDP mouse path is guaranteed to
+                    // produce mousedown; keep the same early capture for
+                    // physical mouse input as a belt-and-suspenders path.
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                    }
+                  }}
+                  onClick={() => {
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                      return;
+                    }
+                    pendingTournamentAction.current?.finish();
+                    pendingPresentationEvent.current?.finish();
+                  }}
                   aria-label={formatMessage("table.spectator.skipAriaLabel")}
                 >
                   {formatMessage("table.spectator.skipToResult")}

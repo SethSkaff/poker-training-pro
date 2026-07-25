@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createPokerTableSnapshot } from "./tournamentSession";
 import {
+  advanceTournamentRunnerOneStep,
   advanceTournamentRunnerToHero,
+  applyHeroTournamentActionOneStep,
   applyHeroTournamentAction,
   createCareerTournamentRunner,
   createTimedTournamentRunner,
@@ -15,6 +17,125 @@ const hero = {
 };
 
 describe("tournament runner", () => {
+  it("emits ordered public-only milestones while advancing one transition at a time", () => {
+    const started = advanceTournamentRunnerOneStep(
+      createCareerTournamentRunner({
+        eventId: "local-qualifier",
+        hero,
+        mode: "normal",
+        seed: "runner-presentation-events",
+      }),
+      { policy: { simulations: 50 } },
+    );
+    expect(started.events.map((event) => event.kind)).toEqual([
+      "button-moved",
+      "blinds-posted",
+      "hole-cards-dealt",
+    ]);
+    expect(JSON.stringify(started.events)).not.toContain("holeCards");
+
+    const opponent = advanceTournamentRunnerOneStep(started.runner, {
+      policy: { simulations: 50 },
+    });
+    expect(opponent.events).toMatchObject([
+      { kind: "action", playerId: expect.any(String) },
+    ]);
+    expect(opponent.events[0]?.kind).toBe("action");
+    expect(opponent.events[0]?.id).toContain(":action:");
+  });
+
+  it("reaches the same authoritative hero decision whether presentation events are consumed or skipped", () => {
+    const seed = "runner-presentation-skip";
+    const source = createCareerTournamentRunner({
+      eventId: "local-qualifier",
+      hero,
+      mode: "rational",
+      seed,
+    });
+    const expected = advanceTournamentRunnerToHero(source, {
+      policy: { simulations: 50 },
+    });
+    let stepped = source;
+    for (let index = 0; index < 100; index += 1) {
+      const transition = advanceTournamentRunnerOneStep(stepped, {
+        policy: { simulations: 50 },
+      });
+      stepped = transition.runner;
+      if (transition.awaitingHero || stepped.session.status === "complete") break;
+    }
+    expect(stepped.session).toEqual(expected.session);
+    expect(stepped.decisions).toEqual(expected.decisions);
+    expect(stepped.sequence).toBe(expected.sequence);
+  });
+
+  it("records a hero action once before the presentation clock advances opponents", () => {
+    const ready = advanceTournamentRunnerToHero(
+      createCareerTournamentRunner({
+        eventId: "local-qualifier",
+        hero,
+        mode: "normal",
+        seed: "runner-presentation-hero",
+      }),
+      { policy: { simulations: 50 } },
+    );
+    const legal = heroTournamentLegalActions(ready);
+    if (!legal) throw new Error("Expected a hero decision");
+    const action = legal.check ? "check" : legal.call ? "call" : "fold";
+    const transition = applyHeroTournamentActionOneStep(ready, { action });
+    expect(transition.events).toMatchObject([
+      { kind: "action", playerId: hero.id, command: { type: action } },
+    ]);
+    expect(transition.runner.decisions).toHaveLength(ready.decisions.length + 1);
+    expect(() => applyHeroTournamentActionOneStep(transition.runner, { action })).toThrow(
+      "not waiting for the hero",
+    );
+  });
+
+  it("keeps one hand's public stream ordered and free of duplicate milestones", () => {
+    let runner = createCareerTournamentRunner({
+      eventId: "local-qualifier",
+      hero,
+      mode: "normal",
+      seed: "runner-public-hand-stream",
+    });
+    const events = [] as Array<ReturnType<typeof advanceTournamentRunnerOneStep>["events"][number]>;
+
+    for (let index = 0; index < 120; index += 1) {
+      const transition = advanceTournamentRunnerOneStep(runner, {
+        policy: { simulations: 50 },
+      });
+      events.push(...transition.events);
+      runner = transition.runner;
+      if (transition.awaitingHero) {
+        const legal = heroTournamentLegalActions(runner);
+        if (!legal) throw new Error("Expected legal hero action");
+        const action = legal.allIn
+          ? "all-in"
+          : legal.call
+            ? "call"
+            : legal.check
+              ? "check"
+              : "fold";
+        const heroTransition = applyHeroTournamentActionOneStep(runner, { action });
+        events.push(...heroTransition.events);
+        runner = heroTransition.runner;
+      }
+      if (runner.session.lastHand && !runner.session.activeHand) break;
+    }
+
+    expect(events.slice(0, 3).map((event) => event.kind)).toEqual([
+      "button-moved",
+      "blinds-posted",
+      "hole-cards-dealt",
+    ]);
+    expect(events.some((event) => event.kind === "action")).toBe(true);
+    expect(events.some((event) => event.kind === "pot-awarded")).toBe(true);
+    expect(new Set(events.map((event) => event.id)).size).toBe(events.length);
+    const firstAward = events.findIndex((event) => event.kind === "pot-awarded");
+    const firstAction = events.findIndex((event) => event.kind === "action");
+    expect(firstAward).toBeGreaterThan(firstAction);
+  });
+
   it("automates opponents and pauses only for a legal hero decision", () => {
     const runner = advanceTournamentRunnerToHero(
       createCareerTournamentRunner({
