@@ -107,6 +107,7 @@ import type {
   SeatPlayer,
   TrainingScenario,
 } from "../types/poker";
+import type { HandValue } from "../engine/evaluator";
 import type { TrainingPresentationCheckpoint } from "../lib/trainingCheckpoint";
 
 interface TournamentTableControls {
@@ -140,7 +141,12 @@ interface TournamentTableControls {
    * result once the next hand begins. Never inferred from a stack-size
    * delta.
    */
-  lastPotAwards?: readonly { playerId: string; amount: number }[];
+  lastPotAwards?: readonly {
+    potId: string;
+    playerId: string;
+    amount: number;
+    hand?: HandValue;
+  }[];
   /**
    * True when the most recently finished hand's award set spanned more than
    * one contestable pot (a genuine side pot), sourced from the engine's own

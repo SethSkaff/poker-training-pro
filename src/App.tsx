@@ -1547,7 +1547,12 @@ export default function App() {
             ),
           ),
           lastPotAwards: (runner.session.lastHand?.awards ?? []).map(
-            (award) => ({ playerId: award.playerId, amount: award.amount }),
+            (award) => ({
+              potId: award.potId,
+              playerId: award.playerId,
+              amount: award.amount,
+              ...(award.hand ? { hand: award.hand } : {}),
+            }),
           ),
           lastHandHadSidePot: Boolean(
             runner.session.lastHand?.pots.some((pot) => pot.kind === "side"),
