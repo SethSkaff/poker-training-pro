@@ -2623,6 +2623,29 @@ input[type="range"]::-webkit-slider-thumb {
 .side-pot-strip > strong { margin-left: 6px; font-size: 14px; }
 .side-pot-strip p { margin: 3px 0 0; color: #c9e9ee; font-size: 9px; }
 
+.all-in-banner {
+  position: absolute;
+  z-index: 36;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  min-width: 210px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 118, 86, .82);
+  border-radius: 13px;
+  padding: 10px 16px;
+  color: #fff4e5;
+  background: rgba(65, 14, 10, .92);
+  box-shadow: 0 0 0 4px rgba(255, 118, 86, .15), 0 12px 28px rgba(0, 0, 0, .4);
+  text-align: center;
+  animation: all-in-arrival 720ms cubic-bezier(.18,.82,.22,1) both;
+}
+
+.all-in-banner > span { color: #ffae78; font-size: 9px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
+.all-in-banner > strong { font-family: "Barlow Condensed", sans-serif; font-size: 24px; }
+.all-in-banner > small { color: #ffd7bb; font-size: 9px; }
+@keyframes all-in-arrival { from { opacity: 0; transform: translate(-50%, -50%) scale(.78); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+
 .showdown-result-strip p + p {
   border-top: 1px solid rgba(255, 255, 255, .1);
   padding-top: 3px;
@@ -5438,6 +5461,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="off"] .seat-action-hand,
 :root[data-motion-table="off"] .dealer-button-travel,
 :root[data-motion-table="off"] .chip-travel,
+:root[data-motion-table="off"] .all-in-banner,
 :root[data-motion-table="off"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="off"] .seat-state--winner {
   animation-duration: 120ms !important;
@@ -5454,6 +5478,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="reduced"] .seat-action-hand,
 :root[data-motion-table="reduced"] .dealer-button-travel,
 :root[data-motion-table="reduced"] .chip-travel,
+:root[data-motion-table="reduced"] .all-in-banner,
 :root[data-motion-table="reduced"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="reduced"] .seat-state--winner {
   animation-duration: 140ms;

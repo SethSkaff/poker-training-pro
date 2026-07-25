@@ -2007,6 +2007,14 @@ export function PokerTable({
     tournament?.presentationEvent?.kind === "side-pot-formed"
       ? tournament.presentationEvent
       : undefined;
+  const allInEvent =
+    tournament?.presentationEvent?.kind === "action" &&
+    tournament.presentationEvent.command.type === "all-in"
+      ? tournament.presentationEvent
+      : undefined;
+  const allInPlayer = allInEvent
+    ? scenario.players.find((player) => player.id === allInEvent.playerId)
+    : undefined;
   const revealedCardsByPlayer = new Map(
     showdownEvent?.reveals.map((reveal) => [reveal.playerId, reveal.cards]) ?? [],
   );
@@ -2248,6 +2256,20 @@ export function PokerTable({
                     .join(", "),
                 })}
               </p>
+            </aside>
+          ) : null}
+          {allInEvent ? (
+            <aside className="all-in-banner" role="status" aria-live="assertive" aria-atomic="true">
+              <span>{formatMessage("table.allIn.label")}</span>
+              <strong>
+                {formatMessage("table.allIn.player", {
+                  player:
+                    allInPlayer?.seat === scenario.heroSeat
+                      ? formatMessage("table.seat.you")
+                      : (allInPlayer?.name ?? allInEvent.playerId),
+                })}
+              </strong>
+              <small>{formatMessage("table.allIn.runoutHint")}</small>
             </aside>
           ) : null}
           {actionError ? (
