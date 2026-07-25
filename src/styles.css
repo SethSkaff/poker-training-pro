@@ -3218,11 +3218,12 @@ input[type="range"]::-webkit-slider-thumb {
   display: none;
 }
 
-.player-seat--lower-left .seat-avatar { background-position: 0 0; }
-.player-seat--upper-left .seat-avatar { background-position: 50% 0; }
-.player-seat--top .seat-avatar { background-position: 100% 0; }
-.player-seat--upper-right .seat-avatar { background-position: 0 100%; }
-.player-seat--lower-right .seat-avatar { background-position: 50% 100%; }
+.seat-avatar--variant-0 { background-position: 0 0; }
+.seat-avatar--variant-1 { background-position: 50% 0; }
+.seat-avatar--variant-2 { background-position: 100% 0; }
+.seat-avatar--variant-3 { background-position: 0 100%; }
+.seat-avatar--variant-4 { background-position: 50% 100%; }
+.seat-avatar--variant-5 { background-position: 100% 100%; }
 
 .thinking-ring {
   position: absolute;

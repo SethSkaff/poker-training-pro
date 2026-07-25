@@ -379,6 +379,16 @@ function ChipStack({ bet = false }: { bet?: boolean }) {
   );
 }
 
+/** Stable visual identity, intentionally unrelated to policy/personality. */
+export function avatarVariantForPlayerId(playerId: string): number {
+  let hash = 2166136261;
+  for (const character of playerId) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 6;
+}
+
 /** Compact visual scale for the central pot; the numeric pot remains exact. */
 export function potChipStackCount(pot: number): number {
   if (!Number.isFinite(pot) || pot <= 0) return 0;
@@ -548,7 +558,10 @@ function PlayerSeat({
               ))}
         </div>
       )}
-      <div className="seat-avatar" aria-hidden="true">
+      <div
+        className={`seat-avatar seat-avatar--variant-${avatarVariantForPlayerId(player.id)}`}
+        aria-hidden="true"
+      >
         <span>{player.name.slice(0, 1)}</span>
         {isActing && (
           <i className="thinking-ring" />
