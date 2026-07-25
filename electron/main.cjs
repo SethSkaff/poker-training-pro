@@ -42,6 +42,7 @@ const {
   createReplayExportController,
 } = require("./replay-export.cjs");
 const { createLocalLogger } = require("./local-logger.cjs");
+const { safeSendToRenderer } = require("./safe-send.cjs");
 
 const isDevelopment = !app.isPackaged;
 const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
@@ -79,13 +80,9 @@ const pendingCloseDecisions = new Map();
  * or destroyed window must never crash the main process.
  */
 function broadcastLifecycle(payload) {
-  const target = mainWindow;
-  if (!target || target.isDestroyed()) return;
-  try {
-    target.webContents.send("lifecycle:event", payload);
-  } catch {
-    // Lifecycle hints are advisory; failure to deliver must not crash.
-  }
+  safeSendToRenderer(mainWindow, "lifecycle:event", payload, {
+    log: (level, event, details) => diagnosticLogger.log(level, event, details),
+  });
   diagnosticLogger.log("info", "lifecycle-event", { kind: payload.kind });
 }
 
@@ -233,9 +230,18 @@ function requestRendererCloseState(window, cause) {
       clearTimeout(timer);
       resolve(state);
     });
-    try {
-      window.webContents.send("lifecycle:prepare-close", { requestId, cause });
-    } catch {
+    const delivered = safeSendToRenderer(
+      window,
+      "lifecycle:prepare-close",
+      { requestId, cause },
+      {
+        log: (level, event, details) =>
+          diagnosticLogger.log(level, event, details),
+      },
+    );
+    if (!delivered) {
+      // Fail open: if the renderer is already gone, treat this exactly like
+      // the timeout path so the close handshake never hangs the window.
       if (pendingCloseDecisions.delete(requestId)) {
         clearTimeout(timer);
         resolve(undefined);
