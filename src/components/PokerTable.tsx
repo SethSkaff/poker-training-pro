@@ -320,6 +320,7 @@ interface PlayerSeatProps {
   recentAction?: BettingActionType;
   recentActionLabel?: string;
   cardsDealt: boolean;
+  isActing: boolean;
 }
 
 const SEAT_STATUS_FRAGMENT_KEYS: Record<SeatPlayer["status"], string> = {
@@ -374,6 +375,7 @@ function PlayerSeat({
   recentAction,
   recentActionLabel,
   cardsDealt,
+  isActing,
 }: PlayerSeatProps) {
   const isFolded = player.status === "folded";
   const isAllIn = player.status === "all-in";
@@ -437,7 +439,7 @@ function PlayerSeat({
       )}
       <div className="seat-avatar" aria-hidden="true">
         <span>{player.name.slice(0, 1)}</span>
-        {player.status === "active" && player.id === "maya" && (
+        {isActing && (
           <i className="thinking-ring" />
         )}
         {!isHero && gesture && (
@@ -2145,6 +2147,7 @@ export function PokerTable({
                     : undefined
                 }
                 cardsDealt={cardsDealt}
+                isActing={scenario.actingPlayerId === player.id}
               />
             ))}
 

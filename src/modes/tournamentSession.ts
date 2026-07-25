@@ -1317,6 +1317,7 @@ export function createPokerTableSnapshot(
     ante: level.bigBlindAnte,
     heroSeat: 0,
     buttonSeat: Math.max(0, buttonIndex),
+    actingPlayerId: actingId ?? undefined,
     pot: hand.information.pot,
     amountToCall: toCall,
     minimumRaise:

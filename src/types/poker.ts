@@ -61,6 +61,8 @@ export interface TrainingScenario {
   ante?: number;
   heroSeat: number;
   buttonSeat: number;
+  /** Public seat currently required to act; absent for static Training prompts. */
+  actingPlayerId?: string;
   pot: number;
   amountToCall: number;
   minimumRaise: number;
