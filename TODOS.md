@@ -3,6 +3,1738 @@
 This is the canonical backlog. Keep it current as work is completed or new
 requirements are added.
 
+> **Document layout.** This file has two parts.
+>
+> - **Part I — Gameplay experience remediation** (below) is the current source
+>   of truth for making the desktop build feel like a video game. It was
+>   authored from a live-playthrough product review on 2026-07-25 plus a
+>   seven-agent forensic code audit. Work Part I in priority order (P0 → P7).
+> - **Part II — Release, platform, and compliance backlog** is the pre-existing
+>   backlog, preserved verbatim. Nothing in it was deleted. Most of its
+>   remaining open items are blocked on external authority (signing, publisher
+>   identity, store accounts, licensed masters, macOS/Xcode) or on hardware and
+>   human acceptance testing that cannot be performed in this environment.
+>
+> **Rules for future runs and sub-agents.**
+>
+> 1. Do not mark a task complete because code exists. Verify it is *connected to
+>    the real application flow* and that the *packaged* experience behaves
+>    correctly. This document exists because many features were documented as
+>    done while being invisible to a player.
+> 2. Do not claim external, hardware, publisher, licensing, or Apple submission
+>    work is complete without its actual evidence.
+> 3. Keep every acceptance criterion inspectable. Prefer a test or a recorded
+>    artifact over an assertion in prose.
+> 4. When you complete a task, annotate it with what you verified and how, and
+>    leave any residual caveat attached.
+
+---
+
+# Part I — Gameplay experience remediation
+
+## Design north star
+
+Poker Training Pro is an offline desktop tournament No-Limit Hold'em training
+**game**, not a poker-themed web dashboard. The desktop product should feel like
+the player is physically seated inside a championship poker environment: table,
+room, opponents, dealer button, chips, cards, camera, movement, sound, and
+transitions forming one continuous world.
+
+**The thirty-second test.** If someone watches over the player's shoulder for
+thirty seconds, they must think *"that is a video game"*, not *"that is a poker
+web app"*. Today the honest answer is the latter.
+
+Visual assets need not be photorealistic. Deliberately stylized, low-poly, or
+simple geometry is acceptable. What matters is that the experience is **spatial,
+continuous, readable, and alive**.
+
+Mobile stays deliberately simpler and flatter. **Do not let the simplified
+mobile design dictate desktop presentation.**
+
+Do not copy protected visual expression, branding, artwork, interfaces, or
+animation from the World Series of Poker, Mario Kart, Chess.com, or any other
+product. These are references for broad concepts only — championship
+atmosphere, continuous progression, review workflow — never templates.
+
+## Priority order (preserve this hierarchy)
+
+| Phase | Theme | Epics |
+|---|---|---|
+| **P0** | Make poker hands visibly and correctly play out | E00, E01, E02, E03, E04, E08 |
+| **P1** | Continuity and visible state transitions | E05, E06, E07, E22 |
+| **P2** | Desktop room, camera, characters, game world | E09, E10 |
+| **P3** | AI behavior and tournament pacing | E11, E12, E13, E14 |
+| **P4** | Post-round game review | E18 |
+| **P5** | Training expansion and adaptation | E15, E16, E17 |
+| **P6** | Career continuity, travel, roster variety | E19, E20 |
+| **P7** | Tutorial removal/reduction | E21 |
+| **X** | Cross-cutting constraints, always in force | E23, E24, E25, E26 |
+
+Dependencies may pull some work in parallel, but the hierarchy above is the
+tie-breaker whenever sequencing is ambiguous.
+
+---
+
+## Epic E00 — Audit findings and the discrepancy ledger
+
+The 2026-07-25 audit established that **most reported "missing features" are not
+missing code**. The engine and data model are substantially richer than the
+player-facing experience. The dominant failure mode is a thin, lossy translation
+layer between engine state and the renderer, plus two global suppressors.
+
+### E00-001 — Record the implementation-versus-overview discrepancy ledger
+
+**Status:** Done (this task documents the audit; keep it updated as work lands)
+
+`APP_OVERVIEW.md` and parts of Part II describe systems as delivered that a
+player cannot perceive. Verified findings:
+
+| Documented claim | Actual implementation | Classification |
+|---|---|---|
+| "Seated first-person championship room" | Flat DOM; `.poker-table` uses `perspective(900px) rotateX(56deg)` on an ellipse (`src/styles.css:2599-2614`). No 3D library exists — runtime deps are only react, react-dom, lucide-react, 2 fontsource (`package.json:33-39`) | FAR WEAKER THAN DOCUMENTED |
+| "Camera fly-through past venue/tables/dealer/players/stacks" | 4.3s Ken-Burns scale/translate over one static PNG plus decorative divs (`RoomFlythrough.tsx:32-69`, `styles.css:2376-2388`); `.venue-table` scales are fixed (`styles.css:2196-2200`) | PROTOTYPE ONLY |
+| "Limited left/right look, center view" | `cameraPan` clamped to `[-2,2]` (`PokerTable.tsx:1408-1414`) × `-18px` (`:1570`) = **±36px** flat `translateX` (`styles.css:2589-2597`); zoom 0.94–1.06 | FAR WEAKER THAN DOCUMENTED |
+| "Original avatar-sheet characters with public-action-driven hands (deal/hold/muck, check tap, chip push, all-in, pot gather, elimination retreat)" | Portrait is a sprite crop keyed to **seat slot, not identity** (`styles.css:3041-3064`); gestures are small decorative CSS glyphs beside the seat (`styles.css:4923-5028`); `hold` is `display:none` (`:5026-5028`); opponent peek absent | FAR WEAKER THAN DOCUMENTED |
+| "Between-round camera travel toward the next seat" | Progress bar fades in over a table that never moves (`PokerTable.tsx:1810-1834`) | FAR WEAKER THAN DOCUMENTED |
+| "Cartoony physical card/chip motion" | No chip ever travels seat→pot or pot→winner; only local fade/scale flourishes at the seat. `.center-pot` is 3 static chip icons, never sized to the real pot (`styles.css:2799-2806`) | MISSING FEATURE |
+| "Validated bank of twelve Training scenarios" | 12 exist and are **schema**-valid, but all carry `review.status:"pending"`, `reviewerId:null` — none human-reviewed | DISCREPANCY (in wording) |
+| "Always-available poker reference with hand rankings, betting terms, probability shortcuts, tournament terms, worked examples" (Part II marks this `[x]`) | **No standalone reference screen exists.** Content lives only inside `PlayableTutorial.tsx` step 5 and the live in-table math HUD | DISCREPANCY — checked item is not true |
+| "Live six-seat geometry audit reports zero intersections" | `work/table-collision-audit.json` has **no producing script anywhere in the repo** — a one-off manual capture, not a gate. Its checklist excludes hero stack, committed-bet labels, dealer button, and side-pot display; measures only bbox intersection, never contrast/size/legibility | DISCREPANCY — misleading as stated |
+| "Career play-through with event progression" | Progress is never persisted; resets every app mount | EXISTS BUT DISCONNECTED |
+| "Anti-tell decision timing" | Real and implemented; not disputed | ACCURATE |
+| Deterministic engine, side pots, information-set redaction | Real, well-tested, richer than the UI exposes | ACCURATE |
+
+**Acceptance criteria**
+- [ ] `APP_OVERVIEW.md` is corrected so no claim above overstates the build. It is a briefing document given to third parties; leaving it inaccurate is a correctness problem.
+- [ ] Part II's poker-reference item is un-checked or re-scoped to match reality (see E21-003).
+- [ ] Part II's collision-audit claim is re-worded and superseded by E25-002.
+
+### E00-002 — Two global suppressors explain most "nothing animates" reports
+
+**Observed problem**
+The player reported no animation, blinking, and abrupt state replacement
+throughout. The audit found two *independent* causes, either of which alone
+produces that experience.
+
+**Cause 1 — the player's settings had all motion off.** The real save at
+`%APPDATA%\poker-training-pro\saves\autosave.json` contained:
+`reducedMotion:true`, `reducedMotionExplicit:true`, `cameraMotion:"off"`,
+`menuMotion:"off"`, `roomMotion:"off"`, `tableMotion:"off"`,
+`transitionMotion:"off"`, `autoCameraMovement:false`, `dealSpeed:"quick"`.
+`src/styles.css:4137-4144` then applies a blanket
+`.reduced-motion *, *::before, *::after { animation-duration:0.01ms !important;
+transition-duration:0.01ms !important; }` with **no carve-outs**, and
+`styles.css:4146-4155` repeats it under `@media (prefers-reduced-motion: reduce)`
+so it fires from the OS alone regardless of app state.
+The host OS actually has animations **enabled** (`HKCU\...\WindowMetrics\MinAnimate = 1`),
+so this was an in-app explicit choice, not an OS mirror.
+
+**Cause 2 — the table subtree remounts on nearly every tick.** See E01-001.
+Even with motion fully enabled, no CSS transition can survive a destroyed and
+recreated DOM tree.
+
+**Implementation notes**
+Both must be fixed before any animation work can be evaluated. Any future
+"animation is missing" report must first check these two conditions, or effort
+will be spent re-implementing animation that already exists and is suppressed.
+
+**Acceptance criteria**
+- [ ] A documented one-command diagnostic reports, for the current save and host: resolved `reducedMotion`, `reducedMotionExplicit`, each motion-surface value, `dealSpeed`, and OS `prefers-reduced-motion`.
+- [ ] The remount defect (E01-001) is fixed and verified.
+- [ ] The reduced-motion policy is corrected (E08).
+
+**Tests**
+- [ ] Unit: the diagnostic resolves settings identically to `applyOsReducedMotionDefault`.
+
+### E00-003 — Investigate how first-run produced all-motion-off with explicit=true
+
+**Observed problem**
+The save shows `reducedMotionExplicit:true` with every motion surface `"off"`,
+on a machine whose OS has animations enabled. Something in the first-run
+accessibility flow steered a default player into a fully motion-free game and
+locked it in — after which the OS preference is permanently ignored
+(`motionPreference.ts:76-83` only defers to the OS while `!explicit`).
+
+**Audit**
+- Relevant files: `src/App.tsx:279-298` (OS seed + `applyOsReducedMotionDefault`), `src/lib/motionPreference.ts:30-32,76-83`, the first-run setup screen in `src/App.tsx`, `src/lib/storage.ts:9-12` (defaults).
+- Suspected root cause: the first-run screen pre-selects motion options and marks the choice explicit on Save even when the player accepted a pre-checked "reduce motion" state, or the individual motion-surface toggles default to `"off"` independently of `reducedMotion`.
+- Not yet determined: which control set the five `*Motion` keys to `"off"`.
+
+**Acceptance criteria**
+- [ ] Reproduce a clean first run and record the exact resulting settings object.
+- [ ] A player who does not deliberately choose reduced motion ends up with motion **on** and `reducedMotionExplicit:false`.
+- [ ] Skipping first-run setup leaves the app following the OS preference.
+- [ ] Choosing reduced motion deliberately still fully works and is respected.
+
+**Tests**
+- [ ] Unit: first-run Save with untouched defaults yields motion-on, `explicit:false`.
+- [ ] Unit: first-run Skip yields `explicit:false`.
+- [ ] Integration: OS-reduce + no explicit choice yields reduced motion; explicit choice overrides OS in both directions.
+
+### E00-004 — Fix Math Elo not moving on incorrect answers
+
+**Observed problem**
+The real save shows `mathElo: 1000` (exactly the starting value) after
+**13 attempts with 0 correct math answers**, while `decisionElo` rose to 1227.
+A rating that cannot fall on repeated failure is not a rating.
+
+**Audit**
+- Relevant files: `src/lib/trainingEngine.ts` (`calculateEloDelta`, `gradeTrainingAttempt`), the math-grading branch in `src/components/PokerTable.tsx:1547-1560`, persistence in `src/App.tsx`.
+- Note the same save shows `mathCorrect:false` on all 13 attempts — separately investigate whether the math input/parse/submit path is failing to register answers at all, since 0/13 with a parser whose own tests pass 32/32 is suspicious.
+
+**Acceptance criteria**
+- [ ] A wrong math answer produces a negative `mathElo` delta and a persisted decrease.
+- [ ] Determine and document whether 0/13 reflects genuine wrong answers or a submission/registration defect; if the latter, fix it.
+- [ ] `mathElo` and `decisionElo` are independently verified to move in both directions.
+
+**Tests**
+- [ ] Unit: wrong/blank/correct math answers each produce the expected signed delta.
+- [ ] Integration: a full Training attempt persists both Elo values correctly.
+
+---
+
+## Epic E01 — Visible hand lifecycle (P0)
+
+The single most important requirement: **a hand must visibly progress from
+beginning to end**. Before visual polish, the player must be able to see what
+was dealt, what each player did, who folded, who bet how much, what remains,
+what is in the pot, whether side pots exist, which cards reached the board, how
+the hand ended, who won, why, with which five cards, for how many chips, and
+what their new stack is.
+
+### E01-001 — Stop remounting the table subtree on every state tick
+
+**Observed problem**
+The screen blinks; the flop "suddenly exists"; the visual state appears to
+restart between hands. Nothing animates even with motion enabled.
+
+**Desired behavior**
+The table, seats, room, and camera persist as stable DOM across actions,
+streets, and hands. Objects change *within* a continuous scene.
+
+**Audit**
+- Root cause, exact: `src/App.tsx:1344-1352` sets a `key` on `<PokerTable>` composed of `snapshot.id`, `snapshot.street`, `snapshot.pot`, `snapshot.amountToCall`, `runner.sequence`, `activeHand.betting.currentBet`, and `activeHand.betting.pending`. `runner.sequence` increments on **every** action, so the key changes on nearly every update.
+- `<PokerTable>` is `React.lazy`-wrapped (`SceneLoader.tsx:27-40`) under `<Suspense>` (`App.tsx:1330-1341`); an unstable key forces a **full unmount/remount** of the whole subtree — destroying all DOM nodes and all component state (`peeked`, `foldProgress`, `dragging`, `raiseOpen`, `cameraPan`, `arrivalVisible`, `paused` — `PokerTable.tsx:815-856`).
+- This is not a Suspense-fallback flash; the module is already resolved.
+- Consequence: existing, well-authored opponent keyframes (`opponent-card-deal`, `opponent-card-muck`, `styles.css:3134-3149`) either replay every tick or mount directly into their end state, so a deal and a muck can visually coincide.
+- Classification: **PRESENTATION BUG**, single location.
+
+**Dependencies** — Blocks essentially all of P0/P1. Do this first.
+
+**Implementation notes**
+Remove the volatile key. Identity should change only when the *scene* genuinely
+changes (mode/event), not when game state advances. Component state that
+legitimately must reset per hand should be reset explicitly by effect on
+`handId`, not by destroying the tree. Audit every `key` in the table render path
+for the same defect.
+
+**Acceptance criteria**
+- [ ] `<PokerTable>` is not keyed on pot, bet, street, or `runner.sequence`.
+- [ ] Advancing a street does not unmount the table subtree.
+- [ ] Starting a new hand does not unmount the table subtree.
+- [ ] Camera pan, peek state, and pause state survive an opponent action.
+- [ ] Existing opponent deal/muck keyframes visibly play once per real transition.
+
+**Tests**
+- [ ] Unit: a rendered table instance persists across simulated street and hand advances (assert a stable element identity / no remount).
+- [ ] Integration: component state (e.g. camera pan) is retained across an action.
+- [ ] Packaged: E25-001 perceptual gate observes non-instant board transitions.
+- [ ] Accessibility: live regions are not destroyed and re-announced spuriously.
+
+**Risks**
+Removing the key may expose stale-state bugs previously masked by the remount
+(the remount was acting as an accidental full reset). Expect to add explicit
+per-hand resets.
+
+### E01-002 — Introduce a public presentation event queue
+
+**Observed problem**
+There is no presentation timeline at all. Everything between two hero decisions
+happens invisibly in one batch.
+
+**Audit**
+- `advanceTournamentRunnerToHero` (`src/modes/tournamentRunner.ts:264-329`) and `...Async` (`:353-422`) are run-to-completion loops — deal, resolve street, apply bot action, repeat — with **no yield between iterations**, stopping only when `nextToAct === heroId` or the tournament ends.
+- `src/App.tsx:812-853` then performs a **single** `setRunner(next)` for the entire batch.
+- The engine *does* have per-event granularity: `hand.information.actions: HandActionRecord[]` (`src/engine/tournament.ts:112-116,139`) and `runner.decisions[]` (bounded 80, `tournamentRunner.ts:315-324`). These are reduced to a static text popover (`App.tsx:1383-1393`) and a single `lastPublicAction` (`App.tsx:1328`).
+- Classification: **EXISTS BUT DISCONNECTED** — the event stream exists as data and is discarded as a timeline.
+
+**Desired behavior**
+A clean separation between: authoritative engine state; a queue of public
+events; presentation state; animation state; input-lock state; and
+skip/fast-forward state. The renderer consumes events over time.
+
+**Implementation notes**
+The runner must become steppable/incremental (generator or explicit
+step-function) rather than run-to-completion. Engine authority must not change —
+the engine may compute ahead; only the *presentation* is paced. Actions must
+never be duplicated or recomputed because an animation was skipped.
+
+**Acceptance criteria**
+- [ ] A hand emits an ordered public event stream: hole cards dealt, each action with actor and amount, each street's board cards, bets collected, side pots formed, showdown reveals, each pot award, eliminations, button move, blinds posted.
+- [ ] The renderer advances through the queue on a deterministic presentation clock honoring the speed setting.
+- [ ] Engine results are bit-for-bit identical whether or not presentation is skipped.
+- [ ] Input is locked exactly while a queued sequence is playing, and released precisely when a hero decision is live.
+- [ ] Pause/resume freezes and restores the exact remaining presentation delay (reuse `FreezableDelay`).
+
+**Tests**
+- [ ] Unit: the event stream for a scripted hand matches an expected ordered list.
+- [ ] Unit: skipping produces identical final engine state to not skipping.
+- [ ] Unit: pause mid-queue then resume preserves the exact remainder.
+- [ ] Integration: no action is applied twice under rapid skip input.
+- [ ] Determinism: the frozen bot-league baseline and `tournamentReplay` tests are unchanged.
+
+**Risks**
+Highest-risk change in Part I. It touches the runner used by replay,
+determinism gates, and the iOS bridge. Keep a synchronous run-to-completion path
+for tests, replay reconstruction, and the mobile bundle.
+
+### E01-003 — Animate hole-card dealing
+
+**Audit** — No entrance animation exists for hero hole cards; `.hero-hole-cards`
+(`styles.css:3207-3272`) has only drag/peek transitions. Opponent cards do have
+`opponent-card-deal` (`styles.css:3134-3145`) but it is defeated by E01-001.
+Classification: **MISSING FEATURE** (hero) + **DISCONNECTED** (opponent).
+
+**Acceptance criteria**
+- [ ] Cards visibly travel from a dealer/deal origin to each active seat.
+- [ ] The deal order is perceptible and correct.
+- [ ] Each seat visibly receives the correct number of cards.
+- [ ] Hero cards arrive before peek/reveal is possible.
+- [ ] Honors the speed setting and the corrected reduced-motion policy (E08).
+
+**Tests** — [ ] Unit: deal events emitted per seat in order. [ ] Packaged: perceptual gate sees a non-instant deal.
+
+### E01-004 — Animate flop, turn, and river
+
+**Audit** — `.community-cards`/`.playing-card` (`styles.css:2715-2773`) have
+**zero** animation or transition rules. Board cards appear fully formed.
+Empirically confirmed: board went from empty to three rendered cards with the
+pot already updated between consecutive frames. Classification: **MISSING FEATURE**.
+
+**Acceptance criteria**
+- [ ] The flop arrives as a visible three-card dealing sequence (rapid cadence acceptable; the player must see three cards placed).
+- [ ] A readable pause lets the board register before the turn.
+- [ ] Turn and river each deal visibly with an appropriate pause.
+- [ ] All-in runouts use the stronger sequence in E06.
+
+**Tests** — [ ] Unit: one board-card event per card, ordered. [ ] Packaged: perceptual gate observes intermediate board states.
+
+### E01-005 — Expose every public player action
+
+**Audit** — A textual "Folded" label renders per seat
+(`PokerTable.tsx:412-416`). But opponent cards are **always hardcoded
+placeholders** — every non-hero seat renders `A♠`/`K♥` marked hidden
+(`PokerTable.tsx:376-386`); `createPokerTableSnapshot` only attaches real cards
+for the viewer (`tournamentSession.ts:1276-1294`). The muck animation exists but
+is defeated by E01-001.
+
+**Acceptance criteria**
+- [ ] Fold, check, call, bet, raise, all-in, and any forced action are each visibly and distinctly communicated at the acting seat.
+- [ ] An opponent fold shows a physical/animated muck toward the muck pile plus a readable label.
+- [ ] Eliminations and pot/side-pot awards are visibly communicated.
+- [ ] The player never has to infer an action from a later stack change.
+
+**Tests** — [ ] Unit: each action type produces a distinct presentation event. [ ] Accessibility: each is announced without leaking hidden information.
+
+### E01-006 — Add a real "currently acting" indicator
+
+**Audit** — **Dead code.** `PokerTable.tsx:390-392` gates the thinking ring on
+`player.id === "maya"`, but the only roster uses id `"maya-tempo"`
+(`tournamentSession.ts:192-199`), so the ring can never render in real play.
+There is no `actingPlayerId`/`toAct` concept surfaced to the UI at all.
+Classification: **STATE-SYNC BUG** over a **MISSING FEATURE**.
+
+**Acceptance criteria**
+- [ ] The seat to act is unmistakably indicated, by more than color.
+- [ ] The indicator is driven by real engine state, not a hardcoded id.
+- [ ] Action order is discoverable.
+- [ ] The hero's own turn is clearly distinguished from waiting.
+
+**Tests** — [ ] Unit: indicator follows `actingPlayerId` across a betting round. [ ] Regression: no hardcoded player id remains in render conditions (add a lint/grep gate).
+
+---
+
+## Epic E02 — Table-state clarity (P0)
+
+### E02-001 — Make the hero's stack always visible
+
+**Observed problem**
+The player could not see their own remaining chips, and had to open the raise
+controls and drag toward all-in to infer them. This is the most damning
+readability defect found.
+
+**Audit**
+- Root cause, exact: `src/styles.css:2858-2860` — `.player-seat--hero { display: none; }`, unconditional, present since the baseline commit.
+- `PlayerSeat` (`PokerTable.tsx:325-434`) renders the stack for **every** seat including the hero (`:400-405`, invoked `:1911-1928`), so the JSX and data already exist.
+- `display:none` also removes it from the **accessibility tree**, so `playerSeatAriaLabel` (`:294-323`) — which does include the stack — is unreachable by screen readers.
+- No substitute HUD exists: `table-topbar` (`:1725-1798`) and `ModeSidePanel` (`:682-761`) never show stack.
+- Empirically confirmed: the only place the hero's stack appears is the raise panel's All-in preset (`:2144-2145`).
+- Interface scale (`styles.css:5075-5085`) is irrelevant — a hidden element cannot be scaled into view.
+- Classification: **EXISTS BUT DISCONNECTED**.
+
+**Acceptance criteria**
+- [ ] Remaining stack is visible during normal play without opening any menu.
+- [ ] Distinct from the amount currently committed.
+- [ ] Never obscured by cards, chips, controls, overlays, or avatars.
+- [ ] Readable at 1100×720 through 2560×1080 and at every interface scale.
+- [ ] Exposed to screen readers with a correct label, announced on change.
+- [ ] Not conveyed by color alone.
+- [ ] Updates at the correct presentation moment (after chips visibly leave, per E05-001).
+
+**Tests** — [ ] Unit: hero stack element present and populated in a live tournament render. [ ] Accessibility: hero stack reachable in the a11y tree and announced on change. [ ] Packaged: present and unobscured at all five reference sizes (E25-002). [ ] Regression: a gate fails if the hero seat or its replacement HUD is hidden.
+
+### E02-002 — Show committed wager, amount to call, and total invested
+
+**Audit**
+- Amount-to-call **is** already visible outside the raise UI (`PokerTable.tsx:1987-1994`, and the call button `:2064-2070`) — this part of the report was inaccurate; it is present but visually modest and far from the chips.
+- Hero's committed-this-street `.seat-bet` (`:406-411`) is hidden by the same `display:none` as E02-001.
+- Opponent committed-this-street renders correctly.
+- **Total invested this hand is an engine/type gap**: the engine tracks `totalCommitted` (`engine/betting.ts:14`, `tournament.ts:125`) but `SeatPlayer` (`src/types/poker.ts:35-44`) has only a single `bet`, populated from `streetCommitted` alone (`tournamentSession.ts:1289`). The UI has no field to read.
+
+**Acceptance criteria**
+- [ ] Every seat visibly shows its committed amount for the current betting round.
+- [ ] The hero's committed amount is visible outside the raise UI.
+- [ ] Amount to call is prominent and near the decision controls.
+- [ ] Total invested this hand is available where useful (requires surfacing `totalCommitted`).
+- [ ] Current pot and each side-pot amount are visible (E05-004).
+
+**Tests** — [ ] Unit: `SeatPlayer` carries and renders `totalCommitted`. [ ] Unit: hero committed amount renders. [ ] Accessibility: all four values announced.
+
+### E02-003 — Make position and blinds unmistakable
+
+**Audit**
+- Dealer button: `PokerTable.tsx:372`, a 20×20px circle with 8px text and a plain `#ede9dc` fill (`styles.css:3191-3205`), pinned beside an 86×86px avatar — a tiny inconspicuous dot.
+- **No SB/BB markers exist at all.** Grep for `smallBlindSeat|bigBlindSeat|isSmallBlind|"SB"` in `PokerTable.tsx` returns nothing; only aggregate blind values show in the centre readout (`:1874-1883`).
+- **No position labels** (UTG etc.) anywhere.
+- Which seats hold SB/BB is not exposed to the UI as seat ids.
+
+**Acceptance criteria**
+- [ ] The dealer button is unmistakable at every supported size.
+- [ ] Small-blind and big-blind seats are marked per seat.
+- [ ] Ante is shown when applicable.
+- [ ] The player immediately knows whether they are button, SB, BB, UTG, acting, or waiting.
+- [ ] Markers are distinguished by more than color.
+
+**Tests** — [ ] Unit: SB/BB/button markers map to correct seats across a rotation. [ ] Accessibility: position announced for the hero.
+
+### E02-004 — Make the dealer button visibly move between hands
+
+**Audit** — No transition or animation is attached to `.dealer-button` or its
+position change; it re-renders at the new seat. Empirically confirmed: between
+hands the "D" jumped instantly to another seat. Classification: **MISSING FEATURE (motion)**.
+
+**Acceptance criteria**
+- [ ] The button visibly travels to the next seat during the between-hand sequence (E07).
+- [ ] The move happens at the correct moment in the sequence, before blinds are posted.
+- [ ] Reduced-motion provides an instant-but-clear alternative that still communicates the change.
+
+**Tests** — [ ] Unit: a button-move event is emitted between hands. [ ] Packaged: perceptual gate observes the move.
+
+---
+
+## Epic E03 — Showdown and hand-result presentation (P0)
+
+### E03-001 — Stop discarding the winning hand from the result
+
+**Observed problem**
+At showdown the player often cannot tell whether they won or lost; winning hands
+are not named and winning cards are not highlighted.
+
+**Audit**
+- The engine already computes everything: `HandValue { category, categoryName, displayName, tiebreak, cards }` (`src/engine/evaluator.ts:19-34`) — including the exact best-five `cards`.
+- `PotAward { potId, playerId, amount, hand?: HandValue }` (`src/engine/pots.ts:43-48`) **already carries the winning hand**, populated for every award by `resolvePots` (`pots.ts:213-220`), correctly handling ties, splits, and odd chips (`pots.ts:169-232`).
+- It survives into `session.lastHand.awards` (`tournamentSession.ts:965-980`).
+- **Severed here:** `src/App.tsx:1402-1404` maps awards to `{ playerId, amount }`, dropping `potId` and `hand`; the receiving type `TournamentTableControls.lastPotAwards` (`PokerTable.tsx:127`) is likewise narrowed.
+- Classification: **EXISTS BUT DISCONNECTED** — a one-line data loss.
+
+**Acceptance criteria**
+- [ ] `potId` and `hand` reach the UI for every award.
+- [ ] The winning hand category is named on screen (Pair … Royal Flush).
+- [ ] The exact five cards used are highlighted — moved slightly forward/up and visually connected.
+- [ ] Unused cards remain visible but de-emphasized.
+- [ ] Board-playing hands are handled correctly.
+- [ ] Ties and split pots are shown explicitly.
+- [ ] Each side pot's winner is shown separately.
+- [ ] The result stays visible long enough to read, and is grounded at the table rather than only in a modal.
+
+**Tests** — [ ] Unit: award mapping preserves `potId` and `hand`. [ ] Unit: best-five highlighting for pair/two-pair/trips/straight/flush/full house/quads/straight flush/board-plays. [ ] Unit: split pot and multi-side-pot rendering. [ ] Accessibility: winner, category, and amount announced.
+
+### E03-002 — Implement legitimate showdown reveals
+
+**Audit**
+- A `revealed?: boolean` field exists on `HandInformationPlayer` (`engine/tournament.ts:127`) and redaction already honors it (`:848`) — but **nothing ever sets it to `true`**. The only `revealed: true` in the repo is a test fixture (`engine/tournament.test.ts:249`). `createPokerTableSnapshot` doesn't branch on it.
+- Consequence: opponent hole cards are never available even at a legitimate showdown, and every opponent seat shows hardcoded placeholders.
+- Classification: **PROTOTYPE ONLY** — a half-built mechanism that is fully inert.
+
+**Implementation notes**
+This is an engine-level change with a privacy review, not a UI detail. Reveals
+must be set only where the rules make cards public, and the redaction path must
+remain the single gate. Because determinism ties every card to the seed, review
+and replay consumers must reapply viewer-scoped redaction rather than trusting
+reconstructed state (see E24-002).
+
+**Acceptance criteria**
+- [ ] `revealed` is set exactly for players whose cards the rules make public.
+- [ ] The snapshot honors `revealed`; opponent placeholders are removed.
+- [ ] Cards never public are never exposed, in UI, logs, announcements, saves, or exports.
+- [ ] Folded hands are not revealed unless a deliberate, separately specified option is added.
+
+**Tests** — [ ] Unit: reveal set only at qualifying showdowns. [ ] Privacy: redaction denies non-revealed cards for every viewer. [ ] Regression: existing hidden-information invariance tests still pass.
+
+### E03-003 — Guarantee every hand communicates win or loss
+
+**Acceptance criteria**
+- [ ] Every hand-ending sequence states the winner, the hand category, the amount awarded, and the player's updated stack.
+- [ ] Losing players are indicated where relevant.
+- [ ] Elimination and advancement are stated.
+- [ ] Side-pot effects on the result are explained.
+- [ ] Communicated visually, textually, and via assistive technology.
+
+**Tests** — [ ] Unit: fold-win, showdown-win, split, side-pot, and elimination each produce a complete result statement. [ ] Accessibility: assertive announcement for elimination.
+
+---
+
+## Epic E04 — Folded-hand continuation (P0)
+
+### E04-001 — Continue the hand after the hero folds
+
+**Observed problem**
+When the hero folds, the hand appears to end or blank immediately.
+
+**Audit**
+- Root cause: the advance loop's stop condition is `if (actor === runner.session.heroId) return runner;` (`tournamentRunner.ts:298`, `:389`). Once the hero folds they are never `nextToAct` again this hand, so the loop plays out the entire remainder, settles the pot, checks eliminations, **and deals the next hand**, stopping only at the next real hero decision.
+- Empirically confirmed: fold at "Hand 1, Preflop, 6 players remain" → the very next frame the player sees is "Hand 2, Preflop, 5 players remain" with two opponents already marked FOLDED and a winner's stack already grown from 14,975 to 30,000. Zero intervening frames.
+- Classification: **PRESENTATION BUG / STATE-SYNC BUG**. Depends on E01-002.
+
+**Acceptance criteria**
+- [ ] Default: hero cards visibly muck, remaining opponents act visibly, board cards continue to deal, pots build, the winner is shown, the pot is awarded, then the next hand begins normally.
+- [ ] The player can watch a folded hand play out.
+- [ ] Presentation honors the speed setting.
+
+**Tests** — [ ] Unit: after a hero fold, presentation events continue to hand end. [ ] Integration: the next hand is not dealt until the current hand's result has been presented.
+
+### E04-002 — Make Skip optional, not the default
+
+**Audit**
+- "Skip to result" (`PokerTable.tsx:2101-2107`) only resolves the `FreezableDelay` wrapping the hero's **own** just-submitted action (`:1279-1288`). Everything after that runs the same run-to-completion loop regardless.
+- The hero-decision delay (`1_500 + ((sequence*977) % 2_750)` ms, `tournamentRunner.ts:310,403`) is the **only** throttle in the entire pipeline.
+- Empirically: simply waiting produced the identical instantaneous whole-hand jump. The documented "skip never duplicates or cancels an action" claim is trivially true because there is no other queued presentation.
+- Classification: **PRESENTATION BUG / MISSING FEATURE**.
+
+**Acceptance criteria**
+- [ ] Full presentation is the default; skipping is an explicit choice.
+- [ ] Skip resolves only queued presentation and opponent-play delays.
+- [ ] Skip never cancels, duplicates, or recomputes an already-chosen action.
+- [ ] Skip moves cleanly to the result and leaves the result readable.
+- [ ] Skip is keyboard and controller accessible and clearly labelled.
+
+**Tests** — [ ] Unit: skip yields identical engine state to full playback. [ ] Unit: repeated rapid skip applies each action exactly once. [ ] Accessibility: skip reachable by keyboard and controller.
+
+### E04-003 — Give fold-wins an explicit result sequence
+
+**Acceptance criteria**
+- [ ] The final fold is shown.
+- [ ] The winner is identified with a short result message.
+- [ ] The pot visibly moves to the winner and the stack updates.
+- [ ] The result remains visible long enough to understand.
+- [ ] Folded hole cards are **not** revealed (no deliberate option is in scope here).
+
+**Tests** — [ ] Unit: all-fold termination emits a complete result sequence. [ ] Privacy: no folded hole card is exposed.
+
+---
+
+## Epic E05 — Bets, pots, side pots, and chip movement (P1)
+
+### E05-001 — Make bets physically move and define the presentation contract
+
+**Observed problem**
+Bets do not physically move. The player specifically asked whether the pot
+number increases before chips visibly move.
+
+**Audit**
+- **No chip ever travels between two screen locations.** What exists is local motion at the seat only: `.seat-bet { animation: opponent-chip-push 420ms }` (`styles.css:3117-3132`, keyframes `:3156-3159`) is a fade/scale-in at the seat (translateY(-38px)→0), not travel to the pot. The `.seat-action-hand--bet/--all-in/--win` glyphs (`styles.css:4950-4999`) nudge a ~30-40px icon at the seat edge.
+- `.center-pot` (`PokerTable.tsx:1903-1907`, `styles.css:2799-2806`) is **three static chip icons rendered unconditionally**, never sized or animated to reflect the real pot.
+- No animation exists for collecting bets at street end — when `player.bet` resets to 0 the `.seat-bet` block simply unmounts with no exit transition.
+- No animation exists for chips traveling to a winner; only the local win flourish plays.
+- **Order of operations, resolved:** `scenario.pot` is computed as `Σ player.totalCommitted` (`tournamentSession.ts:468-470,595,668`), so the displayed pot **already includes chips still sitting in front of players**. The pot text and each `.seat-bet` badge derive from the same render and update in the same React commit — there is no data-level lag. The player's perception is nonetheless accurate: the centre number changes with nothing visibly moving toward it.
+- Classification: **MISSING FEATURE** (travel animation never built), not a state-sync bug.
+
+**Desired behavior**
+A single, non-contradictory presentation contract. Either (a) update the
+committed-bet amount as chips leave the stack and update the central pot when
+chips are collected, or (b) visibly reserve chips before consolidating them.
+Never show chips at a seat while simultaneously presenting them as fully
+collected into the centre without a clear reason.
+
+**Acceptance criteria**
+- [ ] The chosen contract is written down in `docs/` and referenced from the code.
+- [ ] Chips visibly move from the stack area into a committed-bet area on bet/raise/call/blind.
+- [ ] Committed chips remain visually separate from the remaining stack.
+- [ ] Opponent bet chips never overlap stack labels (add these elements to the geometry gate, E25-002).
+- [ ] The numeric pot and the chip visuals never contradict one another.
+- [ ] `.center-pot` reflects the real pot magnitude or is removed.
+
+**Tests** — [ ] Unit: displayed pot equals the contract's expected value at each phase. [ ] Packaged: geometry gate covers bet-vs-stack-label. [ ] Packaged: perceptual gate observes chip travel.
+
+### E05-002 — Collect bets into the pot at street end
+
+**Acceptance criteria**
+- [ ] Committed chips visibly move to the central pot when a street closes.
+- [ ] The pot display updates in sync with the collection.
+- [ ] Side-pot separation is preserved through the collection.
+- [ ] No instantaneous teleport when motion is enabled.
+
+**Tests** — [ ] Unit: a collect event is emitted per street close. [ ] Unit: chip conservation holds across collection.
+
+### E05-003 — Animate pot awards
+
+**Acceptance criteria**
+- [ ] The main pot visibly moves to its winner.
+- [ ] Each side pot visibly moves to its own correct winner.
+- [ ] Stacks update during or after the visible award.
+- [ ] Split-pot division is shown explicitly.
+- [ ] No full-screen refresh occurs.
+- [ ] Winning has emotional payoff (pairs with E22-001).
+
+**Tests** — [ ] Unit: one award event per pot with correct recipient. [ ] Unit: split awards animate to multiple seats.
+
+### E05-004 — Build a real side-pot display
+
+**Observed problem**
+Side pots are communicated only by a small message in the bottom-right corner,
+with no amounts and no eligible players.
+
+**Audit**
+- Confirmed exactly. The only side-pot UI is `ContextCoachPanel` (`PokerTable.tsx:774-799`), styled `.context-coach { position: fixed; right: 28px; bottom: clamp(18px,3vh,40px) }` (`styles.css:7254-7272`) — literally pinned bottom-right. Its copy is generic and non-numeric (`en-US.messages.gameplay.ts:440-441`): no amount, no eligible players, nothing tied to the actual hand.
+- Worse: `contextualPrompts.ts:21-24,148,152-159` persists a `seen` list, so this prompt fires **once ever per save file**. After first dismissal it never appears again for any subsequent side pot.
+- A glossary entry exists in the pause menu's reference page (`PokerTable.tsx:2481-2482`) — not live state.
+- **The engine has everything**: `ContestablePot { id, kind:"main"|"side", amount, cap, contributorIds, eligiblePlayerIds }` (`engine/pots.ts:14-21`) and per-pot awards. It is discarded: `App.tsx:1394-1407` collapses `lastHand.pots` into a single boolean `lastHandHadSidePot` and strips `potId` from awards. Live in-hand pot is a single flat number (`types/poker.ts:64`).
+- Caveat: `ContestablePot` is currently built at settlement (`buildPots`), so **live** mid-hand pot structure is not yet available before resolution — exposing it during a multiway all-in requires computing it earlier.
+- Classification: **EXISTS BUT DISCONNECTED** + **MISSING FEATURE**.
+
+**Acceptance criteria**
+- [ ] Main pot and each side pot are visually separated with their own amounts.
+- [ ] Eligible players are shown per pot.
+- [ ] The reason a side pot exists is explained in context, not as a one-shot tip.
+- [ ] Side-pot creation is announced, every time, not once per save.
+- [ ] At showdown each pot is evaluated and awarded separately and visibly.
+- [ ] Understandable to a player who knows poker but is not tracking every chip.
+- [ ] Live pot structure is available before resolution for all-in situations.
+
+**Tests** — [ ] Unit: multi-side-pot hand renders correct amounts and eligibility. [ ] Unit: the explanation is not gated by a once-ever `seen` flag. [ ] Unit: per-pot award attribution reaches the UI. [ ] Accessibility: side-pot amounts and eligibility announced.
+
+---
+
+## Epic E06 — All-in presentation (P1)
+
+### E06-001 — Build a dedicated all-in sequence
+
+**Observed problem**
+All-ins are treated as another abrupt transition, often without revealing
+opponent cards or showing the runout.
+
+**Audit**
+- No all-in presentation exists. Only an `is-all-in` seat label (`PokerTable.tsx:417-420`) and a one-time educational tip (`offerPrompt("all-in")`, `:1174`).
+- `progressTournamentSessionHand` is called repeatedly inside the same synchronous loop with no yield (`tournamentRunner.ts:286-292,376-383`), so a flop→turn→river→showdown runout resolves in one JS tick.
+- Depends on E01-002 and E03-002.
+
+**Desired sequence**
+1. Confirm who is all-in. 2. Move involved hole cards to a clear presentation
+position. 3. Reveal all live all-in hands. 4. Show each player's probability of
+winning/tying/losing. 5. State plainly that probabilities derive only from
+remaining unseen cards. 6. Run remaining board cards one at a time. 7. After each
+card, update equities with animation and a brief suspense pause. 8. Resolve the
+winner. 9. Highlight the winning five. 10. Award main and side pots visibly.
+11. Show eliminations or survival.
+
+**Acceptance criteria**
+- [ ] The sequence above plays in order.
+- [ ] It stays visually connected to the table and hides no important state.
+- [ ] It never misrepresents the math.
+- [ ] It leaks no information before cards are legally revealed.
+- [ ] It respects the corrected reduced-motion policy and remains skippable.
+- [ ] It does not affect the deterministic engine result.
+
+**Tests** — [ ] Unit: sequence event order for 2-way and 3-way all-ins. [ ] Unit: identical engine result with and without the sequence. [ ] Privacy: no reveal before the legal reveal point. [ ] Accessibility: each stage announced; equity values exposed as text.
+
+### E06-002 — Wire a player-facing equity readout
+
+**Audit**
+- The Monte Carlo machinery is real and production-reachable: `estimateRangeEquity`/`estimateRangeEquitySliced` (`src/modes/rational.ts`), the versioned worker protocol (`rationalEquityProtocol.ts`), and the service with cancellation and stale-result rejection (`rationalEquityService.ts`), already off-main-thread via `createDesktopEquityService()` (`App.tsx:66,82,817-826,864-879`).
+- It is **viewer-agnostic** — it accepts any `PlayerInformationSet`, so it works for the hero.
+- But a repo-wide search shows it is consumed **only** by AI decision-making. There is no call site in `PokerTable.tsx` or any presentation path. No "chance to win" is ever computed for the player.
+- Classification: **MISSING FEATURE** (presentation) over **EXISTS BUT DISCONNECTED** (compute).
+
+**Implementation notes**
+Reuse the existing sliced/worker path; do not add a second estimator. Budget
+awareness matters: `docs/rational-equity-work-budget.md:64-71` measures median
+382 ms at 700 simulations and 663 ms at 1,200 on the reference machine, so the
+readout must be sliced/backgrounded and must not block the runout.
+
+**Acceptance criteria**
+- [ ] Win/tie/lose probabilities are shown per live all-in player.
+- [ ] Values update after each board card.
+- [ ] The basis (remaining unseen cards, simulation count) is disclosed.
+- [ ] Computation is cancellable and rejects stale results.
+- [ ] It never uses information the player is not entitled to.
+- [ ] It never blocks the presentation thread.
+
+**Tests** — [ ] Unit: equity for a known board matches an expected range. [ ] Unit: cancellation and stale rejection. [ ] Determinism: fixed seed yields identical displayed values.
+
+---
+
+## Epic E07 — Between-hand continuity (P1)
+
+### E07-001 — Make the inter-hand sequence continuous
+
+**Observed problem**
+Each hand appears to start from a newly rendered screen.
+
+**Audit**
+- The between-round `room-progress-overlay` (`PokerTable.tsx:1810-1834`) is a fade-in/out div over a **never-unmounted** table — so the overlay itself is fine; the discontinuity comes from E01-001's remount and E01-002's batching.
+- The genuine hard cut is per-*event*: `screen === "room-transition"` (`App.tsx:1281-1315`) lazy-loads `RoomFlythrough` and on completion calls `setScreen("tournament-table")` (`:1307-1311`), unmounting one and mounting the other.
+
+**Desired sequence**
+Finish the result → push chips to the winner → update stacks visibly → muck or
+clear cards → clear the board → move the dealer button → post blinds → deal the
+next hand. The room, camera, seats, table, and lighting persist throughout.
+
+**Acceptance criteria**
+- [ ] The sequence above is visible and ordered.
+- [ ] No fade-to-black or reload of the same table between hands.
+- [ ] The player perceives one continuous session, not a sequence of screenshots.
+- [ ] Blinds are visibly posted before hole cards are dealt.
+
+**Tests** — [ ] Unit: inter-hand event order. [ ] Unit: the table subtree is not unmounted across a hand boundary. [ ] Packaged: perceptual gate confirms continuity.
+
+---
+
+## Epic E08 — Motion policy and reduced-motion correctness (P0)
+
+### E08-001 — Replace the blanket animation kill switch with a tiered policy
+
+**Observed problem**
+The player experienced no animation at all. Their settings had every motion
+surface off, and the CSS then removes **all** motion app-wide.
+
+**Audit**
+- `styles.css:4137-4144`: `.reduced-motion *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }` — a blanket kill with **no carve-outs**.
+- `styles.css:4146-4155` repeats the identical rule under `@media (prefers-reduced-motion: reduce)`, so it fires from the OS alone even if app state disagrees.
+- `App.tsx:589-602` additionally sets `data-motion-table="off"` etc., which zeroes the `.seat-state--winner` badge animation (`styles.css:5153-5156`) — so a reduced-motion player gets no sound (E22-001), no seat highlight, and no badge animation on winning.
+
+**Why this is a defect, not just a setting**
+Reduced-motion is intended to suppress **vestibular triggers** — large parallax,
+spin, rapid zoom, camera sway. It is not intended to remove state-change
+feedback. Stripping card-deal and chip-movement cues leaves reduced-motion
+players unable to perceive what happened, which is itself an accessibility
+failure and contradicts the requirement that the player always knows the state.
+
+**Desired behavior**
+Tier motion into categories and gate them independently:
+- **Vestibular / decorative** (camera sway, room fly-through, parallax, flourish, background motion) — suppressed under reduced motion.
+- **State-communicating** (card deal, chip travel, fold/muck, pot award, button move) — retained under reduced motion, optionally shortened, with an instant-but-legible fallback that still shows the state change occurred.
+- **Essential feedback** (focus, selection, error) — always retained.
+
+**Dependencies** — Blocks meaningful evaluation of E01, E05, E06, E07.
+
+**Acceptance criteria**
+- [ ] The blanket `*` kill rule is replaced by tiered, named categories.
+- [ ] Reduced motion still communicates every state change, by motion, discrete step, or explicit label.
+- [ ] Existing granular surfaces (`cameraMotion`, `menuMotion`, `roomMotion`, `tableMotion`, `transitionMotion`) map onto the tiers coherently and are documented.
+- [ ] The OS `@media` rule suppresses only the vestibular tier.
+- [ ] A reduced-motion player can still tell who folded, what was dealt, where chips went, and who won.
+- [ ] Motion-off does not silently disable audio or badges that are the only remaining feedback.
+
+**Tests** — [ ] Unit: per-tier resolution for every combination of settings. [ ] Accessibility: with reduced motion on, every state change still has a perceivable non-motion indicator. [ ] Packaged: perceptual gate run twice — full motion and reduced motion — with different expectations per tier, not "no animation" for both.
+
+**Risks**
+Over-correcting would reintroduce vestibular triggers. Keep the flash/luminance
+analysis (Part II) green for the vestibular tier.
+
+---
+
+## Epic E09 — Desktop room, camera, and game world (P2)
+
+### E09-001 — Research spike: choose the desktop presentation architecture
+
+**Status:** Not started — **research spike, must precede E09-002+**
+
+**Observed problem**
+The desktop feels like a web UI arranged around a table. The intent is a
+championship room with depth, multiple tables, seated opponents with real
+bodies, lighting, objects, and camera motion.
+
+**Audit / constraints that make this a decision, not a task**
+- There is **no 3D anywhere** and no 3D dependency (`package.json:33-39`). Nothing existing is reusable as "3D minus a renderer" — the camera and room are CSS illusions with no 3D math beneath them.
+- Assets today: one static room PNG and one 3×2 portrait sprite sheet. Low-poly seated characters, a modeled room, and card/chip/table meshes would all need authoring or licensing.
+- **Bundle gate:** `config/performance-budgets.json` caps initial JS at **0.3 MiB gzipped** and `distTotalMiB` at 64. A 3D engine strains that before any app code. Either the engine is lazy-loaded strictly behind the room/table screens *and* the budget policy explicitly redefines "initial", or the budget is deliberately raised. Silently blowing the gate fails `scripts/audit-static-budgets.mjs`.
+- **CSP/offline:** `index.html:13-14` (`script-src 'self'`) permits a locally bundled engine but forbids CDN delivery, remote models/textures, and eval-based shader loading. Everything ships in the ASAR.
+- **Accessibility:** a canvas scene has no DOM for assistive technology. The existing named seat groups, live regions, focus management, contrast/target audits, and CSS-driven reduced motion are all DOM-based. A 3D scene must sit **behind a maintained parallel accessibility layer**, roughly doubling the scene's surface area permanently (see E23-001).
+
+**Deliverable of the spike**
+A written decision record in `docs/` covering: chosen approach (staged 2.5D
+enhancement vs. real 3D via a bundled engine); the budget-policy decision with
+numbers; the asset plan and its provenance/licensing path; the accessibility
+parity plan; and a milestone breakdown. **Do not begin E09-002+ before this
+lands.** Note honestly that GPU usage is not itself the goal — the goal is a
+spatial presentation that could not be mistaken for a mobile web screen.
+
+**Acceptance criteria**
+- [ ] Decision record exists and is explicit about cost and trade-offs.
+- [ ] The budget decision is recorded as an intentional policy change, not a gate bypass.
+- [ ] Asset provenance is addressed up front (ties to Part II's asset-rights work).
+- [ ] A cheaper interim path is identified so P2 is not all-or-nothing.
+
+### E09-002 — Interim: raise perceived depth without a new engine
+
+**Rationale** — De-risks E09-001 by delivering visible improvement regardless of
+the architecture decision.
+
+**Acceptance criteria**
+- [ ] Opponents read as seated presences grounded to the table, not floating portraits (add body/chair/shadow grounding).
+- [ ] Portrait selection is keyed to **player identity**, not seat slot (see E10-001).
+- [ ] Felt, lighting, and depth cues are improved; the table no longer reads as a flat coloured ellipse. (Note: the felt is `#164938`, a dark desaturated green — the "neon" characterization was an exaggeration, but the flatness is real.)
+- [ ] Layered parallax between room, table, and foreground within the vestibular tier of E08.
+
+### E09-003 — Make the seated camera meaningful
+
+**Audit** — Current range is ±36px flat translate plus a 0.94–1.06 scale.
+
+**Acceptance criteria**
+- [ ] Looking left/right produces a genuinely spatial change, with parallax between depth layers.
+- [ ] Center-view command works and is discoverable.
+- [ ] Keyboard, controller, and pointer control with sensible bounds; no unrestricted free camera in normal play.
+- [ ] Camera sensitivity, recenter behavior, field-of-view/zoom choice, and an option to disable automatic camera movement (this also satisfies the corresponding Part II accessibility item).
+- [ ] A fixed/reduced-motion alternative.
+
+**Tests** — [ ] Unit: pan bounds and recenter. [ ] Accessibility: full keyboard and controller parity; auto-camera disable honored.
+
+### E09-004 — Make room arrival a real spatial transition
+
+**Audit** — Today: a 4.3 s Ken-Burns zoom over one PNG with a three-stop route
+breadcrumb and a skip button; the five "tables" are fixed-scale divs that never
+change perspective relative to one another.
+
+**Acceptance criteria**
+- [ ] Entering a session or event moves through the venue past tables, dealer areas, players and stacks, then settles into the hero's seat.
+- [ ] Loading is hidden behind the authored transition where practical.
+- [ ] It transitions directly into play without a hard cut (addresses the `room-transition` → `tournament-table` remount).
+- [ ] Skippable, with a static reduced-motion alternative.
+
+---
+
+## Epic E10 — Characters and roster variety (P2)
+
+### E10-001 — Replace the hardcoded roster with a deterministic procedural field
+
+**Observed problem**
+The same opponents, names, and portraits appear in Normal, in Rational, across
+different events, across later career stages, and across sessions.
+
+**Audit**
+- Root cause: `DEFAULT_OPPONENTS` (`tournamentSession.ts:192-223`) is a hardcoded five-entrant constant (Maya Chen, Rafael Torres, Adrian Cole, Juno Pike, Lena Ortiz). `createTournamentSession` uses `options.opponents ?? DEFAULT_OPPONENTS` (`:350`) and the sole call site `App.tsx:734-745` **never passes `opponents`**.
+- Only the card/decision seed varies (`deriveSeed(seed, eventId, "tournament")`, `:356`).
+- Compounding defect: portraits are keyed to **seat slot** (`styles.css:3041-3064`), so as the same five rotate seats the face at a position never changes even though the occupant does.
+- Classification: **MISSING FEATURE** — no generation system exists to be reconnected.
+
+**Implementation notes — determinism is a hard constraint**
+Replay persists public entrant data and reconstructs from a stored seed. Roster
+selection must therefore become part of the **seeded derivation chain**
+(`deriveSeed`), never a separate unseeded randomization, or replay determinism
+breaks. Continue persisting public entrant identity/personality/rating exactly as
+today.
+
+**Acceptance criteria**
+- [ ] A fresh field is generated per event and per session.
+- [ ] Normal and Rational do not reuse an identical roster.
+- [ ] Immediate repeats are avoided.
+- [ ] Variation across face shape, hair, clothing, accessories, body type, skin tone, age presentation, posture, seat animation, name, personality, playing style, stack, field size, and event tier.
+- [ ] Appearance is **never** correlated with playing behavior or skill — no stereotype coupling. This is an explicit review item, not an implicit hope.
+- [ ] Portraits key to identity, not seat position.
+- [ ] Recurring named rivals only if deliberately designed.
+- [ ] Higher tiers feel like different competitions.
+- [ ] Fixed seed reproduces an identical roster.
+
+**Tests** — [ ] Unit: same seed → identical roster; different event/mode/session → different roster. [ ] Unit: no immediate repeat across consecutive events. [ ] Determinism: replay reconstruction reproduces the roster exactly. [ ] Review: a documented check that appearance dimensions are independent of behavior parameters.
+
+### E10-002 — Make character action animation read as physical
+
+**Audit** — Gestures exist and are correctly driven by **public** state (a real
+strength — no hidden-information leak), but they are small decorative CSS glyphs
+beside a static portrait. `hold` is `display:none` (`styles.css:5026-5028`);
+opponent card-peek does not exist; elimination is an opacity/grayscale fade
+rather than leaving the table.
+
+**Acceptance criteria**
+- [ ] Receive, peek, hold, muck, check the felt, gather/count/push chips, call, raise, go all-in, collect a pot, react to winning, and leave after elimination are each visible on the character.
+- [ ] `hold` has a real visual; opponent peek exists.
+- [ ] Animation reflects only public state, personality, pacing, and tournament context — **never** hidden-card strength.
+- [ ] Motion tiers per E08.
+
+**Tests** — [ ] Unit: gesture selection is a pure function of public state. [ ] Privacy: a test asserts gesture choice is invariant to hole cards (extend the existing hidden-information invariance suite).
+
+### E10-003 — Vary the environment by event tier
+
+**Audit** — Zero variation exists; every event renders identical markup, and
+`RoomFlythrough` always uses the same PNG regardless of event.
+
+**Acceptance criteria**
+- [ ] Room scale, crowd density, lighting, table presentation, signage, and background activity vary by tier.
+- [ ] Achieved procedurally where possible — a full art set per event is not required.
+- [ ] Reduced-motion and performance budgets respected.
+
+---
+
+## Epic E11 — Normal AI behavior (P3)
+
+> **Note:** the statistical measurement agent for this epic had not reported when
+> this document was authored. E11-001 is therefore the mandatory first task, and
+> the numbers it produces must be pasted into this epic before any tuning begins.
+> Treat every playthrough complaint below as a **reproducible test case**, not an
+> opinion, until measurement says otherwise.
+
+### E11-001 — Measure before tuning (blocking prerequisite)
+
+**Reported behavior to confirm or refute**
+- Opponents continuously raised instead of calling.
+- Raise → reraise → reraise chains reached **~10-11 consecutive raises**.
+- An opponent committed **~60,000 chips preflop** holding pocket kings.
+- Multiple opponents went all-in against ordinary made hands.
+- Opponents appeared to overvalue any "good" hand.
+- The player could reliably **predict** bots would keep raising.
+- A six-player Normal tournament reached **heads-up by ~hand 16**; four of six busted very fast.
+- The user consistently won and did not find it challenging.
+- Rational showed the same raising pathology.
+
+**Acceptance criteria**
+- [ ] A headless harness (reuse `src/modes/botLeague.ts` and `docs/bot-league-regression-harness.md` before writing anything new) measures, across many seeds and both policies: consecutive-raise-chain length distribution (max, and frequency ≥4/≥8/≥10); preflop and postflop all-in frequency; VPIP, PFR, 3-bet%, 4-bet%, fold-to-raise%, call%; hands to first elimination, to heads-up, and to completion; average pot vs. blinds; chips committed preflop; raise sizing vs. pot and effective stack.
+- [ ] Actual numbers are recorded in this epic.
+- [ ] Concrete reproducing seeds are recorded for a ≥8 raise chain and a deep-stack preflop all-in.
+- [ ] Each complaint is marked CONFIRMED or NOT REPRODUCED. **If chains do not reproduce, say so and investigate presentation-layer duplication instead** (see E11-002 last bullet) — the player may have observed one action rendered repeatedly.
+
+**Tests** — [ ] The harness itself is deterministic and committed so results are re-derivable.
+
+### E11-002 — Root-cause the raise pathology
+
+**Do not multiply aggression by a smaller constant.** Determine which of these is
+actually true, with file:line evidence:
+
+- [ ] Is a "should I continue?" evaluation being converted into a **raise** rather than compared against **call**? (See E11-003 — this is the leading hypothesis.)
+- [ ] Are bet amounts interpreted as **target totals** vs **increments** inconsistently anywhere? A prior fix addressed fractional targets in `roundChips` at 25-snapped career blinds; check for a surviving related unit/interpretation defect.
+- [ ] Does the policy correctly account for its own remaining stack, effective stack, and SPR?
+- [ ] Is minimum-raise handling creating a loop where a re-raise always looks marginally profitable?
+- [ ] Does each re-raise recompute state correctly, or is stale pot/`currentBet`/cached equity reused so the same verdict repeats?
+- [ ] For Rational: are Monte Carlo results stale or incorrectly reused/cancelled? Does the sliced/worker path ever differ in outcome from the synchronous path? (A determinism-equivalence test exists — confirm it covers re-raise sequences.)
+- [ ] Are personality/aggression modifiers unbounded or multiplicative in a compounding way?
+- [ ] Is there action-selection randomness/temperature, and is it calibrated?
+- [ ] **Could the renderer be submitting the same action repeatedly?** Check the submission path in `App.tsx` and `PokerTable.tsx` for re-entrancy. This is especially plausible given E01-001's remount defect and E01-002's batching, which could make one action appear many times.
+
+**Acceptance criteria**
+- [ ] A written root-cause statement with evidence and confidence, distinguishing incorrect math, wrong units, bad thresholds, excessive personality aggression, missing call behavior, a response-logic loop, poor ranges, blind pacing, renderer duplication, or a combination.
+
+### E11-003 — Separate "continue?" from "raise?"
+
+**Desired behavior**
+The AI must not reason *"my hand is good enough to continue, therefore raise."*
+It must compare the values of all legal actions — fold, check, call, each bet
+size, each raise size, all-in — and choose the best. A profitable call is not
+automatically a profitable raise.
+
+**Acceptance criteria**
+- [ ] Every raise has an identifiable reason to outperform calling: value, protection, fold equity, range leverage, stack pressure, tournament pressure, exploitation, or a personality-consistent bluff.
+- [ ] Call frequency rises to a plausible level; raise frequency falls to a plausible level.
+- [ ] The comparison is inspectable — a decision can be explained in terms of the action values considered (this also feeds E17 and E18).
+
+**Tests** — [ ] Unit: constructed spots where calling strictly beats raising produce a call. [ ] Statistical: call/raise mix within calibrated bounds.
+
+### E11-004 — Reach the Normal AI target
+
+**Target** — A varied table of skilled human professionals: strong fundamentals,
+distinct personalities, plausible bluffs, calls as well as raises, strategic
+pressure, occasional traps, position/stack/tournament awareness, bounded
+mistakes. **"Human-feeling" must not mean "randomly makes bad decisions."** No
+inexplicable repeated aggression, no hidden-card access, no reliably exploitable
+single pattern.
+
+**Acceptance criteria**
+- [ ] No single exploitable pattern lets a competent player win reliably (measure hero win-rate and exploitability against scripted strategies).
+- [ ] Personalities are behaviorally distinguishable in measurement, not just labelled.
+- [ ] Position, stack depth, and tournament stage measurably change behavior.
+
+---
+
+## Epic E12 — Rational AI behavior (P3)
+
+### E12-001 — Verify and enforce the Rational contract
+
+**Acceptance criteria**
+- [ ] Uses only information legally available to its seat (existing hidden-information invariance tests extended to cover re-raise chains).
+- [ ] Compares action values mathematically rather than pattern-matching hand strength.
+- [ ] Respects simulation budgets and remains deterministic under fixed seeds.
+- [ ] No timing leakage (existing anti-tell work is sound — keep it green).
+- [ ] Calls when calling outperforms raising; folds when continuing is unprofitable.
+- [ ] No repeated raises without mathematical justification.
+- [ ] Rational is **measurably distinct** from Normal — quantify the behavioral difference; if they share a code path such that personality is a thin wrapper over identical math, say so and separate them.
+
+**Tests** — [ ] Determinism: fixed seed reproduces decisions bit-for-bit. [ ] Privacy: decisions invariant to opponents' hole cards. [ ] Statistical: Normal-vs-Rational divergence exceeds a documented threshold.
+
+---
+
+## Epic E13 — Tournament pacing (P3)
+
+### E13-001 — Diagnose and fix the collapse to heads-up
+
+**Observed problem** — Six players reached heads-up by ~hand 16; four busted very
+fast.
+
+**Audit direction**
+Investigate whether the blind structure is simply far too fast for a six-player
+field **independent of AI aggression**. Report starting stack in big blinds and
+how quickly that decays through `src/engine/tournament.ts` (`scaledStructure`)
+and the timed director. Distinguish structural pacing from AI over-aggression —
+they require different fixes and may both be present.
+
+**Acceptance criteria**
+- [ ] Starting effective stack depth in BBs is documented per event tier.
+- [ ] A documented calibration target exists for a six-player format, justified rather than copied from a real-world statistic without regard to format, blind structure, and event design.
+- [ ] Median hands to first elimination and to heads-up fall within the target.
+- [ ] Event tiers differ intentionally in pacing.
+
+---
+
+## Epic E14 — AI regression gates and critic harness (P3)
+
+### E14-001 — Gate the metrics that are currently ungated
+
+**Audit** — Existing gates: the frozen bot-league baseline
+(`src/modes/fixtures/bot-league-baseline.json`, `botLeague.test.ts`) and the
+Training calibration gate. E11-001 must report precisely which of its metrics are
+**not** currently gated; that gap list becomes this task.
+
+**Acceptance criteria**
+- [ ] Regression gates exist for: raise-chain frequency, preflop and postflop all-in frequency, VPIP, PFR, 3-bet%, 4-bet%, fold-to-raise%, call%, average tournament duration, median hands to first elimination, median hands to heads-up, finish distribution, EV loss, and timing leakage.
+- [ ] Gates are statistical with documented tolerances, not single-anecdote assertions.
+- [ ] The frozen baseline is only regenerated through the documented sanctioned workflow, with before/after comparison recorded.
+
+### E14-002 — Development-only LLM critic harness
+
+**Hard constraint** — **The shipped game must never gain network access.** No
+live LLM opponent, no online dependency. This is a development evaluation tool
+only.
+
+**Acceptance criteria**
+- [ ] A dev/research harness plays large numbers of hands headlessly, samples suspicious or representative hands, and submits **public** hand histories to a low-cost or local model for qualitative labels: implausible aggression, passive missed value, unjustified raise, strange all-in, repeated action pattern, human-plausible play.
+- [ ] Results are used as qualitative signal **alongside** mathematical metrics, never as source of truth.
+- [ ] The harness lives outside the shipped bundle and is excluded from production packages (extend the existing production-hygiene audit).
+- [ ] No hidden-card information is ever sent.
+
+**Risks** — Must not become a release gate, and must not create an offline-policy
+violation or a data-egress path for hidden information.
+
+---
+
+## Epic E15 — Training scenario selection (P5)
+
+### E15-001 — Fix the deterministic selection cycle
+
+**Observed problem**
+The player saw what appeared to be only three repeating scenarios, all obvious
+calls, answerable by pressing the call hotkey repeatedly for "Strong decision".
+
+**Audit — confirmed empirically, and worse than reported**
+- `src/App.tsx:283` — a new session always starts at `trainingScenarios[0]` = `preflop-pot-odds-ak`.
+- `App.tsx:921-932` (`advanceTrainingScenario`) calls `selectNearTransferScenario`, a **fully deterministic greedy scorer** (`src/lib/trainingEngine.ts:398-436`) — never random, never Elo-filtered.
+- Weights (`:414-428`): same math topic **+100**, same transferGroup **+65**, not-yet-completed **+40 (one time only)**, shared tag +6 each, street change +12, difficulty distance −8/point.
+- Simulating 100 consecutive advances from the real default entry point yields a **permanent 2-cycle**: `preflop-pot-odds-ak` ↔ `river-bluff-catch-price`, 50/50, **2 of 12 scenarios**. Both are call-correct — they are the only pair sharing the `pot-odds` topic, worth an unbeatable +100.
+- Every one of the 12 possible starting points degenerates: 2-cycles in 8 cases, 3-cycles in 4 (the `aggression-threshold` group). The reported "three scenarios" corresponds to landing in a 3-cycle.
+- **Confirmed in the player's real save** (`autosave.json`): 13 attempts, `preflop-pot-odds-ak` ×7 and `river-bluff-catch-price` ×6, **2 distinct scenarios of 12**, action `call` ×13, all correct.
+- Compounding: only 2 scenarios share `pot-odds`; `implied-odds`, `outs`, `minimum-defense-frequency`, `stack-to-pot-ratio`, and `tournament-pressure` have exactly **one** scenario each, so the dominant weights have no diversity to draw from.
+- The frozen calibration baseline contains a `nearTransferPairs` field (`trainingCalibration.ts:344-347`) — **this cycling was captured into a passing baseline and never flagged**.
+- Classification: **SELECTION BUG** + **DATA-CONTENT LIMITATION**.
+
+**The 12-scenario bank** (5 sole-call-best, plus one accepting call as tied-best — call is fully correct on half the bank):
+
+| id | street | difficulty | best action | math topic |
+|---|---|---|---|---|
+| preflop-pot-odds-ak | preflop | 2 | call | pot-odds |
+| preflop-button-shove-fold-equity | preflop | 3 | all-in | expected-value |
+| preflop-implied-odds-pair | preflop | 3 | call | implied-odds |
+| flop-flush-draw-all-in | flop | 2 | call | equity |
+| flop-dirty-straight-outs | flop | 3 | fold | outs |
+| flop-defense-frequency | flop | 3 | fold | minimum-defense-frequency |
+| turn-close-flush-price | turn | 3 | call (fold also accepted) | equity |
+| turn-spr-commitment | turn | 2 | all-in | stack-to-pot-ratio |
+| turn-semi-bluff-ev | turn | 4 | raise | expected-value |
+| river-bluff-catch-price | river | 3 | call | pot-odds |
+| river-blocker-bluff | river | 4 | raise | expected-value |
+| river-icm-bubble-call | river | 5 | fold | tournament-pressure |
+
+**Acceptance criteria**
+- [ ] No fixed-point cycle exists from **any** starting scenario.
+- [ ] Over a session, coverage spans the bank rather than a 2-3 member subset.
+- [ ] The correct action varies — a player cannot answer correctly by repeating one input.
+- [ ] The starting scenario is not always index 0.
+- [ ] Recent-history avoidance covers scenario id, cards, board texture, stack structure, pot-odds threshold, correct action, wording, and lesson category.
+- [ ] Determinism is preserved where replay requires it.
+- [ ] The calibration baseline is re-derived so it no longer enshrines cycling, through the sanctioned workflow.
+
+**Tests** — [ ] Unit: 100-draw simulation from every starting point shows no cycle and broad coverage. [ ] Unit: consecutive correct actions are not all identical. [ ] Unit: all 12 scenarios are reachable. [ ] Regression: a gate fails if selection coverage over N draws falls below a threshold.
+
+### E15-002 — Move to constraint-driven selection and generation
+
+**Desired pipeline** — Choose a learning objective → choose target difficulty →
+build or select a legal candidate → compute equities, pot odds, action EVs, and
+regret → **reject** candidates that are illegal, ambiguous beyond the intended
+tolerance, trivially obvious, near-duplicates of recent, or off-target difficulty
+→ present → grade by EV regret → explain.
+
+Objectives to cover: pot odds, equity, expected value, bluff catching, value
+betting, draws, implied odds (only with a defensible model), fold equity, SPR,
+tournament pressure, side pots, preflop ranges, multiway decisions.
+
+**Audit — reusable infrastructure**
+
+| Piece | Exists | Reachable at runtime? |
+|---|---|---|
+| Versioned schema + validator (`src/data/trainingScenarioSchema.ts`) — legality, board/card counts, duplicate cards, EV-vs-epsilon consistency, structural fingerprints | Yes, thorough | **Yes** — imported by `trainingEngine.ts`, ships in the bundle. Strongest asset. |
+| Authoring/preview CLI (`scripts/training-scenario-tool.ts`, `scripts/training-tools/core.ts`) incl. bulk seeded simulation | Yes | **Dev-only** — pure logic is reusable but the module is not shipped |
+| Calibration benchmark (`src/lib/trainingCalibration.ts`) | Yes | Bundle-reachable but only exercised by dev scripts/tests |
+| Equity estimator (`src/modes/rational.ts`, sliced + worker) | Yes, substantial | **Yes** — already shipped and running off-main-thread for AI. **Zero coupling to Training today** |
+
+**Guarantees that must survive generation**
+- Versioning — stamp generated content with schema/content versions.
+- Legality — reuse `validateTrainingScenario` at runtime.
+- Source/reviewer metadata — **substantively unmet today** (all 12 are `review.status:"pending"`). A generator with no human in the loop satisfies the shape but not the spirit; decide and document the policy.
+- Tolerance checking — reusable.
+- Duplicate detection — today it is **strict-equality fingerprinting**, so a one-chip difference passes while still feeling repetitive. A **near-duplicate/similarity** rejection is required and does not exist.
+- Deterministic replay — the checkpoint persists only a `scenarioId`. Generated scenarios must be persisted **verbatim**, not regenerated from a seed on load, or replay breaks.
+- EV-regret grading — reusable, but requires the generator to compute real EVs, which requires the equity estimator.
+
+**Acceptance criteria**
+- [ ] Selection/generation is constraint-driven with an explicit reject stage.
+- [ ] The validated 12-scenario bank is **retained**, not discarded, when generation is added.
+- [ ] Near-duplicate rejection exists.
+- [ ] Generated scenarios persist verbatim for replay.
+- [ ] Every guarantee above is enforced, with the reviewer-metadata policy decided in writing.
+
+**Risks / constraint — iOS parity**
+`scripts/export-ios-training-bank.ts` statically snapshots the bank into
+`ios/.../training-scenarios.json`, with a release gate
+(`release:verify-ios-training-bank`) that fails if the checked-in JSON does not
+byte-match a fresh export. Runtime generation has **no representation** in this
+pipeline, and iOS consumes static JSON without an equivalent constraint-solving
+runtime. Three options, each a product decision: ship the generator into the
+JavaScriptCore bridge; pre-generate a larger frozen corpus at build time and drop
+true generation; or explicitly sacrifice desktop/iOS Training parity. **Decide
+before implementing.**
+
+---
+
+## Epic E16 — Adaptive Training difficulty (P5)
+
+### E16-001 — Make Elo actually drive difficulty
+
+**Audit** — **Elo is write-only telemetry.** `decisionElo`/`mathElo` are read only
+as inputs to `calculateEloDelta`/`gradeTrainingAttempt`
+(`trainingEngine.ts:297-330`) and displayed on the Dashboard
+(`Dashboard.tsx:595-600`). Grep-confirmed: no file passes either into any
+selection path. The authored `difficulty` field (1-5) is used in exactly one
+place — an `−8`/point tie-break (`trainingEngine.ts:426`) — never gated by player
+rating. A player at 1000 or 2500 gets the same fixed cycle, and cannot reach the
+bank's hardest scenario unless it happens to be their arbitrary start.
+Classification: **MISSING FEATURE** (never built, so not a regression).
+
+**Desired behavior** — Keep the player near the edge of their skill: not spamming
+obvious calls, not facing impossible or noisy decisions; closer decisions as
+Decision Elo rises; more complex math as Math Elo rises.
+
+**Difficulty inputs to consider** — gap between best and second-best action EV;
+EV-regret sensitivity; equity distance from the pot-odds threshold; number of
+opponents; number of draws; stack depth; bet-sizing complexity; tournament
+pressure; side pots; street; required mathematical operations.
+
+**Acceptance criteria**
+- [ ] Decision Elo and Math Elo are inputs to selection.
+- [ ] Difficulty escalates as ratings rise and de-escalates on struggle.
+- [ ] Low-rated players are not given impossible spots; high-rated players are not given trivial ones.
+- [ ] The algorithm is documented, including the Elo→difficulty mapping.
+- [ ] Math difficulty and decision difficulty adapt independently.
+
+**Tests** — [ ] Unit: rising Elo yields measurably harder selections. [ ] Unit: a low-Elo player never receives the hardest tier. [ ] Unit: a high-Elo player never receives the most trivial tier. [ ] Unit: deterministic seeds reproduce selections.
+
+---
+
+## Epic E17 — Training feedback (P5)
+
+### E17-001 — Show the mathematics instead of "Strong decision"
+
+**Audit** — `FeedbackPanel` (`PokerTable.tsx:581-679`) shows a verdict header, raw
+Elo deltas, and — **when correct or close** — only the static authored
+`actionReason` (`:636-637`). `regret` and `bestAction` appear **only when wrong**
+(`:638-642`). So the common case (correct) shows no math at all.
+
+**Computed but never surfaced** (all present in `GradedTrainingAttempt` /
+`ActionEvaluation`, `trainingEngine.ts:35-45,169-199`): `bestEv`, `chosenEv`,
+`regret` on correct/close answers, the full authored `actionEvs` map for every
+legal action, pot size and cost-to-call assembled into a required-equity
+statement, and the numeric partial-credit score. Estimated hand equity versus the
+stated villain range is **never computed at all** for Training — the shipped
+equity estimator has no Training coupling.
+
+**Acceptance criteria**
+- [ ] Feedback shows: action chosen, recommended action, pot size, cost to call, pot odds, estimated equity, required equity, EV of relevant actions, EV regret, and whether the decision was close.
+- [ ] It explains **why** calling, folding, or raising was best.
+- [ ] It shows how the calculation changes under reasonable assumptions.
+- [ ] Math is shown on correct answers too, not only on mistakes.
+- [ ] Answer formats continue to accept percentage, decimal, fraction, ratio, and decimal-comma input (the parser is sound — 32/32 tests pass; do not regress it).
+
+**Tests** — [ ] Unit: every listed value renders for correct, close, and wrong outcomes. [ ] Unit: parser regression suite stays green. [ ] Accessibility: the math explanation is readable by assistive technology and stays on screen until dismissed.
+
+---
+
+## Epic E18 — Post-round game review (P4)
+
+### E18-001 — Architecture: derive the review from existing replay data
+
+**Verdict from the audit** — The review **can** be derived for state
+reconstruction, **cannot** be derived for the judgment/math half without new
+computation, and **cannot** show opponent showdown cards at all until E03-002
+lands.
+
+**Existing data (reusable)**
+- `TournamentRunnerReplay` (`tournamentRunner.ts:512-531`): format, versions, `policySimulations`, kind, eventId, mode, **seed**, hero, careerResults, full `blindSchedule`, and `actions: TournamentReplayAction[]`.
+- `TournamentReplayAction` (`:37-40,73-77`) records **hero decisions only**: action, `raiseTo?`, `decisionElapsedMs?`, `nowMs`.
+- The engine is fully deterministic — no `Math.random()` in `src/modes` or `src/engine`; seeded Mulberry32 (`engine/deck.ts:43-66`). `restoreTournamentRunnerReplay` (`:572-612`) provably regenerates the entire session — opponent decisions, board deals, pots — bit-for-bit from seed + hero actions, asserted by `tournamentReplay.test.ts:54-60`.
+- **Therefore opponent actions need not be stored** — they are re-derivable. Do not build a second hand-history store.
+
+**Minimum new work required**
+- [ ] A derivation layer that replays the log and, at each hero decision, reconstructs the public state and computes pot-before, cost-to-call, pot-after, equity vs. estimated ranges, EV per legal action, EV regret, a notable classification, and a correctness/error magnitude. Ephemeral, not persisted.
+- [ ] Showdown reveals (E03-002) — without them the review can never legitimately show an opponent card.
+- [ ] Segmentation keys (street, phase, pot-size bucket, decision type) computed as review output.
+- [ ] **A version-drift guard.** `restoreTournamentRunnerReplay` checks only `format`, `version`, and `policySimulations` bounds (`:575-582`) — it does **not** check `engineVersion`/`contentVersion`/`policyVersion`, unlike the export path which does strict equality (`replay-export.cjs:162-166`). A future engine change could silently corrupt reconstruction instead of failing closed.
+
+**Restart survival — correction to a prior assumption**
+A completed tournament's replay **does** survive restart today. `save-store.cjs:100-121`
+writes `replay` into the on-disk autosave; `App.tsx:337-353` restores it at
+startup as an exportable (not resumable) replay; `App.tsx:1446-1466` deliberately
+does not clear it on ceremony exit. It is cleared only by Reset/Import or by
+starting a new event. So review can consume the same object already flowing
+through `loadStartup`/`lastPublicReplay`. Only the version-drift guard is open.
+
+**Recommended storage architecture**
+Derive on demand from replay + seed using the existing deterministic engine and
+existing sliced/worker equity estimator; hold computed annotations **ephemerally**
+for the open review session only; persist **aggregates only** (extend
+`PlayerProgress`, which today has no tournament-hand data — `results` covers
+Training only). This avoids a parallel database and matches the existing
+"one active replay envelope, aggregates persist" pattern.
+
+**Performance constraint** — Recomputing EV per decision is not free:
+`docs/rational-equity-work-budget.md:64-71` measures median 382 ms at 700
+simulations and 663 ms at 1,200 on the reference machine. A full round's review
+must be **sliced/backgrounded**, never synchronous on the UI thread.
+
+**Privacy constraint** — Because determinism ties every card to the seed, anyone
+with the **private** checkpoint can recompute every player's cards for every
+hand, including never-shown folded hands. The public export strips the seed for
+exactly this reason (`docs/replay-export.md:9-13`, asserted in
+`replayExport.test.ts:180-193`). Any in-app review built on the private checkpoint
+**must reapply viewer-scoped redaction** (`createInformationSet`) at every
+reconstructed decision point — it must not expose replay-computed full state.
+
+**Acceptance criteria**
+- [ ] Review derives from existing replay data; no second hand-history system is created.
+- [ ] Annotations are ephemeral; only aggregates persist.
+- [ ] Viewer-scoped redaction is applied at every reconstructed decision point.
+- [ ] Version-drift guard added, failing closed.
+- [ ] Recomputation is sliced and cancellable.
+
+**Tests** — [ ] Unit: reconstruction at a decision matches the live state. [ ] Privacy: no unreleased card is reachable through review. [ ] Unit: version mismatch fails closed. [ ] Performance: a full round's review completes within budget without blocking.
+
+### E18-002 — Full decision review and notable-decision playback
+
+**Acceptance criteria**
+- [ ] Every meaningful hero decision is inspectable across preflop, flop, turn, river, for fold, check, call, bet, raise, and all-in.
+- [ ] A Play/Review-Highlights mode auto-advances, fast-forwards routine or obvious decisions, stops at important ones, explains why they matter, and continues on the player's cue.
+- [ ] Notable spots include close correct calls, close correct folds, large mistakes, strong bluffs, missed value, excellent discipline, major all-in decisions, high-EV decisions under pressure, unusually high regret, and decisions revealing a recurring weakness.
+- [ ] Pacing target ≈ one highlighted decision per 2-4 hands (a target, not a rigid quota — most preflop folds are not educational).
+
+**Tests** — [ ] Unit: notable classification on a scripted round. [ ] Unit: playback skips routine decisions. [ ] Unit: highlight density lands near the target across many seeds.
+
+### E18-003 — Decision timeline
+
+**Acceptance criteria**
+- [ ] A scrollable timeline, preferably along the right side, lists every decision with hand number, street, action, pot size, bet/call amount, result classification, notable flag, correctness, and error magnitude.
+- [ ] Each entry carries a **non-color** label or icon; red/green are supplemental only.
+- [ ] Click any decision; arrow keys move backward and forward; jump to previous/next mistake; filter the list; play only noteworthy decisions; or review every decision manually.
+- [ ] Screen-reader descriptions for quality and magnitude.
+
+**Audit note** — The existing hand-history popover (`PokerTable.tsx:2005-2034`) is
+a flat narrative `string[]` for the current hand only. It is **not a suitable
+base** and should be replaced rather than extended.
+
+**Tests** — [ ] Unit: every hero decision appears. [ ] Unit: filters return correct subsets. [ ] Accessibility: arrow-key navigation and non-color quality indicators.
+
+### E18-004 — Reconstructed state and mathematical explanation
+
+**Acceptance criteria**
+- [ ] Selecting a decision reconstructs hero cards, board, position, stacks, pot, side pots, bet to call, previous actions, tournament stage, blind level, and players remaining.
+- [ ] **Cards unknown at the decision point are not revealed** merely because they were revealed later.
+- [ ] The view distinguishes information available at the time, the later outcome, and counterfactual analysis.
+- [ ] Math shown: pot before action, cost to call, pot after calling, pot odds, required equity, estimated equity, fold equity, EV of fold/call/candidate raises, EV regret, SPR, tournament pressure, and confidence/uncertainty.
+- [ ] Understandable to a player learning poker math.
+- [ ] **No claim of perfect GTO correctness** — use the game's own evaluation model and clearly label approximations.
+
+**Tests** — [ ] Unit: future information is absent from a reconstructed decision. [ ] Unit: side pots reconstruct correctly. [ ] Unit: approximation labels present.
+
+### E18-005 — Accuracy rating and segmentation
+
+**Acceptance criteria**
+- [ ] An overall accuracy/decision-quality score per round.
+- [ ] Segmented by **street** (preflop/flop/turn/river); **tournament phase** (early/middle/late/bubble-or-qualification/heads-up); **risk or pot size** (low/medium/high/all-in/large fraction of effective stack); and **decision type** (folds/calls/raises/bet sizing/bluff/value).
+- [ ] Clicking a segment (e.g. Flop) filters the review to those decisions.
+- [ ] **Sample counts and confidence are shown**; tiny-sample averages are not presented as meaningful.
+- [ ] Long-term aggregates persist and are surfaced (natural home: `PlayerRecord`, `Dashboard.tsx:574-614`).
+
+**Tests** — [ ] Unit: segment assignment correctness. [ ] Unit: accuracy math stability. [ ] Unit: small-sample suppression/annotation.
+
+### E18-006 — Wire the already-scaffolded entry point
+
+**Audit** — `TournamentCeremonyProps.onReview` and the label
+`dashboard.ceremony.reviewKeyHand` already exist
+(`Dashboard.tsx:616-624,690-694`) but `App.tsx:1428-1465` never passes
+`onReview`, so the button never renders. Do **not** confuse this with
+`PokerTable.tsx:2197`'s `onReview={resetHand}`, which is a Training retry.
+
+**Acceptance criteria**
+- [ ] The ceremony's review affordance renders and opens the review.
+- [ ] A new `HandReview` state is added to `docs/desktop-game-state-machine.md` with explicit Back and mid-review quit/background behavior.
+- [ ] Review re-derives from the persisted replay after a relaunch.
+
+---
+
+## Epic E19 — Career resume behavior (P6)
+
+### E19-001 — Persist career progress and resume the active event
+
+**Observed problem**
+The player had progressed to Circuit Main, but selecting Normal later recommended
+Local Qualifier — making career feel like a generic unlock menu.
+
+**Audit — root cause, exact**
+- `App.tsx:267` — `const [tourResults, setTourResults] = useState(emptyTourResults)`; `emptyTourResults` is `{ normal: [], rational: [] }` (`:128-134`). Updated only in memory after a result (`:708-726`).
+- **Never persisted.** `persistBoundary` (`:402-438`) only ever writes `settings`, `progress`, and a `replay` checkpoint.
+- `PlayerProgress` (`src/types/poker.ts:89-103`) has **no field** for career event history or an active event.
+- `unlockedCircuit` exists and is migrated (`saveMigration.ts:362-366`, default 1 in `storage.ts:42`) but is **never read** by any event-selection code — a vestigial field that looks like the missing bridge.
+- `Dashboard.tsx:442-446` computes `initialEvent` from `careerResults` (`= tourResults[tourMode]`, `App.tsx:1531`); with an empty array nothing is qualified, only `local-qualifier` is unlocked (`tournamentSession.ts:300-302`), so it always falls back to Local Qualifier.
+- Secondary defect: `tourResults` is **keyed per mode**, so Normal and Rational progress are mutually invisible even in one session.
+- **Confirmed in the real save**: `unlockedCircuit: 1` despite tournament play (`tournamentElo: 1017`).
+- Classification: **EXISTS BUT DISCONNECTED**.
+
+**Acceptance criteria**
+- [ ] Career progress and an explicit **current/active event** persist in the versioned save with migration.
+- [ ] Mode entry prioritizes: resume current active event → continue the next required event → restore saved tournament state.
+- [ ] Current championship progress is clearly shown.
+- [ ] Event selection remains available as a secondary action where rules permit.
+- [ ] `unlockedCircuit` is either wired as the real source of truth or removed as dead state — decide and document.
+- [ ] The Normal/Rational keying decision is deliberate and documented (shared career vs. separate tracks), not accidental.
+- [ ] Progress survives restart, verified end-to-end.
+
+**Tests** — [ ] Unit: progress round-trips through save/migration. [ ] Integration: after completing an event and relaunching, mode entry offers the correct next event. [ ] Unit: legacy saves without the new field migrate sanely. [ ] Regression: a gate asserts career state is included in a persist boundary.
+
+---
+
+## Epic E20 — Career transition and horizontal progression (P6)
+
+### E20-001 — Continuous championship journey
+
+**Acceptance criteria**
+- [ ] After completing or qualifying, the game shows the result, qualification, Elo change, and what comes next, then moves naturally toward the next event.
+- [ ] It does not return to a disconnected menu unless the player chooses to exit.
+
+### E20-002 — Horizontal event progression
+
+**Audit** — Confirmed vertical: an `<ol>` of stacked `<li>` rows joined by a 1px
+vertical connector (`Dashboard.tsx:468-506`, `styles.css:5577-5619`). States are
+already distinguished by icon + text + border, which is reasonably
+color-independent — but there is no persistent "current event" marker distinct
+from "selected in the list", because no such data exists (E19-001).
+
+**Acceptance criteria**
+- [ ] Current event around the left third; next event around the right third.
+- [ ] A horizontal route/progress line connects them.
+- [ ] A marker/dot moves from the completed event toward the next.
+- [ ] Completed, current, and future states are clear and distinguished by more than color.
+- [ ] Depends on E19-001 for a real "current event" value.
+
+### E20-003 — Physical travel between events
+
+**Acceptance criteria**
+- [ ] Finish the event → pull the camera from the seat → rise above the room → move through the venue → display the horizontal progress path → animate the marker → travel toward the next area → descend into the next seat → begin the next event.
+- [ ] Skippable, with a reduced-motion alternative.
+- [ ] Staged implementation is acceptable: reuse one venue with changed tables, lighting, crowd, signage, and roster rather than modeling a separate room per event.
+- [ ] Depends on E09-001's architecture decision.
+
+---
+
+## Epic E21 — Tutorial removal or reduction (P7)
+
+### E21-001 — Decide and execute removal-versus-reduction
+
+**Context** — The target audience already understands poker. Do not invest in a
+beginner course. Preferred direction: remove the full tutorial, or reduce it to a
+very short optional controls orientation.
+
+**Audit — footprint and impact**
+- `src/lib/playableTutorial.ts` (110 lines, a 7-step reducer over a single hardcoded hand), `src/components/PlayableTutorial.tsx` (344 lines), `src/lib/playableTutorial.test.ts` (143 lines, 10 tests) = **597 lines**, plus ~30 `tutorial.*` locale keys (`en-US.messages.gameplay.ts:123-184`) and `shell.loading.tutorial`.
+- Entry: a CTA **below** the mode grid (`Dashboard.tsx:325-333`).
+- **Correction to a prior assumption:** the mode grid is `repeat(4, ...)` (`styles.css:4910-4913`), not five columns; the tutorial is a separate link, not a grid cell. Removal does **not** require reflowing the grid. (The only `repeat(5, …)` is at `styles.css:3545`, for bet presets.)
+- Files needing updates on removal: the three tutorial files; `App.tsx` (`"tutorial"` screen type/branch `:120,1266-1281`, lazy import `:99-101`, entry `:1492-1495`); `Dashboard.tsx` (CTA `:325-333`, `onSelect` union `:226`); `styles.css` (`.mode-stage__tutorial-link*` `:5189-5212` and all `.tutorial-*` rules); the locale keys; `PseudoLocaleScreens.test.tsx:225-227`; `RtlDirectionScreens.test.tsx:136-137`; `DesktopContrastTargetAudit.test.ts:187-232` (pins tutorial buttons as documented 44px targets); `DesktopScreensAccessibility.test.tsx:53-70` (asserts 4 mode choices plus the tutorial CTA text and its position).
+
+**Acceptance criteria**
+- [ ] A documented decision: full removal or reduction to a controls orientation.
+- [ ] Every file above is updated; no dead locale keys, CSS, or test assertions remain.
+- [ ] The suite stays green and the contrast/target audit still covers real controls.
+
+### E21-002 — Preserve the contextual-prompt system
+
+**Audit** — `src/lib/contextualPrompts.ts` (283 lines) is **fully self-contained**:
+own types, detector, priority order, persistence key, wired into `PokerTable.tsx`
+at runtime (`:1174,1237`). **Zero imports** to or from the tutorial. This is a
+clean, safe removal boundary.
+
+**Acceptance criteria**
+- [ ] Contextual prompts for all-in, side pot, min-raise, blind increase, elimination, qualification, Elo change, short stack, and decision mistake survive removal intact.
+- [ ] Prompts remain manually dismissible and replayable.
+- [ ] The once-ever `seen` behavior is reconsidered for recurring teaching moments (see E05-004).
+
+### E21-003 — Extract a real standalone poker reference
+
+**Audit — a checked Part II item is not true.** There is **no** standalone
+reference/glossary/rules screen. Searches for hand-ranking content, glossary
+components, and rules locale keys find only engine logic and in-table formula
+labels. The nearest thing is the tutorial's step-5 glossary (chips/pot
+odds/equity/EV) and the live in-table math HUD, which is only available during a
+hand.
+
+**Acceptance criteria**
+- [ ] A standalone, always-reachable reference exists with hand rankings, betting terms, probability shortcuts, tournament terms, and worked examples.
+- [ ] It is reachable outside a hand (menu and pause).
+- [ ] Tutorial glossary content is **extracted before** the tutorial is deleted, so it is not lost.
+- [ ] Part II's poker-reference item is corrected to reflect reality.
+
+### E21-004 — Optional "How this trainer works" orientation
+
+**Audit** — Mode taglines exist (`modes.*.description`, rendered
+`Dashboard.tsx:260-321`) but are marketing-length. `PlayerRecord`
+(`Dashboard.tsx:574-614`) shows the three Elo values as raw numbers with no
+explanation. No surface explains the trainer end-to-end; this is new copy on
+existing screens, not true reuse.
+
+**Acceptance criteria**
+- [ ] An optional orientation explains Normal, Rational, Training, Timed Table, Decision Elo, Math Elo, and the accuracy review.
+- [ ] It is skippable and replayable.
+- [ ] It explains **what each mode optimizes**, including that Rational uses only information legally available to its seat.
+
+---
+
+## Epic E22 — Audio and emotional payoff (P1)
+
+### E22-001 — Add the missing win cue and the unwired game moments
+
+**Observed problem** — Wins feel lackluster.
+
+**Audit — confirmed at the code level**
+- Exactly **six** cues exist: `click`, `chip`, `fold`, `success`, `error`, `deal` (`src/lib/audio.ts:1-7`).
+- **There is no win sound at all** — not disconnected, never designed. In tournament play, winning a pot plays nothing: `PokerTable.tsx:1654-1677` and `:1911-1928` feed only the aria-live announcer and a CSS class. `success` plays only in the Training grading branch (`:1240`), which does not exist in Normal/Rational/Timed.
+- `Dashboard.tsx` **never imports** `gameAudio`, so the entire end-of-event ceremony is silent and has no celebratory animation (`.ceremony-board*` rules are static typography).
+- The `wonPot` → `is-winner` class (`PokerTable.tsx:360`) has **no matching CSS rule anywhere** — a dead class.
+- The one thing that does render, the `.seat-state--winner` badge (`styles.css:3184-3186`), has its animation zeroed under `data-motion-table="off"` (`:5153-5156`) — which the player's settings had set.
+- `deal` fires only on **screen entry** (`App.tsx:758,788,918,934,1495`), never per hand or per card.
+- No cue for: board cards, chips collected, winning, losing, side pot, elimination, qualification, Elo change, blind increase.
+- Defaults are audible (`storage.ts:9-12`: master 100, effects 70, unmuted), so this is not a volume problem.
+- Music is correctly dormant (`musicPlaylistManifest.ts:1-23`, empty manifest) and is architecturally independent of effects — it is **not** the cause.
+
+**Acceptance criteria**
+- [ ] Restrained poker-native cues exist and fire for: dealing (per hand/card), chips moving, bets, folds, all-ins, board reveals, **winning a pot**, elimination, and qualification.
+- [ ] The end-of-event ceremony has audio and visual payoff.
+- [ ] The dead `is-winner` class is either styled or removed.
+- [ ] Winning is perceptible with motion on **and** with reduced motion (per E08).
+- [ ] All cues respect master/effects volume, mute, first-user-input gating, pause, blur, suspend, and silent fallback.
+- [ ] Music remains absent pending licensing.
+
+**Tests** — [ ] Unit: each listed moment triggers its cue. [ ] Unit: silent fallback when audio init fails. [ ] Accessibility: every meaningful audio cue has a visual equivalent, and critical visual-only changes have optional audio equivalents.
+
+### E22-002 — Add an automated audio-tell guarantee
+
+**Audit** — The no-tell guarantee is only a **code comment** (`audio.ts:125-129`).
+`audio.test.ts` has no test asserting it. Today no tell exists because every cue
+keys to a public action or a Training grading outcome — but nothing would catch a
+regression, and a naive "add a win sound tied to hand strength" fix would
+introduce one. Classification: **TEST-COVERAGE GAP**.
+
+**Acceptance criteria**
+- [ ] A test asserts cue selection is invariant to hidden information (hole cards, opponents' holdings).
+- [ ] The test fails if a cue is ever keyed to hand strength.
+- [ ] Cues create no timing tell the visual interface does not already disclose.
+
+---
+
+## Epic E23 — Accessibility preservation (cross-cutting, always in force)
+
+### E23-001 — Do not regress accessibility while rebuilding presentation
+
+**Constraint** — Every change in E01-E10 must preserve: screen-reader semantics;
+accessible action controls; named seats; card, pot, and side-pot announcements;
+focus visibility; keyboard parity; controller parity; reduced motion; text
+scaling; non-color indicators; and persistent explanations.
+
+**Specific hazards identified**
+- The current a11y layer is entirely DOM-based. A canvas/WebGL scene has **no DOM for assistive technology**, so named seat groups (`playerSeatAriaLabel`, `PokerTable.tsx:294-323`) and live regions (`:1712,1720,1811,2243`) must be maintained as an **invisible parallel DOM layer** synchronized to the scene — permanent added surface, not a free port.
+- Live-announcement debouncing is DOM-timing dependent; a rAF-driven render loop runs on a different cadence and would need re-validation.
+- Reduced motion is CSS-driven today; a 3D scene's camera and rig motion is not CSS-controllable and needs an equivalent path built and verified inside the engine.
+- Any in-scene focusable control needs a synchronized focusable DOM proxy — canvas content is not natively focusable.
+- The contrast/target audit is a static source-level CSS check and **does not extend to canvas pixels**; a rendered-pixel verification method would be needed (precedent exists in the flash/luminance analysis).
+- **`display:none` removes content from the accessibility tree** — the hero-stack defect (E02-001) was simultaneously a visual and an assistive-technology failure. Never hide state-bearing elements this way.
+
+**Acceptance criteria**
+- [ ] Each E01-E10 task lists its accessibility impact and its verification.
+- [ ] The existing accessibility test suites stay green throughout.
+- [ ] New presentation states are announced without reading decorative scenery.
+- [ ] Announcements never leak hidden information.
+- [ ] Keyboard-only and controller-only paths remain complete for every new affordance.
+
+---
+
+## Epic E24 — Determinism, privacy, and security (cross-cutting, always in force)
+
+### E24-001 — Preserve core guarantees
+
+**Constraint** — These must survive all Part I work: offline operation; no
+telemetry; no accounts; no payment path; no remote assets; deterministic
+shuffling; deterministic replay; strict legal betting; side-pot correctness; chip
+conservation; hidden-information redaction; worker cancellation; stale-result
+rejection; save recovery; crash-safe autosave; safe mode; secure Electron
+boundaries; production package integrity.
+
+**Acceptance criteria**
+- [ ] The frozen bot-league baseline and replay determinism tests stay green, or change only through the documented sanctioned workflow with before/after evidence.
+- [ ] The offline deny-proxy audit still passes through representative play in every mode.
+- [ ] No new dependency is added without an explicit decision recorded (see E09-001).
+
+### E24-002 — Never leak hidden cards through new surfaces
+
+**Constraint** — Opponents' hidden cards must not appear in logs, review data,
+accessibility announcements, AI inputs, diagnostics, exported saves, or public
+replay files. A showdown may display cards **only** when the rules and engine
+declare them public.
+
+**Specific hazard** — Determinism means the seed reconstructs every card. The
+private checkpoint retains the seed (`save-store.cjs` forbids `deck`,
+`holeCards`, `opponentCards`, etc. but **not** plain `seed`), while the public
+export strips it deliberately. Any review or replay consumer built on the private
+checkpoint must reapply viewer-scoped redaction at every reconstructed point.
+
+**Acceptance criteria**
+- [ ] Review, all-in presentation, showdown reveal, and character animation each have a privacy test.
+- [ ] `revealed` is the single gate for legitimate reveals, and is set only where rules make cards public.
+- [ ] The public replay allowlist remains strict; a test asserts the seed stays absent.
+
+---
+
+## Epic E25 — Packaged verification and perceptual gates (cross-cutting)
+
+### E25-001 — Add a perceptual gate that can actually fail on flatness
+
+**Audit — why the build "passed everything" while feeling poor**
+None of the existing packaged gates assert anything about presentation:
+- `audit-packaged-render-smoke.mjs:99-131` asserts zero fatal events and that `#root` is non-empty. **A fully static, silent render passes identically to an animated one.**
+- `audit-packaged-input-smoke.mjs` asserts end states are reached and explicitly widens polling to *tolerate* animation variance; it never asserts animation occurred. Its six-seat collision gate (`:326-354`) is a **static one-time `getBoundingClientRect()` snapshot**.
+- `audit-packaged-mode-completion.mjs` proves functional completion only.
+
+Classification: **TEST-COVERAGE GAP** — the gates were built to prove
+correctness and stability, not perceptual quality.
+
+**Acceptance criteria**
+- [ ] A packaged gate captures frames across a hand and asserts that intermediate states exist: board cards appear progressively rather than instantly; chips are observed in transit; the dealer button is observed moving; a fold is observed before its result.
+- [ ] The gate runs twice — full motion and reduced motion — with **different, tier-appropriate expectations** per E08, not "no animation" for both.
+- [ ] It asserts non-zero effective animation duration for the state-communicating tier.
+- [ ] It fails if the table subtree remounts during a hand (guards E01-001 against regression).
+- [ ] Flakiness is handled per the existing input-smoke precedent, and host-contention CDP timeouts are reported separately from genuine product failures.
+
+### E25-002 — Replace the collision claim with a real, re-runnable gate
+
+**Audit** — `work/table-collision-audit.json` has **no producing script in the
+repo**; it is a one-off manual capture from 2026-07-23. Its checklist covers
+opponent-side elements only and **excludes the hero stack, committed-bet labels,
+the dealer button, and the side-pot display**. Only `heroCardRects` data is
+retained; the other nine checks assert `"issues": []` with no underlying rects.
+It measures axis-aligned bbox intersection at 0.5px and says nothing about
+contrast, size, or legibility.
+
+**Acceptance criteria**
+- [ ] A committed, re-runnable, CI-capable script produces the audit.
+- [ ] Coverage adds: hero stack, hero and opponent committed-bet labels, dealer button, SB/BB markers, acting indicator, side-pot display, equity readout, and showdown highlight.
+- [ ] It verifies **visibility and minimum legible size**, not only non-overlap.
+- [ ] It runs at 1100×720, 1280×720, 1366×768, 1920×1080, 2560×1080 **and** at every interface scale.
+- [ ] Part II's "live geometry audit" wording is corrected.
+
+### E25-003 — Verify in the packaged build, not only in dev
+
+**Audit — packaged-vs-dev divergence mechanisms**: the `app.isPackaged` URL branch
+(`main.cjs:47,173-177`); devtools disabled when packaged (`:107`), which is why
+the owner could not inspect the problem; ASAR/custom-protocol asset resolution
+(`:254`) — a mis-pathed asset fails silently only when packaged; lazy chunk load
+failure over the custom protocol could strand a scene on
+`SceneLoadingFallback`; safe mode forcing muted + reduced motion; and
+`backgroundThrottling` left at Chromium's default `true` (`:100-111`), which
+throttles rAF to ~1fps whenever the window is not foregrounded — identical in dev
+and packaged, but it can make animation vanish during screen recording or when
+another window takes focus. (A prior decision deliberately declined to set it
+`false` because that conflicts with the pause-while-hidden power requirement;
+revisit only with that trade-off explicit.)
+
+**Acceptance criteria**
+- [ ] Every Part I acceptance criterion is verified in the **packaged** build, not only the dev renderer.
+- [ ] Verification covers normal and heavy CPU load, all supported resolutions, all UI scales, reduced motion, window blur, minimize, suspend/resume, and screen lock where possible.
+- [ ] Any CDP transport timeout is recorded separately from a genuine product failure.
+
+---
+
+## Epic E26 — Hardware and human acceptance (deferred, not deliverable here)
+
+### E26-001 — Deferred acceptance work
+
+**Reason for deferral** — Requires hardware, assistive technology, external
+authority, or credentials unavailable in this environment. These are **not**
+skipped; they are gated.
+
+| Item | Blocked on | Suggested phase | Acceptance target |
+|---|---|---|---|
+| Physical controller acceptance | A real gamepad | After E09-003 | Full flow operable by controller only |
+| Windows Narrator / NVDA acceptance | Real AT on Windows | After E23-001 | Full hand comprehensible by screen reader only |
+| 200% scaling, multi-monitor, DPI change, display disconnect | Multi-display hardware | After E25-002 | No clipping or focus loss |
+| Low-spec / integrated-GPU / discrete-GPU matrix and 60-minute thermal soak | Three machine classes | After E09 | Within `config/performance-budgets.json` |
+| Clean-machine install/upgrade/rollback/uninstall | Clean Windows VMs | Release freeze | Part II criteria |
+| Authenticode signing, publisher identity, HTTPS host, update host | Legal publisher + certificate | Pre-release | Part II criteria |
+| IARC / store metadata / press materials | Store accounts | Pre-release | Part II criteria |
+| Licensed music masters, loudness, attribution | Licensing | After E22-001 | Part II criteria |
+| Asset provenance for artwork and any new 3D assets | Rights research | Before E09-002 ships art | `config/asset-rights-ledger.json` resolved |
+| Qualified poker-math review and consented human pilot | External experts + participants | After E16/E17 | Calibration no longer labelled synthetic-only |
+| macOS/Xcode, Simulator, Instruments, TestFlight, App Store | A Mac | After desktop P0-P2 | Part II criteria |
+
+---
+
+## Part I traceability matrix
+
+Every item from the review's "do not lose the small details" checklist, mapped to
+its task. Nothing here may be dropped without an explicit deferral note.
+
+| Detail | Task |
+|---|---|
+| Hero stack always visible | E02-001 |
+| Current committed bet always visible | E02-002 |
+| Amount to call visible | E02-002 (already present; improve prominence) |
+| Dealer button visible | E02-003 |
+| Blind position obvious | E02-003 |
+| Opponent folds animated and labeled | E01-005 |
+| Fold wins identify the winner | E04-003 |
+| Chips visibly move to the winner | E05-003 |
+| Bets visibly move toward the pot | E05-001, E05-002 |
+| Pot values and chip movement synchronized | E05-001 |
+| Side pots shown and explained | E05-004 |
+| Hands continue after the hero folds | E04-001 |
+| Skip optional rather than default | E04-002 |
+| Hole cards visibly dealt | E01-003 |
+| Flop visibly dealt | E01-004 |
+| Turn visibly dealt | E01-004 |
+| River visibly dealt | E01-004 |
+| No blinking between streets | E01-001 |
+| No full-screen reset between hands | E01-001, E07-001 |
+| Showdown reveals live hands | E03-002 |
+| Winning five cards highlighted | E03-001 |
+| Winning hand named | E03-001 |
+| Ties shown | E03-001 |
+| All-in equity percentages shown | E06-002 |
+| All-in percentages update card by card | E06-001, E06-002 |
+| All-ins feel suspenseful | E06-001 |
+| Every hand communicates win or loss | E03-003 |
+| Next hand begins through continuous motion | E07-001 |
+| Dealer button physically moves | E02-004 |
+| Desktop feels spatial and three-dimensional | E09-001, E09-002 |
+| Camera can look left and right | E09-003 |
+| Camera can recenter | E09-003 |
+| Room-arrival fly-through exists | E09-004 |
+| Career travel uses camera movement | E20-003 |
+| Event progression is horizontal | E20-002 |
+| Current event resumes automatically | E19-001 |
+| Current and next event clearly shown | E20-002 |
+| Progress marker moves toward the next event | E20-002 |
+| New tournaments have new rosters | E10-001 |
+| Normal and Rational do not reuse identical opponents | E10-001 |
+| Opponents vary in face, hair, clothing, body, name, style | E10-001 |
+| Appearance does not determine behavior via stereotypes | E10-001 |
+| Ten-plus raise chains investigated | E11-001, E11-002 |
+| Raise-versus-call logic separated | E11-003 |
+| Pot odds not the only decision input | E11-002, E11-003 |
+| Normal AI feels like skilled human professionals | E11-004 |
+| Normal AI not random or recklessly aggressive | E11-004 |
+| Rational AI remains mathematically grounded | E12-001 |
+| Tournaments do not collapse by hand sixteen | E13-001 |
+| All-in frequency calibrated | E13-001, E14-001 |
+| User win rate and exploitability investigated | E11-004 |
+| LLMs as development critics, not live online opponents | E14-002 |
+| Training does not repeat only three scenarios | E15-001 |
+| All twelve existing scenarios audited | E15-001 (table included) |
+| Training not solved by repeatedly pressing Call | E15-001 |
+| Scenario difficulty adapts to Elo | E16-001 |
+| Scenario generation/selection constraint-driven | E15-002 |
+| Recent scenario duplicates avoided | E15-001, E15-002 |
+| Training feedback shows calculations | E17-001 |
+| Post-round review exists | E18-002 |
+| Overall accuracy exists | E18-005 |
+| Accuracy segmented by street | E18-005 |
+| Accuracy segmented by tournament phase | E18-005 |
+| Accuracy segmented by risk or bet size | E18-005 |
+| Decisions can be filtered | E18-003 |
+| Every decision in a right-side timeline | E18-003 |
+| Good/bad decisions use accessible labels and icons | E18-003 |
+| Arrow keys move through decisions | E18-003 |
+| Playback shows noteworthy decisions | E18-002 |
+| Routine decisions can be fast-forwarded | E18-002 |
+| Review math includes pot odds, equity, EV, regret | E18-004 |
+| Review does not reveal future information | E18-004 |
+| Existing JSON/replay infrastructure reused | E18-001 |
+| Redundant review storage avoided | E18-001 |
+| Weak beginner tutorial removed or reduced | E21-001 |
+| Accessibility setup remains | E21-002, E23-001 |
+| Poker reference remains | E21-003 (**does not currently exist**) |
+| Desktop and mobile presentation intentionally different | Design north star; E09-001 |
+| Reduced motion remains supported | E08-001, E23-001 |
+| No hidden information leaks | E24-002 |
+| Offline/privacy guarantees intact | E24-001 |
+| Packaged behavior verified, not assumed | E25-001, E25-003 |
+
+### Parallelization and sub-agent assignment
+
+- **Must be first, blocks nearly everything:** E01-001 (remount), then E01-002 (event queue). Single owner; do not parallelize these two.
+- **Safe to run in parallel with E01:** E02 (table-state clarity — mostly independent rendering), E08 (motion policy), E00-003/E00-004 (settings and Elo defects), E19-001 (career persistence — save-schema work, no presentation coupling).
+- **After E01-002 lands:** E03, E04, E05, E06, E07 can be split across owners by epic.
+- **Independent of the presentation rebuild entirely:** E11-E14 (AI, pure engine/statistics), E15-E17 (Training), E18-001 (review derivation layer), E21 (tutorial), E22 (audio wiring).
+- **Gated behind a decision:** E09-002+ and E20-003 wait on E09-001's architecture record. E15-002 waits on the iOS-parity decision.
+- **Continuous, every task:** E23, E24, E25.
+- **Research spikes:** E09-001 (presentation architecture), E11-001 (AI measurement), E14-002 (critic harness feasibility).
+
+
+
+
+
+## Part II — Release, platform, and compliance backlog
+
+The sections below predate the 2026-07-25 gameplay review and are preserved
+unchanged. Cross-references from Part I point into these sections where the two
+overlap.
+
 ## Now — desktop first
 
 - [x] Build deterministic deck, hand evaluator, legal betting, side pots, blind
