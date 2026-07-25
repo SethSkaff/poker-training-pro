@@ -381,6 +381,7 @@ interface PlayerSeatProps {
   cardsDealt: boolean;
   isActing: boolean;
   eliminated?: boolean;
+  positionLabel?: string;
 }
 
 const SEAT_STATUS_FRAGMENT_KEYS: Record<SeatPlayer["status"], string> = {
@@ -442,6 +443,7 @@ function PlayerSeat({
   cardsDealt,
   isActing,
   eliminated = false,
+  positionLabel,
 }: PlayerSeatProps) {
   const isMucking = player.status === "folded" || recentAction === "fold";
   const isFolded = isMucking;
@@ -492,6 +494,7 @@ function PlayerSeat({
       })}
     >
       {dealer && <span className="dealer-button" aria-hidden="true">D</span>}
+      {positionLabel && <span className="seat-position-marker" aria-hidden="true">{positionLabel}</span>}
       {recentActionLabel && (
         <span className="seat-action-label" aria-live="polite">
           {recentActionLabel}
@@ -1855,6 +1858,17 @@ export function PokerTable({
   const heroStack = heroPlayer?.stack ?? scenario.minimumRaise;
   const heroStreetCommitted = heroPlayer?.bet ?? 0;
   const heroTotalCommitted = heroPlayer?.totalCommitted ?? heroStreetCommitted;
+  const positionLabelForSeat = (seat: number): string => {
+    if (seat === scenario.buttonSeat) return "BTN";
+    if (seat === scenario.smallBlindSeat) return "SB";
+    if (seat === scenario.bigBlindSeat) return "BB";
+    if (scenario.bigBlindSeat === undefined) return "";
+    const distance = (seat - scenario.bigBlindSeat + scenario.players.length) % scenario.players.length;
+    if (distance === 1) return "UTG";
+    if (distance === scenario.players.length - 1) return "CO";
+    return distance === 2 ? "HJ" : "MP";
+  };
+  const heroPositionLabel = positionLabelForSeat(scenario.heroSeat);
   const minimumRaise =
     mode !== "training" && tournament
       ? (tournament.legalActions.raise?.minTo ??
@@ -2099,6 +2113,7 @@ export function PokerTable({
               In this round <b>{formatChips(heroStreetCommitted)}</b> · Total this hand{" "}
               <b>{formatChips(heroTotalCommitted)}</b>
             </span>
+            {heroPositionLabel && <span className="hero-stack-hud__position">Position {heroPositionLabel}</span>}
           </aside>
           {actionError ? (
             <p className="table-action-alert" role="alert">
@@ -2248,6 +2263,7 @@ export function PokerTable({
                   cardsDealt={cardsDealt}
                   isActing={scenario.actingPlayerId === player.id}
                   eliminated={presentation.eliminated}
+                  positionLabel={positionLabelForSeat(player.seat)}
                 />
               );
             })}

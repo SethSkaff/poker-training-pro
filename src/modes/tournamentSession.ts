@@ -1296,6 +1296,12 @@ export function createPokerTableSnapshot(
   const buttonIndex = ordered.findIndex(
     (player) => player.seat === hand.buttonSeat,
   );
+  const smallBlindIndex = ordered.findIndex(
+    (player) => player.id === hand.smallBlindPlayerId,
+  );
+  const bigBlindIndex = ordered.findIndex(
+    (player) => player.id === hand.bigBlindPlayerId,
+  );
   const recommendedAction: PokerAction =
     toCall > 0 ? "call" : "check";
 
@@ -1318,6 +1324,8 @@ export function createPokerTableSnapshot(
     ante: level.bigBlindAnte,
     heroSeat: 0,
     buttonSeat: Math.max(0, buttonIndex),
+    smallBlindSeat: Math.max(0, smallBlindIndex),
+    bigBlindSeat: Math.max(0, bigBlindIndex),
     actingPlayerId: actingId ?? undefined,
     pot: hand.information.pot,
     amountToCall: toCall,

@@ -63,6 +63,8 @@ export interface TrainingScenario {
   ante?: number;
   heroSeat: number;
   buttonSeat: number;
+  smallBlindSeat?: number;
+  bigBlindSeat?: number;
   /** Public seat currently required to act; absent for static Training prompts. */
   actingPlayerId?: string;
   pot: number;
