@@ -24,6 +24,7 @@ import {
   directTimedBlinds,
   type TimedBlindDecision,
 } from "./timedBlindDirector";
+import type { HandValue } from "../engine/evaluator";
 
 export type TournamentRunnerKind = "career" | "timed";
 
@@ -103,6 +104,17 @@ export type TournamentPresentationEvent =
       handId: string;
       /** Only non-folded players are eligible for a public showdown reveal. */
       playerIds: readonly string[];
+      /**
+       * Ephemeral, public showdown information. This event is never part of a
+       * table snapshot, replay export, or autosave; folded players are absent.
+       */
+      reveals: readonly { playerId: string; cards: readonly Card[] }[];
+      awards: readonly {
+        potId: string;
+        playerId: string;
+        amount: number;
+        hand?: HandValue;
+      }[];
     }
   | {
       id: string;
@@ -449,13 +461,26 @@ function progressHandPresentationEvents(
     amount: previousHand.information.pot,
   });
   if (!previousHand.betting.handComplete) {
+    const playerIds = previousHand.betting.players
+      .filter((player) => player.status !== "folded")
+      .map((player) => player.id);
     events.push({
       id: presentationEventId(source, result.handId, "showdown"),
       kind: "showdown",
       handId: result.handId,
-      playerIds: previousHand.betting.players
-        .filter((player) => player.status !== "folded")
-        .map((player) => player.id),
+      playerIds,
+      reveals: playerIds.flatMap((playerId) => {
+        const cards = previousHand.holeCards[playerId];
+        return cards?.length === 2
+          ? [{ playerId, cards: cards.map((card) => ({ ...card })) }]
+          : [];
+      }),
+      awards: result.awards.map((award) => ({
+        potId: award.potId,
+        playerId: award.playerId,
+        amount: award.amount,
+        ...(award.hand ? { hand: award.hand } : {}),
+      })),
     });
   }
   result.pots

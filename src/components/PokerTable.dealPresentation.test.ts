@@ -13,8 +13,9 @@ describe("hole-card deal presentation", () => {
     expect(tableSource).toContain("cardsDealt={cardsDealt}");
     expect(tableSource).toContain("disabled={Boolean(action) || !cardsDealt}");
     expect(tableSource).toContain("const isShowingCards = !isHero && !isOut && cardsDealt");
+    expect(tableSource).toContain("hasRevealedCards");
+    expect(tableSource).toContain("revealedCards.map((card)");
     expect(tableSource).toContain('card={{ rank: "A", suit: "spades" }}');
-    expect(tableSource).toContain('card={{ rank: "K", suit: "hearts" }}');
   });
 
   it("gives opponents and hero a dealer-origin deal keyframe", () => {

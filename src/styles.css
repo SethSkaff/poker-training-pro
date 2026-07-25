@@ -2886,6 +2886,22 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 4px;
 }
 
+.showdown-card {
+  transition: opacity 180ms ease, box-shadow 180ms ease, transform 220ms ease;
+}
+
+.showdown-card.is-winning {
+  z-index: 2;
+  border-color: #ffe197;
+  box-shadow: 0 0 0 2px rgba(255, 202, 74, 0.34), 0 0 18px rgba(255, 193, 56, 0.55);
+  transform: translateY(-8px) scale(1.05);
+}
+
+.showdown-card.is-unused {
+  opacity: 0.56;
+  filter: saturate(0.55);
+}
+
 .community-placeholder {
   display: block;
   width: 51px;

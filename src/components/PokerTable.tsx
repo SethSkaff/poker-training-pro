@@ -333,15 +333,17 @@ function PlayingCard({
   card,
   hidden = false,
   small = false,
+  className,
 }: {
   card: Card;
   hidden?: boolean;
   small?: boolean;
+  className?: string;
 }) {
   if (hidden) {
     return (
       <span
-        className={`playing-card playing-card--back ${small ? "playing-card--small" : ""}`}
+        className={`playing-card playing-card--back ${small ? "playing-card--small" : ""} ${className ?? ""}`}
         role="img"
         aria-label={formatMessage("cards.faceDown")}
       >
@@ -354,7 +356,7 @@ function PlayingCard({
     <span
       className={`playing-card playing-card--${card.suit} ${
         small ? "playing-card--small" : ""
-      }`}
+      } ${className ?? ""}`}
       role="img"
       aria-label={cardAriaLabel(card)}
     >
@@ -388,6 +390,8 @@ interface PlayerSeatProps {
   isActing: boolean;
   eliminated?: boolean;
   positionLabel?: string;
+  revealedCards?: readonly Card[];
+  winningCardLabels?: ReadonlySet<string>;
 }
 
 const SEAT_STATUS_FRAGMENT_KEYS: Record<SeatPlayer["status"], string> = {
@@ -450,6 +454,8 @@ function PlayerSeat({
   isActing,
   eliminated = false,
   positionLabel,
+  revealedCards,
+  winningCardLabels,
 }: PlayerSeatProps) {
   const isMucking = player.status === "folded" || recentAction === "fold";
   const isFolded = isMucking;
@@ -463,7 +469,9 @@ function PlayerSeat({
         ? "folded"
         : player.status;
   const isShowingCards = !isHero && !isOut && cardsDealt;
-  const shouldHoldCards = isShowingCards && player.status === "active" && !isMucking;
+  const hasRevealedCards = revealedCards?.length === 2;
+  const shouldHoldCards =
+    isShowingCards && !hasRevealedCards && player.status === "active" && !isMucking;
   const gesture = wonPot
     ? "win"
     : isAllIn
@@ -507,18 +515,29 @@ function PlayerSeat({
         </span>
       )}
       {isShowingCards && (
-        <div className="opponent-cards" aria-hidden="true">
+        <div className="opponent-cards" aria-hidden={!hasRevealedCards}>
           {shouldHoldCards && <i className="opponent-card-hand" aria-hidden="true" />}
-          <PlayingCard
-            card={{ rank: "A", suit: "spades" }}
-            hidden
-            small
-          />
-          <PlayingCard
-            card={{ rank: "K", suit: "hearts" }}
-            hidden
-            small
-          />
+          {hasRevealedCards
+            ? revealedCards.map((card) => (
+                <PlayingCard
+                  key={cardLabel(card)}
+                  card={card}
+                  small
+                  className={
+                    winningCardLabels?.has(cardLabel(card))
+                      ? "showdown-card is-winning"
+                      : "showdown-card is-unused"
+                  }
+                />
+              ))
+            : [0, 1].map((index) => (
+                <PlayingCard
+                  key={index}
+                  card={{ rank: "A", suit: "spades" }}
+                  hidden
+                  small
+                />
+              ))}
         </div>
       )}
       <div className="seat-avatar" aria-hidden="true">
@@ -1940,6 +1959,20 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
+  const showdownEvent =
+    tournament?.presentationEvent?.kind === "showdown"
+      ? tournament.presentationEvent
+      : undefined;
+  const revealedCardsByPlayer = new Map(
+    showdownEvent?.reveals.map((reveal) => [reveal.playerId, reveal.cards]) ?? [],
+  );
+  const winningCardLabels = new Set(
+    showdownEvent?.awards.flatMap((award) =>
+      award.hand?.cards.map(cardLabel) ?? [],
+    ) ?? [],
+  );
+  const showdownAwards = showdownEvent?.awards ?? tournament?.lastPotAwards ?? [];
+  const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
   const tableAnnouncement = buildPokerTableAnnouncement({
     action,
     latestPublicAction: tournament?.actionHistory.at(-1),
@@ -2130,10 +2163,10 @@ export function PokerTable({
             </span>
             {heroPositionLabel && <span className="hero-stack-hud__position">Position {heroPositionLabel}</span>}
           </aside>
-          {arrivalVisible && tournament?.lastPotAwards?.length ? (
+          {showdownAwards.length > 0 && (showdownEvent || arrivalVisible) ? (
             <aside className="showdown-result-strip" role="status" aria-live="polite" aria-atomic="true">
-              <span>Previous hand result</span>
-              {tournament.lastPotAwards.map((award) => {
+              <span>{showdownEvent ? "Showdown result" : "Previous hand result"}</span>
+              {showdownAwards.map((award) => {
                 const winner = scenario.players.find((player) => player.id === award.playerId);
                 const winnerName = winner?.seat === scenario.heroSeat ? "You" : (winner?.name ?? award.playerId);
                 return (
@@ -2263,7 +2296,16 @@ export function PokerTable({
                       }
                       key={`${card.rank}-${index}`}
                     >
-                      <PlayingCard card={card} />
+                      <PlayingCard
+                        card={card}
+                        className={
+                          showdownEvent
+                            ? winningCardLabels.has(cardLabel(card))
+                              ? "showdown-card is-winning"
+                              : "showdown-card is-unused"
+                            : undefined
+                        }
+                      />
                     </span>
                   ))}
                   {Array.from({ length: 5 - stagedBoard.length }).map(
@@ -2307,6 +2349,8 @@ export function PokerTable({
                   isActing={scenario.actingPlayerId === player.id}
                   eliminated={presentation.eliminated}
                   positionLabel={positionLabelForSeat(player.seat)}
+                  revealedCards={revealedCardsByPlayer.get(player.id)}
+                  winningCardLabels={winningCardLabels}
                 />
               );
             })}
@@ -2350,8 +2394,18 @@ export function PokerTable({
               <span className="hero-hole-cards__cards">
                 {scenario.heroCards.map((card, index) => (
                   <span className="hero-card-wrap" key={cardLabel(card)}>
-                    <PlayingCard card={card} hidden={!peeked} />
-                    {peeked && index === 1 && (
+                    <PlayingCard
+                      card={card}
+                      hidden={!peeked && !showdownHeroRevealed}
+                      className={
+                        showdownHeroRevealed
+                          ? winningCardLabels.has(cardLabel(card))
+                            ? "showdown-card is-winning"
+                            : "showdown-card is-unused"
+                          : undefined
+                      }
+                    />
+                    {(peeked || showdownHeroRevealed) && index === 1 && (
                       <small>{cardLabel(card)}</small>
                     )}
                   </span>

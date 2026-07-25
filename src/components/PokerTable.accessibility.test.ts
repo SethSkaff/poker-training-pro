@@ -125,7 +125,10 @@ describe("poker table live announcements", () => {
     expect(source).toContain('role="img"');
     expect(source).toContain('className="community-cards"');
     expect(source).toContain('role="group"');
-    expect(source).toContain('className="opponent-cards" aria-hidden="true"');
+    // Face-down opponent cards remain decorative. The sole exception is the
+    // short-lived public showdown event, whose cards are intentionally exposed
+    // with their normal image semantics.
+    expect(source).toContain('className="opponent-cards" aria-hidden={!hasRevealedCards}');
     expect(source).toContain('className="seat-label" aria-hidden="true"');
 
     // The seat's accessible name is built by an exported pure function

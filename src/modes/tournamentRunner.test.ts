@@ -136,6 +136,49 @@ describe("tournament runner", () => {
     expect(firstAward).toBeGreaterThan(firstAction);
   });
 
+  it("reveals only live showdown hands in the transient public event", () => {
+    let showdown: Extract<
+      ReturnType<typeof advanceTournamentRunnerOneStep>["events"][number],
+      { kind: "showdown" }
+    > | undefined;
+
+    for (let seedIndex = 0; seedIndex < 12 && !showdown; seedIndex += 1) {
+      let runner = createCareerTournamentRunner({
+        eventId: "local-qualifier",
+        hero,
+        mode: "normal",
+        seed: `runner-showdown-${seedIndex}`,
+      });
+      for (let stepIndex = 0; stepIndex < 160 && !showdown; stepIndex += 1) {
+        const transition = advanceTournamentRunnerOneStep(runner, {
+          policy: { simulations: 50 },
+        });
+        showdown = transition.events.find(
+          (event): event is Extract<typeof event, { kind: "showdown" }> =>
+            event.kind === "showdown",
+        );
+        runner = transition.runner;
+        if (transition.awaitingHero) {
+          const legal = heroTournamentLegalActions(runner);
+          if (!legal) throw new Error("Expected legal hero action");
+          const action = legal.allIn ? "all-in" : legal.call ? "call" : "check";
+          const heroTransition = applyHeroTournamentActionOneStep(runner, { action });
+          showdown = heroTransition.events.find(
+            (event): event is Extract<typeof event, { kind: "showdown" }> =>
+              event.kind === "showdown",
+          );
+          runner = heroTransition.runner;
+        }
+      }
+    }
+
+    expect(showdown).toBeDefined();
+    if (!showdown) return;
+    expect(showdown.reveals).toHaveLength(showdown.playerIds.length);
+    expect(showdown.reveals.every((reveal) => reveal.cards.length === 2)).toBe(true);
+    expect(showdown.awards.length).toBeGreaterThan(0);
+  });
+
   it("automates opponents and pauses only for a legal hero decision", () => {
     const runner = advanceTournamentRunnerToHero(
       createCareerTournamentRunner({
