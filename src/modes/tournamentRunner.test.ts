@@ -91,6 +91,50 @@ describe("tournament runner", () => {
     );
   });
 
+  it("begins the next hand with one continuous public inter-hand sequence", () => {
+    let runner = advanceTournamentRunnerToHero(
+      createCareerTournamentRunner({
+        eventId: "local-qualifier",
+        hero,
+        mode: "normal",
+        seed: "runner-inter-hand-continuity",
+      }),
+      { policy: { simulations: 50 } },
+    );
+    const firstHandId = runner.session.activeHand?.handId;
+    if (!firstHandId) throw new Error("Expected the opening hand");
+    const legal = heroTournamentLegalActions(runner);
+    if (!legal) throw new Error("Expected a hero decision");
+    const action = legal.fold ? "fold" : legal.check ? "check" : "call";
+    runner = applyHeroTournamentActionOneStep(runner, { action }).runner;
+
+    for (let step = 0; step < 160; step += 1) {
+      if (runner.session.lastHand?.handId === firstHandId && !runner.session.activeHand) break;
+      const transition = advanceTournamentRunnerOneStep(runner, {
+        policy: { simulations: 50 },
+      });
+      runner = transition.runner;
+      if (transition.awaitingHero) {
+        const nextLegal = heroTournamentLegalActions(runner);
+        if (!nextLegal) throw new Error("Expected legal follow-up action");
+        const nextAction = nextLegal.fold ? "fold" : nextLegal.check ? "check" : "call";
+        runner = applyHeroTournamentActionOneStep(runner, { action: nextAction }).runner;
+      }
+    }
+
+    expect(runner.session.lastHand?.handId).toBe(firstHandId);
+    expect(runner.session.activeHand).toBeUndefined();
+    const nextHand = advanceTournamentRunnerOneStep(runner, {
+      policy: { simulations: 50 },
+    });
+    expect(nextHand.runner.session.activeHand?.handId).not.toBe(firstHandId);
+    expect(nextHand.events.map((event) => event.kind)).toEqual([
+      "button-moved",
+      "blinds-posted",
+      "hole-cards-dealt",
+    ]);
+  });
+
   it("keeps one hand's public stream ordered and free of duplicate milestones", () => {
     let runner = createCareerTournamentRunner({
       eventId: "local-qualifier",

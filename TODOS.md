@@ -706,7 +706,7 @@ next hand. The room, camera, seats, table, and lighting persist throughout.
 - [ ] The sequence above is visible and ordered.
 - [ ] No fade-to-black or reload of the same table between hands.
 - [ ] The player perceives one continuous session, not a sequence of screenshots.
-- [ ] Blinds are visibly posted before hole cards are dealt.
+- [x] Blinds are visibly posted before hole cards are dealt.
 
 **Tests** — [ ] Unit: inter-hand event order. [ ] Unit: the table subtree is not unmounted across a hand boundary. [ ] Packaged: perceptual gate confirms continuity.
 
