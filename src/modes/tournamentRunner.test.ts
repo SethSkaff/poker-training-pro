@@ -179,6 +179,34 @@ describe("tournament runner", () => {
     expect(showdown.awards.length).toBeGreaterThan(0);
   });
 
+  it("keeps emitting public milestones after the hero folds until the hand settles", () => {
+    let runner = advanceTournamentRunnerToHero(
+      createCareerTournamentRunner({
+        eventId: "local-qualifier",
+        hero,
+        mode: "normal",
+        seed: "runner-hero-folds-watch-runout",
+      }),
+      { policy: { simulations: 50 } },
+    );
+    const fold = applyHeroTournamentActionOneStep(runner, { action: "fold" });
+    runner = fold.runner;
+    const events = [...fold.events];
+
+    for (let step = 0; step < 120 && !runner.session.lastHand; step += 1) {
+      const transition = advanceTournamentRunnerOneStep(runner, {
+        policy: { simulations: 50 },
+      });
+      expect(transition.awaitingHero).toBe(false);
+      events.push(...transition.events);
+      runner = transition.runner;
+    }
+
+    expect(runner.session.lastHand).toBeDefined();
+    expect(events.some((event) => event.kind === "pot-awarded")).toBe(true);
+    expect(events.some((event) => event.kind === "action")).toBe(true);
+  });
+
   it("automates opponents and pauses only for a legal hero decision", () => {
     const runner = advanceTournamentRunnerToHero(
       createCareerTournamentRunner({
