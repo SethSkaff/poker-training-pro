@@ -1886,14 +1886,16 @@ export function PokerTable({
   const heroStreetCommitted = heroPlayer?.bet ?? 0;
   const heroTotalCommitted = heroPlayer?.totalCommitted ?? heroStreetCommitted;
   const positionLabelForSeat = (seat: number): string => {
-    if (seat === scenario.buttonSeat) return "BTN";
-    if (seat === scenario.smallBlindSeat) return "SB";
-    if (seat === scenario.bigBlindSeat) return "BB";
+    if (seat === scenario.buttonSeat) return formatMessage("table.position.button");
+    if (seat === scenario.smallBlindSeat) return formatMessage("table.position.smallBlind");
+    if (seat === scenario.bigBlindSeat) return formatMessage("table.position.bigBlind");
     if (scenario.bigBlindSeat === undefined) return "";
     const distance = (seat - scenario.bigBlindSeat + scenario.players.length) % scenario.players.length;
-    if (distance === 1) return "UTG";
-    if (distance === scenario.players.length - 1) return "CO";
-    return distance === 2 ? "HJ" : "MP";
+    if (distance === 1) return formatMessage("table.position.utg");
+    if (distance === scenario.players.length - 1) return formatMessage("table.position.cutoff");
+    return distance === 2
+      ? formatMessage("table.position.hijack")
+      : formatMessage("table.position.middle");
   };
   const heroPositionLabel = positionLabelForSeat(scenario.heroSeat);
   const dealerMoveEvent =
@@ -2163,15 +2165,21 @@ export function PokerTable({
             aria-atomic="true"
             aria-label={heroStackAriaLabel(heroStack)}
           >
-            <span>Your stack</span>
+            <span>{formatMessage("table.heroStack.label")}</span>
             <strong>
               <ChipStack /> {formatChips(heroStack)}
             </strong>
             <span className="hero-stack-hud__commitment">
-              In this round <b>{formatChips(heroStreetCommitted)}</b> · Total this hand{" "}
-              <b>{formatChips(heroTotalCommitted)}</b>
+              {formatMessage("table.heroStack.commitment", {
+                street: formatChips(heroStreetCommitted),
+                total: formatChips(heroTotalCommitted),
+              })}
             </span>
-            {heroPositionLabel && <span className="hero-stack-hud__position">Position {heroPositionLabel}</span>}
+            {heroPositionLabel && (
+              <span className="hero-stack-hud__position">
+                {formatMessage("table.heroStack.position", { position: heroPositionLabel })}
+              </span>
+            )}
           </aside>
           {showdownAwards.length > 0 && (resultEvent || arrivalVisible) ? (
             <aside className="showdown-result-strip" role="status" aria-live="polite" aria-atomic="true">
