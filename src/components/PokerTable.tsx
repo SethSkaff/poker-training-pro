@@ -172,6 +172,8 @@ export function presentationEventLabel(event: TournamentPresentationEvent): stri
       return "Bets collected";
     case "showdown":
       return "Showdown";
+    case "hand-result":
+      return "Hand result";
     case "side-pot-formed":
       return `Side pot formed: ${formatChips(event.amount)}`;
     case "pot-awarded":
@@ -1963,6 +1965,11 @@ export function PokerTable({
     tournament?.presentationEvent?.kind === "showdown"
       ? tournament.presentationEvent
       : undefined;
+  const handResultEvent =
+    tournament?.presentationEvent?.kind === "hand-result"
+      ? tournament.presentationEvent
+      : undefined;
+  const resultEvent = showdownEvent ?? handResultEvent;
   const revealedCardsByPlayer = new Map(
     showdownEvent?.reveals.map((reveal) => [reveal.playerId, reveal.cards]) ?? [],
   );
@@ -1971,7 +1978,7 @@ export function PokerTable({
       award.hand?.cards.map(cardLabel) ?? [],
     ) ?? [],
   );
-  const showdownAwards = showdownEvent?.awards ?? tournament?.lastPotAwards ?? [];
+  const showdownAwards = resultEvent?.awards ?? tournament?.lastPotAwards ?? [];
   const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
   const tableAnnouncement = buildPokerTableAnnouncement({
     action,
@@ -1985,7 +1992,7 @@ export function PokerTable({
   const potResultSnapshot: TableAnnouncerSnapshot["potResult"] =
     showdownAwards.length
       ? {
-          id: showdownEvent?.handId ?? `previous-${tournament?.handNumber ?? 0}`,
+          id: resultEvent?.handId ?? `previous-${tournament?.handNumber ?? 0}`,
           winnerNames: Array.from(
             new Set(showdownAwards.map((award) => award.playerId)),
           ).map((playerId) => {
@@ -2166,9 +2173,15 @@ export function PokerTable({
             </span>
             {heroPositionLabel && <span className="hero-stack-hud__position">Position {heroPositionLabel}</span>}
           </aside>
-          {showdownAwards.length > 0 && (showdownEvent || arrivalVisible) ? (
+          {showdownAwards.length > 0 && (resultEvent || arrivalVisible) ? (
             <aside className="showdown-result-strip" role="status" aria-live="polite" aria-atomic="true">
-              <span>{showdownEvent ? "Showdown result" : "Previous hand result"}</span>
+              <span>
+                {showdownEvent
+                  ? "Showdown result"
+                  : handResultEvent
+                    ? "Hand result"
+                    : "Previous hand result"}
+              </span>
               {showdownAwards.map((award) => {
                 const winner = scenario.players.find((player) => player.id === award.playerId);
                 const winnerName = winner?.seat === scenario.heroSeat ? "You" : (winner?.name ?? award.playerId);

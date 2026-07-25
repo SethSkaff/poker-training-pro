@@ -205,6 +205,18 @@ describe("tournament runner", () => {
     expect(runner.session.lastHand).toBeDefined();
     expect(events.some((event) => event.kind === "pot-awarded")).toBe(true);
     expect(events.some((event) => event.kind === "action")).toBe(true);
+    const resultIndex = events.findIndex(
+      (event) => event.kind === "hand-result" || event.kind === "showdown",
+    );
+    const awardIndex = events.findIndex((event) => event.kind === "pot-awarded");
+    expect(resultIndex).toBeGreaterThan(-1);
+    expect(resultIndex).toBeLessThan(awardIndex);
+    const handResult = events[resultIndex];
+    expect(["hand-result", "showdown"]).toContain(handResult.kind);
+    if (handResult.kind === "hand-result") {
+      expect(handResult.awards.length).toBeGreaterThan(0);
+      expect(JSON.stringify(handResult)).not.toMatch(/holeCards|rank|suit/i);
+    }
   });
 
   it("automates opponents and pauses only for a legal hero decision", () => {

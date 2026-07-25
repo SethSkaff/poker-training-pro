@@ -25,7 +25,9 @@ export function presentationEventDelayMs(
         ? 520
         : event.kind === "action"
           ? 980
-          : event.kind === "pot-awarded" || event.kind === "showdown"
+          : event.kind === "pot-awarded" ||
+              event.kind === "showdown" ||
+              event.kind === "hand-result"
             ? 1_100
             : 620;
   const motionMultiplier =

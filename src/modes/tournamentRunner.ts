@@ -118,6 +118,21 @@ export type TournamentPresentationEvent =
     }
   | {
       id: string;
+      /**
+       * A resolved hand that ended before showdown (for example, everyone
+       * else folded). It deliberately has no hole-card data.
+       */
+      kind: "hand-result";
+      handId: string;
+      awards: readonly {
+        potId: string;
+        playerId: string;
+        amount: number;
+        hand?: HandValue;
+      }[];
+    }
+  | {
+      id: string;
       kind: "side-pot-formed";
       handId: string;
       amount: number;
@@ -475,6 +490,18 @@ function progressHandPresentationEvents(
           ? [{ playerId, cards: cards.map((card) => ({ ...card })) }]
           : [];
       }),
+      awards: result.awards.map((award) => ({
+        potId: award.potId,
+        playerId: award.playerId,
+        amount: award.amount,
+        ...(award.hand ? { hand: award.hand } : {}),
+      })),
+    });
+  } else {
+    events.push({
+      id: presentationEventId(source, result.handId, "hand-result"),
+      kind: "hand-result",
+      handId: result.handId,
       awards: result.awards.map((award) => ({
         potId: award.potId,
         playerId: award.playerId,

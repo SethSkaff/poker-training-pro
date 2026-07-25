@@ -88,4 +88,15 @@ describe("public tournament action presentation", () => {
     expect(announcement).toBe("Pot awarded: 600");
     expect(announcement).not.toMatch(/card|hole|ace|king|spade|heart/i);
   });
+
+  it("labels a fold-ended hand result without implying a showdown", () => {
+    expect(
+      presentationEventLabel({
+        id: "fold-result",
+        kind: "hand-result",
+        handId,
+        awards: [{ potId: "main", playerId: "winner", amount: 600 }],
+      }),
+    ).toBe("Hand result");
+  });
 });
