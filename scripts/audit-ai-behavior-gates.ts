@@ -117,6 +117,28 @@ const BOUNDS: Bound[] = [
     rationale: "Aggression must exist without dominating.",
   },
   {
+    label: "3-bet rate",
+    value: (metrics) => metrics.threeBet,
+    min: 0.01,
+    max: 0.6,
+    rationale:
+      "72% preflop 3-betting was the escalation entry point. Facing an open, re-raising should be a choice, not the default -- but a field that never 3-bets is itself an exploitable pattern (E11-004).",
+  },
+  {
+    label: "4-bet rate",
+    value: (metrics) => metrics.fourBet,
+    max: 0.55,
+    rationale:
+      "86% 4-betting is the clearest single sign of the raise war: nearly every 3-bet was met with another raise. Deliberately unbounded below -- 4-bet opportunities require a 3-bet first, so the sample is small enough that a zero is not evidence of a pattern.",
+  },
+  {
+    label: "median hands to heads-up",
+    value: (metrics) => metrics.handsToHeadsUp.median,
+    min: 8,
+    rationale:
+      "A field reaching heads-up in 7-13 hands leaves no tournament to play. Measured 33-50 after the correction.",
+  },
+  {
     label: "median hands to finish a 6-max event",
     value: (metrics) => metrics.handsToFinish.median,
     min: 15,

@@ -1035,12 +1035,14 @@ below is reproducible rather than a one-off transcript.
 
 | Metric | Normal before | Normal after | Rational before | Rational after |
 |---|---|---|---|---|
-| Max consecutive-raise chain | **631** | **3** | 599 | **3** |
+| Max consecutive-raise chain | **631** | **2** | 599 | **3** |
 | Chains ≥4 / ≥8 / ≥10 | 54 / 34 / 27 | **0 / 0 / 0** | 51 / 25 / 16 | **0 / 0 / 0** |
-| Facing a bet: fold / call / raise | 3 / 3 / **94%** | **40 / 42 / 19%** | 7 / 13 / **80%** | **30 / 43 / 27%** |
-| Preflop all-in hand rate | 21.0% | **0.3%** | 21.2% | **0.0%** |
+| Facing a bet: fold / call / raise | 3 / 3 / **94%** | **46 / 42 / 12%** | 7 / 13 / **80%** | **33 / 49 / 18%** |
+| 3-bet / 4-bet | 72% / 86% | **2.5% / 0%** | 47% / 77% | **20% / 21%** |
+| Preflop all-in hand rate | 21.0% | **0.0%** | 21.2% | **0.0%** |
 | Median raise ÷ pot | 0.50 (min-raise) | **1.00** | 0.50 | **1.00** |
-| Median hands to finish | **8** | **42.5** | **9** | **36** |
+| Median hands to heads-up | 11 | **36** | 7 | **44** |
+| Median hands to finish | **8** | **29** | **9** | **46.5** |
 
 **Fixes, one per cause**
 - **Cause 1** — `buildCandidates` no longer offers `legal.raise.minTo` as a routine option; it is reinstated only when the stack leaves no larger legal sizing. Pot-fraction floors also rise with the aggression already shown on the street (0.5/0.8/1.1× opening → 0.75/1.1/1.5× → 1.0/1.4/2.0× after three raises).
@@ -1084,9 +1086,9 @@ inexplicable repeated aggression, no hidden-card access, no reliably exploitable
 single pattern.
 
 **Acceptance criteria**
-- [ ] No single exploitable pattern lets a competent player win reliably (measure hero win-rate and exploitability against scripted strategies).
-- [ ] Personalities are behaviorally distinguishable in measurement, not just labelled.
-- [ ] Position, stack depth, and tournament stage measurably change behavior.
+- [ ] No single exploitable pattern lets a competent player win reliably (measure hero win-rate and exploitability against scripted strategies). **Partly addressed:** the one dominant exploitable pattern the review found — a 94% raise-back response — is gone and gated to [5%, 42%], and a "never 3-bets" pattern is gated against too. A hero win-rate measurement against scripted strategies has **not** been built, so this stays open.
+- [x] Personalities are behaviorally distinguishable in measurement, not just labelled. Asserted directly in `botLeague.test.ts`: the loosest profile must exercise its budget (>2% deviation), the spread between loosest and tightest must exceed 4×, and all five must be distinct measured points. This replaced the previous `selectedBestRate <= 0.98` proxy, which had been calibrated against the miscalibrated utility model.
+- [ ] Position, stack depth, and tournament stage measurably change behavior. The bot league slices Rational by position, stack, and street and freezes those distributions, so a regression is caught — but no assertion yet requires the slices to *differ* from one another.
 
 ---
 
@@ -1095,15 +1097,15 @@ single pattern.
 ### E12-001 — Verify and enforce the Rational contract
 
 **Acceptance criteria**
-- [ ] Uses only information legally available to its seat (existing hidden-information invariance tests extended to cover re-raise chains).
-- [ ] Compares action values mathematically rather than pattern-matching hand strength.
-- [ ] Respects simulation budgets and remains deterministic under fixed seeds.
-- [ ] No timing leakage (existing anti-tell work is sound — keep it green).
-- [ ] Calls when calling outperforms raising; folds when continuing is unprofitable.
-- [ ] No repeated raises without mathematical justification.
-- [ ] Rational is **measurably distinct** from Normal — quantify the behavioral difference; if they share a code path such that personality is a thin wrapper over identical math, say so and separate them.
+- [x] Uses only information legally available to its seat. The new `streetAggressionCount` input reads public betting actions only, so the re-raise-chain awareness added in E11-002 introduces no new information channel; the existing invariance tests cover it.
+- [x] Compares action values mathematically rather than pattern-matching hand strength — confirmed by measurement in E11-003 and unchanged by the correction.
+- [x] Respects simulation budgets and remains deterministic under fixed seeds.
+- [x] No timing leakage — the bot league's anti-tell correlations remain green after the rebalance.
+- [x] Calls when calling outperforms raising; folds when continuing is unprofitable (`rational.test.ts` "calls rather than raises when calling strictly dominates"; call rate 13% → 49%).
+- [x] No repeated raises without mathematical justification — max chain 599 → 3, and every remaining raise still carries its role and rationale.
+- [x] Rational is **measurably distinct** from Normal. They deliberately share the utility core (Normal consumes Rational's evaluations), which is *why* they were previously indistinguishable; the separation is now measured and gated rather than assumed. Rational vs Normal: raise-back 18.2% vs 11.7%, 3-bet 19.8% vs 2.5%, 4-bet 21.2% vs 0%, VPIP 58.2% vs 44.3%. The gate fails if raise-back separation drops below 3 points.
 
-**Tests** — [ ] Determinism: fixed seed reproduces decisions bit-for-bit. [ ] Privacy: decisions invariant to opponents' hole cards. [ ] Statistical: Normal-vs-Rational divergence exceeds a documented threshold.
+**Tests** — [x] Determinism: fixed seed reproduces decisions bit-for-bit. [x] Privacy: decisions invariant to opponents' hole cards. [x] Statistical: Normal-vs-Rational divergence exceeds a documented threshold (`scripts/audit-ai-behavior-gates.ts`).
 
 ---
 
@@ -1124,13 +1126,34 @@ to fix pacing; that would slow the structure while leaving the real defect intac
 and would make later events feel wrong. The collapse is driven by E11-002's
 Causes 1-3, and pacing should be re-measured **after** those land.
 
+**Resolution (2026-07-25): no blind-structure change was needed or made.**
+The prediction above held exactly. Re-measuring after E11-002/E11-003 landed,
+with no structure value altered:
+
+| | before | after |
+|---|---|---|
+| Median hands to first elimination | 1-2 | 4-9 |
+| Median hands to heads-up | 7-11 | **36-44** |
+| Median hands to finish | 8-9 | **29-46.5** |
+
+**Calibration target for this format**, justified rather than borrowed: a
+six-seat single table starting 300 BB deep, played to completion, should run
+**25-90 hands** with heads-up reached no earlier than hand 8. The reasoning is
+the format's own arithmetic — at 300 BB effective, no single pot can eliminate
+a player who has not committed most of a stack, so a field that collapses in
+under ~25 hands must be doing so through mutual over-commitment rather than
+through the blind structure. The upper bound keeps a session finishable in one
+sitting. This is not copied from a real-world tournament statistic, which would
+not transfer: real events have far more players, far more levels, and no
+requirement to end in one sitting.
+
 **Acceptance criteria**
-- [ ] Re-run the E11-001 harness after E11-002/E11-003 and record pacing again before changing any structure value.
-- [ ] Starting effective stack depth in BBs is documented per event tier.
-- [ ] A documented calibration target exists for a six-player format, justified for this format, blind structure, and event design rather than copied from a real-world statistic.
-- [ ] Median hands to first elimination, to heads-up, and to completion fall within the target.
-- [ ] Any blind-structure change is justified by measurement taken *after* the policy fixes, not before.
-- [ ] Event tiers differ intentionally in pacing.
+- [x] Re-ran the harness after E11-002/E11-003 and recorded pacing before touching any structure value.
+- [x] Starting effective stack depth in BBs is documented per event tier — `local-qualifier` is 300 BB; the tier ladder up to `national-championship`'s 60,000 chips is defined in `engine/tournament.ts`.
+- [x] A documented calibration target exists for a six-player format, justified for this format (above).
+- [x] Median hands to first elimination, to heads-up, and to completion fall within the target and are gated to [15, 140] finish / ≥8 heads-up / ≥2 first elimination.
+- [x] No blind-structure change was made — the measurement showed none was warranted, which is the outcome this task was written to protect.
+- [ ] Event tiers differ intentionally in pacing. Deferred: tiers currently differ in stack depth, blind schedule, and (new in E10-001) field strength, but no per-tier pacing target has been set or measured.
 
 ---
 
@@ -1159,9 +1182,9 @@ Not gated by anything today:
 - Roster diversity and portrait-to-identity stability (no test exists at all).
 
 **Acceptance criteria**
-- [ ] Regression gates exist for: raise-chain frequency, preflop and postflop all-in frequency, VPIP, PFR, 3-bet%, 4-bet%, fold-to-raise%, call%, average tournament duration, median hands to first elimination, median hands to heads-up, finish distribution, EV loss, and timing leakage.
-- [ ] Gates are statistical with documented tolerances, not single-anecdote assertions.
-- [ ] The frozen baseline is only regenerated through the documented sanctioned workflow, with before/after comparison recorded.
+- [x] Regression gates exist for every listed metric. `scripts/audit-ai-behavior-gates.ts` (wired into `npm run release:verify`, also `npm run release:audit-ai-behavior`) covers raise-chain max and ≥8 frequency, preflop/postflop all-in rate, VPIP, PFR, 3-bet%, 4-bet%, fold/call/raise-back mix, median hands to first elimination, to heads-up, and to completion, raise-size plausibility, and Normal-vs-Rational separation — all over live sequential play at realistic 300 BB depth, which is exactly what the bot league structurally cannot see. Finish distribution, EV loss, and timing leakage remain gated by the bot league.
+- [x] Gates are statistical with documented tolerances, not single-anecdote assertions. Each bound carries its band, the value measured when it was set, and the reason it exists; bands are set well outside current values so ordinary tuning does not trip them.
+- [x] The frozen baseline is only regenerated through the documented sanctioned workflow, with before/after comparison recorded. The 2026-07-25 replacement is written up in `docs/bot-league-regression-harness.md` under "Baseline replacements", including the accepted distribution changes and why the `selectedBestRate <= 0.98` bound was replaced by a direct distinguishability assertion.
 
 ### E14-002 — Development-only LLM critic harness
 

@@ -931,7 +931,9 @@ export function streetAggressionCount(
  */
 function reRaiseRisk(aggression: number): number {
   if (aggression <= 0) return 0.06;
-  return Math.min(0.72, 0.06 + aggression * 0.17);
+  // Slope tuned against the measured 4-bet rate: at 0.17 per prior raise the
+  // gate still recorded Rational 4-betting 65% of the time facing a 3-bet.
+  return Math.min(0.85, 0.06 + aggression * 0.28);
 }
 
 function addCandidate(

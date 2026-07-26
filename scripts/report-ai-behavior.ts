@@ -22,6 +22,7 @@ function report(metrics: AiBehaviorMetrics): string {
     `max raise chain             ${metrics.maxRaiseChain}`,
     `chains >=4 / >=8 / >=10     ${metrics.chainsAtLeast4} / ${metrics.chainsAtLeast8} / ${metrics.chainsAtLeast10} (of ${metrics.totalChains})`,
     `VPIP / PFR                  ${percent(metrics.vpip)} / ${percent(metrics.pfr)}`,
+    `3-bet / 4-bet               ${percent(metrics.threeBet)} / ${percent(metrics.fourBet)}`,
     `facing a bet f/c/r          ${percent(metrics.facingBet.fold)} / ${percent(metrics.facingBet.call)} / ${percent(metrics.facingBet.raise)} (n=${metrics.facingBet.samples})`,
     `all-in hand rate pre/post   ${percent(metrics.preflopAllInHandRate)} / ${percent(metrics.postflopAllInHandRate)}`,
     `raise/pot mean / median     ${metrics.raiseOverPot.mean.toFixed(2)} / ${metrics.raiseOverPot.median.toFixed(2)}`,

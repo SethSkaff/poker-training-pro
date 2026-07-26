@@ -30,15 +30,15 @@
         "chosenActions": {
           "fold": 0.111111,
           "check": 0,
-          "call": 0.833333,
-          "raise": 0.055556,
+          "call": 0.888889,
+          "raise": 0,
           "all-in": 0
         },
         "expectedActions": {
-          "fold": 0.117434,
+          "fold": 0.118326,
           "check": 0,
-          "call": 0.764108,
-          "raise": 0.118457,
+          "call": 0.825457,
+          "raise": 0.056217,
           "all-in": 0
         }
       },
@@ -53,15 +53,15 @@
           "chosenActions": {
             "fold": 0.166667,
             "check": 0,
-            "call": 0.75,
-            "raise": 0.083333,
+            "call": 0.833333,
+            "raise": 0,
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.138165,
+            "fold": 0.138606,
             "check": 0,
-            "call": 0.723654,
-            "raise": 0.13818,
+            "call": 0.795021,
+            "raise": 0.066373,
             "all-in": 0
           }
         },
@@ -75,15 +75,15 @@
           "chosenActions": {
             "fold": 0,
             "check": 0,
-            "call": 0.916667,
-            "raise": 0.083333,
+            "call": 1,
+            "raise": 0,
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.090666,
+            "fold": 0.091526,
             "check": 0,
-            "call": 0.822752,
-            "raise": 0.086582,
+            "call": 0.867264,
+            "raise": 0.04121,
             "all-in": 0
           }
         },
@@ -102,10 +102,10 @@
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.123472,
+            "fold": 0.124846,
             "check": 0,
-            "call": 0.745918,
-            "raise": 0.130609,
+            "call": 0.814085,
+            "raise": 0.061069,
             "all-in": 0
           }
         }
@@ -121,15 +121,15 @@
           "chosenActions": {
             "fold": 0.083333,
             "check": 0,
-            "call": 0.833333,
-            "raise": 0.083333,
+            "call": 0.916667,
+            "raise": 0,
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.133697,
+            "fold": 0.134446,
             "check": 0,
-            "call": 0.743983,
-            "raise": 0.12232,
+            "call": 0.797886,
+            "raise": 0.067668,
             "all-in": 0
           }
         },
@@ -143,15 +143,15 @@
           "chosenActions": {
             "fold": 0.083333,
             "check": 0,
-            "call": 0.833333,
-            "raise": 0.083333,
+            "call": 0.916667,
+            "raise": 0,
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.106086,
+            "fold": 0.107194,
             "check": 0,
-            "call": 0.75079,
-            "raise": 0.143124,
+            "call": 0.82402,
+            "raise": 0.068786,
             "all-in": 0
           }
         },
@@ -170,10 +170,10 @@
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.112521,
+            "fold": 0.113339,
             "check": 0,
-            "call": 0.797552,
-            "raise": 0.089928,
+            "call": 0.854463,
+            "raise": 0.032198,
             "all-in": 0
           }
         }
@@ -189,15 +189,15 @@
           "chosenActions": {
             "fold": 0,
             "check": 0,
-            "call": 0.777778,
-            "raise": 0.222222,
+            "call": 1,
+            "raise": 0,
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.021171,
+            "fold": 0.02419,
             "check": 0,
-            "call": 0.614759,
-            "raise": 0.36407,
+            "call": 0.77806,
+            "raise": 0.19775,
             "all-in": 0
           }
         },
@@ -216,10 +216,10 @@
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.001114,
+            "fold": 0.001154,
             "check": 0,
-            "call": 0.910223,
-            "raise": 0.088663,
+            "call": 0.97951,
+            "raise": 0.019336,
             "all-in": 0
           }
         },
@@ -238,10 +238,10 @@
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.020389,
+            "fold": 0.020592,
             "check": 0,
-            "call": 0.961165,
-            "raise": 0.018446,
+            "call": 0.973293,
+            "raise": 0.006115,
             "all-in": 0
           }
         },
@@ -260,10 +260,10 @@
             "all-in": 0
           },
           "expectedActions": {
-            "fold": 0.427064,
+            "fold": 0.427369,
             "check": 0,
-            "call": 0.570285,
-            "raise": 0.002651,
+            "call": 0.570963,
+            "raise": 0.001668,
             "all-in": 0
           }
         }
@@ -281,24 +281,24 @@
         "chosenActions": {
           "fold": 0.060185,
           "check": 0,
-          "call": 0.912037,
-          "raise": 0.027778,
+          "call": 0.939815,
+          "raise": 0,
           "all-in": 0
         }
       },
       "tempo": {
         "profileId": "tempo",
         "decisions": 432,
-        "selectedBestRate": 0.988426,
-        "deviationRate": 0.011574,
-        "meanEvLossBigBlinds": 0.000717,
-        "maxEvLossBigBlinds": 0.083007,
+        "selectedBestRate": 0.990741,
+        "deviationRate": 0.009259,
+        "meanEvLossBigBlinds": 0.000525,
+        "maxEvLossBigBlinds": 0.056667,
         "evBudgetBreaches": 0,
         "chosenActions": {
           "fold": 0.064815,
           "check": 0,
-          "call": 0.907407,
-          "raise": 0.027778,
+          "call": 0.935185,
+          "raise": 0,
           "all-in": 0
         }
       },
@@ -313,8 +313,8 @@
         "chosenActions": {
           "fold": 0.05787,
           "check": 0,
-          "call": 0.914352,
-          "raise": 0.027778,
+          "call": 0.94213,
+          "raise": 0,
           "all-in": 0
         }
       },
@@ -329,24 +329,24 @@
         "chosenActions": {
           "fold": 0.069444,
           "check": 0,
-          "call": 0.902778,
-          "raise": 0.027778,
+          "call": 0.930556,
+          "raise": 0,
           "all-in": 0
         }
       },
       "wideLens": {
         "profileId": "wide-lens",
         "decisions": 432,
-        "selectedBestRate": 0.986111,
-        "deviationRate": 0.013889,
-        "meanEvLossBigBlinds": 0.001929,
+        "selectedBestRate": 0.988426,
+        "deviationRate": 0.011574,
+        "meanEvLossBigBlinds": 0.001458,
         "maxEvLossBigBlinds": 0.283333,
         "evBudgetBreaches": 0,
         "chosenActions": {
           "fold": 0.0625,
           "check": 0,
-          "call": 0.909722,
-          "raise": 0.027778,
+          "call": 0.9375,
+          "raise": 0,
           "all-in": 0
         }
       }
@@ -367,14 +367,14 @@
       "finishDistribution": {
         "1": 0,
         "2": 0,
-        "3": 2,
-        "4": 1,
-        "5": 2,
+        "3": 1,
+        "4": 3,
+        "5": 1,
         "6": 1
       },
       "meanHands": 4.166667,
-      "meanDecisions": 41.833333,
-      "maxDecisions": 76
+      "meanDecisions": 37.666667,
+      "maxDecisions": 53
     },
     "normal": {
       "completed": 6,
@@ -388,8 +388,8 @@
         "6": 1
       },
       "meanHands": 7.166667,
-      "meanDecisions": 64.833333,
-      "maxDecisions": 158
+      "meanDecisions": 65.666667,
+      "maxDecisions": 163
     }
   },
   "runtimeBounds": {

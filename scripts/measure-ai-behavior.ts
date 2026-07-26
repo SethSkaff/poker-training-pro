@@ -44,6 +44,9 @@ export interface AiBehaviorMetrics {
   totalChains: number;
   vpip: number;
   pfr: number;
+  /** Share of preflop re-raise opportunities taken, by depth of the raise. */
+  threeBet: number;
+  fourBet: number;
   /** Response distribution when a player faces an outstanding bet. */
   facingBet: { fold: number; call: number; raise: number; samples: number };
   preflopAllInHandRate: number;
@@ -77,6 +80,10 @@ interface EventAccumulator {
   vpipActions: number;
   pfrOpportunities: number;
   pfrActions: number;
+  threeBetOpportunities: number;
+  threeBetActions: number;
+  fourBetOpportunities: number;
+  fourBetActions: number;
   facingBet: { fold: number; call: number; raise: number };
   handsWithPreflopAllIn: number;
   handsWithPostflopAllIn: number;
@@ -95,6 +102,10 @@ function emptyAccumulator(): EventAccumulator {
     vpipActions: 0,
     pfrOpportunities: 0,
     pfrActions: 0,
+    threeBetOpportunities: 0,
+    threeBetActions: 0,
+    fourBetOpportunities: 0,
+    fourBetActions: 0,
     facingBet: { fold: 0, call: 0, raise: 0 },
     handsWithPreflopAllIn: 0,
     handsWithPostflopAllIn: 0,
@@ -164,9 +175,23 @@ function playEvent(
       const pot = hand.information.pot;
       const effectiveStack = Math.max(1, player?.stack ?? 1);
 
+      // Preflop raise depth: the blinds are not raises, so the first
+      // voluntary raise is the open, the second is a 3-bet, the third a
+      // 4-bet. Counted from public actions only.
+      const preflopRaisesSoFar = preflop
+        ? hand.information.actions.filter(
+            (entry) =>
+              entry.type === "raise" ||
+              entry.type === "bet" ||
+              entry.type === "all-in",
+          ).length
+        : 0;
+
       if (preflop) {
         accumulator.vpipOpportunities += 1;
         accumulator.pfrOpportunities += 1;
+        if (preflopRaisesSoFar === 1) accumulator.threeBetOpportunities += 1;
+        if (preflopRaisesSoFar === 2) accumulator.fourBetOpportunities += 1;
       }
 
       const decision = chooseTournamentSessionPolicyAction(session, actor, POLICY);
@@ -179,6 +204,12 @@ function playEvent(
           accumulator.vpipActions += 1;
         }
         if (aggressive) accumulator.pfrActions += 1;
+        if (aggressive && preflopRaisesSoFar === 1) {
+          accumulator.threeBetActions += 1;
+        }
+        if (aggressive && preflopRaisesSoFar === 2) {
+          accumulator.fourBetActions += 1;
+        }
       }
 
       if (toCall > 0) {
@@ -293,6 +324,14 @@ export function measureAiBehavior(options: {
     pfr: ratio(
       events.reduce((sum, event) => sum + event.pfrActions, 0),
       pfrOpportunities,
+    ),
+    threeBet: ratio(
+      events.reduce((sum, event) => sum + event.threeBetActions, 0),
+      events.reduce((sum, event) => sum + event.threeBetOpportunities, 0),
+    ),
+    fourBet: ratio(
+      events.reduce((sum, event) => sum + event.fourBetActions, 0),
+      events.reduce((sum, event) => sum + event.fourBetOpportunities, 0),
     ),
     facingBet: {
       fold: ratio(facingBet.fold, facingSamples),
