@@ -192,6 +192,11 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "dashboard.ceremony.handsPlayed": "Hands played",
   "dashboard.ceremony.unlocked": "Unlocked",
   "dashboard.ceremony.nextEvent": "Next event",
+  "dashboard.ceremony.nextUp": "Next on the road: {eventName}",
+  "dashboard.ceremony.journeyComplete":
+    "That is the last event on the road. Play any event again to improve your finish.",
+  "dashboard.ceremony.retryPath":
+    "You did not qualify this time. {eventName} stays open — enter it again whenever you are ready.",
   "dashboard.ceremony.reviewKeyHand": "Review key hand",
   "dashboard.ceremony.exportReplay": "Export event replay",
   "dashboard.ceremony.returnToMenu": "Return to menu",

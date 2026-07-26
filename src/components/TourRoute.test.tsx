@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { TourLobby } from "./Dashboard";
+import { TourLobby, TournamentCeremony } from "./Dashboard";
 import type { TournamentSessionCareerResult } from "../modes/tournamentSession";
 
 const sourceRoot = path.resolve(
@@ -81,5 +81,52 @@ describe("career route", () => {
     expect(render([qualified("local-qualifier")])).toContain(
       "1 of 5 events qualified",
     );
+  });
+});
+
+describe("career continuity", () => {
+  const ceremonyResult = (overrides: Record<string, unknown> = {}) =>
+    ({
+      eventId: "local-qualifier",
+      eventName: "Local Qualifier",
+      finishPlace: 1,
+      fieldSize: 6,
+      sourceFieldSize: 240,
+      qualifyingPlaces: 2,
+      qualified: true,
+      placementLabel: "1st of 6",
+      qualificationLabel: "Qualified",
+      tournamentEloDelta: 22,
+      handNumber: 41,
+      elo: { heroRating: 1022 },
+      newlyUnlockedEventIds: [],
+      unlockedEventIds: [],
+      nextEventId: "regional-classic",
+      ...overrides,
+    }) as unknown as Parameters<typeof TournamentCeremony>[0]["result"];
+
+  it("names the next event after qualifying", () => {
+    const markup = renderToStaticMarkup(
+      <TournamentCeremony result={ceremonyResult()} onMenu={() => undefined} />,
+    );
+    expect(markup).toContain("Next on the road");
+  });
+
+  it("states the path forward after failing to qualify", () => {
+    // Previously a failed run offered only "Return to menu", which is what
+    // made the career feel like it dead-ended.
+    const markup = renderToStaticMarkup(
+      <TournamentCeremony
+        result={ceremonyResult({
+          finishPlace: 5,
+          qualified: false,
+          qualificationLabel: "Did not qualify",
+          nextEventId: undefined,
+        })}
+        onMenu={() => undefined}
+      />,
+    );
+    expect(markup).toContain("stays open");
+    expect(markup).toContain("Local Qualifier");
   });
 });

@@ -9393,3 +9393,19 @@ input[type="range"]::-webkit-slider-thumb {
   flex-wrap: wrap;
   gap: 10px 28px;
 }
+
+/* The ceremony's "what happens next" line, and a clear primary action so the
+   career reads as continuing rather than dead-ending into a menu (E20-001). */
+.ceremony-board__next {
+  margin: 18px 0 0;
+  color: #d9cfb8;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.ceremony-board__primary {
+  border-color: #e0ae4b !important;
+  color: #0a100e !important;
+  background: linear-gradient(180deg, #ffd98a, #d9a445) !important;
+  font-weight: 600;
+}

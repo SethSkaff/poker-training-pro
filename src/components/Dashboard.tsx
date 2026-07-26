@@ -776,9 +776,29 @@ export function TournamentCeremony({
           </div>
         )}
 
+        {/* What happens next, always stated. Qualifying used to show a Next
+            button while a failed run showed only "Return to menu", which is
+            what made the career feel like it dead-ended into a menu. */}
+        <p className="ceremony-board__next" role="status">
+          {result.nextEventId
+            ? formatMessage("dashboard.ceremony.nextUp", {
+                eventName:
+                  eventNames.get(result.nextEventId) ?? result.nextEventId,
+              })
+            : result.qualified
+              ? formatMessage("dashboard.ceremony.journeyComplete")
+              : formatMessage("dashboard.ceremony.retryPath", {
+                  eventName: result.eventName,
+                })}
+        </p>
+
         <div className="ceremony-board__actions">
           {result.nextEventId && onNext && (
-            <button type="button" onClick={() => onNext(result.nextEventId!)}>
+            <button
+              className="ceremony-board__primary"
+              type="button"
+              onClick={() => onNext(result.nextEventId!)}
+            >
               {formatMessage("dashboard.ceremony.nextEvent")} <ArrowRight size={18} />
             </button>
           )}

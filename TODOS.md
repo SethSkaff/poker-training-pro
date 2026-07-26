@@ -1543,8 +1543,10 @@ asserts the mirror stays in sync.
 ### E20-001 — Continuous championship journey
 
 **Acceptance criteria**
-- [ ] After completing or qualifying, the game shows the result, qualification, Elo change, and what comes next, then moves naturally toward the next event.
-- [ ] It does not return to a disconnected menu unless the player chooses to exit.
+- [x] After completing or qualifying, the ceremony shows the result, placement, qualification label, Elo change, hands played, any newly unlocked events, **and what comes next** — the next event named explicitly, or, when the run did not qualify, that the event stays open and can be re-entered. Previously a failed run offered only "Return to menu", which is exactly what made the career feel like it dead-ended.
+- [x] It does not return to a disconnected menu unless the player chooses to exit — "Next event" is the visually primary action when one exists, with Return to menu as a peer option rather than the only one.
+
+**Tests** — [x] `TourRoute.test.tsx`: the next event is named after qualifying, and the path forward is stated after failing to qualify.
 
 ### E20-002 — Horizontal event progression
 
