@@ -622,13 +622,13 @@ with no amounts and no eligible players.
 - Classification: **EXISTS BUT DISCONNECTED** + **MISSING FEATURE**.
 
 **Acceptance criteria**
-- [ ] Main pot and each side pot are visually separated with their own amounts.
-- [ ] Eligible players are shown per pot.
+- [x] Main pot and each side pot are visually separated with their own amounts.
+- [x] Eligible players are shown per pot.
 - [ ] The reason a side pot exists is explained in context, not as a one-shot tip.
-- [ ] Side-pot creation is announced, every time, not once per save.
-- [ ] At showdown each pot is evaluated and awarded separately and visibly.
+- [x] Side-pot creation is announced, every time, not once per save.
+- [x] At showdown each pot is evaluated and awarded separately and visibly.
 - [ ] Understandable to a player who knows poker but is not tracking every chip.
-- [ ] Live pot structure is available before resolution for all-in situations.
+- [x] Live pot structure is available before resolution for all-in situations.
 
 **Tests** — [ ] Unit: multi-side-pot hand renders correct amounts and eligibility. [ ] Unit: the explanation is not gated by a once-ever `seen` flag. [ ] Unit: per-pot award attribution reaches the UI. [ ] Accessibility: side-pot amounts and eligibility announced.
 
