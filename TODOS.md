@@ -299,11 +299,11 @@ for tests, replay reconstruction, and the mobile bundle.
 Classification: **MISSING FEATURE** (hero) + **DISCONNECTED** (opponent).
 
 **Acceptance criteria**
-- [ ] Cards visibly travel from a dealer/deal origin to each active seat.
-- [ ] The deal order is perceptible and correct.
-- [ ] Each seat visibly receives the correct number of cards.
-- [ ] Hero cards arrive before peek/reveal is possible.
-- [ ] Honors the speed setting and the corrected reduced-motion policy (E08).
+- [x] Cards visibly travel from a dealer/deal origin to each active seat.
+- [x] The deal order is perceptible and correct.
+- [x] Each seat visibly receives the correct number of cards.
+- [x] Hero cards arrive before peek/reveal is possible.
+- [x] Honors the speed setting and the corrected reduced-motion policy (E08).
 
 **Tests** — [ ] Unit: deal events emitted per seat in order. [ ] Packaged: perceptual gate sees a non-instant deal.
 
@@ -315,9 +315,9 @@ Empirically confirmed: board went from empty to three rendered cards with the
 pot already updated between consecutive frames. Classification: **MISSING FEATURE**.
 
 **Acceptance criteria**
-- [ ] The flop arrives as a visible three-card dealing sequence (rapid cadence acceptable; the player must see three cards placed).
-- [ ] A readable pause lets the board register before the turn.
-- [ ] Turn and river each deal visibly with an appropriate pause.
+- [x] The flop arrives as a visible three-card dealing sequence (rapid cadence acceptable; the player must see three cards placed).
+- [x] A readable pause lets the board register before the turn.
+- [x] Turn and river each deal visibly with an appropriate pause.
 - [ ] All-in runouts use the stronger sequence in E06.
 
 **Tests** — [ ] Unit: one board-card event per card, ordered. [ ] Packaged: perceptual gate observes intermediate board states.
