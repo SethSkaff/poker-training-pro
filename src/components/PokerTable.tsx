@@ -172,6 +172,8 @@ export function presentationEventLabel(event: TournamentPresentationEvent): stri
       return "Bets collected";
     case "showdown":
       return "Showdown";
+    case "all-in-reveal":
+      return "All-in hands revealed";
     case "hand-result":
       return "Hand result";
     case "side-pot-formed":
@@ -2231,8 +2233,11 @@ export function PokerTable({
   const allInPlayer = allInEvent
     ? scenario.players.find((player) => player.id === allInEvent.playerId)
     : undefined;
+  const allInRevealEvent = tournament?.presentationEvent?.kind === "all-in-reveal"
+    ? tournament.presentationEvent
+    : undefined;
   const revealedCardsByPlayer = new Map(
-    showdownEvent?.reveals.map((reveal) => [reveal.playerId, reveal.cards]) ?? [],
+    (showdownEvent?.reveals ?? allInRevealEvent?.reveals ?? []).map((reveal) => [reveal.playerId, reveal.cards]),
   );
   const winningCardLabels = winningCardLabelsForAwards(
     showdownEvent?.awards ?? [],

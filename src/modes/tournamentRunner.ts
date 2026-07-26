@@ -117,6 +117,14 @@ export type TournamentPresentationEvent =
       }[];
     }
   | {
+      /** Legal early reveal after betting is closed by all-in players. */
+      id: string;
+      kind: "all-in-reveal";
+      handId: string;
+      playerIds: readonly string[];
+      reveals: readonly { playerId: string; cards: readonly Card[] }[];
+    }
+  | {
       id: string;
       /**
        * A resolved hand that ended before showdown (for example, everyone
@@ -436,7 +444,31 @@ function progressHandPresentationEvents(
   if (nextHand) {
     const newlyDealt = nextHand.board.length - previousHand.board.length;
     if (newlyDealt <= 0) return [];
+    const allInPlayerIds = previousHand.betting.players
+      .filter((player) => player.status !== "folded")
+      .filter((player) => player.status === "all-in")
+      .map((player) => player.id);
+    const revealAllInHands =
+      newlyDealt >= 2 &&
+      allInPlayerIds.length >= 2 &&
+      previousHand.betting.players
+        .filter((player) => player.status !== "folded")
+        .every((player) => player.status === "all-in");
     return [
+      ...(revealAllInHands
+        ? [{
+            id: presentationEventId(source, previousHand.handId, "all-in-reveal", previousHand.board.length),
+            kind: "all-in-reveal" as const,
+            handId: previousHand.handId,
+            playerIds: allInPlayerIds,
+            reveals: allInPlayerIds.flatMap((playerId) => {
+              const cards = previousHand.holeCards[playerId];
+              return cards?.length === 2
+                ? [{ playerId, cards: cards.map((card) => ({ ...card })) }]
+                : [];
+            }),
+          }]
+        : []),
       {
         id: presentationEventId(
           source,
