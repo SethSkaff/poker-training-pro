@@ -92,6 +92,18 @@ const SEQUENCE_PLAN = [
     label: "First dealt hand with chip/card motion",
     durationMs: 2_000,
   },
+  {
+    id: "hero-wager-travel",
+    label: "Hero call visibly travels chips toward the pot",
+    durationMs: 900,
+    requiredSignal: "chipTravel",
+  },
+  {
+    id: "hero-fold-state",
+    label: "Hero fold is visible before the hand can resolve",
+    durationMs: 900,
+    requiredSignal: "heroFolded",
+  },
 ];
 
 export async function runPackagedFlashCapture(options = {}) {
@@ -247,6 +259,24 @@ async function runCapturePass(appPath, { passId, reducedMotion }) {
     await waitForSelector(cdp, child, output, deadline, ".poker-table", "live tournament table");
     sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("dealt-hand")));
 
+    // Sequence 5: use an ordinary visible Call control, then observe the
+    // renderer's public chip-travel token. This does not inject an engine
+    // action or bypass the presentation queue: it is the same mouse path a
+    // player uses. A call can legally be all-in; both outcomes still produce
+    // a public wager and therefore the same travel affordance.
+    await waitForSelector(cdp, child, output, deadline, ".action-dock", "first hero decision");
+    await clickSelector(cdp, ".action-button--call");
+    await waitForSelector(cdp, child, output, deadline, ".chip-travel", "hero wager chip travel");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("hero-wager-travel")));
+
+    // Let the public queue advance to the next real hero decision, then fold
+    // through the normal player control. The capture starts while the folded
+    // table state is visible and before a result strip can replace it.
+    await waitForSelector(cdp, child, output, deadline, ".action-dock", "next hero decision after call");
+    await clickSelector(cdp, ".action-button--fold");
+    await waitForSelector(cdp, child, output, deadline, ".player-seat--hero.is-folded", "visible hero fold state");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("hero-fold-state")));
+
     assertNoFatalCdpEvents(cdp.takeFatalEvents());
   } finally {
     try {
@@ -304,6 +334,10 @@ async function captureAndAnalyzeSequence(cdp, sequenceDefinition) {
     };
   });
   const evaluation = evaluateFlashSequence({ sequenceId: sequenceDefinition.id, frames });
+  const perceptualSignals = summarizePerceptualSignals(rawFrames);
+  const signalPass = sequenceDefinition.requiredSignal
+    ? perceptualSignals[sequenceDefinition.requiredSignal]?.observed === true
+    : true;
   const achievedMeanFrameIntervalMs =
     frames.length > 1 ? round(evaluation.durationMs / (frames.length - 1), 1) : null;
   return {
@@ -332,7 +366,8 @@ async function captureAndAnalyzeSequence(cdp, sequenceDefinition) {
       eventTimestampsMs: evaluation.redFlash.events.map((event) => event.atMs),
       pass: evaluation.redFlash.pass,
     },
-    pass: evaluation.pass,
+    perceptualSignals,
+    pass: evaluation.pass && signalPass,
   };
 }
 
@@ -357,7 +392,11 @@ async function captureBurst(cdp, durationMs) {
   while (Date.now() - start < durationMs && frames.length < maxFrames) {
     const frameStart = Date.now();
     const shot = await captureScreenshotFast(cdp);
-    frames.push({ timestampMs: frameStart - start, dataBase64: shot.data });
+    frames.push({
+      timestampMs: frameStart - start,
+      dataBase64: shot.data,
+      presentation: await readPresentationSignals(cdp),
+    });
     const remaining = CAPTURE_INTERVAL_MS - (Date.now() - frameStart);
     if (remaining > 0) await delay(remaining);
   }
@@ -365,6 +404,53 @@ async function captureBurst(cdp, durationMs) {
     throw new Error("Flash capture burst produced fewer than two frames.");
   }
   return frames;
+}
+
+/**
+ * Read only public DOM state alongside each rendered frame. The screenshot is
+ * still the primary visual artifact; these signals make the resulting gate
+ * fail if an otherwise-similar frame burst was captured after a transition
+ * had already been replaced by its end state.
+ */
+async function readPresentationSignals(cdp) {
+  const result = await cdp.send("Runtime.evaluate", {
+    expression: `(() => {
+      const table = document.querySelector('.poker-table');
+      if (!window.__ptpPerceptualTable && table) window.__ptpPerceptualTable = table;
+      const chip = document.querySelector('.chip-travel');
+      return {
+        tableStable: Boolean(table && window.__ptpPerceptualTable === table),
+        chipTravel: Boolean(chip),
+        chipAnimationMs: chip instanceof HTMLElement
+          ? Number.parseFloat(getComputedStyle(chip).animationDuration) * 1000
+          : 0,
+        heroFolded: Boolean(document.querySelector('.player-seat--hero.is-folded')),
+        handResultVisible: Boolean(document.querySelector('.showdown-result-strip')),
+      };
+    })()`,
+    returnByValue: true,
+  });
+  return result.result?.value ?? {};
+}
+
+function summarizePerceptualSignals(rawFrames) {
+  const signals = rawFrames.map((frame) => frame.presentation ?? {});
+  const chipTravelFrames = signals.filter((signal) => signal.chipTravel === true);
+  const heroFoldedFrames = signals.filter((signal) => signal.heroFolded === true);
+  return {
+    tableStable: {
+      observed: signals.length > 0 && signals.every((signal) => signal.tableStable === true),
+    },
+    chipTravel: {
+      observed: chipTravelFrames.length > 0 && chipTravelFrames.some((signal) => signal.chipAnimationMs > 0),
+      frameCount: chipTravelFrames.length,
+      animationDurationsMs: chipTravelFrames.map((signal) => signal.chipAnimationMs),
+    },
+    heroFolded: {
+      observed: heroFoldedFrames.length > 0 && heroFoldedFrames.some((signal) => signal.handResultVisible === false),
+      frameCount: heroFoldedFrames.length,
+    },
+  };
 }
 
 async function captureScreenshotFast(cdp) {
