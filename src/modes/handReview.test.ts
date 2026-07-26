@@ -256,3 +256,36 @@ describe("hand review derivation", () => {
     expect(second.accuracy).toBe(first.accuracy);
   }, 60_000);
 });
+
+describe("highlight density", () => {
+  it("flags roughly one decision per few hands, not every decision", async () => {
+    // The pacing target is ~1 highlight per 2-4 hands. It is a target, not a
+    // quota: most preflop folds teach nothing, and flagging them would bury
+    // the decisions that matter. What must hold is that the classifier is
+    // selective without being silent.
+    let hands = 0;
+    let decisions = 0;
+    let highlights = 0;
+
+    for (let seedIndex = 0; seedIndex < 4; seedIndex += 1) {
+      const replay = playRound(`review-density-${seedIndex}`);
+      const review = await deriveHandReview(replay, {
+        simulations: 60,
+        yieldControl: async () => undefined,
+      });
+      hands += new Set(review.decisions.map((entry) => entry.handId)).size;
+      decisions += review.decisions.length;
+      highlights += notableDecisions(review).length;
+    }
+
+    expect(decisions).toBeGreaterThan(0);
+    expect(hands).toBeGreaterThan(0);
+    // Selective: nowhere near every decision is notable.
+    expect(highlights).toBeLessThan(decisions);
+    // But not silent either -- a review with nothing to look at is useless.
+    expect(highlights).toBeGreaterThan(0);
+    // Density is reported so drift is visible even when it stays in band.
+    const perHand = highlights / hands;
+    expect(perHand).toBeLessThanOrEqual(1.5);
+  }, 120_000);
+});

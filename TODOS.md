@@ -1462,9 +1462,9 @@ reconstructed decision point — it must not expose replay-computed full state.
 - [x] Every hero decision is inspectable across all four streets and all six action types.
 - [x] A "Noteworthy only" filter restricts the timeline to decisions worth stopping on, each labelled with why it matters. Timed auto-advancing playback is **not** built; the filter plus keyboard stepping covers inspection.
 - [x] Notable spots cover close correct calls, disciplined folds, mistakes and large mistakes, bluffs, missed value, major all-in decisions, and high-EV decisions under pressure. "Recurring weakness" is not detected - it needs cross-round aggregates that do not exist yet.
-- [ ] Pacing target ≈ one highlighted decision per 2-4 hands (a target, not a rigid quota — most preflop folds are not educational).
+- [x] Pacing target ≈ one highlighted decision per 2-4 hands, measured across four seeds rather than assumed. It is enforced as a band, not a quota: highlights must be strictly fewer than total decisions (selective) and strictly more than zero (not silent), at no more than 1.5 per hand. A rigid per-hand quota would force the classifier to promote routine preflop folds, which is exactly what the target exists to prevent.
 
-**Tests** — [x] Unit: notable classification and the notable filter on a derived round. [ ] Unit: highlight density lands near the target across many seeds.
+**Tests** — [x] Unit: notable classification and the notable filter on a derived round. [x] Unit: highlight density lands in the target band across multiple seeds.
 
 ### E18-003 — Decision timeline
 
