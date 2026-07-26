@@ -25,6 +25,14 @@ const appPath = resolve(
   argumentValue("--app") ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
 );
 const reportPath = resolve(projectRoot, "work", "packaged-input-smoke.json");
+const TABLE_GEOMETRY_VIEWPORTS = [
+  { width: 1100, height: 720 },
+  { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
+  { width: 1920, height: 1080 },
+  { width: 2560, height: 1080 },
+];
+const TABLE_INTERFACE_SCALES = ["compact", "standard", "large", "extra-large"];
 // This is the overall CDP session budget (also bounds every individual CDP
 // command's timeout via CdpClient.send. Native range gestures get a bounded
 // longer per-command allowance because Chromium can wait for compositor input
@@ -415,11 +423,59 @@ async function expectStableTableSceneAfterAdvance(cdp) {
  * package-level test instead of a one-time screenshot review.
  */
 async function expectClearTableInformationLanes(cdp) {
+  const observations = [];
+  try {
+    for (const viewport of TABLE_GEOMETRY_VIEWPORTS) {
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: viewport.width,
+        height: viewport.height,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      for (const scale of TABLE_INTERFACE_SCALES) {
+        await cdp.send("Runtime.evaluate", {
+          expression: `document.documentElement.dataset.interfaceScale = ${JSON.stringify(scale)}`,
+          awaitPromise: false,
+        });
+        // `zoom` changes layout on the next rendering turn. Sampling after a
+        // frame makes this a real stylesheet/DOM geometry assertion rather
+        // than an attribute-only source check.
+        await delay(40);
+        const observation = await inspectTableInformationLanes(cdp);
+        observations.push({ viewport, scale, ...observation });
+      }
+    }
+  } finally {
+    await cdp.send("Emulation.clearDeviceMetricsOverride");
+    await cdp.send("Runtime.evaluate", {
+      expression: 'document.documentElement.dataset.interfaceScale = "standard"',
+      awaitPromise: false,
+    });
+    await delay(40);
+  }
+  const ok = observations.every((observation) => observation.ok === true);
+  record("table information lanes remain visible and non-overlapping across supported viewports and UI scales", ok);
+  if (!ok) {
+    throw new Error(
+      `Table information lanes overlap, are clipped, or are too small: ${JSON.stringify(observations.filter((observation) => !observation.ok))}.`,
+    );
+  }
+}
+
+async function inspectTableInformationLanes(cdp) {
   const result = await cdp.send("Runtime.evaluate", {
     expression: `(() => {
       const intersects = (left, right) =>
         left.left < right.right && left.right > right.left &&
         left.top < right.bottom && left.bottom > right.top;
+      const readable = (element) => {
+        if (!(element instanceof HTMLElement)) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width >= 16 && rect.height >= 12 && rect.right > 0 &&
+          rect.left < innerWidth && rect.bottom > 0 && rect.top < innerHeight &&
+          style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0;
+      };
       const seats = [...document.querySelectorAll('.player-seat:not(.player-seat--hero)')]
         .filter((seat) => seat.getBoundingClientRect().width > 2)
         .map((seat) => {
@@ -428,29 +484,40 @@ async function expectClearTableInformationLanes(cdp) {
           const bet = seat.querySelector('.seat-bet');
           return {
             player: seat.getAttribute('aria-label') || 'unknown player',
-            cardsOverlap: cards.length === 2 && intersects(
+          cardsOverlap: cards.length === 2 && intersects(
               cards[0].getBoundingClientRect(), cards[1].getBoundingClientRect(),
             ),
             betOverlapsStack: Boolean(label && bet && intersects(
               label.getBoundingClientRect(), bet.getBoundingClientRect(),
             )),
+            labelReadable: readable(label),
+            betReadable: !bet || readable(bet),
+            dealerReadable: !seat.querySelector('.dealer-button') || readable(seat.querySelector('.dealer-button')),
+            positionReadable: !seat.querySelector('.seat-position-marker') || readable(seat.querySelector('.seat-position-marker')),
           };
         });
+      const heroHud = document.querySelector('.hero-stack-hud');
+      const heroCards = document.querySelector('.hero-hole-cards');
+      const actionDock = document.querySelector('.action-dock');
+      const heroHudRect = heroHud?.getBoundingClientRect();
+      const heroCardsRect = heroCards?.getBoundingClientRect();
+      const actionDockRect = actionDock?.getBoundingClientRect();
+      const hero = {
+        readable: readable(heroHud),
+        overlapsCards: Boolean(heroHudRect && heroCardsRect && intersects(heroHudRect, heroCardsRect)),
+        overlapsActions: Boolean(heroHudRect && actionDockRect && intersects(heroHudRect, actionDockRect)),
+      };
       return {
         seats,
-        ok: seats.length >= 5 && seats.every((seat) => !seat.cardsOverlap && !seat.betOverlapsStack),
+        hero,
+        ok: seats.length >= 5 && hero.readable && !hero.overlapsCards && !hero.overlapsActions &&
+          seats.every((seat) => !seat.cardsOverlap && !seat.betOverlapsStack &&
+            seat.labelReadable && seat.betReadable && seat.dealerReadable && seat.positionReadable),
       };
     })()`,
     returnByValue: true,
   });
-  const observation = result.result?.value;
-  const ok = observation?.ok === true;
-  record("table card and bet/stack lanes do not overlap", ok);
-  if (!ok) {
-    throw new Error(
-      `Table information lanes overlap or are incomplete: ${JSON.stringify(observation)}.`,
-    );
-  }
+  return result.result?.value ?? { ok: false, reason: "no geometry observation" };
 }
 
 /**
