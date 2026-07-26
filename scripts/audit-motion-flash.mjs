@@ -7,6 +7,11 @@ import { pathToFileURL } from "node:url";
 
 const CSS_EXTENSIONS = new Set([".css", ".scss", ".sass", ".less"]);
 const SCRIPT_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"]);
+// The app deliberately uses a tiered reduced-motion policy. State feedback is
+// retained while the named vestibular tier carries camera/decorative motion.
+// Recognize that explicit policy as well as a conventional blanket override.
+const IN_APP_REDUCED_MOTION_SELECTOR =
+  /\.reduced-motion\s+(?:\*(?:::before|::after)?|\.motion-vestibular(?:\s|\.|:|,|\{))/i;
 const VISUAL_PROPERTIES = new Set([
   "background",
   "background-color",
@@ -238,7 +243,7 @@ export function analyzeCss(css, file = "fixture.css") {
     /@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)/i.test(css) &&
     /animation-(?:duration|iteration-count)\s*:[^;]+!important/i.test(css);
   const hasInAppReduction =
-    /\.reduced-motion\s+\*(?:::before|::after)?[\s,\{]/i.test(css) &&
+    IN_APP_REDUCED_MOTION_SELECTOR.test(css) &&
     /animation-(?:duration|iteration-count)\s*:[^;]+!important/i.test(css);
   const hasRepeatedAnimation = animations.some(
     (animation) =>
@@ -383,7 +388,7 @@ export async function auditProject(rootDirectory) {
   const combinedCss = [...cssText.values()].join("\n");
   const globalSystemReduction =
     /@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)/i.test(combinedCss);
-  const globalInAppReduction = /\.reduced-motion\s+\*/i.test(combinedCss);
+  const globalInAppReduction = IN_APP_REDUCED_MOTION_SELECTOR.test(combinedCss);
   const animations = [];
   const transitions = [];
   const keyframes = [];
