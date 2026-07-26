@@ -395,13 +395,13 @@ readability defect found.
 - **Total invested this hand is an engine/type gap**: the engine tracks `totalCommitted` (`engine/betting.ts:14`, `tournament.ts:125`) but `SeatPlayer` (`src/types/poker.ts:35-44`) has only a single `bet`, populated from `streetCommitted` alone (`tournamentSession.ts:1289`). The UI has no field to read.
 
 **Acceptance criteria**
-- [ ] Every seat visibly shows its committed amount for the current betting round.
-- [ ] The hero's committed amount is visible outside the raise UI.
-- [ ] Amount to call is prominent and near the decision controls.
-- [ ] Total invested this hand is available where useful (requires surfacing `totalCommitted`).
+- [x] Every seat visibly shows its committed amount for the current betting round.
+- [x] The hero's committed amount is visible outside the raise UI.
+- [x] Amount to call is prominent and near the decision controls.
+- [x] Total invested this hand is available where useful (requires surfacing `totalCommitted`).
 - [ ] Current pot and each side-pot amount are visible (E05-004).
 
-**Tests** — [ ] Unit: `SeatPlayer` carries and renders `totalCommitted`. [ ] Unit: hero committed amount renders. [ ] Accessibility: all four values announced.
+**Tests** — [x] Unit: `SeatPlayer` carries and renders `totalCommitted` (`tournamentSession.test.ts`, `PokerTable.heroStack.test.ts`). [x] Unit: hero committed amount renders. [x] Accessibility: stack, committed-this-street, total-invested, and amount-to-call are announced (`PokerTable.accessibility.test.ts`, `PokerTable.heroStack.test.ts`).
 
 ### E02-003 — Make position and blinds unmistakable
 
@@ -412,13 +412,13 @@ readability defect found.
 - Which seats hold SB/BB is not exposed to the UI as seat ids.
 
 **Acceptance criteria**
-- [ ] The dealer button is unmistakable at every supported size.
-- [ ] Small-blind and big-blind seats are marked per seat.
-- [ ] Ante is shown when applicable.
-- [ ] The player immediately knows whether they are button, SB, BB, UTG, acting, or waiting.
-- [ ] Markers are distinguished by more than color.
+- [x] The dealer button is unmistakable at every supported size.
+- [x] Small-blind and big-blind seats are marked per seat.
+- [x] Ante is shown when applicable.
+- [x] The player immediately knows whether they are button, SB, BB, UTG, acting, or waiting.
+- [x] Markers are distinguished by more than color.
 
-**Tests** — [ ] Unit: SB/BB/button markers map to correct seats across a rotation. [ ] Accessibility: position announced for the hero.
+**Tests** — [x] Unit: SB/BB/button markers map to correct seats across a rotation (`PokerTable.heroStack.test.ts`). [x] Accessibility: position is announced for the hero (`heroStackAriaLabel`).
 
 ### E02-004 — Make the dealer button visibly move between hands
 

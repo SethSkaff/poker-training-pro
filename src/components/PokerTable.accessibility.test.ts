@@ -188,6 +188,18 @@ describe("poker table live announcements", () => {
     expect(betLabel).toContain(", dealer button");
     expect(betLabel.startsWith("You,")).toBe(true);
 
+    const investedLabel = playerSeatAriaLabel({
+      isHero: true,
+      name: "You",
+      stack: 3_400,
+      status: "active",
+      showingCards: false,
+      bet: 200,
+      totalCommitted: 800,
+      dealer: false,
+    });
+    expect(investedLabel).toContain(", total invested 800");
+
     const noBetLabel = playerSeatAriaLabel({
       isHero: false,
       name: "Jules",
