@@ -1643,6 +1643,15 @@ None of the existing packaged gates assert anything about presentation:
 Classification: **TEST-COVERAGE GAP** — the gates were built to prove
 correctness and stability, not perceptual quality.
 
+**Progress (2026-07-25).** `audit-packaged-flash-capture.mjs` now runs the
+shipping package in full-motion and reduced-motion passes and fails unless it
+observes a non-zero public chip-travel animation after a real Call, a visible
+hero-fold state before a result strip, and one stable table DOM node across
+each captured burst. The verified run observed 560 ms travel in full motion
+and the 120 ms reduced-motion state-feedback path. Progressive board and
+dealer-button movement still need their own deterministic capture states, so
+the full criterion remains open.
+
 **Acceptance criteria**
 - [ ] A packaged gate captures frames across a hand and asserts that intermediate states exist: board cards appear progressively rather than instantly; chips are observed in transit; the dealer button is observed moving; a fold is observed before its result.
 - [ ] The gate runs twice — full motion and reduced motion — with **different, tier-appropriate expectations** per E08, not "no animation" for both.
