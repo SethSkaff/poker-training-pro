@@ -2993,6 +2993,29 @@ input[type="range"]::-webkit-slider-thumb {
   filter: saturate(0.55);
 }
 
+/* E06-001 step 2: once a hand is legally face up, lift it clear of the seat
+   furniture and enlarge it so the player can actually read the two cards the
+   runout is about to be decided against. The seat itself does not move, so
+   stack, committed bet, and position markers stay exactly where they were. */
+.player-seat.is-revealed .opponent-cards {
+  z-index: 6;
+  gap: 5px;
+  transform: translateY(-10px) scale(1.14);
+  transform-origin: center bottom;
+  transition: transform 260ms cubic-bezier(0.24, 0.82, 0.36, 1);
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.5));
+}
+
+.player-seat.is-revealed .opponent-cards::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -7px -9px -6px -9px;
+  border: 1px solid rgba(255, 214, 138, 0.34);
+  border-radius: 9px;
+  background: rgba(9, 26, 20, 0.72);
+}
+
 .community-placeholder {
   display: block;
   width: 51px;
@@ -5573,6 +5596,12 @@ input[type="range"]::-webkit-slider-thumb {
 @keyframes opponent-card-peek {
   0%, 100% { transform: translateY(0) rotate(-10deg); }
   45% { transform: translate(4px, -5px) rotate(-4deg); }
+}
+
+/* The lift is state, not decoration: with table motion off the revealed hand
+   still sits forward and enlarged, it simply arrives there instantly. */
+:root[data-motion-table="off"] .player-seat.is-revealed .opponent-cards {
+  transition: none !important;
 }
 
 :root[data-motion-table="off"] .seat-bet,

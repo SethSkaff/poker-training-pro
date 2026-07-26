@@ -318,7 +318,7 @@ pot already updated between consecutive frames. Classification: **MISSING FEATUR
 - [x] The flop arrives as a visible three-card dealing sequence (rapid cadence acceptable; the player must see three cards placed).
 - [x] A readable pause lets the board register before the turn.
 - [x] Turn and river each deal visibly with an appropriate pause.
-- [ ] All-in runouts use the stronger sequence in E06.
+- [x] All-in runouts use the stronger sequence in E06. Once this hand's `all-in-reveal` has been presented, every remaining `board-card-dealt` runs on the 1,250 ms suspense cadence instead of the 520 ms live-street one.
 
 **Tests** — [ ] Unit: one board-card event per card, ordered. [ ] Packaged: perceptual gate observes intermediate board states.
 
@@ -671,15 +671,19 @@ card, update equities with animation and a brief suspense pause. 8. Resolve the
 winner. 9. Highlight the winning five. 10. Award main and side pots visibly.
 11. Show eliminations or survival.
 
-**Acceptance criteria**
-- [ ] The sequence above plays in order.
-- [ ] It stays visually connected to the table and hides no important state.
-- [ ] It never misrepresents the math.
-- [ ] It leaks no information before cards are legally revealed.
-- [ ] It respects the corrected reduced-motion policy and remains skippable.
-- [ ] It does not affect the deterministic engine result.
+**Status:** Done — the eleven steps are now realised by the presentation queue
+rather than a bespoke modal, which is what keeps step 2's requirement ("stays
+connected to the table") satisfiable at all.
 
-**Tests** — [ ] Unit: sequence event order for 2-way and 3-way all-ins. [ ] Unit: identical engine result with and without the sequence. [ ] Privacy: no reveal before the legal reveal point. [ ] Accessibility: each stage announced; equity values exposed as text.
+**Acceptance criteria**
+- [x] The sequence above plays in order. `all-in` action → `all-in-reveal` (lifting the involved hands, `styles.css` `.player-seat.is-revealed`) → equity strip → one `board-card-dealt` per card on the slower runout cadence with equity recomputed per card → `showdown` with best-five highlight → `side-pot-formed` / `pot-awarded` → `eliminated`.
+- [x] It stays visually connected to the table and hides no important state. The reveal lifts only the two cards; the seat, stack, committed bet, and position markers do not move, and the equity strip is a corner aside rather than an overlay.
+- [x] It never misrepresents the math. Equity comes from the same deterministic estimator as Rational, and the strip states the unseen-card count and simulation count as its basis.
+- [x] It leaks no information before cards are legally revealed. `all-in-reveal` is emitted only when every live player is all-in with ≥2 board cards to come; the leak sweep in E03-002 covers the negative.
+- [x] It respects the corrected reduced-motion policy and remains skippable. Runout delays scale with speed and the motion tier (313 ms at speed 4; 563 ms with table motion off), and the lift becomes instant rather than absent under `data-motion-table="off"`.
+- [x] It does not affect the deterministic engine result. Pacing lives entirely in `presentationEventDelayMs`, which the engine never reads; the skip-equals-playback test still holds.
+
+**Tests** — [x] Unit: sequence event order for 2-way and 3-way all-ins (`tournamentRunner.test.ts`). [x] Unit: identical engine result with and without the sequence ("reaches the same authoritative hero decision whether presentation events are consumed or skipped"). [x] Unit: the runout cadence is slower than a live street and still scales with speed/motion (`tournamentPresentationClock.test.ts`). [x] Privacy: no reveal before the legal reveal point. [x] Accessibility: each stage announced; equity values exposed as text (`.all-in-equity-strip` is `role="status"` with per-player win/tie/lose text).
 
 ### E06-002 — Wire a player-facing equity readout
 

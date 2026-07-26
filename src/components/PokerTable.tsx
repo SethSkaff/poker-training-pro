@@ -680,7 +680,7 @@ function PlayerSeat({
         isHero ? "player-seat--hero" : ""
       } ${isFolded ? "is-folded" : ""} ${isAllIn ? "is-all-in" : ""} ${
         isOut ? "is-out" : ""
-      } ${wonPot ? "is-winner" : ""}`}
+      } ${wonPot ? "is-winner" : ""} ${hasRevealedCards ? "is-revealed" : ""}`}
       role="group"
       aria-label={playerSeatAriaLabel({
         isHero,
@@ -1593,6 +1593,9 @@ export function PokerTable({
         }
         onComplete();
       },
+      // Betting is already closed once the all-in hands are face up, so the
+      // remaining board cards run out on the slower suspense cadence.
+      { allInRunout: Boolean(tournament?.allInReveal) },
     );
     pendingPresentationEvent.current = delay;
     group.add(delay);

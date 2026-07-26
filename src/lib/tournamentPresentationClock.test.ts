@@ -69,6 +69,51 @@ describe("tournament presentation clock", () => {
     ).toBe(441);
   });
 
+  it("runs an all-in board out more slowly than a live betting street", () => {
+    const boardEvent: TournamentPresentationEvent = {
+      id: "9:hand-4:board-card-dealt:3",
+      kind: "board-card-dealt",
+      handId: "hand-4",
+      street: "turn",
+      cardIndex: 3,
+      card: { rank: "9", suit: "clubs" },
+    };
+    const settings = { reducedMotion: false, transitionMotion: "full" } as const;
+
+    const live = presentationEventDelayMs(boardEvent, 1, settings);
+    const runout = presentationEventDelayMs(boardEvent, 1, settings, {
+      allInRunout: true,
+    });
+    expect(live).toBe(520);
+    expect(runout).toBe(1_250);
+    expect(runout).toBeGreaterThan(live);
+
+    // The reveal itself gets its own beat, long enough to read the hands and
+    // the first equity figures before the next card lands.
+    const reveal: TournamentPresentationEvent = {
+      id: "9:hand-4:all-in-reveal:0",
+      kind: "all-in-reveal",
+      handId: "hand-4",
+      playerIds: ["hero", "villain"],
+      reveals: [],
+    };
+    expect(presentationEventDelayMs(reveal, 1, settings)).toBe(1_500);
+
+    // Speed and the motion policy still scale the runout; it is a longer beat,
+    // not an unskippable one.
+    expect(
+      presentationEventDelayMs(boardEvent, 4, settings, { allInRunout: true }),
+    ).toBe(313);
+    expect(
+      presentationEventDelayMs(
+        boardEvent,
+        1,
+        { reducedMotion: true, transitionMotion: "off" },
+        { allInRunout: true },
+      ),
+    ).toBe(563);
+  });
+
   it("freezes the exact remaining queue-item duration and completes only once", () => {
     const clock = new FakeClock();
     let completions = 0;
