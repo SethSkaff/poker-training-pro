@@ -3,11 +3,41 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { formatChips } from "../lib/format";
-import { heroStackAriaLabel } from "./PokerTable";
+import { heroStackAriaLabel, tablePositionLabelForSeat } from "./PokerTable";
 
 const componentDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 describe("persistent hero stack HUD", () => {
+  it("maps button, blinds, and postflop positions across a full table rotation", () => {
+    const labels = Array.from({ length: 6 }, (_, seat) =>
+      tablePositionLabelForSeat({
+        seat,
+        buttonSeat: 0,
+        smallBlindSeat: 1,
+        bigBlindSeat: 2,
+        playerCount: 6,
+      }),
+    );
+
+    expect(labels).toEqual(["BTN", "SB", "BB", "UTG", "HJ", "MP"]);
+    // Rotate every visible marker one seat: labels must follow the engine
+    // seats rather than a fixed visual slot.
+    expect(tablePositionLabelForSeat({
+      seat: 3,
+      buttonSeat: 1,
+      smallBlindSeat: 2,
+      bigBlindSeat: 3,
+      playerCount: 6,
+    })).toBe("BB");
+    expect(tablePositionLabelForSeat({
+      seat: 4,
+      buttonSeat: 1,
+      smallBlindSeat: 2,
+      bigBlindSeat: 3,
+      playerCount: 6,
+    })).toBe("UTG");
+  });
+
   it("uses the live stack value in visible and accessible status copy", () => {
     expect(heroStackAriaLabel({
       stack: 3_600,

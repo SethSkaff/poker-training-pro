@@ -348,6 +348,36 @@ export function heroStackAriaLabel({
   ].join(" ") + positionSummary;
 }
 
+/**
+ * Public table-position label derived only from the visible button/blind
+ * seats. Keeping it pure makes each rotation testable and ensures the HUD,
+ * seat marker, and assistive label always agree on the same position.
+ */
+export function tablePositionLabelForSeat({
+  seat,
+  buttonSeat,
+  smallBlindSeat,
+  bigBlindSeat,
+  playerCount,
+}: {
+  seat: number;
+  buttonSeat?: number;
+  smallBlindSeat?: number;
+  bigBlindSeat?: number;
+  playerCount: number;
+}): string {
+  if (seat === buttonSeat) return formatMessage("table.position.button");
+  if (seat === smallBlindSeat) return formatMessage("table.position.smallBlind");
+  if (seat === bigBlindSeat) return formatMessage("table.position.bigBlind");
+  if (bigBlindSeat === undefined || playerCount <= 0) return "";
+  const distance = (seat - bigBlindSeat + playerCount) % playerCount;
+  if (distance === 1) return formatMessage("table.position.utg");
+  if (distance === playerCount - 1) return formatMessage("table.position.cutoff");
+  return distance === 2
+    ? formatMessage("table.position.hijack")
+    : formatMessage("table.position.middle");
+}
+
 function PlayingCard({
   card,
   hidden = false,
@@ -2022,18 +2052,14 @@ export function PokerTable({
   const heroStack = heroPlayer?.stack ?? scenario.minimumRaise;
   const heroStreetCommitted = heroPlayer?.bet ?? 0;
   const heroTotalCommitted = heroPlayer?.totalCommitted ?? heroStreetCommitted;
-  const positionLabelForSeat = (seat: number): string => {
-    if (seat === scenario.buttonSeat) return formatMessage("table.position.button");
-    if (seat === scenario.smallBlindSeat) return formatMessage("table.position.smallBlind");
-    if (seat === scenario.bigBlindSeat) return formatMessage("table.position.bigBlind");
-    if (scenario.bigBlindSeat === undefined) return "";
-    const distance = (seat - scenario.bigBlindSeat + scenario.players.length) % scenario.players.length;
-    if (distance === 1) return formatMessage("table.position.utg");
-    if (distance === scenario.players.length - 1) return formatMessage("table.position.cutoff");
-    return distance === 2
-      ? formatMessage("table.position.hijack")
-      : formatMessage("table.position.middle");
-  };
+  const positionLabelForSeat = (seat: number): string =>
+    tablePositionLabelForSeat({
+      seat,
+      buttonSeat: scenario.buttonSeat,
+      smallBlindSeat: scenario.smallBlindSeat,
+      bigBlindSeat: scenario.bigBlindSeat,
+      playerCount: scenario.players.length,
+    });
   const heroPositionLabel = positionLabelForSeat(scenario.heroSeat);
   const dealerMoveEvent =
     tournament?.presentationEvent?.kind === "button-moved"
