@@ -1,5 +1,12 @@
-import { ArrowLeft, ArrowRight, LockKeyhole, Trophy } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronRight,
+  LockKeyhole,
+  Trophy,
+} from "lucide-react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { formatClock, formatChips } from "../lib/format";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import { useResilientAsset } from "../lib/useResilientAsset";
@@ -461,6 +468,13 @@ export function TourLobby({
   const selected = events.find((event) => event.id === selectedId) ?? initialEvent;
   const selectedResult = resultForEvent(careerResults, selected.id);
   const openingLevel = selected.structure.levels[0];
+  // The marker sits on the current event's slot: with N events the slots are
+  // centred at (i + 0.5)/N of the route's width.
+  const currentIndex = Math.max(
+    0,
+    events.findIndex((event) => event.id === initialEvent.id),
+  );
+  const routeProgress = ((currentIndex + 0.5) / Math.max(1, events.length)) * 100;
 
   return (
     <main className="night-shell night-shell--tour" {...localeTextAttributes()}>
@@ -499,9 +513,17 @@ export function TourLobby({
           </p>
         </header>
 
+        {/*
+          A horizontal route rather than a stacked list: the journey reads
+          left-to-right, with the marker sitting on the current event and the
+          connecting line filled up to it. Stage is conveyed by an explicit
+          text label and a distinct glyph as well as colour, so the states stay
+          distinguishable without it.
+        */}
         <ol
           className="event-route"
           aria-label={formatMessage("dashboard.tour.eventsAriaLabel")}
+          style={{ "--route-progress": `${routeProgress}%` } as CSSProperties}
         >
           {events.map((event, index) => {
             const result = resultForEvent(careerResults, event.id);
@@ -518,8 +540,15 @@ export function TourLobby({
                       fieldSize: result.fieldSize,
                     })
                   : formatMessage("dashboard.tour.available");
+            const stage = !event.unlocked
+              ? "future"
+              : result?.qualified
+                ? "complete"
+                : event.id === initialEvent.id
+                  ? "current"
+                  : "future";
             return (
-              <li key={event.id}>
+              <li key={event.id} data-stage={stage}>
                 <button
                   type="button"
                   disabled={!event.unlocked}
@@ -527,10 +556,21 @@ export function TourLobby({
                   aria-current={selected.id === event.id ? "true" : undefined}
                   onClick={() => setSelectedId(event.id)}
                 >
-                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <span className="event-route__index">
+                    {stage === "complete" ? (
+                      <Check size={15} aria-hidden="true" />
+                    ) : stage === "current" ? (
+                      <ChevronRight size={15} aria-hidden="true" />
+                    ) : (
+                      String(index + 1).padStart(2, "0")
+                    )}
+                  </span>
                   <div>
                     <strong>{event.name}</strong>
                     <small>{status}</small>
+                    <em className="event-route__stage">
+                      {formatMessage(`dashboard.tour.stage.${stage}`)}
+                    </em>
                   </div>
                   {!event.unlocked && <LockKeyhole size={15} />}
                 </button>

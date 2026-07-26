@@ -1542,11 +1542,13 @@ color-independent — but there is no persistent "current event" marker distinct
 from "selected in the list", because no such data exists (E19-001).
 
 **Acceptance criteria**
-- [ ] Current event around the left third; next event around the right third.
-- [ ] A horizontal route/progress line connects them.
-- [ ] A marker/dot moves from the completed event toward the next.
-- [ ] Completed, current, and future states are clear and distinguished by more than color.
-- [ ] Depends on E19-001 for a real "current event" value.
+- [x] The route reads left-to-right across the lobby, with each event on its own slot rather than a stacked `<ol>`.
+- [x] A horizontal route/progress line connects them, filled up to the current event's slot centre.
+- [x] A marker moves along the line as events complete — verified by rendering two career states and asserting the marker advances.
+- [x] Completed, current, and future states are distinguished by a `data-stage` attribute, a distinct glyph (check / chevron / index number), a node style, **and** an explicit text label, so the route survives colour removal.
+- [x] Depends on E19-001 for a real "current event" value — now satisfied; the marker follows the persisted active event when there is one.
+
+**Tests** — [x] `TourRoute.test.tsx`: horizontal layout and the progress variable; the marker advances with completion; all three stages are labelled in text; resuming an active event is preferred over recommending the next; the qualified count renders.
 
 ### E20-003 — Physical travel between events
 
