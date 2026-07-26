@@ -196,6 +196,7 @@ export function publicPresentationSound(
   switch (event.kind) {
     case "hole-cards-dealt":
     case "board-card-dealt":
+    case "all-in-reveal":
       return "deal";
     case "blinds-posted":
     case "bets-collected":

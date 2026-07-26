@@ -109,6 +109,13 @@ describe("public tournament action presentation", () => {
       playerIds: ["hero", "opponent"],
     })).toBe("deal");
     expect(publicPresentationSound({
+      id: "all-in-reveal",
+      kind: "all-in-reveal",
+      handId,
+      playerIds: ["hero", "opponent"],
+      reveals: [],
+    })).toBe("deal");
+    expect(publicPresentationSound({
       id: "blinds",
       kind: "blinds-posted",
       handId,
