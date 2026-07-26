@@ -99,10 +99,22 @@ const SEQUENCE_PLAN = [
     requiredSignal: "chipTravel",
   },
   {
+    id: "board-card-progression",
+    label: "Flop cards enter the board one at a time",
+    durationMs: 1_100,
+    requiredSignal: "boardProgression",
+  },
+  {
     id: "hero-fold-state",
     label: "Hero fold is visible before the hand can resolve",
     durationMs: 900,
     requiredSignal: "heroFolded",
+  },
+  {
+    id: "dealer-button-move",
+    label: "Dealer button travels before the next hand posts blinds",
+    durationMs: 900,
+    requiredSignal: "dealerMove",
   },
 ];
 
@@ -269,6 +281,13 @@ async function runCapturePass(appPath, { passId, reducedMotion }) {
     await waitForSelector(cdp, child, output, deadline, ".chip-travel", "hero wager chip travel");
     sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("hero-wager-travel")));
 
+    // Calling leaves the hero and the original bettor live (or produces an
+    // all-in runout), so public board cards must now be staged one by one.
+    // The runner emits one board-card-dealt event per card; this observes that
+    // the visible board count increases across the captured frame burst.
+    await waitForSelector(cdp, child, output, deadline, ".board-card-entering", "progressive flop entry");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("board-card-progression")));
+
     // Let the public queue advance to the next real hero decision, then fold
     // through the normal player control. The capture starts while the folded
     // table state is visible and before a result strip can replace it.
@@ -276,6 +295,11 @@ async function runCapturePass(appPath, { passId, reducedMotion }) {
     await clickSelector(cdp, ".action-button--fold");
     await waitForSelector(cdp, child, output, deadline, ".player-seat--hero.is-folded", "visible hero fold state");
     sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("hero-fold-state")));
+
+    // The hero remains seated after folding. Once the public hand settles,
+    // the next hand starts with the button-moved milestone before blind posts.
+    await waitForSelector(cdp, child, output, deadline, ".dealer-button-travel", "dealer button travel between hands");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("dealer-button-move")));
 
     assertNoFatalCdpEvents(cdp.takeFatalEvents());
   } finally {
@@ -426,6 +450,15 @@ async function readPresentationSignals(cdp) {
           : 0,
         heroFolded: Boolean(document.querySelector('.player-seat--hero.is-folded')),
         handResultVisible: Boolean(document.querySelector('.showdown-result-strip')),
+        boardEntering: Boolean(document.querySelector('.board-card-entering')),
+        communityCardCount: document.querySelectorAll('.community-cards .playing-card').length,
+        dealerMoving: Boolean(document.querySelector('.dealer-button-travel')),
+        dealerAnimationMs: (() => {
+          const dealer = document.querySelector('.dealer-button-travel');
+          return dealer instanceof HTMLElement
+            ? Number.parseFloat(getComputedStyle(dealer).animationDuration) * 1000
+            : 0;
+        })(),
       };
     })()`,
     returnByValue: true,
@@ -449,6 +482,17 @@ function summarizePerceptualSignals(rawFrames) {
     heroFolded: {
       observed: heroFoldedFrames.length > 0 && heroFoldedFrames.some((signal) => signal.handResultVisible === false),
       frameCount: heroFoldedFrames.length,
+    },
+    boardProgression: {
+      observed: signals.some((signal) => signal.boardEntering === true) &&
+        new Set(signals.map((signal) => signal.communityCardCount).filter(Number.isFinite)).size >= 2,
+      counts: signals.map((signal) => signal.communityCardCount),
+    },
+    dealerMove: {
+      observed: signals.some((signal) => signal.dealerMoving === true && signal.dealerAnimationMs > 0),
+      animationDurationsMs: signals
+        .filter((signal) => signal.dealerMoving === true)
+        .map((signal) => signal.dealerAnimationMs),
     },
   };
 }
