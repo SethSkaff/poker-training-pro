@@ -1657,7 +1657,7 @@ timeout classification remains open.
 - [x] The gate runs twice — full motion and reduced motion — with **different, tier-appropriate expectations** per E08, not "no animation" for both.
 - [x] It asserts non-zero effective animation duration for the state-communicating tier.
 - [x] It fails if the table subtree remounts during a hand (guards E01-001 against regression).
-- [ ] Flakiness is handled per the existing input-smoke precedent, and host-contention CDP timeouts are reported separately from genuine product failures.
+- [x] Flakiness is handled per the existing input-smoke precedent, and host-contention CDP timeouts are reported separately from genuine product failures. The perceptual capture exits with the explicit `inconclusive-cdp-timeout` outcome for a CDP deadline; other failures remain product failures.
 
 ### E25-002 — Replace the collision claim with a real, re-runnable gate
 
