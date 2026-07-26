@@ -17,4 +17,13 @@ describe("seeded tournament roster", () => {
     expect(normal).not.toEqual(rational);
     expect(normal).not.toEqual(regional);
   });
+
+  it("changes the seated field for consecutive deterministic session seeds", () => {
+    const first = createSessionOpponents("career-session-1", "local-qualifier", "normal");
+    const second = createSessionOpponents("career-session-2", "local-qualifier", "normal");
+
+    expect(first.map((entrant) => entrant.id)).not.toEqual(
+      second.map((entrant) => entrant.id),
+    );
+  });
 });
