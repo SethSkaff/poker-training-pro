@@ -41,6 +41,12 @@ export const defaultProgress: PlayerProgress = {
   results: [],
   unlockedCircuit: 1,
   career: { normal: { results: [] }, rational: { results: [] } },
+  reviewTotals: {
+    roundsReviewed: 0,
+    decisions: 0,
+    bestDecisions: 0,
+    totalRegretBigBlinds: 0,
+  },
 };
 
 function readValue<T>(key: string, fallback: T, legacyKey?: string): T {

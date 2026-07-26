@@ -112,7 +112,7 @@ describe("deterministic bot league", () => {
 describe("position, stack depth, and street reach the policy", () => {
   const rational = report.policies.rational;
 
-  const actionMix = (slice: { chosenActions: Record<string, number> }) =>
+  const actionMix = (slice: { chosenActions: unknown }) =>
     JSON.stringify(slice.chosenActions);
 
   it("measurably changes behaviour by street", () => {

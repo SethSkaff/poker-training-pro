@@ -137,3 +137,75 @@ describe("career persistence", () => {
     expect(transfer).toContain("career: career.value");
   });
 });
+
+describe("review aggregates", () => {
+  it("round-trips lifetime review totals", () => {
+    const envelope = createSaveEnvelope(defaultSettings, {
+      ...defaultProgress,
+      reviewTotals: {
+        roundsReviewed: 3,
+        decisions: 47,
+        bestDecisions: 31,
+        totalRegretBigBlinds: 12.5,
+      },
+    });
+    expect(envelope.data.progress.reviewTotals).toEqual({
+      roundsReviewed: 3,
+      decisions: 47,
+      bestDecisions: 31,
+      totalRegretBigBlinds: 12.5,
+    });
+  });
+
+  it("migrates a save written before reviews existed", () => {
+    const legacy = { ...defaultProgress } as Record<string, unknown>;
+    delete legacy.reviewTotals;
+    expect(
+      createSaveEnvelope(defaultSettings, legacy).data.progress.reviewTotals,
+    ).toEqual({
+      roundsReviewed: 0,
+      decisions: 0,
+      bestDecisions: 0,
+      totalRegretBigBlinds: 0,
+    });
+  });
+
+  it("clamps totals that cannot be true", () => {
+    // More "best" decisions than decisions is not a reason to reject a save,
+    // but it must not be shown as an accuracy above 100%.
+    const envelope = createSaveEnvelope(defaultSettings, {
+      ...defaultProgress,
+      reviewTotals: {
+        roundsReviewed: 1,
+        decisions: 10,
+        bestDecisions: 999,
+        totalRegretBigBlinds: -5,
+      },
+    });
+    expect(envelope.data.progress.reviewTotals?.bestDecisions).toBe(10);
+    expect(envelope.data.progress.reviewTotals?.totalRegretBigBlinds).toBe(0);
+  });
+
+  it("persists only aggregates, never per-decision annotations", () => {
+    // The review recomputes annotations from the replay on demand; storing
+    // them would be the second hand-history database E18-001 rules out.
+    const review = readFileSync(
+      path.join(sourceRoot, "modes", "handReview.ts"),
+      "utf8",
+    );
+    expect(review).not.toContain("persistBoundary");
+    expect(review).not.toContain("localStorage");
+    const app = readFileSync(path.join(sourceRoot, "App.tsx"), "utf8");
+    expect(app).toContain("reviewTotals:");
+    expect(app).not.toContain("reviewDecisions:");
+  });
+
+  it("mirrors the review schema in the main-process validator", () => {
+    const transfer = readFileSync(
+      path.join(sourceRoot, "..", "electron", "save-transfer.cjs"),
+      "utf8",
+    );
+    expect(transfer).toContain("function validateReviewTotals(");
+    expect(transfer).toContain("reviewTotals: validateReviewTotals(");
+  });
+});

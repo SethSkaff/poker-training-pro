@@ -1776,6 +1776,28 @@ export default function App() {
           <HandReviewScreen
             replay={reviewable}
             onBack={() => setScreen("home")}
+            onReviewed={(totals) => {
+              // Only the rolling totals persist; the annotations behind them
+              // are re-derivable from the replay and are not stored.
+              const previous = progress.reviewTotals ?? {
+                roundsReviewed: 0,
+                decisions: 0,
+                bestDecisions: 0,
+                totalRegretBigBlinds: 0,
+              };
+              const nextProgress: PlayerProgress = {
+                ...progress,
+                reviewTotals: {
+                  roundsReviewed: previous.roundsReviewed + 1,
+                  decisions: previous.decisions + totals.decisions,
+                  bestDecisions: previous.bestDecisions + totals.bestDecisions,
+                  totalRegretBigBlinds:
+                    previous.totalRegretBigBlinds + totals.totalRegretBigBlinds,
+                },
+              };
+              setProgress(nextProgress);
+              persistBoundary("result", settings, nextProgress);
+            }}
           />
         </Suspense>
       );

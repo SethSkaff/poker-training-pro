@@ -24,6 +24,15 @@ import type { TournamentRunnerReplay } from "../modes/tournamentRunner";
 interface HandReviewScreenProps {
   replay: TournamentRunnerReplay;
   onBack: () => void;
+  /**
+   * Called once per derived round with that round's totals. Only aggregates
+   * leave this screen — the per-decision annotations stay ephemeral.
+   */
+  onReviewed?: (totals: {
+    decisions: number;
+    bestDecisions: number;
+    totalRegretBigBlinds: number;
+  }) => void;
 }
 
 /** Non-colour glyph per quality band, so red/green stays supplemental. */
@@ -45,7 +54,11 @@ function actionLabel(action: { type: string; to?: number }): string {
     : `${formatMessage(`review.action.${action.type}`)} ${formatChips(action.to)}`;
 }
 
-export function HandReviewScreen({ replay, onBack }: HandReviewScreenProps) {
+export function HandReviewScreen({
+  replay,
+  onBack,
+  onReviewed,
+}: HandReviewScreenProps) {
   const [review, setReview] = useState<HandReview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
@@ -61,7 +74,18 @@ export function HandReviewScreen({ replay, onBack }: HandReviewScreenProps) {
     setError(null);
     void deriveHandReview(replay, { signal: controller.signal })
       .then((derived) => {
-        if (!controller.signal.aborted) setReview(derived);
+        if (controller.signal.aborted) return;
+        setReview(derived);
+        onReviewed?.({
+          decisions: derived.decisions.length,
+          bestDecisions: derived.decisions.filter(
+            (decision) => decision.quality === "best",
+          ).length,
+          totalRegretBigBlinds: derived.decisions.reduce(
+            (sum, decision) => sum + decision.math.evRegretBigBlinds,
+            0,
+          ),
+        });
       })
       .catch((cause: unknown) => {
         if (cause instanceof HandReviewCancelledError) return;
@@ -73,6 +97,9 @@ export function HandReviewScreen({ replay, onBack }: HandReviewScreenProps) {
         );
       });
     return () => controller.abort();
+    // `onReviewed` is intentionally excluded: a new identity from the parent
+    // must not re-derive an already-reviewed round.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replay]);
 
   const visible = useMemo(

@@ -369,6 +369,31 @@ function normalizeProgress(value: unknown): PlayerProgress {
       ),
     ),
     career: normalizeCareer(source.career),
+    reviewTotals: normalizeReviewTotals(source.reviewTotals),
+  };
+}
+
+/**
+ * Rolling review aggregates. Optional in the schema, so a save written before
+ * reviews existed migrates to zeroes rather than being rejected.
+ */
+function normalizeReviewTotals(
+  value: unknown,
+): PlayerProgress["reviewTotals"] {
+  const source = isRecord(value) ? value : {};
+  const decisions = nonNegativeInteger(source.decisions, 0);
+  return {
+    roundsReviewed: nonNegativeInteger(source.roundsReviewed, 0),
+    decisions,
+    // Cannot exceed the decisions it is counted from.
+    bestDecisions: Math.min(
+      decisions,
+      nonNegativeInteger(source.bestDecisions, 0),
+    ),
+    totalRegretBigBlinds: Math.max(
+      0,
+      finiteNumber(source.totalRegretBigBlinds, 0),
+    ),
   };
 }
 

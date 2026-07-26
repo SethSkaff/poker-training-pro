@@ -1499,7 +1499,15 @@ base** and should be replaced rather than extended.
 - [x] Segmented by street, tournament phase (early/middle/late/qualification/heads-up), risk bucket (low/medium/high/all-in), and decision type.
 - [x] Clicking a street segment filters the review to those decisions.
 - [x] **Sample counts are always shown, and a segment below 8 decisions is explicitly marked "too few to read into"** rather than presented as a finding.
-- [ ] Long-term aggregates persist and are surfaced in `PlayerRecord`. Not built - the review is per-round only.
+- [x] Long-term aggregates persist and are surfaced in `PlayerRecord`. `PlayerProgress.reviewTotals` accumulates rounds reviewed, decisions, best-line decisions, and total EV given up; the record sheet shows rounds reviewed and lifetime review accuracy **with its decision count beside it**, so a single reviewed round is not read as a trend. Accuracy renders as "—" rather than 0% until something has actually been reviewed, so an untouched profile does not read as failing.
+
+**Only aggregates persist.** The per-decision annotations stay ephemeral and
+are re-derived from the replay on demand — storing them would be the second
+hand-history database E18-001 rules out. Asserted directly: `handReview.ts`
+contains no persistence call, and `App.tsx` writes `reviewTotals` and nothing
+per-decision. The main-process import validator mirrors the schema and clamps
+impossible totals (more best-decisions than decisions, negative regret) rather
+than rejecting the save.
 
 **Tests** — [x] Unit: segment assignment partitions the decision set exactly (street counts sum to the total). [x] Unit: accuracy stays in [0,1] and small samples are flagged unreliable at the documented threshold.
 

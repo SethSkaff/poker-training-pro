@@ -664,6 +664,12 @@ export function PlayerRecord({ progress, onBack }: PlayerRecordProps) {
     progress.trainingCompleted > 0
       ? progress.totalDecisionMs / progress.trainingCompleted
       : 0;
+  // Undefined rather than 0% until at least one round has been reviewed, so an
+  // untouched profile does not read as either perfect or failing.
+  const reviewAccuracy =
+    progress.reviewTotals && progress.reviewTotals.decisions > 0
+      ? progress.reviewTotals.bestDecisions / progress.reviewTotals.decisions
+      : undefined;
 
   return (
     <main className="night-shell night-shell--overlay" {...localeTextAttributes()}>

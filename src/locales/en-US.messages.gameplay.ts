@@ -185,6 +185,8 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "dashboard.record.mathElo": "Math Elo",
   "dashboard.record.practiceHands": "Practice hands",
   "dashboard.record.averageDecision": "Average decision",
+  "dashboard.record.roundsReviewed": "Rounds reviewed",
+  "dashboard.record.reviewAccuracy": "Review accuracy (decisions)",
 
   "dashboard.ceremony.champion": "Champion",
   "dashboard.ceremony.qualified": "Qualified",

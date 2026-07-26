@@ -64,6 +64,12 @@ const DEFAULT_PROGRESS = Object.freeze({
   results: [],
   unlockedCircuit: 1,
   career: { normal: { results: [] }, rational: { results: [] } },
+  reviewTotals: {
+    roundsReviewed: 0,
+    decisions: 0,
+    bestDecisions: 0,
+    totalRegretBigBlinds: 0,
+  },
 });
 
 const ACTIONS = new Set(["fold", "check", "call", "raise", "all-in"]);
@@ -569,7 +575,29 @@ function validateCurrentProgress(value) {
       results,
       unlockedCircuit: Math.max(1, value.unlockedCircuit),
       career: career.value,
+      reviewTotals: validateReviewTotals(value.reviewTotals),
     },
+  };
+}
+
+/**
+ * Rolling review aggregates. Optional, and clamped rather than rejected: a
+ * nonsensical total is a display problem, not a reason to refuse an import.
+ */
+function validateReviewTotals(value) {
+  const source = isRecord(value) ? value : {};
+  const int = (candidate) =>
+    Number.isInteger(candidate) && candidate >= 0 ? candidate : 0;
+  const decisions = int(source.decisions);
+  return {
+    roundsReviewed: int(source.roundsReviewed),
+    decisions,
+    bestDecisions: Math.min(decisions, int(source.bestDecisions)),
+    totalRegretBigBlinds:
+      Number.isFinite(source.totalRegretBigBlinds) &&
+      source.totalRegretBigBlinds >= 0
+        ? source.totalRegretBigBlinds
+        : 0,
   };
 }
 
@@ -774,6 +802,12 @@ function normalizeLegacyProgress(value) {
     // A legacy (pre-versioning) save predates career tracking entirely, so
     // there is nothing to carry forward; empty tracks keep the shape valid.
     career: { normal: { results: [] }, rational: { results: [] } },
+    reviewTotals: {
+      roundsReviewed: 0,
+      decisions: 0,
+      bestDecisions: 0,
+      totalRegretBigBlinds: 0,
+    },
   };
 }
 

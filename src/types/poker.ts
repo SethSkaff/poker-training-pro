@@ -163,6 +163,20 @@ export interface PlayerProgress {
     normal: CareerTrack;
     rational: CareerTrack;
   };
+  /**
+   * Rolling aggregates from post-round reviews.
+   *
+   * Only these totals persist — the per-decision annotations a review computes
+   * stay ephemeral, because they are re-derivable from the replay and storing
+   * them would be a second hand-history database. Optional for the same
+   * migration reason as `career`.
+   */
+  reviewTotals?: {
+    roundsReviewed: number;
+    decisions: number;
+    bestDecisions: number;
+    totalRegretBigBlinds: number;
+  };
 }
 
 // Persisted per-device control remaps. Only differences from the built-in
