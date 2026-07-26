@@ -5431,7 +5431,21 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .seat-action-hand--hold {
-  display: none;
+  left: -14px;
+  bottom: 10px;
+  width: 30px;
+  opacity: .9;
+  transform: rotate(-10deg);
+  animation: opponent-card-peek 1.8s ease-in-out infinite;
+}
+
+.seat-action-hand--hold::after {
+  top: -11px;
+  right: -6px;
+  width: 16px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(145deg, #f4eee0, #aeb7b2);
 }
 
 @keyframes opponent-chip-hand {
@@ -5554,6 +5568,11 @@ input[type="range"]::-webkit-slider-thumb {
 
 :root[data-motion-table="off"] .thinking-ring {
   animation: none !important;
+}
+
+@keyframes opponent-card-peek {
+  0%, 100% { transform: translateY(0) rotate(-10deg); }
+  45% { transform: translate(4px, -5px) rotate(-4deg); }
 }
 
 :root[data-motion-table="off"] .seat-bet,

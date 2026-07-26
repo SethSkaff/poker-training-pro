@@ -877,7 +877,7 @@ rather than leaving the table.
 
 **Acceptance criteria**
 - [ ] Receive, peek, hold, muck, check the felt, gather/count/push chips, call, raise, go all-in, collect a pot, react to winning, and leave after elimination are each visible on the character.
-- [ ] `hold` has a real visual; opponent peek exists.
+- [x] `hold` has a real visual; opponent peek exists. Active opponents now visibly lift their face-down cards with a public-state-only hand pose; `PokerTable.characterGesture.test.ts` covers the hold/peek selection and action priority.
 - [ ] Animation reflects only public state, personality, pacing, and tournament context — **never** hidden-card strength.
 - [ ] Motion tiers per E08.
 

@@ -309,6 +309,26 @@ export interface SeatPresentationUpdate {
   eliminated?: boolean;
 }
 
+/** Public-only character gesture selection. Deliberately accepts no cards or
+ * policy output, so appearance and movement cannot become a hand-strength tell. */
+export function seatGestureForPublicState(input: {
+  wonPot?: boolean;
+  status: SeatPlayer["status"];
+  bet: number;
+  recentAction?: BettingActionType;
+  showingFaceDownCards: boolean;
+  hasPublicReveal: boolean;
+}): "win" | "all-in" | "fold" | "bet" | "check" | "call" | "hold" | undefined {
+  if (input.wonPot) return "win";
+  if (input.status === "all-in" || input.recentAction === "all-in") return "all-in";
+  if (input.status === "folded" || input.recentAction === "fold") return "fold";
+  if (input.bet > 0 || input.recentAction === "bet" || input.recentAction === "raise") return "bet";
+  if (input.recentAction === "check") return "check";
+  if (input.recentAction === "call") return "call";
+  if (input.showingFaceDownCards && !input.hasPublicReveal && input.status === "active") return "hold";
+  return undefined;
+}
+
 /**
  * Projects one renderer-safe tournament event onto an individual seat. The
  * projection deliberately reads no scenario cards, so it is safe for every
@@ -645,21 +665,14 @@ function PlayerSeat({
   const hasRevealedCards = revealedCards?.length === 2;
   const shouldHoldCards =
     isShowingCards && !hasRevealedCards && player.status === "active" && !isMucking;
-  const gesture = wonPot
-    ? "win"
-    : isAllIn
-      ? "all-in"
-      : isFolded
-        ? "fold"
-        : player.bet > 0 || recentAction === "bet" || recentAction === "raise"
-          ? "bet"
-          : recentAction === "check"
-            ? "check"
-            : recentAction === "call"
-              ? "call"
-              : shouldHoldCards
-                ? "hold"
-                : undefined;
+  const gesture = seatGestureForPublicState({
+    wonPot,
+    status: player.status,
+    bet: player.bet,
+    recentAction,
+    showingFaceDownCards: isShowingCards,
+    hasPublicReveal: hasRevealedCards,
+  });
 
   return (
     <div
