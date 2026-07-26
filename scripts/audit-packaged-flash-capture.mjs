@@ -700,6 +700,14 @@ function parseArguments(arguments_) {
 const isMain =
   typeof process.argv[1] === "string" && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 
+/** A CDP deadline proves neither a presentation pass nor a product failure. */
+export function classifyCaptureFailure(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /^CDP command .* timed out\.$/.test(message)
+    ? "inconclusive-cdp-timeout"
+    : "product-failure";
+}
+
 if (isMain) {
   try {
     const report = await runPackagedFlashCapture(parseArguments(process.argv.slice(2)));
@@ -718,9 +726,10 @@ if (isMain) {
     );
     if (!report.overallPass) process.exitCode = 1;
   } catch (error) {
+    const outcome = classifyCaptureFailure(error);
     console.error(
-      `Packaged flash/luminance analysis failed to run: ${error instanceof Error ? error.message : "unknown error"}`,
+      `Packaged flash/luminance analysis ${outcome}: ${error instanceof Error ? error.message : "unknown error"}`,
     );
-    process.exitCode = 1;
+    process.exitCode = outcome === "inconclusive-cdp-timeout" ? 2 : 1;
   }
 }
