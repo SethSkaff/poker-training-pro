@@ -832,13 +832,13 @@ the architecture decision.
 **Audit** — Current range is ±36px flat translate plus a 0.94–1.06 scale.
 
 **Acceptance criteria**
-- [ ] Looking left/right produces a genuinely spatial change, with parallax between depth layers.
-- [ ] Center-view command works and is discoverable.
-- [ ] Keyboard, controller, and pointer control with sensible bounds; no unrestricted free camera in normal play.
-- [ ] Camera sensitivity, recenter behavior, field-of-view/zoom choice, and an option to disable automatic camera movement (this also satisfies the corresponding Part II accessibility item).
-- [ ] A fixed/reduced-motion alternative.
+- [x] Looking left/right produces a genuinely spatial change, with parallax between depth layers (E09-002's three-plane `--camera-pan` fractions).
+- [x] Center-view command works and is discoverable. It was keyboard-only (X); the camera control now has a third button that both recenters and reads out the current heading ("Centered" / "Looking left"), and disables itself when already square.
+- [x] Keyboard (Q/E/X), controller (D-pad left/right/down), and pointer control, all remappable, with the pan clamped to ±2 on every path — no free camera in normal play.
+- [x] Camera sensitivity, recenter behavior, field-of-view/zoom choice, and an option to disable automatic camera movement are all in Settings (`cameraSensitivity`, `cameraView`, `cameraMotion`).
+- [x] A fixed/reduced-motion alternative: `data-camera-motion="off"` stops the parallax transform and transition outright while leaving the layers legible.
 
-**Tests** — [ ] Unit: pan bounds and recenter. [ ] Accessibility: full keyboard and controller parity; auto-camera disable honored.
+**Tests** — [x] Unit: pan bounds and recenter, plus device parity across keyboard/gamepad/pointer for all three camera actions (`PokerTable.camera.test.ts`). [x] Accessibility: every camera action is remappable and carries a pointer hint; auto-camera disable is honored (`PokerTable.roomDepth.test.ts`).
 
 ### E09-004 — Make room arrival a real spatial transition
 

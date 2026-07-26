@@ -318,6 +318,11 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
 
   "table.camera.left": "Look one seat left",
   "table.camera.right": "Look one seat right",
+  "table.camera.center": "Recenter the table view",
+  "table.camera.centered": "Centered",
+  "table.camera.offset": "Looking {direction}",
+  "table.camera.directionLeft": "left",
+  "table.camera.directionRight": "right",
   "table.camera.viewLabel": "Table view",
 
   "table.felt.brand": "PTP · CHAMPIONSHIP",

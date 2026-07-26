@@ -2874,6 +2874,42 @@ input[type="range"]::-webkit-slider-thumb {
   background: rgba(93, 228, 206, 0.07);
 }
 
+.camera-controls__center {
+  display: grid;
+  width: auto;
+  min-width: 86px;
+  height: 26px;
+  padding: 0 8px;
+  gap: 0;
+  place-items: center;
+  line-height: 1.1;
+}
+
+.camera-controls__center > span {
+  font-size: 7px;
+  letter-spacing: 0.09em;
+}
+
+.camera-controls__center > b {
+  color: var(--cyan);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.camera-controls__center:disabled {
+  cursor: default;
+}
+
+.camera-controls__center:disabled > b {
+  color: var(--muted);
+}
+
+.camera-controls__center:disabled:hover {
+  color: var(--muted);
+  background: transparent;
+}
+
 .poker-scene {
   position: absolute;
   top: 30px;

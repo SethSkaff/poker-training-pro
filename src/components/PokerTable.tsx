@@ -2735,7 +2735,32 @@ export function PokerTable({
             >
               <ChevronLeft size={17} />
             </button>
-            <span>{formatMessage("table.camera.viewLabel")}</span>
+            {/*
+              Recenter was previously keyboard-only (X), so a pointer player
+              had no way back to a square view except panning by eye. It is
+              also the live readout of where the camera is pointing, and it
+              disables itself when already centred rather than disappearing.
+            */}
+            <button
+              type="button"
+              className="camera-controls__center"
+              onClick={() => setCameraPan(0)}
+              disabled={cameraPan === 0}
+              aria-label={formatMessage("table.camera.center")}
+            >
+              <span>{formatMessage("table.camera.viewLabel")}</span>
+              <b>
+                {cameraPan === 0
+                  ? formatMessage("table.camera.centered")
+                  : formatMessage("table.camera.offset", {
+                      direction: formatMessage(
+                        cameraPan < 0
+                          ? "table.camera.directionLeft"
+                          : "table.camera.directionRight",
+                      ),
+                    })}
+              </b>
+            </button>
             <button
               type="button"
               onClick={() =>
