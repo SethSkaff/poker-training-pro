@@ -1661,10 +1661,15 @@ It measures axis-aligned bbox intersection at 0.5px and says nothing about
 contrast, size, or legibility.
 
 **Acceptance criteria**
-- [ ] A committed, re-runnable, CI-capable script produces the audit.
+- [x] A committed, re-runnable, CI-capable script produces the audit. Verified
+  2026-07-25 with the packaged Windows smoke (`npm run
+  release:audit-packaged-input` under the bundled Node 24 runtime); it now
+  captures each supported desktop viewport and interface scale.
 - [ ] Coverage adds: hero stack, hero and opponent committed-bet labels, dealer button, SB/BB markers, acting indicator, side-pot display, equity readout, and showdown highlight.
-- [ ] It verifies **visibility and minimum legible size**, not only non-overlap.
-- [ ] It runs at 1100×720, 1280×720, 1366×768, 1920×1080, 2560×1080 **and** at every interface scale.
+- [x] It verifies **visibility and minimum legible size**, not only non-overlap,
+  for the live hero HUD and each visible opponent stack/bet/position/dealer
+  indicator.
+- [x] It runs at 1100×720, 1280×720, 1366×768, 1920×1080, 2560×1080 **and** at every interface scale. Verified with the packaged input smoke on 2026-07-25.
 - [ ] Part II's "live geometry audit" wording is corrected.
 
 ### E25-003 — Verify in the packaged build, not only in dev
