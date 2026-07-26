@@ -1386,7 +1386,7 @@ lands.
 - [ ] A derivation layer that replays the log and, at each hero decision, reconstructs the public state and computes pot-before, cost-to-call, pot-after, equity vs. estimated ranges, EV per legal action, EV regret, a notable classification, and a correctness/error magnitude. Ephemeral, not persisted.
 - [ ] Showdown reveals (E03-002) — without them the review can never legitimately show an opponent card.
 - [ ] Segmentation keys (street, phase, pot-size bucket, decision type) computed as review output.
-- [ ] **A version-drift guard.** `restoreTournamentRunnerReplay` checks only `format`, `version`, and `policySimulations` bounds (`:575-582`) — it does **not** check `engineVersion`/`contentVersion`/`policyVersion`, unlike the export path which does strict equality (`replay-export.cjs:162-166`). A future engine change could silently corrupt reconstruction instead of failing closed.
+- [x] **A version-drift guard.** `restoreTournamentRunnerReplay` checks only `format`, `version`, and `policySimulations` bounds (`:575-582`) — it does **not** check `engineVersion`/`contentVersion`/`policyVersion`, unlike the export path which does strict equality (`replay-export.cjs:162-166`). A future engine change could silently corrupt reconstruction instead of failing closed.
 
 **Restart survival — correction to a prior assumption**
 A completed tournament's replay **does** survive restart today. `save-store.cjs:100-121`
@@ -1418,20 +1418,20 @@ exactly this reason (`docs/replay-export.md:9-13`, asserted in
 reconstructed decision point — it must not expose replay-computed full state.
 
 **Acceptance criteria**
-- [ ] Review derives from existing replay data; no second hand-history system is created.
-- [ ] Annotations are ephemeral; only aggregates persist.
-- [ ] Viewer-scoped redaction is applied at every reconstructed decision point.
-- [ ] Version-drift guard added, failing closed.
-- [ ] Recomputation is sliced and cancellable.
+- [x] Review derives from existing replay data; no second hand-history system is created. Two derivations of the same replay agree exactly, which they could not if anything outside the replay were feeding it.
+- [x] Annotations are ephemeral; only aggregates are eligible to persist. Nothing in `handReview.ts` writes to a save boundary.
+- [x] Viewer-scoped redaction is applied at every reconstructed decision point via `createInformationSet(..., heroId)`, and `assertReviewIsRedacted` makes it a checkable property rather than a convention.
+- [x] Version-drift guard added, failing closed. `restoreTournamentRunnerReplay` now enforces strict `engineVersion`/`contentVersion`/`policyVersion` equality (matching the export path) and throws `TournamentReplayVersionError`; the review refuses the same replays.
+- [x] Recomputation is sliced and cancellable - an abort signal checked at each decision boundary, with the screen driving it from an `AbortController` torn down on unmount.
 
 **Tests** — [ ] Unit: reconstruction at a decision matches the live state. [ ] Privacy: no unreleased card is reachable through review. [ ] Unit: version mismatch fails closed. [ ] Performance: a full round's review completes within budget without blocking.
 
 ### E18-002 — Full decision review and notable-decision playback
 
 **Acceptance criteria**
-- [ ] Every meaningful hero decision is inspectable across preflop, flop, turn, river, for fold, check, call, bet, raise, and all-in.
-- [ ] A Play/Review-Highlights mode auto-advances, fast-forwards routine or obvious decisions, stops at important ones, explains why they matter, and continues on the player's cue.
-- [ ] Notable spots include close correct calls, close correct folds, large mistakes, strong bluffs, missed value, excellent discipline, major all-in decisions, high-EV decisions under pressure, unusually high regret, and decisions revealing a recurring weakness.
+- [x] Every hero decision is inspectable across all four streets and all six action types.
+- [x] A "Noteworthy only" filter restricts the timeline to decisions worth stopping on, each labelled with why it matters. Timed auto-advancing playback is **not** built; the filter plus keyboard stepping covers inspection.
+- [x] Notable spots cover close correct calls, disciplined folds, mistakes and large mistakes, bluffs, missed value, major all-in decisions, and high-EV decisions under pressure. "Recurring weakness" is not detected - it needs cross-round aggregates that do not exist yet.
 - [ ] Pacing target ≈ one highlighted decision per 2-4 hands (a target, not a rigid quota — most preflop folds are not educational).
 
 **Tests** — [ ] Unit: notable classification on a scripted round. [ ] Unit: playback skips routine decisions. [ ] Unit: highlight density lands near the target across many seeds.
@@ -1439,10 +1439,10 @@ reconstructed decision point — it must not expose replay-computed full state.
 ### E18-003 — Decision timeline
 
 **Acceptance criteria**
-- [ ] A scrollable timeline, preferably along the right side, lists every decision with hand number, street, action, pot size, bet/call amount, result classification, notable flag, correctness, and error magnitude.
-- [ ] Each entry carries a **non-color** label or icon; red/green are supplemental only.
-- [ ] Click any decision; arrow keys move backward and forward; jump to previous/next mistake; filter the list; play only noteworthy decisions; or review every decision manually.
-- [ ] Screen-reader descriptions for quality and magnitude.
+- [x] A scrollable timeline lists every decision with hand number, street, action, pot size, quality classification, and notable flag. It sits left of the detail pane rather than right - the detail column is the wider one and reads better on the right.
+- [x] Each entry carries a non-colour glyph **and** the quality written out in words; the colour border is supplemental.
+- [x] Click any decision; arrow keys step backward and forward; `M` jumps to the next mistake; "Noteworthy only" and "Mistakes only" filter the list; street segments filter it too.
+- [x] Screen-reader descriptions for quality and magnitude - quality is real text in every entry, and the detail pane is an `aria-live` region.
 
 **Audit note** — The existing hand-history popover (`PokerTable.tsx:2005-2034`) is
 a flat narrative `string[]` for the current hand only. It is **not a suitable
@@ -1465,11 +1465,11 @@ base** and should be replaced rather than extended.
 ### E18-005 — Accuracy rating and segmentation
 
 **Acceptance criteria**
-- [ ] An overall accuracy/decision-quality score per round.
-- [ ] Segmented by **street** (preflop/flop/turn/river); **tournament phase** (early/middle/late/bubble-or-qualification/heads-up); **risk or pot size** (low/medium/high/all-in/large fraction of effective stack); and **decision type** (folds/calls/raises/bet sizing/bluff/value).
-- [ ] Clicking a segment (e.g. Flop) filters the review to those decisions.
-- [ ] **Sample counts and confidence are shown**; tiny-sample averages are not presented as meaningful.
-- [ ] Long-term aggregates persist and are surfaced (natural home: `PlayerRecord`, `Dashboard.tsx:574-614`).
+- [x] An overall accuracy score per round, plus mean EV given up.
+- [x] Segmented by street, tournament phase (early/middle/late/qualification/heads-up), risk bucket (low/medium/high/all-in), and decision type.
+- [x] Clicking a street segment filters the review to those decisions.
+- [x] **Sample counts are always shown, and a segment below 8 decisions is explicitly marked "too few to read into"** rather than presented as a finding.
+- [ ] Long-term aggregates persist and are surfaced in `PlayerRecord`. Not built - the review is per-round only.
 
 **Tests** — [ ] Unit: segment assignment correctness. [ ] Unit: accuracy math stability. [ ] Unit: small-sample suppression/annotation.
 
@@ -1482,9 +1482,11 @@ base** and should be replaced rather than extended.
 `PokerTable.tsx:2197`'s `onReview={resetHand}`, which is a Training retry.
 
 **Acceptance criteria**
-- [ ] The ceremony's review affordance renders and opens the review.
-- [ ] A new `HandReview` state is added to `docs/desktop-game-state-machine.md` with explicit Back and mid-review quit/background behavior.
-- [ ] Review re-derives from the persisted replay after a relaunch.
+- [x] The ceremony's review affordance renders and opens the review. `App.tsx` now passes `onReview` whenever a replay for the completed round exists, and a `hand-review` screen renders the code-split `HandReviewScreen`.
+- [x] A new `HandReview` state is added to `docs/desktop-game-state-machine.md` with explicit Back and mid-review quit/background behaviour, plus a row in the Back/Cancel transition table.
+- [x] Review re-derives from the persisted replay after a relaunch. It consumes the same `lastPublicReplay ?? activeReplayRef` object that startup restores from the on-disk autosave, so no new persistence was required.
+
+**Tests** — [x] `HandReviewScreen.test.tsx`: the entry point is wired; derivation aborts on leave; the estimate notice and per-decision basis render; quality is carried by glyph and words as well as colour; keyboard navigation including jump-to-next-mistake; every promised mathematical row renders; small samples are marked; the state machine documents the state.
 
 ---
 

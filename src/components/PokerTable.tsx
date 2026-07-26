@@ -40,6 +40,7 @@ import {
   formatFixedDecimal,
 } from "../lib/format";
 import { gameAudio, type SoundName } from "../lib/audio";
+import { PlayingCard } from "./PlayingCard";
 import {
   describeOpponentAppearance,
   opponentAppearanceStyle,
@@ -390,13 +391,6 @@ const seatPositions = [
   "lower-right",
 ] as const;
 
-const suitGlyph: Record<Card["suit"], string> = {
-  clubs: "♣",
-  diamonds: "♦",
-  hearts: "♥",
-  spades: "♠",
-};
-
 /**
  * A concise, player-relevant live announcement. It deliberately omits the
  * dealer, room art, avatar animation, and other decorative scenery so a screen
@@ -501,43 +495,6 @@ export function tablePositionLabelForSeat({
   return distance === 2
     ? formatMessage("table.position.hijack")
     : formatMessage("table.position.middle");
-}
-
-function PlayingCard({
-  card,
-  hidden = false,
-  small = false,
-  className,
-}: {
-  card: Card;
-  hidden?: boolean;
-  small?: boolean;
-  className?: string;
-}) {
-  if (hidden) {
-    return (
-      <span
-        className={`playing-card playing-card--back ${small ? "playing-card--small" : ""} ${className ?? ""}`}
-        role="img"
-        aria-label={formatMessage("cards.faceDown")}
-      >
-        <i />
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className={`playing-card playing-card--${card.suit} ${
-        small ? "playing-card--small" : ""
-      } ${className ?? ""}`}
-      role="img"
-      aria-label={cardAriaLabel(card)}
-    >
-      <b>{card.rank}</b>
-      <i>{suitGlyph[card.suit]}</i>
-    </span>
-  );
 }
 
 function ChipStack({ bet = false }: { bet?: boolean }) {

@@ -898,12 +898,25 @@ export async function applyHeroTournamentActionAsync(
   });
 }
 
+export const CURRENT_ENGINE_VERSION = "tournament-session-v1";
+export const CURRENT_CONTENT_VERSION = "career-events-v1";
+export const CURRENT_POLICY_VERSION = "normal-rational-v1";
+
+/** Thrown when a replay was produced by a build that would reconstruct differently. */
+export class TournamentReplayVersionError extends Error {
+  readonly versionMismatch = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "TournamentReplayVersionError";
+  }
+}
+
 export interface TournamentRunnerReplay {
   format: "poker-training-pro-tournament-replay";
   version: 1;
-  engineVersion: "tournament-session-v1";
-  contentVersion: "career-events-v1";
-  policyVersion: "normal-rational-v1";
+  engineVersion: typeof CURRENT_ENGINE_VERSION;
+  contentVersion: typeof CURRENT_CONTENT_VERSION;
+  policyVersion: typeof CURRENT_POLICY_VERSION;
   policySimulations: number;
   kind: TournamentRunnerKind;
   eventId: string;
@@ -930,9 +943,9 @@ export function createTournamentRunnerReplay(
   return {
     format: "poker-training-pro-tournament-replay",
     version: 1,
-    engineVersion: "tournament-session-v1",
-    contentVersion: "career-events-v1",
-    policyVersion: "normal-rational-v1",
+    engineVersion: CURRENT_ENGINE_VERSION,
+    contentVersion: CURRENT_CONTENT_VERSION,
+    policyVersion: CURRENT_POLICY_VERSION,
     policySimulations,
     kind: runner.kind,
     eventId: runner.session.event.id,
@@ -968,6 +981,23 @@ export function restoreTournamentRunnerReplay(
     replay.policySimulations < 1
   ) {
     throw new Error("Unsupported tournament replay");
+  }
+  // Reconstruction regenerates opponent decisions, deals, and pots from the
+  // seed, so it is only faithful if the engine, content, and policy that
+  // produced the log still behave identically. Without this check a future
+  // change would silently produce a *different* hand and present it as the
+  // one the player actually played. The export path already enforces strict
+  // equality (`replay-export.cjs`); this closes the same hole on the way in.
+  if (
+    replay.engineVersion !== CURRENT_ENGINE_VERSION ||
+    replay.contentVersion !== CURRENT_CONTENT_VERSION ||
+    replay.policyVersion !== CURRENT_POLICY_VERSION
+  ) {
+    throw new TournamentReplayVersionError(
+      `This replay was recorded by a different build (engine ${String(replay.engineVersion)}, ` +
+        `content ${String(replay.contentVersion)}, policy ${String(replay.policyVersion)}); ` +
+        `this build reconstructs ${CURRENT_ENGINE_VERSION}/${CURRENT_CONTENT_VERSION}/${CURRENT_POLICY_VERSION}.`,
+    );
   }
   const firstNowMs =
     replay.timed?.startedAtMs ?? replay.actions[0]?.nowMs ?? Date.now();

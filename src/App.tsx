@@ -130,6 +130,11 @@ const RoomFlythrough = lazyWithPreload(() =>
     default: module.RoomFlythrough,
   })),
 );
+const HandReviewScreen = lazyWithPreload(() =>
+  import("./components/HandReviewScreen").then((module) => ({
+    default: module.HandReviewScreen,
+  })),
+);
 
 type DesktopScreen =
   | "home"
@@ -143,6 +148,7 @@ type DesktopScreen =
   | "practice"
   | "tutorial"
   | "credits"
+  | "hand-review"
   | "chip-ack";
 
 type SafeModeState = Awaited<
@@ -1723,6 +1729,34 @@ export default function App() {
     );
   }
 
+  // Review sits in front of the ceremony so Back returns to it rather than
+  // dropping the player out to the menu mid-flow.
+  if (screen === "hand-review") {
+    const reviewable = asTournamentReplay(
+      lastPublicReplay ?? activeReplayRef.current,
+    );
+    // Leaving review returns to whatever was underneath: the ceremony if the
+    // event just ended (that branch renders on `tournamentResult`, not on
+    // `screen`), otherwise the menu.
+    if (reviewable) {
+      return (
+        <Suspense
+          fallback={
+            <SceneLoadingFallback
+              label={formatMessage("review.deriving")}
+              onCancel={() => setScreen("home")}
+            />
+          }
+        >
+          <HandReviewScreen
+            replay={reviewable}
+            onBack={() => setScreen("home")}
+          />
+        </Suspense>
+      );
+    }
+  }
+
   if (tournamentResult) {
     const completedReplay = lastPublicReplay ?? activeReplayRef.current;
     return (
@@ -1741,6 +1775,14 @@ export default function App() {
                         : {}),
                     }
                   : { ok: false as const, message: result.error.message };
+              },
+            }
+          : {})}
+        {...(completedReplay
+          ? {
+              onReview: () => {
+                setScreen("hand-review");
+                gameAudio.play("click");
               },
             }
           : {})}
