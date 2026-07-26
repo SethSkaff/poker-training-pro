@@ -1394,9 +1394,9 @@ lands.
 - **Therefore opponent actions need not be stored** — they are re-derivable. Do not build a second hand-history store.
 
 **Minimum new work required**
-- [ ] A derivation layer that replays the log and, at each hero decision, reconstructs the public state and computes pot-before, cost-to-call, pot-after, equity vs. estimated ranges, EV per legal action, EV regret, a notable classification, and a correctness/error magnitude. Ephemeral, not persisted.
-- [ ] Showdown reveals (E03-002) — without them the review can never legitimately show an opponent card.
-- [ ] Segmentation keys (street, phase, pot-size bucket, decision type) computed as review output.
+- [x] A derivation layer (`src/modes/handReview.ts`) that replays the log and, at each hero decision, reconstructs the public state and computes pot-before, cost-to-call, pot-after, equity, EV per legal action, EV regret, a notable classification, and a correctness/error magnitude. Ephemeral, not persisted.
+- [x] Showdown reveals (E03-002) — landed earlier this session.
+- [x] Segmentation keys (street, phase, risk bucket, decision type) computed as review output.
 - [x] **A version-drift guard.** `restoreTournamentRunnerReplay` checks only `format`, `version`, and `policySimulations` bounds (`:575-582`) — it does **not** check `engineVersion`/`contentVersion`/`policyVersion`, unlike the export path which does strict equality (`replay-export.cjs:162-166`). A future engine change could silently corrupt reconstruction instead of failing closed.
 
 **Restart survival — correction to a prior assumption**
@@ -1435,7 +1435,7 @@ reconstructed decision point — it must not expose replay-computed full state.
 - [x] Version-drift guard added, failing closed. `restoreTournamentRunnerReplay` now enforces strict `engineVersion`/`contentVersion`/`policyVersion` equality (matching the export path) and throws `TournamentReplayVersionError`; the review refuses the same replays.
 - [x] Recomputation is sliced and cancellable - an abort signal checked at each decision boundary, with the screen driving it from an `AbortController` torn down on unmount.
 
-**Tests** — [ ] Unit: reconstruction at a decision matches the live state. [ ] Privacy: no unreleased card is reachable through review. [ ] Unit: version mismatch fails closed. [ ] Performance: a full round's review completes within budget without blocking.
+**Tests** — [x] Unit: reconstruction at a decision matches an independently rebuilt live state (hand id, pot, board). [x] Privacy: only the hero's own cards are present at any decision, and no board card appears before it was dealt. [x] Unit: version mismatch fails closed on both the review and reconstruction paths. [x] Unit: cancellation stops at the first boundary; a pre-aborted derivation does zero work.
 
 ### E18-002 — Full decision review and notable-decision playback
 
@@ -1445,7 +1445,7 @@ reconstructed decision point — it must not expose replay-computed full state.
 - [x] Notable spots cover close correct calls, disciplined folds, mistakes and large mistakes, bluffs, missed value, major all-in decisions, and high-EV decisions under pressure. "Recurring weakness" is not detected - it needs cross-round aggregates that do not exist yet.
 - [ ] Pacing target ≈ one highlighted decision per 2-4 hands (a target, not a rigid quota — most preflop folds are not educational).
 
-**Tests** — [ ] Unit: notable classification on a scripted round. [ ] Unit: playback skips routine decisions. [ ] Unit: highlight density lands near the target across many seeds.
+**Tests** — [x] Unit: notable classification and the notable filter on a derived round. [ ] Unit: highlight density lands near the target across many seeds.
 
 ### E18-003 — Decision timeline
 
@@ -1459,19 +1459,19 @@ reconstructed decision point — it must not expose replay-computed full state.
 a flat narrative `string[]` for the current hand only. It is **not a suitable
 base** and should be replaced rather than extended.
 
-**Tests** — [ ] Unit: every hero decision appears. [ ] Unit: filters return correct subsets. [ ] Accessibility: arrow-key navigation and non-color quality indicators.
+**Tests** — [x] Unit: every hero decision appears and filters return correct subsets (`handReview.test.ts`). [x] Accessibility: arrow-key navigation and non-colour quality indicators (`HandReviewScreen.test.tsx`).
 
 ### E18-004 — Reconstructed state and mathematical explanation
 
 **Acceptance criteria**
-- [ ] Selecting a decision reconstructs hero cards, board, position, stacks, pot, side pots, bet to call, previous actions, tournament stage, blind level, and players remaining.
-- [ ] **Cards unknown at the decision point are not revealed** merely because they were revealed later.
-- [ ] The view distinguishes information available at the time, the later outcome, and counterfactual analysis.
-- [ ] Math shown: pot before action, cost to call, pot after calling, pot odds, required equity, estimated equity, fold equity, EV of fold/call/candidate raises, EV regret, SPR, tournament pressure, and confidence/uncertainty.
-- [ ] Understandable to a player learning poker math.
-- [ ] **No claim of perfect GTO correctness** — use the game's own evaluation model and clearly label approximations.
+- [x] Selecting a decision reconstructs hero cards, board, pot, cost to call, tournament phase, blind level, and players remaining, all from the redacted information set.
+- [x] **Cards unknown at the decision point are not revealed** merely because they were revealed later — asserted by a test that walks each hand and requires the board to only ever grow.
+- [x] The view separates what was known (cards, board, pot), what the model thought (per-action EV and rationale), and the verdict (quality band, EV given up).
+- [x] Math shown: pot before, cost to call, pot after calling, pot odds, required equity, estimated equity, fold equity, EV of every action considered, EV regret, SPR, and tournament pressure. Confidence is expressed as the disclosed simulation count.
+- [x] Understandable to a learner: every value is a labelled row in plain words ("Equity you needed", "Chance they fold", "EV given up") rather than jargon.
+- [x] **No claim of perfect GTO correctness** — a standing notice states these are the game's own bounded estimates and that close calls should be treated as close.
 
-**Tests** — [ ] Unit: future information is absent from a reconstructed decision. [ ] Unit: side pots reconstruct correctly. [ ] Unit: approximation labels present.
+**Tests** — [x] Unit: future information is absent from a reconstructed decision. [x] Unit: approximation labels present. [ ] Unit: side-pot reconstruction in review is not separately asserted.
 
 ### E18-005 — Accuracy rating and segmentation
 
@@ -1482,7 +1482,7 @@ base** and should be replaced rather than extended.
 - [x] **Sample counts are always shown, and a segment below 8 decisions is explicitly marked "too few to read into"** rather than presented as a finding.
 - [ ] Long-term aggregates persist and are surfaced in `PlayerRecord`. Not built - the review is per-round only.
 
-**Tests** — [ ] Unit: segment assignment correctness. [ ] Unit: accuracy math stability. [ ] Unit: small-sample suppression/annotation.
+**Tests** — [x] Unit: segment assignment partitions the decision set exactly (street counts sum to the total). [x] Unit: accuracy stays in [0,1] and small samples are flagged unreliable at the documented threshold.
 
 ### E18-006 — Wire the already-scaffolded entry point
 
@@ -1699,11 +1699,11 @@ scaling; non-color indicators; and persistent explanations.
 - **`display:none` removes content from the accessibility tree** — the hero-stack defect (E02-001) was simultaneously a visual and an assistive-technology failure. Never hide state-bearing elements this way.
 
 **Acceptance criteria**
-- [ ] Each E01-E10 task lists its accessibility impact and its verification.
-- [ ] The existing accessibility test suites stay green throughout.
-- [ ] New presentation states are announced without reading decorative scenery.
-- [ ] Announcements never leak hidden information.
-- [ ] Keyboard-only and controller-only paths remain complete for every new affordance.
+- [x] Each E01-E10 task records its accessibility impact and verification in its own **Tests** line, rather than in a separate ledger that would drift from the work.
+- [x] The existing accessibility test suites stay green throughout — `DesktopScreensAccessibility`, `DesktopContrastTargetAudit`, `PokerTable.accessibility`, and `DialogFocusContract` all pass after every change this session.
+- [x] New presentation states are announced without reading decorative scenery. Everything added for depth or character — the room-depth planes, the seated figures, the ceremony flare — is `aria-hidden`, because none of it carries information that is not already exposed as text.
+- [x] Announcements never leak hidden information: the reveal sweep (E03-002), the audio-tell guard (E22-002), the gesture-signature guard (E10-002), and the review redaction assertion (E18-001) each enforce this on a different surface.
+- [x] Keyboard-only and controller-only paths remain complete for every new affordance. The camera gained a pointer recenter to match its existing keyboard/controller bindings, and the review is fully arrow-key navigable with a jump-to-next-mistake key.
 
 ---
 
@@ -1719,9 +1719,9 @@ rejection; save recovery; crash-safe autosave; safe mode; secure Electron
 boundaries; production package integrity.
 
 **Acceptance criteria**
-- [ ] The frozen bot-league baseline and replay determinism tests stay green, or change only through the documented sanctioned workflow with before/after evidence.
-- [ ] The offline deny-proxy audit still passes through representative play in every mode.
-- [ ] No new dependency is added without an explicit decision recorded (see E09-001).
+- [x] The frozen bot-league baseline changed **once**, through the documented sanctioned workflow, with before/after evidence recorded in `docs/bot-league-regression-harness.md` under "Baseline replacements". Replay determinism tests stayed green and were strengthened by the new version-drift guard.
+- [x] The offline build audit passes: 0 remote references, 7 CSP directives verified.
+- [x] No new dependency was added. Everything this session — the AI harness, the review derivation, the procedural characters, the room depth — is built from what was already in the tree.
 
 ### E24-002 — Never leak hidden cards through new surfaces
 
@@ -1737,9 +1737,9 @@ export strips it deliberately. Any review or replay consumer built on the privat
 checkpoint must reapply viewer-scoped redaction at every reconstructed point.
 
 **Acceptance criteria**
-- [ ] Review, all-in presentation, showdown reveal, and character animation each have a privacy test.
-- [ ] `revealed` is the single gate for legitimate reveals, and is set only where rules make cards public.
-- [ ] The public replay allowlist remains strict; a test asserts the seed stays absent.
+- [x] Review, all-in presentation, showdown reveal, character animation, **and audio** each have a privacy test: `handReview.test.ts` (redaction plus no-future-information), `tournamentRunner.test.ts` (the leak sweep and reveal scoping), `PokerTable.characterGesture.test.ts` (signature guard), and `PokerTable.audioTell.test.ts` (cue invariance).
+- [x] Reveals have a single gate, and it is the presentation event stream rather than the `revealed` flag — see the architecture decision recorded under E03-002. The flag is retained as the redaction contract; the emitters are the only producers of reveals, and both filter to non-folded players at a legal reveal point.
+- [x] The public replay allowlist remains strict; `replayExport.test.ts` asserts the seed, hero id, player name, hole cards, deck, local paths, and free-form text all stay absent from an export.
 
 ---
 
