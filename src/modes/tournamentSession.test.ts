@@ -294,8 +294,11 @@ describe("six-seat tournament session", () => {
       snapshot.pot,
     );
     expect(snapshot.potBreakdown?.[0]).toMatchObject({ kind: "main" });
-    expect(JSON.stringify(snapshot.potBreakdown)).not.toContain("rank");
-    expect(JSON.stringify(snapshot.potBreakdown)).not.toContain("suit");
+    // Match the serialized *keys*, not the bare letters: a card would appear
+    // as {"rank":…,"suit":…}, whereas a generated player name may legitimately
+    // contain those letters (e.g. "F-rank-ie").
+    expect(JSON.stringify(snapshot.potBreakdown)).not.toContain('"rank":');
+    expect(JSON.stringify(snapshot.potBreakdown)).not.toContain('"suit":');
   });
 
   it("separates live main and side pots before a runout", () => {

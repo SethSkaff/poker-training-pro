@@ -3296,6 +3296,215 @@ input[type="range"]::-webkit-slider-thumb {
 .seat-avatar--variant-4 { background-position: 50% 100%; }
 .seat-avatar--variant-5 { background-position: 100% 100%; }
 
+/* ---------------------------------------------------------------------------
+   Seated figure (E09-002 grounding + E10-001 per-identity variation).
+
+   Everything below is drawn procedurally from CSS custom properties supplied
+   by lib/opponentAppearance, whose only input is the player id. Six portrait
+   cells therefore produce thousands of distinguishable seated people without
+   a portrait per opponent, and appearance stays uncorrelated with play.
+   The figure is decorative: it is `aria-hidden`, and every fact it hints at
+   (name, stack, status, committed bet) is already exposed as real text.
+--------------------------------------------------------------------------- */
+
+.seat-figure {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 86px;
+  height: 104px;
+  transform: rotate(var(--seat-lean, 0deg));
+  transform-origin: center 92%;
+}
+
+.seat-figure-shadow {
+  position: absolute;
+  bottom: -3px;
+  left: 50%;
+  width: 78px;
+  height: 13px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.5),
+    rgba(0, 0, 0, 0) 72%
+  );
+}
+
+.seat-figure-chair {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 62px;
+  height: 46px;
+  transform: translateX(-50%);
+  border-radius: 12px 12px 5px 5px;
+  background: linear-gradient(180deg, #2a1d16, #150e0a);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.06);
+}
+
+.seat-figure-torso {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: var(--seat-shoulders, 72px);
+  height: 40px;
+  transform: translateX(-50%);
+  border-radius: 26px 26px 7px 7px;
+  background: linear-gradient(
+    170deg,
+    var(--seat-cloth-trim, #3d4c5c),
+    var(--seat-cloth, #28323d)
+  );
+  box-shadow:
+    inset 0 -8px 12px rgba(0, 0, 0, 0.32),
+    0 4px 9px rgba(0, 0, 0, 0.35);
+}
+
+/* A sliver of neck above the collar carries the figure's skin tone. */
+.seat-figure-torso::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  width: 22px;
+  height: 12px;
+  transform: translateX(-50%);
+  border-radius: 6px 6px 2px 2px;
+  background: var(--seat-skin, #e5bd9a);
+  filter: brightness(0.88);
+}
+
+.seat-figure .seat-avatar {
+  position: relative;
+  z-index: 2;
+  margin-bottom: 26px;
+}
+
+.seat-figure--body-slim .seat-figure-torso { --seat-shoulders: 58px; }
+.seat-figure--body-average .seat-figure-torso { --seat-shoulders: 68px; }
+.seat-figure--body-broad .seat-figure-torso { --seat-shoulders: 79px; }
+.seat-figure--body-heavy .seat-figure-torso { --seat-shoulders: 86px; height: 44px; }
+
+.seat-figure--posture-hunched .seat-figure .seat-avatar,
+.seat-figure--posture-hunched .seat-avatar { margin-bottom: 21px; }
+.seat-figure--posture-reclined .seat-avatar { margin-bottom: 30px; }
+
+/* Age presentation is a light grade on the portrait, never a caricature. */
+.seat-figure--age-young .seat-avatar { filter: saturate(1.08) brightness(1.04); }
+.seat-figure--age-adult .seat-avatar { filter: none; }
+.seat-figure--age-middle .seat-avatar { filter: saturate(0.92) contrast(1.04); }
+.seat-figure--age-senior .seat-avatar { filter: saturate(0.8) brightness(0.96); }
+
+.seat-avatar--face-oval { border-radius: 26px 26px 15px 15px; }
+.seat-avatar--face-square { border-radius: 15px 15px 9px 9px; }
+.seat-avatar--face-round { border-radius: 32px; }
+.seat-avatar--face-long { border-radius: 24px 24px 20px 20px; height: 92px; }
+
+.seat-figure-hair {
+  position: absolute;
+  z-index: 3;
+  top: -4px;
+  left: 50%;
+  width: 74px;
+  height: 26px;
+  transform: translateX(-50%);
+  background: var(--seat-hair, #3b2a1e);
+  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.4);
+}
+
+.seat-figure-hair--cropped { height: 18px; border-radius: 15px 15px 3px 3px; }
+.seat-figure-hair--swept {
+  height: 22px;
+  border-radius: 18px 10px 4px 12px;
+  transform: translateX(-52%) rotate(-3deg);
+}
+.seat-figure-hair--curls {
+  height: 25px;
+  border-radius: 18px 18px 12px 12px;
+  box-shadow:
+    inset 0 -6px 10px rgba(0, 0, 0, 0.4),
+    inset 6px 4px 0 rgba(255, 255, 255, 0.07),
+    inset -6px 4px 0 rgba(255, 255, 255, 0.07);
+}
+.seat-figure-hair--bun { height: 17px; border-radius: 14px 14px 3px 3px; }
+.seat-figure-hair--bun::after {
+  content: "";
+  position: absolute;
+  top: -9px;
+  right: 9px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: inherit;
+}
+.seat-figure-hair--long { height: 40px; border-radius: 20px 20px 5px 5px; }
+.seat-figure-hair--bald { display: none; }
+
+.seat-figure-accessory {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.seat-figure-accessory--glasses {
+  top: 33px;
+  width: 52px;
+  height: 13px;
+  border: 2px solid rgba(24, 22, 20, 0.85);
+  border-radius: 7px;
+  background:
+    linear-gradient(90deg, rgba(180, 214, 234, 0.3) 44%, transparent 44% 56%, rgba(180, 214, 234, 0.3) 56%);
+}
+
+.seat-figure-accessory--cap {
+  top: -8px;
+  width: 78px;
+  height: 22px;
+  border-radius: 16px 16px 4px 4px;
+  background: linear-gradient(180deg, #1f3a52, #12222f);
+}
+.seat-figure-accessory--cap::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 84px;
+  height: 8px;
+  transform: translateX(-50%);
+  border-radius: 0 0 9px 9px;
+  background: #0d1a24;
+}
+
+.seat-figure-accessory--visor {
+  top: 20px;
+  width: 80px;
+  height: 11px;
+  border-radius: 3px 3px 8px 8px;
+  background: linear-gradient(180deg, #2b2118, #443127);
+}
+
+.seat-figure-accessory--headset {
+  top: -2px;
+  width: 88px;
+  height: 34px;
+  border: 4px solid rgba(38, 46, 54, 0.92);
+  border-bottom: none;
+  border-radius: 22px 22px 0 0;
+}
+
+.seat-figure-accessory--chain {
+  top: 74px;
+  width: 26px;
+  height: 12px;
+  border: 2px solid rgba(226, 194, 116, 0.8);
+  border-top: none;
+  border-radius: 0 0 13px 13px;
+}
+
 .thinking-ring {
   position: absolute;
   inset: -7px;

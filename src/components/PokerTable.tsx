@@ -40,6 +40,10 @@ import {
   formatFixedDecimal,
 } from "../lib/format";
 import { gameAudio, type SoundName } from "../lib/audio";
+import {
+  describeOpponentAppearance,
+  opponentAppearanceStyle,
+} from "../lib/opponentAppearance";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import {
   useTableAnnouncer,
@@ -647,6 +651,7 @@ function PlayerSeat({
   revealedCards,
   winningCardLabels,
 }: PlayerSeatProps) {
+  const appearance = describeOpponentAppearance(player.id);
   const isMucking = player.status === "folded" || recentAction === "fold";
   const isFolded = isMucking;
   const isAllIn = player.status === "all-in" || recentAction === "all-in";
@@ -726,20 +731,39 @@ function PlayerSeat({
               ))}
         </div>
       )}
+      {/* A seated figure rather than a floating portrait: chair, torso, and a
+          ground shadow anchor the opponent to the felt. Every dimension is
+          derived from the player id alone (see lib/opponentAppearance), so the
+          same person keeps the same look as the button rotates them around the
+          table, and no visual detail can encode how they play. */}
       <div
-        className={`seat-avatar seat-avatar--variant-${avatarVariantForPlayerId(player.id)}`}
+        className={`seat-figure seat-figure--body-${appearance.bodyType} seat-figure--posture-${appearance.posture} seat-figure--age-${appearance.agePresentation}`}
+        style={opponentAppearanceStyle(appearance)}
         aria-hidden="true"
       >
-        <span>{player.name.slice(0, 1)}</span>
-        {isActing && (
-          <i className="thinking-ring" />
-        )}
-        {!isHero && gesture && (
-          <i
-            className={`seat-action-hand seat-action-hand--${gesture}`}
-            aria-hidden="true"
-          />
-        )}
+        <i className="seat-figure-shadow" />
+        <i className="seat-figure-chair" />
+        <i className="seat-figure-torso" />
+        <div
+          className={`seat-avatar seat-avatar--variant-${appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
+        >
+          <span>{player.name.slice(0, 1)}</span>
+          <i className={`seat-figure-hair seat-figure-hair--${appearance.hairStyle}`} />
+          {appearance.accessory !== "none" && (
+            <i
+              className={`seat-figure-accessory seat-figure-accessory--${appearance.accessory}`}
+            />
+          )}
+          {isActing && (
+            <i className="thinking-ring" />
+          )}
+          {!isHero && gesture && (
+            <i
+              className={`seat-action-hand seat-action-hand--${gesture}`}
+              aria-hidden="true"
+            />
+          )}
+        </div>
       </div>
       <div className="seat-label" aria-hidden="true">
         <strong>{isHero ? formatMessage("table.seat.you") : player.name}</strong>

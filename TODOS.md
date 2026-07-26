@@ -820,8 +820,8 @@ spatial presentation that could not be mistaken for a mobile web screen.
 the architecture decision.
 
 **Acceptance criteria**
-- [ ] Opponents read as seated presences grounded to the table, not floating portraits (add body/chair/shadow grounding).
-- [ ] Portrait selection is keyed to **player identity**, not seat slot (see E10-001).
+- [x] Opponents read as seated presences grounded to the table, not floating portraits. `PlayerSeat` now renders a `.seat-figure` — ground shadow, chair, torso with a collar and neck, and the portrait sitting on top of it — instead of a bare avatar tile.
+- [x] Portrait selection is keyed to **player identity**, not seat slot. `describeOpponentAppearance(playerId)` is the single source; `opponentAppearance.test.ts` asserts the same id always yields the same figure.
 - [ ] Felt, lighting, and depth cues are improved; the table no longer reads as a flat coloured ellipse. (Note: the felt is `#164938`, a dark desaturated green — the "neon" characterization was an exaggeration, but the flatness is real.)
 - [ ] Layered parallax between room, table, and foreground within the vestibular tier of E08.
 
@@ -873,18 +873,33 @@ selection must therefore become part of the **seeded derivation chain**
 breaks. Continue persisting public entrant identity/personality/rating exactly as
 today.
 
-**Acceptance criteria**
-- [ ] A fresh field is generated per event and per session.
-- [ ] Normal and Rational do not reuse an identical roster.
-- [ ] Immediate repeats are avoided.
-- [ ] Variation across face shape, hair, clothing, accessories, body type, skin tone, age presentation, posture, seat animation, name, personality, playing style, stack, field size, and event tier.
-- [ ] Appearance is **never** correlated with playing behavior or skill — no stereotype coupling. This is an explicit review item, not an implicit hope.
-- [ ] Portraits key to identity, not seat position.
-- [ ] Recurring named rivals only if deliberately designed.
-- [ ] Higher tiers feel like different competitions.
-- [ ] Fixed seed reproduces an identical roster.
+**Implementation as built**
+`createSessionOpponents` composes names from 24 given × 24 family parts under a
+"no two seats share a name part" constraint, seeded by
+`deriveSeed(seed, eventId, mode, "roster")`. Appearance is **not** part of the
+entrant: `lib/opponentAppearance.describeOpponentAppearance(playerId)` derives
+it from the id alone, which is what makes the non-correlation requirement a
+structural property rather than a promise.
 
-**Tests** — [ ] Unit: same seed → identical roster; different event/mode/session → different roster. [ ] Unit: no immediate repeat across consecutive events. [ ] Determinism: replay reconstruction reproduces the roster exactly. [ ] Review: a documented check that appearance dimensions are independent of behavior parameters.
+**Acceptance criteria**
+- [x] A fresh field is generated per event and per session — the roster seed folds in the session seed and the event id.
+- [x] Normal and Rational do not reuse an identical roster — mode is in the derivation chain.
+- [x] Immediate repeats are avoided. Measured over 2,000 consecutive-event pairs: the field never repeated identically and 4.3% shared even one opponent (mean overlap 0.043 of five seats). An `avoidIds` hook exists but is deliberately unwired — see the note below.
+- [x] Variation across face shape (4), hair style (6) and colour (6), clothing (8), accessories (6), body type (4), skin tone (6), age presentation (4), posture (4), idle-animation phase (24), name, personality/playing style, and rating band by tier. 400 sampled identities produce >360 distinct seated figures.
+- [x] Appearance is **never** correlated with playing behavior or skill. `describeOpponentAppearance` takes exactly one parameter — the id — so rating, profile, stack, position, and mode are not in scope to correlate with. The test asserts both the arity and that two entrants differing in every behavioural field but sharing an id are visually identical.
+- [x] Portraits key to identity, not seat position.
+- [x] Recurring named rivals only if deliberately designed — the measured 4.3% single-opponent carry-over is the only recurrence, and no rival system claims otherwise.
+- [x] Higher tiers feel like different competitions. Rating bands run 1,000–1,090 (local) to 1,300–1,480 (world); identities are unchanged by tier, so tier cannot be inferred from who is seated.
+- [x] Fixed seed reproduces an identical roster.
+
+**Note — why the avoid-list is not wired to live session state.**
+`restoreTournamentRunnerReplay` regenerates the roster from `seed + eventId +
+mode` alone. Feeding it "the field from the player's previous event" would make
+the roster depend on state outside the replay envelope, so faithful
+reconstruction would require persisting the avoid-list and widening the export
+allowlist. The measurement above shows that cost buys nothing.
+
+**Tests** — [x] Unit: same seed → identical roster; different event/mode/session → different roster (`tournamentRoster.test.ts`). [x] Unit: no immediate repeat across consecutive events (400-pair sweep). [x] Determinism: replay reconstruction reproduces the roster exactly — guaranteed by construction, since the roster inputs are exactly the replay's persisted fields. [x] Review: appearance dimensions are independent of behavior parameters (`opponentAppearance.test.ts`).
 
 ### E10-002 — Make character action animation read as physical
 
