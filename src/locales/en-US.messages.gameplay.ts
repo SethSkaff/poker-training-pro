@@ -51,6 +51,11 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "dashboard.modeSelect.title": "Choose a mode",
   "dashboard.modeSelect.tutorialPrompt": "New to the table?",
   "dashboard.modeSelect.tutorialCta": "Learn the basics",
+  "dashboard.modeSelect.referencePrompt": "Need the numbers?",
+  "dashboard.modeSelect.referenceCta": "Open the poker reference",
+  "reference.title": "Poker reference",
+  "reference.intro":
+    "Hand rankings, betting and tournament terms, probability shortcuts, and worked examples. Available any time, in a hand or out of one.",
 
   "dashboard.timed.title": "How much time do you have?",
   "dashboard.timed.presetsAriaLabel": "Session length presets",

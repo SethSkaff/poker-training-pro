@@ -42,6 +42,7 @@ import {
 } from "../lib/format";
 import { gameAudio, type SoundName } from "../lib/audio";
 import { PlayingCard } from "./PlayingCard";
+import { PokerReferenceContent } from "./PokerReference";
 import {
   describeOpponentAppearance,
   opponentAppearanceStyle,
@@ -3546,60 +3547,9 @@ export function PokerTable({
               </>
             ) : (
               <>
-                <ol className="hand-ranking-list">
-                  <li>{formatMessage("table.handRank.royalFlush")}</li>
-                  <li>{formatMessage("table.handRank.straightFlush")}</li>
-                  <li>{formatMessage("table.handRank.fourOfAKind")}</li>
-                  <li>{formatMessage("table.handRank.fullHouse")}</li>
-                  <li>{formatMessage("table.handRank.flush")}</li>
-                  <li>{formatMessage("table.handRank.straight")}</li>
-                  <li>{formatMessage("table.handRank.threeOfAKind")}</li>
-                  <li>{formatMessage("table.handRank.twoPair")}</li>
-                  <li>{formatMessage("table.handRank.pair")}</li>
-                  <li>{formatMessage("table.handRank.highCard")}</li>
-                </ol>
-                <div className="pause-formulas">
-                  <p>
-                    <strong>{formatMessage("table.formula.potOdds.label")}</strong>{" "}
-                    {formatMessage("table.formula.potOdds.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.equity.label")}</strong>{" "}
-                    {formatMessage("table.formula.equity.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.spr.label")}</strong>{" "}
-                    {formatMessage("table.formula.spr.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.minRaise.label")}</strong>{" "}
-                    {formatMessage("table.formula.minRaise.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.sidePot.label")}</strong>{" "}
-                    {formatMessage("table.formula.sidePot.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.bubble.label")}</strong>{" "}
-                    {formatMessage("table.formula.bubble.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.workedCall.label")}</strong>{" "}
-                    {formatMessage("table.formula.workedCall.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.shortcut.label")}</strong>{" "}
-                    {formatMessage("table.formula.shortcut.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.ruleOf2And4.label")}</strong>{" "}
-                    {formatMessage("table.formula.ruleOf2And4.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.expectedValue.label")}</strong>{" "}
-                    {formatMessage("table.formula.expectedValue.desc")}
-                  </p>
-                </div>
+                {/* Shared with the menu-reachable reference screen so the
+                    two can never drift apart. */}
+                <PokerReferenceContent />
                 <button
                   className="secondary-button secondary-button--wide"
                   type="button"

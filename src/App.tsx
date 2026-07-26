@@ -9,12 +9,15 @@ import {
 import {
   HomeView,
   ModeSelect,
+  NightCircuitScene,
   PlayerRecord,
   TimedSetup,
   TournamentCeremony,
   TourLobby,
 } from "./components/Dashboard";
 import { RecoveryScreen } from "./components/RecoveryScreen";
+import { PokerReferenceContent } from "./components/PokerReference";
+import { ArrowLeft } from "lucide-react";
 import { useGamepadNavigation } from "./components/GamepadNavigationProvider";
 import { AboutSupport } from "./components/AboutSupport";
 import { CreditsScreen } from "./components/CreditsScreen";
@@ -55,7 +58,7 @@ import {
 } from "./lib/desktopLifecycle";
 import { createSaveEnvelope } from "./lib/saveMigration";
 import { formatChips } from "./lib/format";
-import { formatMessage } from "./lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "./lib/localeMessages";
 import { deriveSafeModeSettings } from "./lib/safeMode";
 import {
   applyOsReducedMotionDefault,
@@ -149,6 +152,7 @@ type DesktopScreen =
   | "tutorial"
   | "credits"
   | "hand-review"
+  | "reference"
   | "chip-ack";
 
 type SafeModeState = Awaited<
@@ -1732,6 +1736,26 @@ export default function App() {
 
   // Review sits in front of the ceremony so Back returns to it rather than
   // dropping the player out to the menu mid-flow.
+  if (screen === "reference") {
+    return (
+      <main
+        className="night-shell reference-shell"
+        aria-labelledby="reference-title"
+        {...localeTextAttributes()}
+      >
+        <NightCircuitScene quiet />
+        <section className="reference-panel">
+          <button className="night-back" type="button" onClick={() => navigate("play")}>
+            <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToModes")}
+          </button>
+          <h1 id="reference-title">{formatMessage("reference.title")}</h1>
+          <p className="reference-intro">{formatMessage("reference.intro")}</p>
+          <PokerReferenceContent />
+        </section>
+      </main>
+    );
+  }
+
   if (screen === "hand-review") {
     const reviewable = asTournamentReplay(
       lastPublicReplay ?? activeReplayRef.current,
@@ -1837,6 +1861,9 @@ export default function App() {
             void PlayableTutorial.preload();
             setScreen("tutorial");
             gameAudio.play("deal");
+          } else if (mode === "reference") {
+            setScreen("reference");
+            gameAudio.play("click");
           } else if (mode === "training") {
             beginTraining();
           } else if (mode === "timed") {

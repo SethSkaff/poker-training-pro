@@ -9350,3 +9350,46 @@ input[type="range"]::-webkit-slider-thumb {
 .table-screen[data-event-tier="world"] .room-depth__mid i {
   width: 142px;
 }
+
+/* Standalone poker reference (E21-003). Reuses the pause menu's own hand-rank
+   and formula styling so the two presentations cannot drift apart. */
+.reference-shell {
+  overflow: auto;
+}
+
+.reference-panel {
+  position: relative;
+  z-index: 20;
+  max-width: 900px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(24px, 4vh, 44px) clamp(24px, 4vw, 56px);
+  background: rgba(3, 7, 6, 0.84);
+}
+
+.reference-panel h1 {
+  margin: 14px 0 6px;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: clamp(28px, 3.4vw, 44px);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.reference-intro {
+  max-width: 70ch;
+  margin: 0 0 22px;
+  color: #a9a49a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.reference-panel .hand-ranking-list,
+.reference-panel .pause-formulas {
+  max-width: 78ch;
+}
+
+.mode-stage__secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+}

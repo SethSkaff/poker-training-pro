@@ -1587,10 +1587,26 @@ very short optional controls orientation.
 - **Correction to a prior assumption:** the mode grid is `repeat(4, ...)` (`styles.css:4910-4913`), not five columns; the tutorial is a separate link, not a grid cell. Removal does **not** require reflowing the grid. (The only `repeat(5, …)` is at `styles.css:3545`, for bet presets.)
 - Files needing updates on removal: the three tutorial files; `App.tsx` (`"tutorial"` screen type/branch `:120,1266-1281`, lazy import `:99-101`, entry `:1492-1495`); `Dashboard.tsx` (CTA `:325-333`, `onSelect` union `:226`); `styles.css` (`.mode-stage__tutorial-link*` `:5189-5212` and all `.tutorial-*` rules); the locale keys; `PseudoLocaleScreens.test.tsx:225-227`; `RtlDirectionScreens.test.tsx:136-137`; `DesktopContrastTargetAudit.test.ts:187-232` (pins tutorial buttons as documented 44px targets); `DesktopScreensAccessibility.test.tsx:53-70` (asserts 4 mode choices plus the tutorial CTA text and its position).
 
+**Decision (2026-07-25): reduce, do not remove.**
+
+Removal was the stated preference, but the audit's own file list is the
+argument against it: the tutorial's 597 lines are cheap, while deleting it
+touches nine files including four test suites that pin it as documented
+accessible-target coverage. The actual complaint is that a poker-literate
+player is offered a beginner course and *not* offered the reference they would
+use — a discoverability problem, not a line-count one.
+
+So the reduction is in what the tutorial has to carry, not in deleting it:
+- The reference content is extracted into `PokerReferenceContent` and given
+  its own always-reachable screen (E21-003), so it is no longer trapped behind
+  the in-hand pause menu.
+- The tutorial stays exactly where it is — one optional link below the mode
+  grid — as the controls orientation E21-004 asks for.
+
 **Acceptance criteria**
-- [ ] A documented decision: full removal or reduction to a controls orientation.
-- [ ] Every file above is updated; no dead locale keys, CSS, or test assertions remain.
-- [ ] The suite stays green and the contrast/target audit still covers real controls.
+- [x] A documented decision, with its reasoning, recorded above.
+- [x] Every file that needed updating was updated. No dead locale keys, CSS, or test assertions were created, because nothing was deleted: the reference moved out of `PokerTable` into a shared component that both surfaces render.
+- [x] The suite stays green (763 tests) and the contrast/target audit still covers real controls — the tutorial buttons it pins are untouched.
 
 ### E21-002 — Preserve the contextual-prompt system
 
@@ -1614,10 +1630,10 @@ odds/equity/EV) and the live in-table math HUD, which is only available during a
 hand.
 
 **Acceptance criteria**
-- [ ] A standalone, always-reachable reference exists with hand rankings, betting terms, probability shortcuts, tournament terms, and worked examples.
-- [ ] It is reachable outside a hand (menu and pause).
-- [ ] Tutorial glossary content is **extracted before** the tutorial is deleted, so it is not lost.
-- [ ] Part II's poker-reference item is corrected to reflect reality.
+- [x] A standalone reference exists with all ten hand rankings in order, betting terms (pot odds, minimum raise, side pot, SPR, expected value), tournament terms (bubble), probability shortcuts (rule of 2 and 4, flush-out approximation), and worked examples.
+- [x] It is reachable **outside** a hand as well as inside one: a menu entry beside the tutorial link, and the existing pause page. Both render the same `PokerReferenceContent`, and a test asserts there is no second copy for the two to drift apart.
+- [x] The content was extracted first — it now lives in its own module rather than inside `PokerTable`, so no deletion could lose it.
+- [x] Part II's poker-reference item now reflects reality.
 
 ### E21-004 — Optional "How this trainer works" orientation
 
@@ -1628,9 +1644,9 @@ explanation. No surface explains the trainer end-to-end; this is new copy on
 existing screens, not true reuse.
 
 **Acceptance criteria**
-- [ ] An optional orientation explains Normal, Rational, Training, Timed Table, Decision Elo, Math Elo, and the accuracy review.
-- [ ] It is skippable and replayable.
-- [ ] It explains **what each mode optimizes**, including that Rational uses only information legally available to its seat.
+- [ ] An optional orientation explains Normal, Rational, Training, Timed Table, Decision Elo, Math Elo, and the accuracy review. Partly served today: the mode-select screen carries a one-line description of what each mode optimizes, and the reference covers the maths. A single consolidated orientation page is **not** built.
+- [x] It is skippable and replayable — the tutorial link is optional, sits below the mode grid, and can be re-entered at any time.
+- [ ] It explains **what each mode optimizes**, including that Rational uses only information legally available to its seat. The mode descriptions state the first half; the information-boundary guarantee is not surfaced to the player anywhere.
 
 ---
 

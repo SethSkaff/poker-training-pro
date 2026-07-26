@@ -230,7 +230,7 @@ export function HomeView({
 
 interface ModeSelectProps {
   onBack: () => void;
-  onSelect: (mode: GameMode | "timed" | "tutorial") => void;
+  onSelect: (mode: GameMode | "timed" | "tutorial" | "reference") => void;
 }
 
 export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
@@ -329,15 +329,29 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
             <ArrowRight size={21} />
           </button>
         </div>
-        <button
-          className="mode-stage__tutorial-link"
-          type="button"
-          onClick={() => onSelect("tutorial")}
-        >
-          {formatMessage("dashboard.modeSelect.tutorialPrompt")}{" "}
-          <strong>{formatMessage("dashboard.modeSelect.tutorialCta")}</strong>
-          <ArrowRight size={16} aria-hidden="true" />
-        </button>
+        <div className="mode-stage__secondary">
+          <button
+            className="mode-stage__tutorial-link"
+            type="button"
+            onClick={() => onSelect("tutorial")}
+          >
+            {formatMessage("dashboard.modeSelect.tutorialPrompt")}{" "}
+            <strong>{formatMessage("dashboard.modeSelect.tutorialCta")}</strong>
+            <ArrowRight size={16} aria-hidden="true" />
+          </button>
+          {/* The reference used to be reachable only from the in-hand pause
+              menu -- unavailable at exactly the moment a player is most likely
+              to want it, which is before sitting down. */}
+          <button
+            className="mode-stage__tutorial-link"
+            type="button"
+            onClick={() => onSelect("reference")}
+          >
+            {formatMessage("dashboard.modeSelect.referencePrompt")}{" "}
+            <strong>{formatMessage("dashboard.modeSelect.referenceCta")}</strong>
+            <ArrowRight size={16} aria-hidden="true" />
+          </button>
+        </div>
       </section>
     </main>
   );
