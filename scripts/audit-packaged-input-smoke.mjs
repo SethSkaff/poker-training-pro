@@ -507,10 +507,33 @@ async function inspectTableInformationLanes(cdp) {
         overlapsCards: Boolean(heroHudRect && heroCardsRect && intersects(heroHudRect, heroCardsRect)),
         overlapsActions: Boolean(heroHudRect && actionDockRect && intersects(heroHudRect, actionDockRect)),
       };
+      // State-dependent surfaces: present only in the situations that produce
+      // them, so each is "absent, or readable and not covering the table".
+      // Checking them only when present is what lets one smoke run cover
+      // surfaces that cannot all coexist in a single frame.
+      const conditional = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return { present: false, ok: true };
+        const rect = element.getBoundingClientRect();
+        return {
+          present: true,
+          ok: readable(element) &&
+            !(heroCardsRect && intersects(rect, heroCardsRect)) &&
+            !(actionDockRect && intersects(rect, actionDockRect)),
+        };
+      };
+      const surfaces = {
+        actingIndicator: conditional('.thinking-ring'),
+        sidePots: conditional('.side-pot-strip'),
+        equityReadout: conditional('.all-in-equity-strip'),
+        showdownHighlight: conditional('.showdown-card.is-winning'),
+      };
       return {
         seats,
         hero,
+        surfaces,
         ok: seats.length >= 5 && hero.readable && !hero.overlapsCards && !hero.overlapsActions &&
+          Object.values(surfaces).every((surface) => surface.ok) &&
           seats.every((seat) => !seat.cardsOverlap && !seat.betOverlapsStack &&
             seat.labelReadable && seat.betReadable && seat.dealerReadable && seat.positionReadable),
       };

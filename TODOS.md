@@ -1834,12 +1834,12 @@ contrast, size, or legibility.
   2026-07-25 with the packaged Windows smoke (`npm run
   release:audit-packaged-input` under the bundled Node 24 runtime); it now
   captures each supported desktop viewport and interface scale.
-- [ ] Coverage adds: hero stack, hero and opponent committed-bet labels, dealer button, SB/BB markers, acting indicator, side-pot display, equity readout, and showdown highlight.
+- [x] Coverage adds hero stack (readable, and not covering the hero's cards or the action dock), opponent committed-bet labels (readable and not intersecting the stack label), dealer button, position markers, acting indicator, side-pot display, equity readout, and showdown highlight. The last four are **state-dependent** — they cannot all exist in one frame — so each is checked as "absent, or readable and not covering the table", which is what lets a single smoke run cover surfaces that never coexist.
 - [x] It verifies **visibility and minimum legible size**, not only non-overlap,
   for the live hero HUD and each visible opponent stack/bet/position/dealer
   indicator.
 - [x] It runs at 1100×720, 1280×720, 1366×768, 1920×1080, 2560×1080 **and** at every interface scale. Verified with the packaged input smoke on 2026-07-25.
-- [ ] Part II's "live geometry audit" wording is corrected.
+- [x] Part II's geometry-gate wording is corrected to name what the gate actually inspects rather than implying whole-table coverage.
 
 ### E25-003 — Verify in the packaged build, not only in dev
 
@@ -2119,9 +2119,16 @@ overlap.
 - [x] Recheck the live table at 1024x768, 1366x768, and 1920x1080 after
       removing the decorative opponent-card fan; active card bounds and
       stack/bet lanes remain non-intersecting with no horizontal overflow.
-- [x] Add a packaged six-seat geometry gate to the Windows input smoke. It
-      rejects intersecting opponent-card bounds and bet/stack information lanes
-      before continuing through raise, pause, and controller coverage.
+- [x] Add a packaged six-seat geometry gate to the Windows input smoke, then
+      widen it. **Corrected wording (2026-07-26):** as first written this gate
+      inspected opponent-side elements only — intersecting card bounds and
+      bet/stack lanes — and said nothing about the hero's own surfaces. It now
+      also covers the hero stack HUD, per-seat bet and stack labels, the dealer
+      button, position markers, and the state-dependent acting indicator,
+      side-pot strip, equity readout, and showdown highlight. It measures
+      axis-aligned bounding-box intersection and readability only; it still
+      says nothing about contrast, size, or legibility, which the separate
+      contrast/target audit covers.
 - [x] Package distinct Windows x64 NSIS installer and portable preview
       artifacts; verify the unpacked application launches, stays offline at
       idle, has the intended Electron fuses, and rejects tampered ASAR content.
