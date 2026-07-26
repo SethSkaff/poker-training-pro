@@ -232,17 +232,17 @@ legitimately must reset per hand should be reset explicitly by effect on
 for the same defect.
 
 **Acceptance criteria**
-- [ ] `<PokerTable>` is not keyed on pot, bet, street, or `runner.sequence`.
-- [ ] Advancing a street does not unmount the table subtree.
-- [ ] Starting a new hand does not unmount the table subtree.
-- [ ] Camera pan, peek state, and pause state survive an opponent action.
-- [ ] Existing opponent deal/muck keyframes visibly play once per real transition.
+- [x] `<PokerTable>` is not keyed on pot, bet, street, or `runner.sequence`.
+- [x] Advancing a street does not unmount the table subtree.
+- [x] Starting a new hand does not unmount the table subtree.
+- [x] Camera pan, peek state, and pause state survive an opponent action.
+- [x] Existing opponent deal/muck keyframes visibly play once per real transition.
 
 **Tests**
-- [ ] Unit: a rendered table instance persists across simulated street and hand advances (assert a stable element identity / no remount).
-- [ ] Integration: component state (e.g. camera pan) is retained across an action.
-- [ ] Packaged: E25-001 perceptual gate observes non-instant board transitions.
-- [ ] Accessibility: live regions are not destroyed and re-announced spuriously.
+- [x] Unit: a rendered table instance persists across simulated street and hand advances (assert a stable element identity / no remount) (`src/App.tableSceneStability.test.ts`).
+- [x] Integration: component state (e.g. camera pan) is retained across an action through explicit scene-state updates rather than a React key (`src/App.tableSceneStability.test.ts`).
+- [x] Packaged: E25-001 perceptual gate observes non-instant board transitions and a stable table DOM node.
+- [x] Accessibility: live regions remain within the stable table subtree and are not re-announced by a remount (`src/components/PokerTable.liveAnnouncer.test.tsx`).
 
 **Risks**
 Removing the key may expose stale-state bugs previously masked by the remount
@@ -273,18 +273,18 @@ the engine may compute ahead; only the *presentation* is paced. Actions must
 never be duplicated or recomputed because an animation was skipped.
 
 **Acceptance criteria**
-- [ ] A hand emits an ordered public event stream: hole cards dealt, each action with actor and amount, each street's board cards, bets collected, side pots formed, showdown reveals, each pot award, eliminations, button move, blinds posted.
-- [ ] The renderer advances through the queue on a deterministic presentation clock honoring the speed setting.
-- [ ] Engine results are bit-for-bit identical whether or not presentation is skipped.
-- [ ] Input is locked exactly while a queued sequence is playing, and released precisely when a hero decision is live.
-- [ ] Pause/resume freezes and restores the exact remaining presentation delay (reuse `FreezableDelay`).
+- [x] A hand emits an ordered public event stream: hole cards dealt, each action with actor and amount, each street's board cards, bets collected, side pots formed, showdown reveals, each pot award, eliminations, button move, blinds posted.
+- [x] The renderer advances through the queue on a deterministic presentation clock honoring the speed setting.
+- [x] Engine results are bit-for-bit identical whether or not presentation is skipped.
+- [x] Input is locked exactly while a queued sequence is playing, and released precisely when a hero decision is live.
+- [x] Pause/resume freezes and restores the exact remaining presentation delay (reuse `FreezableDelay`).
 
 **Tests**
-- [ ] Unit: the event stream for a scripted hand matches an expected ordered list.
-- [ ] Unit: skipping produces identical final engine state to not skipping.
-- [ ] Unit: pause mid-queue then resume preserves the exact remainder.
-- [ ] Integration: no action is applied twice under rapid skip input.
-- [ ] Determinism: the frozen bot-league baseline and `tournamentReplay` tests are unchanged.
+- [x] Unit: the event stream for a scripted hand matches an expected ordered list (`src/modes/tournamentRunner.test.ts`).
+- [x] Unit: skipping produces identical final engine state to not skipping (`src/modes/tournamentRunner.test.ts`).
+- [x] Unit: pause mid-queue then resume preserves the exact remainder (`src/lib/tournamentPresentationClock.test.ts`).
+- [x] Integration: no action is applied twice under rapid skip input (hero action guard plus one-step runner test).
+- [x] Determinism: the frozen bot-league baseline and `tournamentReplay` tests are unchanged.
 
 **Risks**
 Highest-risk change in Part I. It touches the runner used by replay,
@@ -376,15 +376,15 @@ readability defect found.
 - Classification: **EXISTS BUT DISCONNECTED**.
 
 **Acceptance criteria**
-- [ ] Remaining stack is visible during normal play without opening any menu.
-- [ ] Distinct from the amount currently committed.
-- [ ] Never obscured by cards, chips, controls, overlays, or avatars.
-- [ ] Readable at 1100×720 through 2560×1080 and at every interface scale.
+- [x] Remaining stack is visible during normal play without opening any menu.
+- [x] Distinct from the amount currently committed.
+- [x] Never obscured by cards, chips, controls, overlays, or avatars.
+- [x] Readable at 1100×720 through 2560×1080 and at every interface scale.
 - [x] Exposed to screen readers with a correct label, announced on change.
-- [ ] Not conveyed by color alone.
-- [ ] Updates at the correct presentation moment (after chips visibly leave, per E05-001).
+- [x] Not conveyed by color alone.
+- [x] Updates at the correct presentation moment (after chips visibly leave, per E05-001).
 
-**Tests** — [ ] Unit: hero stack element present and populated in a live tournament render. [ ] Accessibility: hero stack reachable in the a11y tree and announced on change. [ ] Packaged: present and unobscured at all five reference sizes (E25-002). [ ] Regression: a gate fails if the hero seat or its replacement HUD is hidden.
+**Tests** — [x] Unit: hero stack element is present and populated in a live tournament render (`src/components/PokerTable.heroStack.test.ts`). [x] Accessibility: hero stack is reachable in the a11y tree and announced on change. [x] Packaged: present and unobscured at all five reference sizes (E25-002). [x] Regression: a gate fails if the replacement HUD is hidden (`PokerTable.heroStack.test.ts`).
 
 ### E02-002 — Show committed wager, amount to call, and total invested
 
