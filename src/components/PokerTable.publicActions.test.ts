@@ -103,6 +103,24 @@ describe("public tournament action presentation", () => {
 
   it("selects audio only from public presentation events", () => {
     expect(publicPresentationSound({
+      id: "deal",
+      kind: "hole-cards-dealt",
+      handId,
+      playerIds: ["hero", "opponent"],
+    })).toBe("deal");
+    expect(publicPresentationSound({
+      id: "blinds",
+      kind: "blinds-posted",
+      handId,
+      posts: [{ playerId: "hero", type: "small-blind", amount: 50 }],
+    })).toBe("chip");
+    expect(publicPresentationSound({
+      id: "collect",
+      kind: "bets-collected",
+      handId,
+      amount: 300,
+    })).toBe("chip");
+    expect(publicPresentationSound({
       id: "flop",
       kind: "board-card-dealt",
       handId,
@@ -118,12 +136,32 @@ describe("public tournament action presentation", () => {
       command: { type: "all-in" },
     })).toBe("all-in");
     expect(publicPresentationSound({
+      id: "fold",
+      kind: "action",
+      handId,
+      playerId: "opponent",
+      command: { type: "fold" },
+    })).toBe("fold");
+    expect(publicPresentationSound({
+      id: "raise",
+      kind: "action",
+      handId,
+      playerId: "opponent",
+      command: { type: "raise", to: 400 },
+    })).toBe("chip");
+    expect(publicPresentationSound({
       id: "award",
       kind: "pot-awarded",
       handId,
       playerId: "winner",
       amount: 600,
     })).toBe("win");
+    expect(publicPresentationSound({
+      id: "out",
+      kind: "eliminated",
+      handId,
+      playerId: "opponent",
+    })).toBe("eliminated");
     expect(publicPresentationSound({
       id: "showdown",
       kind: "showdown",
