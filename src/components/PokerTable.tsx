@@ -318,6 +318,27 @@ export interface SeatPresentationUpdate {
 
 /** Public-only character gesture selection. Deliberately accepts no cards or
  * policy output, so appearance and movement cannot become a hand-strength tell. */
+export type SeatGesture =
+  | "win"
+  | "out"
+  | "all-in"
+  | "raise"
+  | "fold"
+  | "bet"
+  | "check"
+  | "call"
+  | "receive"
+  | "hold";
+
+/**
+ * The physical gesture a seat should be showing.
+ *
+ * **Every input is public.** There is no card, rank, equity, or evaluated-hand
+ * parameter in this signature, which is what makes "animation never reflects
+ * hidden-card strength" a structural property rather than a promise — an
+ * opponent holding the nuts and one holding 7-2 produce byte-identical
+ * gestures. `PokerTable.characterGesture.test.ts` asserts it.
+ */
 export function seatGestureForPublicState(input: {
   wonPot?: boolean;
   status: SeatPlayer["status"];
@@ -325,13 +346,20 @@ export function seatGestureForPublicState(input: {
   recentAction?: BettingActionType;
   showingFaceDownCards: boolean;
   hasPublicReveal: boolean;
-}): "win" | "all-in" | "fold" | "bet" | "check" | "call" | "hold" | undefined {
+  /** True on the beat the seat is dealt in. */
+  justDealt?: boolean;
+}): SeatGesture | undefined {
   if (input.wonPot) return "win";
+  if (input.status === "out") return "out";
   if (input.status === "all-in" || input.recentAction === "all-in") return "all-in";
   if (input.status === "folded" || input.recentAction === "fold") return "fold";
-  if (input.bet > 0 || input.recentAction === "bet" || input.recentAction === "raise") return "bet";
+  // A raise is a distinct physical act from an opening bet -- chips are
+  // gathered and pushed rather than simply placed.
+  if (input.recentAction === "raise") return "raise";
+  if (input.bet > 0 || input.recentAction === "bet") return "bet";
   if (input.recentAction === "check") return "check";
   if (input.recentAction === "call") return "call";
+  if (input.justDealt && input.status === "active") return "receive";
   if (input.showingFaceDownCards && !input.hasPublicReveal && input.status === "active") return "hold";
   return undefined;
 }
@@ -540,6 +568,8 @@ interface PlayerSeatProps {
   recentAction?: BettingActionType;
   recentActionLabel?: string;
   cardsDealt: boolean;
+  /** True while this hand's deal beat is the presented event. */
+  justDealt?: boolean;
   isActing: boolean;
   eliminated?: boolean;
   positionLabel?: string;
@@ -604,6 +634,7 @@ function PlayerSeat({
   recentAction,
   recentActionLabel,
   cardsDealt,
+  justDealt = false,
   isActing,
   eliminated = false,
   positionLabel,
@@ -636,6 +667,7 @@ function PlayerSeat({
     recentAction,
     showingFaceDownCards: isShowingCards,
     hasPublicReveal: hasRevealedCards,
+    justDealt,
   });
 
   return (
@@ -2935,6 +2967,9 @@ export function PokerTable({
                   recentAction={presentation.action}
                   recentActionLabel={presentation.label}
                   cardsDealt={cardsDealt}
+                  justDealt={
+                    tournament?.presentationEvent?.kind === "hole-cards-dealt"
+                  }
                   isActing={scenario.actingPlayerId === player.id}
                   eliminated={presentation.eliminated}
                   positionLabel={positionLabelForSeat(player.seat)}

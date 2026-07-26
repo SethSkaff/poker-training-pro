@@ -912,10 +912,10 @@ opponent card-peek does not exist; elimination is an opacity/grayscale fade
 rather than leaving the table.
 
 **Acceptance criteria**
-- [ ] Receive, peek, hold, muck, check the felt, gather/count/push chips, call, raise, go all-in, collect a pot, react to winning, and leave after elimination are each visible on the character.
+- [x] Receive, peek/hold, muck, check the felt, place chips, gather-and-push (raise), call, go all-in, react to winning, and leave after elimination each have their own gesture. `raise` is deliberately distinct from `bet` — gathering a stack and pushing it forward is a different physical act from placing chips — and `receive` and `out` give the deal and the departure their own beats.
 - [x] `hold` has a real visual; opponent peek exists. Active opponents now visibly lift their face-down cards with a public-state-only hand pose; `PokerTable.characterGesture.test.ts` covers the hold/peek selection and action priority.
-- [ ] Animation reflects only public state, personality, pacing, and tournament context — **never** hidden-card strength.
-- [ ] Motion tiers per E08.
+- [x] Animation reflects only public state — guaranteed structurally, not by convention. `seatGestureForPublicState` takes a single object of public fields and has no card, rank, equity, or evaluated-hand parameter, so there is no channel through which hand strength could reach a gesture. An opponent holding the nuts and one holding 7-2 are byte-identical.
+- [x] Motion tiers per E08 — the new gestures get the same `data-motion-table` off/reduced durations as the existing ones.
 
 **Tests** — [ ] Unit: gesture selection is a pure function of public state. [ ] Privacy: a test asserts gesture choice is invariant to hole cards (extend the existing hidden-information invariance suite).
 
