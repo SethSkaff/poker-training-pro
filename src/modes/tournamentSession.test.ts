@@ -335,6 +335,60 @@ describe("six-seat tournament session", () => {
     expect(snapshot.potBreakdown?.[1]?.eligiblePlayerIds).toHaveLength(2);
   });
 
+  it("keeps main and side pots separate after a street's bets are collected", () => {
+    const session = beginTournamentSessionHand(createSession());
+    const hand = session.activeHand;
+    if (!hand) throw new Error("Expected an active hand");
+    const amounts = [400, 1_000, 1_000, 0, 0, 0];
+    // The distinguishing state is `bet` -- during the street each player still
+    // has chips in front of them; collecting a street zeroes `bet` while
+    // `totalCommitted` (which is what defines the pot ladder) persists.
+    const withCommitments = (bet: number) => ({
+      ...session,
+      activeHand: {
+        ...hand,
+        betting: {
+          ...hand.betting,
+          currentBet: bet === 0 ? 0 : hand.betting.currentBet,
+          players: hand.betting.players.map((player, index) => ({
+            ...player,
+            bet: bet === 0 ? 0 : (amounts[index] ?? 0),
+            totalCommitted: amounts[index] ?? 0,
+            status: index < 3 ? ("all-in" as const) : ("folded" as const),
+          })),
+        },
+        information: {
+          ...hand.information,
+          pot: 2_400,
+          currentBet: bet === 0 ? 0 : hand.information.currentBet,
+          players: hand.information.players.map((player, index) => ({
+            ...player,
+            bet: bet === 0 ? 0 : (amounts[index] ?? 0),
+            totalCommitted: amounts[index] ?? 0,
+            status: index < 3 ? ("all-in" as const) : ("folded" as const),
+          })),
+        },
+      },
+    });
+
+    const duringStreet = createPokerTableSnapshot(withCommitments(1));
+    const afterCollection = createPokerTableSnapshot(withCommitments(0));
+
+    // Two lanes before and after: the collection animation consolidates chips
+    // visually, it never merges a capped side pot into the main pot.
+    expect(afterCollection.potBreakdown).toEqual(duringStreet.potBreakdown);
+    expect(afterCollection.potBreakdown).toMatchObject([
+      { kind: "main", amount: 1_200 },
+      { kind: "side", amount: 1_200 },
+    ]);
+    expect(afterCollection.potBreakdown?.[0]?.eligiblePlayerIds).toHaveLength(3);
+    expect(afterCollection.potBreakdown?.[1]?.eligiblePlayerIds).toHaveLength(2);
+    // Chip conservation across the collection.
+    expect(
+      afterCollection.potBreakdown?.reduce((sum, pot) => sum + pot.amount, 0),
+    ).toBe(2_400);
+  });
+
   it("synthesizes title/prompt/actionReason through the message catalog with correct interpolation", () => {
     const session = beginTournamentSessionHand(createSession());
     const snapshot = createPokerTableSnapshot(session);

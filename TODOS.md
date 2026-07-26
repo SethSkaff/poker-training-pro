@@ -399,7 +399,7 @@ readability defect found.
 - [x] The hero's committed amount is visible outside the raise UI.
 - [x] Amount to call is prominent and near the decision controls.
 - [x] Total invested this hand is available where useful (requires surfacing `totalCommitted`).
-- [ ] Current pot and each side-pot amount are visible (E05-004).
+- [x] Current pot and each side-pot amount are visible (E05-004). The centre pot carries the inclusive total; whenever a side pot exists the live "Live pots" strip lists every lane with its amount and eligible players.
 
 **Tests** — [x] Unit: `SeatPlayer` carries and renders `totalCommitted` (`tournamentSession.test.ts`, `PokerTable.heroStack.test.ts`). [x] Unit: hero committed amount renders. [x] Accessibility: stack, committed-this-street, total-invested, and amount-to-call are announced (`PokerTable.accessibility.test.ts`, `PokerTable.heroStack.test.ts`).
 
@@ -605,10 +605,10 @@ collected into the centre without a clear reason.
 **Acceptance criteria**
 - [x] Committed chips visibly move to the central pot when a street closes.
 - [x] The pot display updates in sync with the collection.
-- [ ] Side-pot separation is preserved through the collection.
+- [x] Side-pot separation is preserved through the collection. The live ladder is derived from `totalCommitted`, which the street close does not reset, so the Main/Side lanes and their eligibility lists are byte-identical before and after `bets-collected` — the animation consolidates chips visually without ever merging a capped pot into the main pot.
 - [x] No instantaneous teleport when motion is enabled.
 
-**Tests** — [ ] Unit: a collect event is emitted per street close. [ ] Unit: chip conservation holds across collection.
+**Tests** — [x] Unit: a collect event is emitted per street close (`tournamentRunner.test.ts` public-stream ordering). [x] Unit: chip conservation holds across collection, and the pot ladder is unchanged by it (`tournamentSession.test.ts` — "keeps main and side pots separate after a street's bets are collected").
 
 ### E05-003 — Animate pot awards
 
