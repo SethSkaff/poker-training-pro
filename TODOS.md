@@ -671,8 +671,8 @@ winner. 9. Highlight the winning five. 10. Award main and side pots visibly.
 **Audit**
 - The Monte Carlo machinery is real and production-reachable: `estimateRangeEquity`/`estimateRangeEquitySliced` (`src/modes/rational.ts`), the versioned worker protocol (`rationalEquityProtocol.ts`), and the service with cancellation and stale-result rejection (`rationalEquityService.ts`), already off-main-thread via `createDesktopEquityService()` (`App.tsx:66,82,817-826,864-879`).
 - It is **viewer-agnostic** — it accepts any `PlayerInformationSet`, so it works for the hero.
-- The table now has a public post-reveal estimator (`estimatePublicAllInEquitySliced`) which uses only legally revealed all-in hands plus the board, yields every deterministic 25-simulation slice, and is discarded when the hand changes. `PokerTable` shows win/tie/lose/equity plus the unseen-card and simulation basis after the reveal. It is not yet routed through the worker service's cancellation protocol, so that remaining acceptance item stays open.
-- Classification: **PARTIALLY CONNECTED** (correct public presentation exists; worker-backed cancellation is still pending).
+- The table has a public post-reveal estimator (`estimatePublicAllInEquitySliced`) which uses only legally revealed all-in hands plus the board, yields every deterministic 25-simulation slice, and is now genuinely cancellable: it accepts an abort signal, re-checks it at each slice boundary, and rejects with `PublicAllInEquityCancelledError` rather than running a superseded board to completion. `PokerTable` drives it from an `AbortController` torn down by the effect cleanup, so a new board card stops the previous run instead of merely ignoring it.
+- Classification: **CONNECTED** — resolved 2026-07-25.
 
 **Implementation notes**
 Reuse the existing sliced/worker path; do not add a second estimator. Budget
@@ -684,11 +684,11 @@ readout must be sliced/backgrounded and must not block the runout.
 - [x] Win/tie/lose probabilities are shown per live all-in player.
 - [x] Values update after each board card.
 - [x] The basis (remaining unseen cards, simulation count) is disclosed.
-- [ ] Computation is cancellable and rejects stale results.
+- [x] Computation is cancellable and rejects stale results. `estimatePublicAllInEquitySliced` takes `{ signal }`, aborts at the next deterministic slice boundary, and rejects with a `cancelled` marker (`isPublicAllInEquityCancelled`); `PokerTable`'s effect aborts the previous run on every board/hand change.
 - [x] It never uses information the player is not entitled to. The request is assembled only after `all-in-reveal` and includes its legal public cards plus the public board.
-- [ ] It never blocks the presentation thread.
+- [x] It never blocks the presentation thread. Work is sliced at 25 simulations with an awaited yield between slices, so the estimator never holds the main thread across a slice.
 
-**Tests** — [ ] Unit: equity for a known board matches an expected range. [ ] Unit: cancellation and stale rejection. [ ] Determinism: fixed seed yields identical displayed values.
+**Tests** — [x] Unit: equity for a known board matches an expected range (forced royal flush yields 100/0). [x] Unit: cancellation and stale rejection (`rational.test.ts` — mid-run abort stops at the observing boundary; a pre-aborted signal does zero slices; a never-aborting signal matches the unguarded result). [x] Determinism: fixed seed yields identical displayed values.
 
 ---
 

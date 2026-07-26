@@ -2312,7 +2312,10 @@ export function PokerTable({
       setAllInEquity(undefined);
       return;
     }
-    let cancelled = false;
+    // A real abort, not just an ignored promise: the estimator re-checks this
+    // at each deterministic slice boundary, so a new board card stops the
+    // superseded run instead of leaving it to finish against a stale board.
+    const controller = new AbortController();
     setAllInEquity(undefined);
     const publicCardSeed = [
       allInRevealEvent.handId,
@@ -2322,19 +2325,22 @@ export function PokerTable({
         ...reveal.cards.map(cardLabel),
       ]),
     ].join(":");
-    void estimatePublicAllInEquitySliced({
-      players: allInRevealEvent.reveals,
-      board: stagedBoard,
-      seed: `public-all-in:${publicCardSeed}`,
-      simulations: 500,
-      simulationsPerSlice: 25,
-    }).then((estimate) => {
-      if (!cancelled) setAllInEquity(estimate);
+    void estimatePublicAllInEquitySliced(
+      {
+        players: allInRevealEvent.reveals,
+        board: stagedBoard,
+        seed: `public-all-in:${publicCardSeed}`,
+        simulations: 500,
+        simulationsPerSlice: 25,
+      },
+      { signal: controller.signal },
+    ).then((estimate) => {
+      if (!controller.signal.aborted) setAllInEquity(estimate);
     }).catch(() => {
       // A stale/cancelled visual calculation is intentionally silent. The
       // authoritative engine is already progressing independently.
     });
-    return () => { cancelled = true; };
+    return () => { controller.abort(); };
   }, [allInRevealEvent, stagedBoard]);
   const revealedCardsByPlayer = new Map(
     publicRevealsForPresentation(

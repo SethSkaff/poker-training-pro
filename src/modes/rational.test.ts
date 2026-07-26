@@ -5,6 +5,7 @@ import type { PlayerInformationSet } from "../engine/tournament";
 import {
   decideRationalAction,
   estimatePublicAllInEquitySliced,
+  isPublicAllInEquityCancelled,
   estimateRangeEquity,
   estimateRangeEquitySliced,
   MAX_EQUITY_SIMULATIONS_PER_DECISION,
@@ -406,6 +407,76 @@ describe("public all-in equity", () => {
     const second = await estimatePublicAllInEquitySliced(request);
     expect(first).toEqual(second);
     expect(yields).toBe(4);
+  });
+
+  it("abandons the remaining work when the caller cancels mid-run", async () => {
+    let slices = 0;
+    const controller = { aborted: false };
+    const request = {
+      players: [
+        { playerId: "hero", cards: cards("As", "Kd") },
+        { playerId: "villain", cards: cards("Qh", "Qs") },
+      ],
+      board: cards("2c", "7d", "Th"),
+      seed: "public-cancelled",
+      simulations: 500,
+      simulationsPerSlice: 25,
+    };
+
+    await expect(
+      estimatePublicAllInEquitySliced(request, {
+        signal: controller,
+        yieldControl: async () => {
+          slices += 1;
+          if (slices === 2) controller.aborted = true;
+        },
+      }),
+    ).rejects.toSatisfy(isPublicAllInEquityCancelled);
+
+    // Stopped at the boundary that observed the abort rather than running all
+    // 19 remaining slices to completion.
+    expect(slices).toBe(2);
+  });
+
+  it("rejects an already-superseded request before doing any work", async () => {
+    let slices = 0;
+    await expect(
+      estimatePublicAllInEquitySliced(
+        {
+          players: [
+            { playerId: "hero", cards: cards("As", "Kd") },
+            { playerId: "villain", cards: cards("Qh", "Qs") },
+          ],
+          board: cards("2c", "7d", "Th"),
+          seed: "public-stale",
+          simulations: 500,
+          simulationsPerSlice: 25,
+        },
+        {
+          signal: { aborted: true },
+          yieldControl: async () => { slices += 1; },
+        },
+      ),
+    ).rejects.toSatisfy(isPublicAllInEquityCancelled);
+    expect(slices).toBe(0);
+  });
+
+  it("still resolves normally when the signal never aborts", async () => {
+    const request = {
+      players: [
+        { playerId: "hero", cards: cards("As", "Kd") },
+        { playerId: "villain", cards: cards("Qh", "Qs") },
+      ],
+      board: cards("2c", "7d", "Th"),
+      seed: "public-sliced",
+      simulations: 60,
+      simulationsPerSlice: 13,
+    };
+    const guarded = await estimatePublicAllInEquitySliced(request, {
+      signal: { aborted: false },
+    });
+    const plain = await estimatePublicAllInEquitySliced(request);
+    expect(guarded).toEqual(plain);
   });
 });
 

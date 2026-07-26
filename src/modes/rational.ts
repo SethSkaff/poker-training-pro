@@ -746,15 +746,47 @@ function validatePublicAllInEquity(request: PublicAllInEquityRequest): void {
 }
 
 /**
+ * Thrown when a sliced public-equity run is abandoned at a slice boundary.
+ * Callers use the marker to distinguish "this result is stale, drop it" from a
+ * genuine validation or evaluation failure that should surface.
+ */
+export class PublicAllInEquityCancelledError extends Error {
+  readonly cancelled = true;
+  constructor(message = "Public all-in equity estimation was cancelled") {
+    super(message);
+    this.name = "PublicAllInEquityCancelledError";
+  }
+}
+
+export function isPublicAllInEquityCancelled(error: unknown): boolean {
+  return error instanceof PublicAllInEquityCancelledError;
+}
+
+export interface PublicAllInEquityOptions
+  extends Pick<SlicedEquityOptions, "yieldControl"> {
+  /**
+   * Checked only at deterministic slice boundaries, so cancellation can never
+   * change the sample stream of a run that does complete.
+   */
+  signal?: { readonly aborted: boolean };
+}
+
+/**
  * Deterministic Monte Carlo from only publicly known cards. Each slice yields
- * to the event loop; callers can disregard a stale promise on a board/hand
- * update without touching the authoritative tournament engine.
+ * to the event loop and re-checks the caller's cancellation signal, so a board
+ * or hand change stops the remaining work instead of merely discarding it. The
+ * authoritative tournament engine is never consulted or affected.
  */
 export async function estimatePublicAllInEquitySliced(
   request: PublicAllInEquityRequest,
-  options: Pick<SlicedEquityOptions, "yieldControl"> = {},
+  options: PublicAllInEquityOptions = {},
 ): Promise<PublicAllInEquityEstimate> {
   validatePublicAllInEquity(request);
+  const signal = options.signal;
+  const throwIfCancelled = () => {
+    if (signal?.aborted) throw new PublicAllInEquityCancelledError();
+  };
+  throwIfCancelled();
   const simulations = request.simulations ?? 500;
   const simulationsPerSlice = Math.max(1, request.simulationsPerSlice ?? 25);
   const knownKeys = new Set(
@@ -793,8 +825,10 @@ export async function estimatePublicAllInEquitySliced(
     });
     if ((completed + 1) % simulationsPerSlice === 0 && completed + 1 < simulations) {
       await yieldControl();
+      throwIfCancelled();
     }
   }
+  throwIfCancelled();
   return {
     players: request.players.map((player, index) => ({
       playerId: player.playerId,
