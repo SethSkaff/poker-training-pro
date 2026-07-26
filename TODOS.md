@@ -577,33 +577,33 @@ collected into the centre without a clear reason.
 
 **Acceptance criteria**
 - [x] The chosen contract is written down in `docs/` and referenced from the code.
-- [ ] Chips visibly move from the stack area into a committed-bet area on bet/raise/call/blind.
-- [ ] Committed chips remain visually separate from the remaining stack.
-- [ ] Opponent bet chips never overlap stack labels (add these elements to the geometry gate, E25-002).
-- [ ] The numeric pot and the chip visuals never contradict one another.
-- [ ] `.center-pot` reflects the real pot magnitude or is removed.
+- [x] Chips visibly move from the stack area into a committed-bet area on bet/raise/call/blind.
+- [x] Committed chips remain visually separate from the remaining stack.
+- [x] Opponent bet chips never overlap stack labels (add these elements to the geometry gate, E25-002).
+- [x] The numeric pot and the chip visuals never contradict one another.
+- [x] `.center-pot` reflects the real pot magnitude or is removed.
 
 **Tests** — [ ] Unit: displayed pot equals the contract's expected value at each phase. [ ] Packaged: geometry gate covers bet-vs-stack-label. [ ] Packaged: perceptual gate observes chip travel.
 
 ### E05-002 — Collect bets into the pot at street end
 
 **Acceptance criteria**
-- [ ] Committed chips visibly move to the central pot when a street closes.
-- [ ] The pot display updates in sync with the collection.
+- [x] Committed chips visibly move to the central pot when a street closes.
+- [x] The pot display updates in sync with the collection.
 - [ ] Side-pot separation is preserved through the collection.
-- [ ] No instantaneous teleport when motion is enabled.
+- [x] No instantaneous teleport when motion is enabled.
 
 **Tests** — [ ] Unit: a collect event is emitted per street close. [ ] Unit: chip conservation holds across collection.
 
 ### E05-003 — Animate pot awards
 
 **Acceptance criteria**
-- [ ] The main pot visibly moves to its winner.
-- [ ] Each side pot visibly moves to its own correct winner.
-- [ ] Stacks update during or after the visible award.
-- [ ] Split-pot division is shown explicitly.
-- [ ] No full-screen refresh occurs.
-- [ ] Winning has emotional payoff (pairs with E22-001).
+- [x] The main pot visibly moves to its winner.
+- [x] Each side pot visibly moves to its own correct winner.
+- [x] Stacks update during or after the visible award.
+- [x] Split-pot division is shown explicitly.
+- [x] No full-screen refresh occurs.
+- [x] Winning has emotional payoff (pairs with E22-001).
 
 **Tests** — [ ] Unit: one award event per pot with correct recipient. [ ] Unit: split awards animate to multiple seats.
 
