@@ -117,6 +117,11 @@ interface TournamentTableControls {
   heroDecision?: boolean;
   /** The one public event currently being presented, if the table is busy. */
   presentationEvent?: TournamentPresentationEvent;
+  /**
+   * A legal all-in reveal held by the presentation coordinator for this hand.
+   * It is intentionally ephemeral: never part of a snapshot, save, or replay.
+   */
+  allInReveal?: Extract<TournamentPresentationEvent, { kind: "all-in-reveal" }>;
   onPresentationEventComplete?: () => void;
   onSkipPresentation?: () => void;
   kind: "career" | "timed";
@@ -246,6 +251,25 @@ export function winningCardLabelsForAwards(
   return new Set(
     awards.flatMap((award) => award.hand?.cards.map(cardLabel) ?? []),
   );
+}
+
+/**
+ * Selects only card data that is public at the currently presented moment.
+ * A held all-in reveal persists through queued board cards, while a showdown
+ * replaces it with the final legally revealed set. No runner snapshot or
+ * replay is consulted here.
+ */
+export function publicRevealsForPresentation(
+  event: TournamentPresentationEvent | undefined,
+  heldAllInReveal: Extract<
+    TournamentPresentationEvent,
+    { kind: "all-in-reveal" }
+  > | undefined,
+): readonly { playerId: string; cards: readonly Card[] }[] {
+  if (event?.kind === "showdown") return event.reveals;
+  if (heldAllInReveal) return heldAllInReveal.reveals;
+  if (event?.kind === "all-in-reveal") return event.reveals;
+  return [];
 }
 
 /**
@@ -2260,11 +2284,15 @@ export function PokerTable({
   const allInPlayer = allInEvent
     ? scenario.players.find((player) => player.id === allInEvent.playerId)
     : undefined;
-  const allInRevealEvent = tournament?.presentationEvent?.kind === "all-in-reveal"
-    ? tournament.presentationEvent
-    : undefined;
+  const allInRevealEvent = tournament?.allInReveal ??
+    (tournament?.presentationEvent?.kind === "all-in-reveal"
+      ? tournament.presentationEvent
+      : undefined);
   const revealedCardsByPlayer = new Map(
-    (showdownEvent?.reveals ?? allInRevealEvent?.reveals ?? []).map((reveal) => [reveal.playerId, reveal.cards]),
+    publicRevealsForPresentation(
+      tournament?.presentationEvent,
+      allInRevealEvent,
+    ).map((reveal) => [reveal.playerId, reveal.cards]),
   );
   const winningCardLabels = winningCardLabelsForAwards(
     showdownEvent?.awards ?? [],

@@ -144,6 +144,11 @@ interface PendingTournamentPresentation {
   skipResultVisible?: boolean;
 }
 
+type AllInRevealPresentation = Extract<
+  TournamentPresentationEvent,
+  { kind: "all-in-reveal" }
+>;
+
 const emptyTourResults: Record<
   TournamentPolicyMode,
   TournamentSessionCareerResult[]
@@ -272,6 +277,11 @@ export default function App() {
   const [runner, setRunner] = useState<TournamentRunner | null>(null);
   const [pendingPresentation, setPendingPresentation] =
     useState<PendingTournamentPresentation | null>(null);
+  // Legal reveal data belongs to the renderer's in-memory presentation state,
+  // not the game model. It remains visible through a queued all-in runout and
+  // is discarded as soon as that hand ends.
+  const [activeAllInReveal, setActiveAllInReveal] =
+    useState<AllInRevealPresentation>();
   const [resumeCandidate, setResumeCandidate] = useState<TournamentRunner | null>(null);
   const [trainingResumeScenarioId, setTrainingResumeScenarioId] = useState<
     string | null
@@ -760,6 +770,7 @@ export default function App() {
 
   const startCareerEvent = useCallback(
     (eventId: string) => {
+      setActiveAllInReveal(undefined);
       const created = createCareerTournamentRunner({
         eventId,
         hero: {
@@ -800,6 +811,7 @@ export default function App() {
 
   const startTimedTable = useCallback(
     (minutes: number) => {
+      setActiveAllInReveal(undefined);
       const created = createTimedTournamentRunner({
         minutes,
         hero: {
@@ -839,6 +851,14 @@ export default function App() {
 
   const commitTournamentAdvance = useCallback(
     (previous: TournamentRunner, next: TournamentRunner) => {
+      const nextHandId = next.session.activeHand?.handId;
+      // A legal all-in reveal is public only for its own hand. Keeping it out
+      // of the runner prevents it from leaking into autosaves/replays while
+      // still allowing the cards to remain on the table through every queued
+      // board-card presentation event.
+      setActiveAllInReveal((current) =>
+        current?.handId === nextHandId ? current : undefined,
+      );
       const replay = createTournamentRunnerReplay(next, 60);
       activeReplayRef.current = replay as unknown as Record<string, unknown>;
       finishRunner(next);
@@ -865,6 +885,10 @@ export default function App() {
         commitTournamentAdvance(source, transition.runner);
         return;
       }
+      const legalReveal = transition.events.find(
+        (event): event is AllInRevealPresentation => event.kind === "all-in-reveal",
+      );
+      if (legalReveal) setActiveAllInReveal(legalReveal);
       const next: PendingTournamentPresentation = {
         source,
         next: transition.runner,
@@ -1567,6 +1591,7 @@ export default function App() {
           onAction: actInTournament,
           heroDecision: Boolean(legalActions),
           presentationEvent,
+          allInReveal: activeAllInReveal,
           onPresentationEventComplete: completeTournamentPresentationEvent,
           onSkipPresentation: skipTournamentPresentation,
           kind: runner.kind,

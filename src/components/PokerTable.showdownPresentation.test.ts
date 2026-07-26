@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { evaluateFive } from "../engine/evaluator";
 import { cardLabel } from "../lib/format";
 import type { Card, Rank, SeatPlayer, Suit } from "../types/poker";
-import { describeLiveSidePot, winningCardLabelsForAwards } from "./PokerTable";
+import {
+  describeLiveSidePot,
+  publicRevealsForPresentation,
+  winningCardLabelsForAwards,
+} from "./PokerTable";
 
 const suits: Record<string, Suit> = {
   c: "clubs",
@@ -80,5 +84,34 @@ describe("live side-pot explanation", () => {
       players,
     );
     expect(explanation).not.toMatch(/rank|suit|hand|pair|flush/i);
+  });
+});
+
+describe("all-in reveal presentation", () => {
+  const reveal = {
+    id: "all-in-reveal",
+    kind: "all-in-reveal" as const,
+    handId: "hand-7",
+    playerIds: ["hero", "opponent"],
+    reveals: [
+      { playerId: "hero", cards: cards("As", "Kd") },
+      { playerId: "opponent", cards: cards("Qh", "Qs") },
+    ],
+  };
+  const boardCard = {
+    id: "board-1",
+    kind: "board-card-dealt" as const,
+    handId: "hand-7",
+    street: "flop" as const,
+    cardIndex: 0,
+    card: cards("2c")[0],
+  };
+
+  it("keeps a legal all-in reveal visible while later board events play", () => {
+    expect(publicRevealsForPresentation(boardCard, reveal)).toEqual(reveal.reveals);
+  });
+
+  it("does not reveal cards from an ordinary board event without a legal reveal", () => {
+    expect(publicRevealsForPresentation(boardCard, undefined)).toEqual([]);
   });
 });
