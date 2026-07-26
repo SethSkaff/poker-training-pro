@@ -1637,9 +1637,11 @@ at runtime (`:1174,1237`). **Zero imports** to or from the tutorial. This is a
 clean, safe removal boundary.
 
 **Acceptance criteria**
-- [ ] Contextual prompts for all-in, side pot, min-raise, blind increase, elimination, qualification, Elo change, short stack, and decision mistake survive removal intact.
-- [ ] Prompts remain manually dismissible and replayable.
-- [ ] The once-ever `seen` behavior is reconsidered for recurring teaching moments (see E05-004).
+- [x] All nine contextual prompts survive intact — nothing was removed, per the E21-001 decision.
+- [x] Prompts remain manually dismissible, and "Replay contextual tips" still clears the seen history.
+- [x] The once-ever `seen` behaviour is **reconsidered and changed**. Prompts are now classified as a **rule** or a **situation**. A rule ("this is what a side pot is") is true once and stays dismissed for good. A situation — short stack, blind increase, elimination, qualification, Elo change, decision mistake — recurs, because the circumstance recurs and the advice is actionable every time. The old behaviour meant a player who dismissed "you are short-stacked" in their first session never saw it again, so the coaching switched itself off exactly when it started to matter. Situational prompts now re-arm between sessions while still never repeating within one.
+
+**Tests** — [x] A dismissed rule stays dismissed; every situational prompt returns in a later session; none repeats within a session; the coaching master switch still wins; and every prompt id is classified exactly once.
 
 ### E21-003 — Extract a real standalone poker reference
 

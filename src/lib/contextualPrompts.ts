@@ -140,12 +140,50 @@ export function resetContextualPromptState(): ContextualPromptState {
   return { enabled: true, seen: [] };
 }
 
+/**
+ * Whether a prompt teaches a rule or flags a situation.
+ *
+ * The original design suppressed every prompt forever after one dismissal,
+ * which is right for a rule ("this is what a side pot is" needs saying once)
+ * and wrong for a situation. "You are short-stacked" and "the blinds just went
+ * up" are actionable *every* time they happen, and a player who dismissed them
+ * in their first session never saw them again — the advice was silently
+ * switched off precisely when it started to matter.
+ */
+export const PROMPT_RECURRENCE: Record<
+  ContextualPromptId,
+  "rule" | "situation"
+> = {
+  // Rules of the game: true once, then known.
+  "all-in": "rule",
+  "side-pot": "rule",
+  "minimum-raise": "rule",
+  // Situations: recur because the circumstance recurs.
+  "blind-increase": "situation",
+  elimination: "situation",
+  qualification: "situation",
+  "elo-change": "situation",
+  "short-stack": "situation",
+  "decision-mistake": "situation",
+};
+
 export function nextContextualPrompt(
   state: ContextualPromptState,
   occurrences: readonly ContextualPromptId[],
+  /**
+   * Prompts already shown during this sitting. Situational prompts re-arm
+   * between sessions; passing this keeps them from repeating within one.
+   */
+  shownThisSession: readonly ContextualPromptId[] = [],
 ): ContextualPrompt | undefined {
   if (!state.enabled) return undefined;
-  const id = occurrences.find((candidate) => !state.seen.includes(candidate));
+  const id = occurrences.find((candidate) => {
+    if (shownThisSession.includes(candidate)) return false;
+    // A rule stays dismissed for good; a situation only for this session.
+    return PROMPT_RECURRENCE[candidate] === "situation"
+      ? true
+      : !state.seen.includes(candidate);
+  });
   return id ? CONTEXTUAL_PROMPTS[id] : undefined;
 }
 

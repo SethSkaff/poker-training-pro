@@ -10,6 +10,8 @@ import {
   resetContextualPromptState,
   type ContextualPromptId,
   type ContextualPromptSignals,
+  PROMPT_RECURRENCE,
+  type ContextualPromptState,
 } from "./contextualPrompts";
 
 function seat(overrides: Partial<SeatPlayer> = {}): SeatPlayer {
@@ -254,5 +256,67 @@ describe("first-occurrence, dismiss, and replay", () => {
     );
     // The exhausted state proves replay is what re-opens them.
     expect(nextContextualPrompt(exhausted, ["elo-change"])).toBeUndefined();
+  });
+});
+
+describe("prompt recurrence", () => {
+  const dismissedEverything: ContextualPromptState = {
+    enabled: true,
+    seen: [
+      "all-in",
+      "side-pot",
+      "minimum-raise",
+      "blind-increase",
+      "elimination",
+      "qualification",
+      "elo-change",
+      "short-stack",
+      "decision-mistake",
+    ],
+  };
+
+  it("keeps a dismissed rule dismissed", () => {
+    // "This is what a side pot is" is true once and then known.
+    for (const id of ["all-in", "side-pot", "minimum-raise"] as const) {
+      expect(nextContextualPrompt(dismissedEverything, [id])).toBeUndefined();
+    }
+  });
+
+  it("brings a situational prompt back in a later session", () => {
+    // The original defect: a player who dismissed "you are short-stacked" in
+    // their first session never saw it again, so the advice switched itself
+    // off exactly when it started to matter.
+    for (const id of [
+      "short-stack",
+      "blind-increase",
+      "elimination",
+      "qualification",
+      "elo-change",
+      "decision-mistake",
+    ] as const) {
+      expect(nextContextualPrompt(dismissedEverything, [id])?.id).toBe(id);
+    }
+  });
+
+  it("does not repeat a situational prompt within one session", () => {
+    expect(
+      nextContextualPrompt(dismissedEverything, ["short-stack"], [
+        "short-stack",
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("still respects the coaching master switch", () => {
+    expect(
+      nextContextualPrompt({ enabled: false, seen: [] }, ["short-stack"]),
+    ).toBeUndefined();
+  });
+
+  it("classifies every prompt exactly once", () => {
+    const ids = Object.keys(CONTEXTUAL_PROMPTS) as ContextualPromptId[];
+    for (const id of ids) {
+      expect(["rule", "situation"]).toContain(PROMPT_RECURRENCE[id]);
+    }
+    expect(Object.keys(PROMPT_RECURRENCE).sort()).toEqual(ids.sort());
   });
 });

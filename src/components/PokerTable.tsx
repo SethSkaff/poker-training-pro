@@ -1439,11 +1439,25 @@ export function PokerTable({
     [],
   );
 
+  // Situational prompts re-arm between sessions but must not repeat within
+  // one, so this sitting's shown-set lives in a ref rather than the save.
+  const promptsShownThisSession = useRef<ContextualPromptId[]>([]);
+
   const offerPrompt = useCallback(
     (id: ContextualPromptId) => {
       if (activePrompt) return;
-      const prompt = nextContextualPrompt(coachState, [id]);
-      if (prompt) setActivePrompt(prompt);
+      const prompt = nextContextualPrompt(
+        coachState,
+        [id],
+        promptsShownThisSession.current,
+      );
+      if (prompt) {
+        promptsShownThisSession.current = [
+          ...promptsShownThisSession.current,
+          prompt.id,
+        ];
+        setActivePrompt(prompt);
+      }
     },
     [activePrompt, coachState],
   );
@@ -1466,8 +1480,15 @@ export function PokerTable({
         eloBaseline: eloBaseline.current,
         eloCurrent: progress.decisionElo + progress.mathElo,
       }),
+      promptsShownThisSession.current,
     );
-    if (prompt) setActivePrompt(prompt);
+    if (prompt) {
+      promptsShownThisSession.current = [
+        ...promptsShownThisSession.current,
+        prompt.id,
+      ];
+      setActivePrompt(prompt);
+    }
   }, [
     activePrompt,
     coachState,
