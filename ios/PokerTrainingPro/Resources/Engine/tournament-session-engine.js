@@ -1,5 +1,9 @@
 "use strict";
 (() => {
+  var __defProp = Object.defineProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
   // src/engine/betting.ts
   function assertChipAmount(value, label) {
     if (!Number.isSafeInteger(value) || value < 0) {
@@ -1146,6 +1150,54 @@
     "saveData.confirm.resetPreview": "This will archive the current save, clear {resultCount} recorded results and {trainingCompleted} completed training hands, and preserve audio and display settings.",
     "saveData.confirm.importAction": "Import this save",
     "saveData.confirm.resetAction": "Archive and reset progress",
+    // Durable save failures (src/lib/durablePersistence.ts) — surfaced as
+    // DurableFailure.message in RecoveryScreen and SaveDataControls. Distinct
+    // from the saveData.error.* keys above: those describe a save-backup
+    // format validation/migration failure raised directly by
+    // src/lib/saveMigration.ts with its own specific wording; these describe
+    // the durable-journal read/write/IPC failure paths (disk/quota/permission,
+    // stale confirmations, replay export, "operation unavailable in this
+    // build"), which intentionally use their own, sometimes-similar English
+    // copy rather than reusing the saveMigration wording.
+    "durable.error.noPendingRetry": "There is no pending save to retry.",
+    "durable.error.restoreUnavailable": "Restore is not available in this desktop build.",
+    "durable.error.startFreshUnavailable": "Start Fresh is not available in this desktop build.",
+    "durable.error.exportUnavailable": "Save export is not available in this desktop build.",
+    "durable.error.diagnosticsUnavailable": "Diagnostic export is not available in this desktop build.",
+    "durable.error.importUnavailable": "Save import is not available in this desktop build.",
+    "durable.error.resetUnavailable": "Progress reset is not available in this desktop build.",
+    "durable.error.replayExportUnavailable": "Replay export is not available in this desktop build.",
+    "durable.error.createdByNewerVersion": "This save was created by a newer version of the app.",
+    "durable.error.unknownApplicationOrFormat": "This save belongs to an unknown application or format.",
+    "durable.error.progressNotValidated": "The saved progress could not be validated.",
+    "durable.error.diskFull": "The save could not be written because the device is full.",
+    "durable.error.quotaExceeded": "The storage quota was exceeded.",
+    "durable.error.permissionDenied": "The save location is unavailable or read-only.",
+    "durable.error.readFailed": "The saved progress could not be read.",
+    "durable.error.generationInvalidJson": "A save generation contains incomplete or invalid data.",
+    "durable.error.generationInvalidRecord": "A save generation has an invalid format.",
+    "durable.error.generationChecksumMismatch": "A save generation failed its integrity check.",
+    "durable.error.noValidGeneration": "No valid save generation could be loaded.",
+    "durable.error.foreignSave": "The selected file belongs to another application.",
+    "durable.error.cyclicSave": "The selected save contains cyclic data.",
+    "durable.error.importTooLarge": "The selected save is too large to import.",
+    "durable.error.importChanged": "The selected save changed after preview. Choose it again.",
+    "durable.error.saveChanged": "Progress changed after preview. Review the reset again.",
+    "durable.error.invalidConfirmation": "The confirmation expired or was already used.",
+    "durable.error.invalidCurrentSave": "Current settings could not be validated safely.",
+    "durable.error.invalidReplay": "The replay could not be validated.",
+    "durable.error.replayTooLarge": "The replay is too large to export.",
+    "durable.error.developerExportDisabled": "Developer replay export is unavailable in this build.",
+    "durable.error.pickerFailed": "The replay destination could not be selected.",
+    "durable.error.cancelled": "The operation was cancelled.",
+    "durable.error.writeFallback": "Progress could not be saved. It remains ready to retry.",
+    "durable.error.genericFallback": "The save operation could not be completed.",
+    "durable.error.recoveryCopyAvailable": "The latest save could not be used. A recovery copy is available.",
+    "durable.error.previousSaveRestorable": "The latest save could not be used. The previous save can be restored.",
+    "durable.error.browserImportDamaged": "Existing browser progress is damaged and was not imported or replaced.",
+    "durable.error.browserQuotaExceeded": "Browser storage quota prevented the legacy import.",
+    "durable.error.browserAccessUnavailable": "Browser storage access is unavailable.",
+    "durable.error.browserReadFailed": "Browser storage could not be read.",
     // Save recovery (src/components/RecoveryScreen.tsx)
     "recovery.eyebrow": "Save recovery",
     "recovery.title": "Your progress is still protected",
@@ -1167,10 +1219,30 @@
     "recovery.confirm.startFreshAction": "Archive and start fresh",
     "recovery.confirm.keepProgress": "Keep my progress",
     // Credits (src/components/CreditsScreen.tsx) — UI chrome only; bundled
-    // license/notice text itself stays verbatim from its source files.
+    // license/notice text itself stays verbatim from its source files. Section
+    // titles/notes and version-row/document labels assembled by
+    // src/lib/creditsData.ts (assembleCredits) also live here. Font labels
+    // that pair a font's proper name with its license name (e.g. "Inter —
+    // SIL Open Font License 1.1") are intentionally NOT migrated — they are
+    // proper nouns/license identifiers, not composed UI prose.
     "credits.eyebrow": "About",
     "credits.title": "Credits & licenses",
     "credits.document.unavailable": "This notice is bundled with the installed app and is unavailable in this preview.",
+    "credits.section.application.title": "Application",
+    "credits.section.application.note": "Version and runtime identifiers for this build.",
+    "credits.versionRow.buildId": "Build identifier",
+    "credits.versionRow.electron": "Electron",
+    "credits.versionRow.chromium": "Chromium",
+    "credits.versionRow.nodeJs": "Node.js",
+    "credits.section.fonts.title": "Fonts",
+    "credits.section.fonts.note": "Bundled local fonts under the SIL Open Font License 1.1.",
+    "credits.document.label.thirdPartyPackages": "npm package notices",
+    "credits.document.label.thirdPartyRuntime": "Bundled runtime notices",
+    "credits.section.packages.title": "Open-source software",
+    "credits.section.packages.note": "Notices for the npm packages compiled into this build. These are bundled copies, shown offline; nothing is fetched.",
+    "credits.section.music.title": "Music",
+    "credits.section.music.note": "No instrumental soundtrack is included yet. When licensed tracks ship, each track's title, author, source, and license will appear here.",
+    "credits.musicStatus": "No licensed music ships in this build. Background music stays disabled until instrumental masters are licensed, loudness-normalised, and attributed here.",
     // About & support (src/components/AboutSupport.tsx) — UI chrome only.
     "about.heading": "About & support",
     "about.versionLabel": "Version",
@@ -1325,6 +1397,10 @@
     "dashboard.modeSelect.title": "Choose a mode",
     "dashboard.modeSelect.tutorialPrompt": "New to the table?",
     "dashboard.modeSelect.tutorialCta": "Learn the basics",
+    "dashboard.modeSelect.referencePrompt": "Need the numbers?",
+    "dashboard.modeSelect.referenceCta": "Open the poker reference",
+    "reference.title": "Poker reference",
+    "reference.intro": "Hand rankings, betting and tournament terms, probability shortcuts, and worked examples. Available any time, in a hand or out of one.",
     "dashboard.timed.title": "How much time do you have?",
     "dashboard.timed.presetsAriaLabel": "Session length presets",
     "dashboard.timed.minUnit": "min",
@@ -1338,6 +1414,94 @@
     "dashboard.tour.qualifiedStatus": "{finishPlace} of {fieldSize} · Qualified",
     "dashboard.tour.retryStatus": "{finishPlace} of {fieldSize} · Retry",
     "dashboard.tour.available": "Available",
+    "table.feedback.potOdds": "Pot odds",
+    "table.feedback.estimatedEquity": "Your equity (vs a random hand)",
+    "table.feedback.whyBest": "{bestAction} wins because it is worth {bestEv} bb against {runnerUpAction} at {runnerUpEv} bb - a margin of {margin} bb.",
+    "table.feedback.sensitivityCall": "You were {margin} points {direction} the equity you needed. A swing of about {swing} points in your read would change the answer.",
+    "table.feedback.sensitivityAbove": "above",
+    "table.feedback.sensitivityBelow": "below",
+    "table.feedback.sensitivityNoCall": "There is nothing to call here, so the decision turns on fold equity and position rather than pot odds.",
+    "table.feedback.equityBasis": "Equity estimated over {simulations} simulations against a uniformly random opponent hand. This scenario does not state a villain range, so treat it as a baseline, not a read.",
+    "review.title": "Round review",
+    "review.deriving": "Rebuilding the round from its replay…",
+    "review.error.generic": "This round could not be reviewed.",
+    "review.accuracy": "{accuracy}% matched the model's best line",
+    "review.decisionCount": "{count} decisions reviewed",
+    "review.approximationNotice": "These are this game's own estimates, not solved play. Equity comes from a bounded simulation, so treat close calls as close.",
+    "review.timelineLabel": "Decision timeline",
+    "review.handStreet": "Hand {handNumber} · {street}",
+    "review.potLabel": "pot {pot}",
+    "review.playersRemaining": "{count} players remaining",
+    "review.yourCards": "Your cards",
+    "review.board": "Board",
+    "review.noBoardYet": "No board cards yet",
+    "review.youPlayed": "You played",
+    "review.modelPreferred": "Model preferred",
+    "review.actionValues": "What each action was worth",
+    "review.basis": "Estimated from {simulations} simulations of the remaining unseen cards.",
+    "review.noneMatch": "No decisions match the current filters.",
+    "review.sampleCount": "{count} decisions",
+    "review.sampleTooSmall": "only {count} — too few to read into",
+    "review.keyboardHint": "arrows move · M jumps to the next mistake",
+    "review.filter.notable": "Noteworthy only",
+    "review.filter.mistakes": "Mistakes only",
+    "review.segment.street": "By street",
+    "review.segment.phase": "By stage",
+    "review.segment.risk": "By risk",
+    "review.segment.decisionType": "By action",
+    "review.quality.best": "Best line",
+    "review.quality.close": "Close",
+    "review.quality.inaccuracy": "Inaccuracy",
+    "review.quality.mistake": "Mistake",
+    "review.quality.blunder": "Blunder",
+    "review.action.fold": "Fold",
+    "review.action.check": "Check",
+    "review.action.call": "Call",
+    "review.action.bet": "Bet",
+    "review.action.raise": "Raise to",
+    "review.action.all-in": "All-in",
+    "review.key.preflop": "Preflop",
+    "review.key.flop": "Flop",
+    "review.key.turn": "Turn",
+    "review.key.river": "River",
+    "review.key.early": "Early",
+    "review.key.middle": "Middle",
+    "review.key.late": "Late",
+    "review.key.qualification": "Qualification",
+    "review.key.heads-up": "Heads-up",
+    "review.key.low": "Low risk",
+    "review.key.medium": "Medium risk",
+    "review.key.high": "High risk",
+    "review.key.all-in": "All-in",
+    "review.key.fold": "Folds",
+    "review.key.check": "Checks",
+    "review.key.call": "Calls",
+    "review.key.bet": "Bets",
+    "review.key.raise": "Raises",
+    "review.math.potBefore": "Pot before your action",
+    "review.math.costToCall": "Cost to call",
+    "review.math.potAfterCalling": "Pot after calling",
+    "review.math.potOdds": "Pot odds",
+    "review.math.requiredEquity": "Equity you needed",
+    "review.math.estimatedEquity": "Equity you had (estimated)",
+    "review.math.foldEquity": "Chance they fold",
+    "review.math.spr": "Stack-to-pot ratio",
+    "review.math.tournamentPressure": "Tournament pressure",
+    "review.math.evRegret": "EV given up",
+    "review.notable.large-mistake": "Costly mistake",
+    "review.notable.mistake": "Mistake",
+    "review.notable.major-all-in": "Major all-in decision",
+    "review.notable.disciplined-fold": "Disciplined fold",
+    "review.notable.close-correct-call": "Close correct call",
+    "review.notable.bluff": "Bluff",
+    "review.notable.missed-value": "Missed value",
+    "review.notable.high-ev-under-pressure": "Strong decision under pressure",
+    "dashboard.tour.progressCount": "{qualified} of {total} events qualified",
+    "dashboard.tour.stage.complete": "Completed",
+    "dashboard.tour.stage.current": "Current",
+    "dashboard.tour.stage.future": "Upcoming",
+    "dashboard.tour.resuming": "Resuming {eventName}",
+    "dashboard.tour.nextUp": "Next up: {eventName}",
     "dashboard.tour.startingStack": "Starting stack",
     "dashboard.tour.openingBlinds": "Opening blinds",
     "dashboard.tour.localField": "Local field",
@@ -1362,6 +1526,9 @@
     "dashboard.ceremony.handsPlayed": "Hands played",
     "dashboard.ceremony.unlocked": "Unlocked",
     "dashboard.ceremony.nextEvent": "Next event",
+    "dashboard.ceremony.nextUp": "Next on the road: {eventName}",
+    "dashboard.ceremony.journeyComplete": "That is the last event on the road. Play any event again to improve your finish.",
+    "dashboard.ceremony.retryPath": "You did not qualify this time. {eventName} stays open — enter it again whenever you are ready.",
     "dashboard.ceremony.reviewKeyHand": "Review key hand",
     "dashboard.ceremony.exportReplay": "Export event replay",
     "dashboard.ceremony.returnToMenu": "Return to menu",
@@ -1468,6 +1635,7 @@
     "table.seat.statusFragment.out": "out",
     "table.seat.holdingCardsFragment": ", holding cards",
     "table.seat.betFragment": ", bet {amount}",
+    "table.seat.committed": "In",
     "table.seat.dealerFragment": ", dealer button",
     "table.math.ariaLabel": "Training math question",
     "table.math.eyebrow": "Show your work · Optional",
@@ -1500,6 +1668,23 @@
     "table.feedback.math.incorrect": "incorrect",
     "table.feedback.reviewButton": "Review",
     "table.feedback.nextHandButton": "Next hand",
+    "table.feedback.analysisAriaLabel": "Decision mathematics",
+    "table.feedback.analysisHeading": "Decision mathematics",
+    "table.feedback.potBefore": "Pot before your action",
+    "table.feedback.costToCall": "Cost to call",
+    "table.feedback.potAfter": "Pot after a call",
+    "table.feedback.requiredEquity": "Required equity",
+    "table.feedback.chosenAction": "Your action",
+    "table.feedback.recommendedAction": "Recommended action",
+    "table.feedback.evRegret": "EV regret",
+    "table.feedback.closeDecisionLabel": "Close decision",
+    "table.feedback.actionEvs": "Modeled action EVs",
+    "table.feedback.assumptionCall": "If your range estimate falls below {requiredEquity}%, folding becomes preferable; above it, calling gains value.",
+    "table.feedback.assumptionAggression": "This is not a call spot: changes to the modeled range or fold frequency can change the value of aggression.",
+    "table.feedback.notApplicable": "Not applicable",
+    "table.feedback.notAvailable": "Not available",
+    "table.feedback.yes": "Yes",
+    "table.feedback.no": "No",
     "table.modeTitle.training": "Training Lab",
     "table.modeTitle.rational": "Rational Circuit",
     "table.modeTitle.normal": "Normal Tournament",
@@ -1534,12 +1719,32 @@
     "table.arrival.settling": "Settling into the next hand",
     "table.camera.left": "Look one seat left",
     "table.camera.right": "Look one seat right",
+    "table.camera.center": "Recenter the table view",
+    "table.camera.centered": "Centered",
+    "table.camera.offset": "Looking {direction}",
+    "table.camera.directionLeft": "left",
+    "table.camera.directionRight": "right",
     "table.camera.viewLabel": "Table view",
     "table.felt.brand": "PTP · CHAMPIONSHIP",
     "table.felt.dealerLabel": "DEALER",
     "table.readout.potLabel": "Pot",
     "table.readout.blinds": "Blinds {smallBlind}/{bigBlind}",
     "table.communityCards.ariaLabel": "Community cards",
+    "table.sidePot.label": "Side pot",
+    "table.sidePot.eligible": "Eligible: {players}",
+    "table.allIn.label": "All-in",
+    "table.allIn.player": "{player} is all-in",
+    "table.allIn.runoutHint": "Remaining cards will play out in order.",
+    "table.heroStack.label": "Your stack",
+    "table.heroStack.commitment": "In this round {street} · Total this hand {total}",
+    "table.heroStack.position": "Position {position}",
+    "table.position.button": "BTN",
+    "table.position.smallBlind": "SB",
+    "table.position.bigBlind": "BB",
+    "table.position.utg": "UTG",
+    "table.position.cutoff": "CO",
+    "table.position.hijack": "HJ",
+    "table.position.middle": "MP",
     "table.fold.release": "Release to fold",
     "table.fold.keepDragging": "Keep dragging",
     "table.holeCards.hide": "Hide",
@@ -1661,6 +1866,16 @@
     "prompts.shortStack.message": "At ten big blinds or fewer, blinds consume your stack quickly. Waiting is still a choice, but each orbit makes it more expensive.",
     "prompts.decisionMistake.title": "Review the decision",
     "prompts.decisionMistake.message": "A mistake is useful evidence. Compare the legal choices and their expected value, then retry the unscored scenario.",
+    // --- tournamentSession.ts (synthesized in-play scenario text) -------------
+    // Per-hand title/prompt/action-reason strings synthesized for Normal/
+    // Rational tournament hands, interpolated with the acting player's name
+    // and the event/hand numbers. Distinct from the versioned, calibration-
+    // gated src/data/trainingScenarios.ts content, which is Training-mode DATA
+    // outside this catalog (see PseudoLocaleScreens.test.tsx).
+    "tournamentSession.title": "{eventName} · Hand {handNumber}",
+    "tournamentSession.prompt.actorDeciding": "{actorName} is deciding.",
+    "tournamentSession.prompt.bettingComplete": "Betting is complete. Continue the hand.",
+    "tournamentSession.actionReason": "Tournament decisions are supplied by the selected information-set policy.",
     // --- lifecyclePause.ts (PokerTable's resume-recap panel) ------------------
     "resumeRecap.reasonLabel.manual": "Paused",
     "resumeRecap.reasonLabel.windowBlurred": "Window inactive",
@@ -2715,6 +2930,23 @@
     }
     return clamp(premium, 0, 0.22);
   }
+  function streetAggressionCount(informationSet) {
+    let count = 0;
+    for (const action of informationSet.actions) {
+      if (action.type === "flop" || action.type === "turn" || action.type === "river") {
+        count = 0;
+        continue;
+      }
+      if (action.type === "bet" || action.type === "raise" || action.type === "all-in") {
+        count += 1;
+      }
+    }
+    return count;
+  }
+  function reRaiseRisk(aggression) {
+    if (aggression <= 0) return 0.06;
+    return Math.min(0.85, 0.06 + aggression * 0.28);
+  }
   function addCandidate(map, command, additionalRisk) {
     const id = command.to === void 0 ? command.type : `${command.type}:${command.to}`;
     map.set(id, { id, command, additionalRisk });
@@ -2751,7 +2983,9 @@
     }
     if (legal.raise) {
       const potAfterCall = informationSet.pot + legal.toCall;
-      const desired = [0.5, 0.8, 1.1].map(
+      const aggression = streetAggressionCount(informationSet);
+      const fractions = aggression >= 3 ? [1, 1.4, 2] : aggression >= 1 ? [0.75, 1.1, 1.5] : [0.5, 0.8, 1.1];
+      const desired = fractions.map(
         (fraction) => {
           var _a, _b, _c, _d;
           return clamp(
@@ -2764,7 +2998,11 @@
           );
         }
       );
-      for (const to of /* @__PURE__ */ new Set([legal.raise.minTo, ...desired, legal.raise.maxTo])) {
+      const smallestDesired = Math.min(...desired);
+      const sizes = new Set(desired);
+      if (legal.raise.maxTo <= smallestDesired) sizes.add(legal.raise.minTo);
+      sizes.add(legal.raise.maxTo);
+      for (const to of sizes) {
         addCandidate(
           candidates,
           { type: "raise", to },
@@ -2841,6 +3079,7 @@
     const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
     const spr = effectiveStack / Math.max(1, informationSet.pot);
     const equityEdge = equity - requiredEquity;
+    const aggression = streetAggressionCount(informationSet);
     return candidates.map((candidate) => {
       const type = candidate.command.type;
       const foldEquity = foldEquityFor(
@@ -2867,7 +3106,11 @@
           1
         );
         const calledPot = informationSet.pot + wager * 2;
-        chipUtility = foldEquity * informationSet.pot + (1 - foldEquity) * (calledEquity * calledPot - wager);
+        const reRaised = reRaiseRisk(aggression);
+        const called = Math.max(0, 1 - foldEquity - reRaised * (1 - foldEquity));
+        const reRaisedShare = (1 - foldEquity) * reRaised;
+        const reRaisedValue = -wager * (1 - clamp(equity - 0.25, 0, 0.55));
+        chipUtility = foldEquity * informationSet.pot + called * (calledEquity * calledPot - wager) + reRaisedShare * reRaisedValue;
         chipUtility -= riskPremium * wager * (1.4 + Math.min(1, wager / Math.max(1, effectiveStack)));
         chipUtility += position * bigBlind * 0.1;
         if (role === "bluff") {
@@ -2877,6 +3120,10 @@
         if (spr >= 8 && wager > informationSet.pot && equity < 0.7) {
           chipUtility -= bigBlind * 0.5;
         }
+        const committedShare = clamp(wager / Math.max(1, effectiveStack), 0, 1);
+        const exposure = Math.max(0, committedShare - 0.25) / 0.75;
+        const survivalWeight = clamp(0.55 + riskPremium * 3, 0.55, 1.6);
+        chipUtility -= exposure * exposure * effectiveStack * survivalWeight * clamp(0.62 - equity, 0, 0.62);
       }
       if (type === "call") chipUtility += equityEdge * bigBlind * 1.2;
       const utilityBigBlinds = chipUtility / bigBlind;
@@ -3056,38 +3303,100 @@
   // src/modes/tournamentSession.ts
   var SESSION_TABLE_SIZE = 6;
   var SESSION_FORMAT = "compressed-six-seat";
-  var DEFAULT_OPPONENTS = [
-    {
-      id: "maya-tempo",
-      name: "Maya Chen",
-      rating: 1080,
-      normalProfile: "tempo"
-    },
-    {
-      id: "rafael-pressure",
-      name: "Rafael Torres",
-      rating: 1125,
-      normalProfile: "pressure"
-    },
-    {
-      id: "adrian-anchor",
-      name: "Adrian Cole",
-      rating: 1040,
-      normalProfile: "anchor"
-    },
-    {
-      id: "juno-mirror",
-      name: "Juno Pike",
-      rating: 1095,
-      normalProfile: "mirror"
-    },
-    {
-      id: "lena-wide",
-      name: "Lena Ortiz",
-      rating: 1060,
-      normalProfile: "wideLens"
-    }
+  var GIVEN_NAMES = [
+    "Alex",
+    "Blair",
+    "Casey",
+    "Devon",
+    "Emery",
+    "Frankie",
+    "Gale",
+    "Harper",
+    "Indigo",
+    "Jordan",
+    "Kai",
+    "Lennon",
+    "Marlow",
+    "Noor",
+    "Onyx",
+    "Paz",
+    "Quinn",
+    "Rio",
+    "Sasha",
+    "Tam",
+    "Umi",
+    "Vesper",
+    "Wren",
+    "Zuri"
   ];
+  var FAMILY_NAMES = [
+    "Moreno",
+    "Woods",
+    "Park",
+    "Ellis",
+    "Ross",
+    "Vale",
+    "Hart",
+    "Stone",
+    "Kim",
+    "Reed",
+    "Santos",
+    "Frost",
+    "Abara",
+    "Batista",
+    "Calder",
+    "Duarte",
+    "Eriksen",
+    "Fenwick",
+    "Ghosh",
+    "Halloran",
+    "Ibarra",
+    "Jansen",
+    "Kovač",
+    "Laurent"
+  ];
+  var ROSTER_PROFILES = Object.keys(NORMAL_OPPONENT_PROFILES);
+  var TIER_RATING_BANDS = {
+    local: { floor: 1e3, spread: 90 },
+    regional: { floor: 1060, spread: 110 },
+    circuit: { floor: 1130, spread: 130 },
+    championship: { floor: 1210, spread: 150 },
+    world: { floor: 1300, spread: 180 }
+  };
+  function createSessionOpponents(seed, eventId, mode, options = {}) {
+    var _a, _b;
+    const random = createSeededRandom(deriveSeed(seed, eventId, mode, "roster"));
+    const identities = [];
+    const takenIds = /* @__PURE__ */ new Set();
+    const takenGiven = /* @__PURE__ */ new Set();
+    const takenFamily = /* @__PURE__ */ new Set();
+    const seats = SESSION_TABLE_SIZE - 1;
+    let guard = 0;
+    while (identities.length < seats * 3 && guard < 800) {
+      guard += 1;
+      const given = GIVEN_NAMES[Math.floor(random() * GIVEN_NAMES.length)];
+      const family = FAMILY_NAMES[Math.floor(random() * FAMILY_NAMES.length)];
+      if (takenGiven.has(given) || takenFamily.has(family)) continue;
+      const id = `${given}-${family}`.toLowerCase();
+      if (takenIds.has(id)) continue;
+      takenGiven.add(given);
+      takenFamily.add(family);
+      takenIds.add(id);
+      identities.push({ id, name: `${given} ${family}` });
+    }
+    const avoid = new Set((_a = options.avoidIds) != null ? _a : []);
+    const seated = [
+      ...identities.filter((identity) => !avoid.has(identity.id)),
+      ...identities.filter((identity) => avoid.has(identity.id))
+    ].slice(0, seats);
+    const band = TIER_RATING_BANDS[(_b = options.tier) != null ? _b : "local"];
+    return seated.map(({ id, name }) => ({
+      id,
+      name,
+      rating: band.floor + Math.floor(random() * band.spread),
+      normalProfile: ROSTER_PROFILES[Math.floor(random() * ROSTER_PROFILES.length)]
+    }));
+  }
   function sourceQualificationRate(event) {
     switch (event.qualification.type) {
       case "win":
@@ -3181,7 +3490,9 @@
     }
     const entrants = assertEntrants(
       options.hero,
-      (_b = options.opponents) != null ? _b : DEFAULT_OPPONENTS
+      (_b = options.opponents) != null ? _b : createSessionOpponents(options.seed, options.eventId, options.mode, {
+        tier: event.tier
+      })
     );
     const tournament = createTournament(
       `${options.eventId}-session`,
@@ -3889,7 +4200,7 @@
     if (!viewerBetting) throw new Error("Viewer betting state is missing");
     const toCall = Math.max(0, hand.betting.currentBet - viewerBetting.streetCommitted);
     const players = ordered.map((tournamentPlayer, index) => {
-      var _a2, _b;
+      var _a2, _b, _c;
       const handPlayer = informationSet.players.find(
         (player) => player.id === tournamentPlayer.id
       );
@@ -3900,31 +4211,72 @@
         seat: index,
         status: tournamentPlayer.status === "eliminated" ? "out" : (_a2 = handPlayer == null ? void 0 : handPlayer.status) != null ? _a2 : "out",
         bet: (_b = handPlayer == null ? void 0 : handPlayer.streetCommitted) != null ? _b : 0,
+        totalCommitted: (_c = handPlayer == null ? void 0 : handPlayer.totalCommitted) != null ? _c : 0,
         ...tournamentPlayer.id === viewerId ? { cards: viewerHoleCards.map((card) => ({ ...card })) } : {}
       };
     });
     const buttonIndex = ordered.findIndex(
       (player) => player.seat === hand.buttonSeat
     );
+    const smallBlindIndex = ordered.findIndex(
+      (player) => player.id === hand.smallBlindPlayerId
+    );
+    const bigBlindIndex = ordered.findIndex(
+      (player) => player.id === hand.bigBlindPlayerId
+    );
     const recommendedAction = toCall > 0 ? "call" : "check";
+    const builtLivePots = buildPots(
+      hand.betting.players.map((player) => ({
+        playerId: player.id,
+        amount: player.totalCommitted,
+        folded: player.status === "folded"
+      }))
+    );
+    const temporarilyUnmatched = builtLivePots.refunds.reduce(
+      (sum, refund) => sum + refund.amount,
+      0
+    );
+    const potBreakdown = builtLivePots.pots.map((pot, index) => ({
+      id: pot.id,
+      kind: pot.kind,
+      // Before a betting round closes, buildPots correctly classifies an
+      // unmatched blind/ante as refundable. The public table's inclusive pot
+      // still contains that committed chip, so retain it on the main lane until
+      // later action contests it or the engine returns it.
+      amount: pot.amount + (index === 0 ? temporarilyUnmatched : 0),
+      eligiblePlayerIds: pot.eligiblePlayerIds.map((playerId) => {
+        var _a2;
+        const player = players.find((entry) => entry.id === playerId);
+        return (_a2 = player == null ? void 0 : player.id) != null ? _a2 : playerId;
+      })
+    }));
     return {
       id: hand.handId,
-      title: `${session.event.name} · Hand ${tableForSession(session).handNumber}`,
+      title: formatMessage("tournamentSession.title", {
+        eventName: session.event.name,
+        handNumber: tableForSession(session).handNumber
+      }),
       difficulty: session.event.tier === "local" ? 2 : session.event.tier === "regional" ? 3 : session.event.tier === "world" ? 5 : 4,
       street: hand.street,
       blinds: [level.smallBlind, level.bigBlind],
       ante: level.bigBlindAnte,
       heroSeat: 0,
       buttonSeat: Math.max(0, buttonIndex),
+      smallBlindSeat: Math.max(0, smallBlindIndex),
+      bigBlindSeat: Math.max(0, bigBlindIndex),
+      actingPlayerId: actingId != null ? actingId : void 0,
       pot: hand.information.pot,
+      potBreakdown,
       amountToCall: toCall,
       minimumRaise: hand.betting.currentBet === 0 ? level.bigBlind : hand.betting.currentBet + hand.betting.lastFullRaise,
       heroCards: viewerHoleCards.map((card) => ({ ...card })),
       board: hand.board.map((card) => ({ ...card })),
       players,
-      prompt: actingId ? `${(_a = actor == null ? void 0 : actor.name) != null ? _a : actingId} is deciding.` : "Betting is complete. Continue the hand.",
+      prompt: actingId ? formatMessage("tournamentSession.prompt.actorDeciding", {
+        actorName: (_a = actor == null ? void 0 : actor.name) != null ? _a : actingId
+      }) : formatMessage("tournamentSession.prompt.bettingComplete"),
       recommendedAction,
-      actionReason: "Tournament decisions are supplied by the selected information-set policy.",
+      actionReason: formatMessage("tournamentSession.actionReason"),
       mathQuestion: {
         topic: "pot-odds",
         prompt: "Compatibility field; hidden outside Training mode.",
@@ -4218,65 +4570,256 @@
       }
     }
   }
-  function advanceTournamentRunnerToHero(source, options = {}) {
+  function presentationEventId(runner, handId, kind, index = 0) {
+    return `${runner.sequence}:${handId}:${kind}:${index}`;
+  }
+  function beginHandPresentationEvents(source, handId) {
+    const hand = source.session.activeHand;
+    if (!hand) return [];
+    const activePlayerIds = hand.information.players.filter((player) => player.status !== "folded").map((player) => player.id);
+    const blindPosts = hand.information.actions.filter(
+      (action) => action.type === "small-blind" || action.type === "big-blind" || action.type === "big-blind-ante"
+    ).map((action) => {
+      var _a;
+      return {
+        playerId: action.playerId,
+        type: action.type,
+        amount: (_a = action.amount) != null ? _a : 0
+      };
+    });
+    return [
+      {
+        id: presentationEventId(source, handId, "button-moved"),
+        kind: "button-moved",
+        handId,
+        buttonSeat: hand.buttonSeat
+      },
+      {
+        id: presentationEventId(source, handId, "blinds-posted"),
+        kind: "blinds-posted",
+        handId,
+        posts: blindPosts
+      },
+      {
+        id: presentationEventId(source, handId, "hole-cards-dealt"),
+        kind: "hole-cards-dealt",
+        handId,
+        playerIds: activePlayerIds
+      }
+    ];
+  }
+  function progressHandPresentationEvents(source, next) {
+    const previousHand = source.session.activeHand;
+    if (!previousHand) return [];
+    const nextHand = next.session.activeHand;
+    if (nextHand) {
+      const newlyDealt = nextHand.board.length - previousHand.board.length;
+      if (newlyDealt <= 0) return [];
+      const allInPlayerIds = previousHand.betting.players.filter((player) => player.status !== "folded").filter((player) => player.status === "all-in").map((player) => player.id);
+      const revealAllInHands = newlyDealt >= 2 && allInPlayerIds.length >= 2 && previousHand.betting.players.filter((player) => player.status !== "folded").every((player) => player.status === "all-in");
+      return [
+        ...revealAllInHands ? [{
+          id: presentationEventId(source, previousHand.handId, "all-in-reveal", previousHand.board.length),
+          kind: "all-in-reveal",
+          handId: previousHand.handId,
+          playerIds: allInPlayerIds,
+          reveals: allInPlayerIds.flatMap((playerId) => {
+            const cards = previousHand.holeCards[playerId];
+            return (cards == null ? void 0 : cards.length) === 2 ? [{ playerId, cards: cards.map((card) => ({ ...card })) }] : [];
+          })
+        }] : [],
+        {
+          id: presentationEventId(
+            source,
+            previousHand.handId,
+            "bets-collected",
+            previousHand.board.length
+          ),
+          kind: "bets-collected",
+          handId: previousHand.handId,
+          amount: previousHand.information.pot
+        },
+        ...Array.from({ length: newlyDealt }, (_, index) => ({
+          id: presentationEventId(
+            source,
+            previousHand.handId,
+            "board-card-dealt",
+            previousHand.board.length + index
+          ),
+          kind: "board-card-dealt",
+          handId: previousHand.handId,
+          street: nextHand.street,
+          cardIndex: previousHand.board.length + index,
+          card: { ...nextHand.board[previousHand.board.length + index] }
+        }))
+      ];
+    }
+    const result = next.session.lastHand;
+    if (!result || result.handId !== previousHand.handId) return [];
+    const events = [];
+    events.push({
+      id: presentationEventId(
+        source,
+        result.handId,
+        "bets-collected",
+        previousHand.board.length
+      ),
+      kind: "bets-collected",
+      handId: result.handId,
+      amount: previousHand.information.pot
+    });
+    if (!previousHand.betting.handComplete) {
+      const playerIds = previousHand.betting.players.filter((player) => player.status !== "folded").map((player) => player.id);
+      events.push({
+        id: presentationEventId(source, result.handId, "showdown"),
+        kind: "showdown",
+        handId: result.handId,
+        playerIds,
+        reveals: playerIds.flatMap((playerId) => {
+          const cards = previousHand.holeCards[playerId];
+          return (cards == null ? void 0 : cards.length) === 2 ? [{ playerId, cards: cards.map((card) => ({ ...card })) }] : [];
+        }),
+        awards: result.awards.map((award) => ({
+          potId: award.potId,
+          playerId: award.playerId,
+          amount: award.amount,
+          ...award.hand ? { hand: award.hand } : {}
+        }))
+      });
+    } else {
+      events.push({
+        id: presentationEventId(source, result.handId, "hand-result"),
+        kind: "hand-result",
+        handId: result.handId,
+        awards: result.awards.map((award) => ({
+          potId: award.potId,
+          playerId: award.playerId,
+          amount: award.amount,
+          ...award.hand ? { hand: award.hand } : {}
+        }))
+      });
+    }
+    result.pots.filter((pot) => pot.kind === "side").forEach((pot, index) => {
+      events.push({
+        id: presentationEventId(source, result.handId, "side-pot-formed", index),
+        kind: "side-pot-formed",
+        handId: result.handId,
+        potId: pot.id,
+        amount: pot.amount,
+        eligiblePlayerIds: [...pot.eligiblePlayerIds]
+      });
+    });
+    result.awards.forEach((award, index) => {
+      events.push({
+        id: presentationEventId(source, result.handId, "pot-awarded", index),
+        kind: "pot-awarded",
+        handId: result.handId,
+        playerId: award.playerId,
+        amount: award.amount
+      });
+    });
+    result.eliminatedPlayerIds.forEach((playerId, index) => {
+      events.push({
+        id: presentationEventId(source, result.handId, "eliminated", index),
+        kind: "eliminated",
+        handId: result.handId,
+        playerId
+      });
+    });
+    return events;
+  }
+  function recordedActionRunner(source, playerId, command, policy, elapsedMs, recordReplay) {
+    var _a;
+    const handId = (_a = source.session.activeHand) == null ? void 0 : _a.handId;
+    if (!handId) throw new Error("The tournament hand is missing");
+    const nextSession = applyTournamentSessionAction(
+      source.session,
+      playerId,
+      command
+    );
+    return {
+      ...source,
+      sequence: source.sequence + 1,
+      session: advanceTournamentSessionClock(nextSession, elapsedMs),
+      decisions: [
+        ...source.decisions.slice(-79),
+        {
+          sequence: source.sequence,
+          handId,
+          playerId,
+          command: { ...command },
+          policy
+        }
+      ],
+      ...recordReplay ? { replayActions: [...source.replayActions, recordReplay] } : {}
+    };
+  }
+  function advanceTournamentRunnerOneStep(source, options = {}) {
     var _a, _b;
-    const maxSteps = (_a = options.maxSteps) != null ? _a : 2500;
-    const nowMs = (_b = options.nowMs) != null ? _b : Date.now();
-    let runner = source;
-    for (let step = 0; step < maxSteps; step += 1) {
-      runner = sanitizeTimedCompletion(runner);
-      if (runner.session.status === "complete") return runner;
-      if (!runner.session.activeHand) {
-        runner = applyTimedBlindLevel(runner, nowMs);
-        runner = {
-          ...runner,
-          session: beginTournamentSessionHand(runner.session)
-        };
-        continue;
-      }
-      const hand = runner.session.activeHand;
-      if (hand.betting.complete) {
-        runner = {
-          ...runner,
-          session: progressTournamentSessionHand(runner.session)
-        };
-        continue;
-      }
-      const actor = nextToAct(hand.betting);
-      if (!actor) {
-        throw new Error("Incomplete betting round has no actor");
-      }
-      if (actor === runner.session.heroId) return runner;
-      const policy = chooseTournamentSessionPolicyAction(
-        runner.session,
-        actor,
-        options.policy
-      );
-      const nextSession = applyTournamentSessionAction(
-        runner.session,
-        actor,
-        policy.command
-      );
-      const elapsed = 1500 + runner.sequence * 977 % 2750;
-      runner = {
+    const nowMs = (_a = options.nowMs) != null ? _a : Date.now();
+    let runner = sanitizeTimedCompletion(source);
+    if (runner.session.status === "complete") {
+      return { runner, events: [], awaitingHero: false };
+    }
+    if (!runner.session.activeHand) {
+      runner = applyTimedBlindLevel(runner, nowMs);
+      const next2 = {
         ...runner,
-        sequence: runner.sequence + 1,
-        session: advanceTournamentSessionClock(nextSession, elapsed),
-        decisions: [
-          ...runner.decisions.slice(-79),
-          {
-            sequence: runner.sequence,
-            handId: hand.handId,
-            playerId: actor,
-            command: { ...policy.command },
-            policy: policy.mode
-          }
-        ]
+        session: beginTournamentSessionHand(runner.session)
+      };
+      const handId = (_b = next2.session.activeHand) == null ? void 0 : _b.handId;
+      if (!handId) throw new Error("Started tournament hand is missing");
+      return {
+        runner: next2,
+        events: beginHandPresentationEvents(next2, handId),
+        awaitingHero: false
       };
     }
-    throw new Error(`Tournament runner exceeded ${maxSteps} automatic steps`);
+    const hand = runner.session.activeHand;
+    if (hand.betting.complete) {
+      const next2 = sanitizeTimedCompletion({
+        ...runner,
+        session: progressTournamentSessionHand(runner.session)
+      });
+      return {
+        runner: next2,
+        events: progressHandPresentationEvents(runner, next2),
+        awaitingHero: false
+      };
+    }
+    const actor = nextToAct(hand.betting);
+    if (!actor) throw new Error("Incomplete betting round has no actor");
+    if (actor === runner.session.heroId) {
+      return { runner, events: [], awaitingHero: true };
+    }
+    const policy = chooseTournamentSessionPolicyAction(
+      runner.session,
+      actor,
+      options.policy
+    );
+    const elapsed = 1500 + runner.sequence * 977 % 2750;
+    const next = recordedActionRunner(
+      runner,
+      actor,
+      policy.command,
+      policy.mode,
+      elapsed
+    );
+    return {
+      runner: next,
+      events: [
+        {
+          id: presentationEventId(runner, hand.handId, "action"),
+          kind: "action",
+          handId: hand.handId,
+          playerId: actor,
+          command: { ...policy.command }
+        }
+      ],
+      awaitingHero: false
+    };
   }
-  function applyHeroTournamentAction(source, request, options = {}) {
+  function applyHeroTournamentActionOneStep(source, request, options = {}) {
     var _a, _b, _c;
     const legal = heroTournamentLegalActions(source);
     if (!legal) throw new Error("The tournament is not waiting for the hero");
@@ -4284,33 +4827,60 @@
     const command = tournamentCommandForHeroAction(legal, request);
     const handId = (_b = source.session.activeHand) == null ? void 0 : _b.handId;
     if (!handId) throw new Error("The tournament hand is missing");
-    const acted = applyTournamentSessionAction(
-      source.session,
+    const next = recordedActionRunner(
+      source,
       source.session.heroId,
-      command
+      command,
+      source.session.mode,
+      Math.max(0, (_c = request.decisionElapsedMs) != null ? _c : 0),
+      { request: { ...request }, nowMs }
     );
-    const elapsed = Math.max(0, (_c = request.decisionElapsedMs) != null ? _c : 0);
-    const runner = {
-      ...source,
-      sequence: source.sequence + 1,
-      session: advanceTournamentSessionClock(acted, elapsed),
-      decisions: [
-        ...source.decisions.slice(-79),
+    return {
+      runner: next,
+      events: [
         {
-          sequence: source.sequence,
+          id: presentationEventId(source, handId, "action"),
+          kind: "action",
           handId,
           playerId: source.session.heroId,
-          command,
-          policy: source.session.mode
+          command: { ...command }
         }
       ],
-      replayActions: [
-        ...source.replayActions,
-        { request: { ...request }, nowMs }
-      ]
+      awaitingHero: false
     };
-    return advanceTournamentRunnerToHero(runner, { ...options, nowMs });
   }
+  function advanceTournamentRunnerToHero(source, options = {}) {
+    var _a;
+    const maxSteps = (_a = options.maxSteps) != null ? _a : 2500;
+    let runner = source;
+    for (let step = 0; step < maxSteps; step += 1) {
+      const transition = advanceTournamentRunnerOneStep(runner, options);
+      runner = transition.runner;
+      if (transition.awaitingHero || runner.session.status === "complete") {
+        return sanitizeTimedCompletion(runner);
+      }
+    }
+    throw new Error(`Tournament runner exceeded ${maxSteps} automatic steps`);
+  }
+  function applyHeroTournamentAction(source, request, options = {}) {
+    var _a;
+    const nowMs = (_a = options.nowMs) != null ? _a : Date.now();
+    const step = applyHeroTournamentActionOneStep(source, request, {
+      ...options,
+      nowMs
+    });
+    return advanceTournamentRunnerToHero(step.runner, { ...options, nowMs });
+  }
+  var CURRENT_ENGINE_VERSION = "tournament-session-v1";
+  var CURRENT_CONTENT_VERSION = "career-events-v1";
+  var CURRENT_POLICY_VERSION = "normal-rational-v1";
+  var TournamentReplayVersionError = class extends Error {
+    constructor(message) {
+      super(message);
+      __publicField(this, "versionMismatch", true);
+      this.name = "TournamentReplayVersionError";
+    }
+  };
   function createTournamentRunnerReplay(runner, policySimulations = 60) {
     const hero = runner.session.entrants.find(
       (entrant) => entrant.id === runner.session.heroId
@@ -4319,9 +4889,9 @@
     return {
       format: "poker-training-pro-tournament-replay",
       version: 1,
-      engineVersion: "tournament-session-v1",
-      contentVersion: "career-events-v1",
-      policyVersion: "normal-rational-v1",
+      engineVersion: CURRENT_ENGINE_VERSION,
+      contentVersion: CURRENT_CONTENT_VERSION,
+      policyVersion: CURRENT_POLICY_VERSION,
       policySimulations,
       kind: runner.kind,
       eventId: runner.session.event.id,
@@ -4348,6 +4918,11 @@
     var _a, _b, _c, _d, _e, _f, _g, _h;
     if (replay.format !== "poker-training-pro-tournament-replay" || replay.version !== 1 || !Number.isInteger(replay.policySimulations) || replay.policySimulations < 1) {
       throw new Error("Unsupported tournament replay");
+    }
+    if (replay.engineVersion !== CURRENT_ENGINE_VERSION || replay.contentVersion !== CURRENT_CONTENT_VERSION || replay.policyVersion !== CURRENT_POLICY_VERSION) {
+      throw new TournamentReplayVersionError(
+        `This replay was recorded by a different build (engine ${String(replay.engineVersion)}, content ${String(replay.contentVersion)}, policy ${String(replay.policyVersion)}); this build reconstructs ${CURRENT_ENGINE_VERSION}/${CURRENT_CONTENT_VERSION}/${CURRENT_POLICY_VERSION}.`
+      );
     }
     const firstNowMs = (_d = (_c = (_a = replay.timed) == null ? void 0 : _a.startedAtMs) != null ? _c : (_b = replay.actions[0]) == null ? void 0 : _b.nowMs) != null ? _d : Date.now();
     let runner = replay.kind === "timed" ? createTimedTournamentRunner({
