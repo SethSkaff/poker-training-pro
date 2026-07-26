@@ -33,6 +33,7 @@ import {
   type RatedTrainingScenario,
 } from "../data/trainingScenarios";
 import type { BettingActionType, LegalActionSet } from "../engine";
+import type { CareerTier } from "../engine/tournament";
 import {
   cardAriaLabel,
   cardLabel,
@@ -144,6 +145,12 @@ interface TournamentTableControls {
   durationMs?: number;
   actionHistory: string[];
   showArrival: boolean;
+  /**
+   * Career tier of the event being played. Drives room scale, crowd density,
+   * and lighting at the seated table, so a world championship does not look
+   * like the local qualifier with different signage.
+   */
+  tier?: CareerTier;
   /** Big blind of the opening level, used to detect a blind increase. */
   openingBigBlind?: number;
   /** Finishing places that qualify or cash in this event. */
@@ -2495,6 +2502,7 @@ export function PokerTable({
   return (
     <div
       className="table-screen"
+      data-event-tier={tournament?.tier ?? "local"}
       data-camera-motion={settings.cameraMotion}
       data-table-motion={settings.tableMotion}
       data-transition-motion={settings.transitionMotion}

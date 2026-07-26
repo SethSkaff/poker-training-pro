@@ -9293,3 +9293,60 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="reduced"] .seat-action-hand--out {
   animation-duration: 240ms !important;
 }
+
+/* ---------------------------------------------------------------------------
+   Seated-table environment by event tier (E10-003).
+
+   The fly-through already varied by tier; the table the player actually sits
+   at did not, so every event looked identical once seated. These rules reuse
+   the depth layers rather than adding art: crowd density comes from how many
+   distant tables stay visible, room scale from their spread, and lighting from
+   the house-light warmth. Entirely procedural, no per-event asset set.
+--------------------------------------------------------------------------- */
+
+/* Local qualifier: a small, dim room -- the far plane is mostly empty. */
+.table-screen[data-event-tier="local"] .room-depth__far i:nth-child(n + 4) {
+  display: none;
+}
+
+.table-screen[data-event-tier="local"] .room-lights i {
+  opacity: 0.55;
+}
+
+.table-screen[data-event-tier="regional"] .room-depth__far i:nth-child(n + 6) {
+  display: none;
+}
+
+/* Circuit upward: the hall fills out and the house lights warm. */
+.table-screen[data-event-tier="circuit"] .room-lights i {
+  background: linear-gradient(rgba(230, 246, 255, 0.11), transparent);
+}
+
+.table-screen[data-event-tier="championship"] .room-depth__far,
+.table-screen[data-event-tier="world"] .room-depth__far {
+  right: -22%;
+  left: -22%;
+  opacity: 0.62;
+}
+
+.table-screen[data-event-tier="championship"] .room-lights i,
+.table-screen[data-event-tier="world"] .room-lights i {
+  width: 320px;
+  background: linear-gradient(rgba(255, 240, 208, 0.14), transparent);
+}
+
+/* The championship rail carries a warmer, brighter trim. */
+.table-screen[data-event-tier="championship"] .poker-table,
+.table-screen[data-event-tier="world"] .poker-table {
+  box-shadow:
+    0 0 0 3px #c79a4c,
+    0 0 0 11px #0b110e,
+    0 47px 60px rgba(0, 0, 0, 0.57),
+    inset 0 22px 44px rgba(0, 0, 0, 0.28),
+    inset 0 -30px 46px rgba(0, 0, 0, 0.46),
+    inset 0 2px 0 rgba(212, 246, 226, 0.18);
+}
+
+.table-screen[data-event-tier="world"] .room-depth__mid i {
+  width: 142px;
+}

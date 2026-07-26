@@ -1702,6 +1702,7 @@ export default function App() {
             return `${name}: ${decision.command.type}${amount}`;
           }),
           showArrival,
+          tier: runner.session.event.tier,
           lastPotWinnerIds: Array.from(
             new Set(
               (runner.session.lastHand?.awards ?? []).map(

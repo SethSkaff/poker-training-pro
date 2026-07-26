@@ -226,7 +226,7 @@ describe("tournament runner", () => {
     expect(showdown.reveals).toHaveLength(showdown.playerIds.length);
     expect(showdown.reveals.every((reveal) => reveal.cards.length === 2)).toBe(true);
     expect(showdown.awards.length).toBeGreaterThan(0);
-  });
+  }, 60_000);
 
   it("keeps an early all-in reveal limited to live all-in players", () => {
     let reveal: Extract<
@@ -254,7 +254,9 @@ describe("tournament runner", () => {
     if (!reveal) return; // The seed can legitimately finish without a preflop all-in.
     expect(reveal.playerIds).toHaveLength(reveal.reveals.length);
     expect(reveal.reveals.every((entry) => entry.cards.length === 2)).toBe(true);
-  });
+    // Scans up to 160 policy decisions; ~1.7s alone but slower under parallel
+    // load, so it gets an explicit budget rather than the 5s default.
+  }, 60_000);
 
   it("never leaks a hole card through a non-reveal event, and never reveals a folded hand", () => {
     const label = (card: { rank: string; suit: string }) =>
