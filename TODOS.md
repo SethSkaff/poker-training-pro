@@ -516,9 +516,9 @@ When the hero folds, the hand appears to end or blank immediately.
 - Classification: **PRESENTATION BUG / STATE-SYNC BUG**. Depends on E01-002.
 
 **Acceptance criteria**
-- [ ] Default: hero cards visibly muck, remaining opponents act visibly, board cards continue to deal, pots build, the winner is shown, the pot is awarded, then the next hand begins normally.
-- [ ] The player can watch a folded hand play out.
-- [ ] Presentation honors the speed setting.
+- [x] Default: hero cards visibly muck, remaining opponents act visibly, board cards continue to deal, pots build, the winner is shown, the pot is awarded, then the next hand begins normally.
+- [x] The player can watch a folded hand play out.
+- [x] Presentation honors the speed setting.
 
 **Tests** — [ ] Unit: after a hero fold, presentation events continue to hand end. [ ] Integration: the next hand is not dealt until the current hand's result has been presented.
 
@@ -531,22 +531,22 @@ When the hero folds, the hand appears to end or blank immediately.
 - Classification: **PRESENTATION BUG / MISSING FEATURE**.
 
 **Acceptance criteria**
-- [ ] Full presentation is the default; skipping is an explicit choice.
-- [ ] Skip resolves only queued presentation and opponent-play delays.
-- [ ] Skip never cancels, duplicates, or recomputes an already-chosen action.
-- [ ] Skip moves cleanly to the result and leaves the result readable.
-- [ ] Skip is keyboard and controller accessible and clearly labelled.
+- [x] Full presentation is the default; skipping is an explicit choice.
+- [x] Skip resolves only queued presentation and opponent-play delays.
+- [x] Skip never cancels, duplicates, or recomputes an already-chosen action.
+- [x] Skip moves cleanly to the result and leaves the result readable.
+- [x] Skip is keyboard and controller accessible and clearly labelled.
 
 **Tests** — [ ] Unit: skip yields identical engine state to full playback. [ ] Unit: repeated rapid skip applies each action exactly once. [ ] Accessibility: skip reachable by keyboard and controller.
 
 ### E04-003 — Give fold-wins an explicit result sequence
 
 **Acceptance criteria**
-- [ ] The final fold is shown.
-- [ ] The winner is identified with a short result message.
-- [ ] The pot visibly moves to the winner and the stack updates.
-- [ ] The result remains visible long enough to understand.
-- [ ] Folded hole cards are **not** revealed (no deliberate option is in scope here).
+- [x] The final fold is shown.
+- [x] The winner is identified with a short result message.
+- [x] The pot visibly moves to the winner and the stack updates.
+- [x] The result remains visible long enough to understand.
+- [x] Folded hole cards are **not** revealed (no deliberate option is in scope here).
 
 **Tests** — [ ] Unit: all-fold termination emits a complete result sequence. [ ] Privacy: no folded hole card is exposed.
 
