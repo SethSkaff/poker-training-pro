@@ -457,14 +457,14 @@ are not named and winning cards are not highlighted.
 - Classification: **EXISTS BUT DISCONNECTED** — a one-line data loss.
 
 **Acceptance criteria**
-- [ ] `potId` and `hand` reach the UI for every award.
-- [ ] The winning hand category is named on screen (Pair … Royal Flush).
-- [ ] The exact five cards used are highlighted — moved slightly forward/up and visually connected.
-- [ ] Unused cards remain visible but de-emphasized.
-- [ ] Board-playing hands are handled correctly.
-- [ ] Ties and split pots are shown explicitly.
-- [ ] Each side pot's winner is shown separately.
-- [ ] The result stays visible long enough to read, and is grounded at the table rather than only in a modal.
+- [x] `potId` and `hand` reach the UI for every award.
+- [x] The winning hand category is named on screen (Pair … Royal Flush).
+- [x] The exact five cards used are highlighted — moved slightly forward/up and visually connected.
+- [x] Unused cards remain visible but de-emphasized.
+- [x] Board-playing hands are handled correctly.
+- [x] Ties and split pots are shown explicitly.
+- [x] Each side pot's winner is shown separately.
+- [x] The result stays visible long enough to read, and is grounded at the table rather than only in a modal.
 
 **Tests** — [ ] Unit: award mapping preserves `potId` and `hand`. [ ] Unit: best-five highlighting for pair/two-pair/trips/straight/flush/full house/quads/straight flush/board-plays. [ ] Unit: split pot and multi-side-pot rendering. [ ] Accessibility: winner, category, and amount announced.
 
@@ -493,11 +493,11 @@ reconstructed state (see E24-002).
 ### E03-003 — Guarantee every hand communicates win or loss
 
 **Acceptance criteria**
-- [ ] Every hand-ending sequence states the winner, the hand category, the amount awarded, and the player's updated stack.
-- [ ] Losing players are indicated where relevant.
-- [ ] Elimination and advancement are stated.
-- [ ] Side-pot effects on the result are explained.
-- [ ] Communicated visually, textually, and via assistive technology.
+- [x] Every hand-ending sequence states the winner, the hand category, the amount awarded, and the player's updated stack.
+- [x] Losing players are indicated where relevant.
+- [x] Elimination and advancement are stated.
+- [x] Side-pot effects on the result are explained.
+- [x] Communicated visually, textually, and via assistive technology.
 
 **Tests** — [ ] Unit: fold-win, showdown-win, split, side-pot, and elimination each produce a complete result statement. [ ] Accessibility: assertive announcement for elimination.
 
