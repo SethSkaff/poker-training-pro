@@ -68,6 +68,14 @@ export interface TrainingScenario {
   /** Public seat currently required to act; absent for static Training prompts. */
   actingPlayerId?: string;
   pot: number;
+  /** Public, live contestable-pot ledger for tournament all-ins. Training
+   * scenarios leave this undefined because they model a single decision. */
+  potBreakdown?: Array<{
+    id: string;
+    kind: "main" | "side";
+    amount: number;
+    eligiblePlayerIds: string[];
+  }>;
   amountToCall: number;
   minimumRaise: number;
   heroCards: Card[];

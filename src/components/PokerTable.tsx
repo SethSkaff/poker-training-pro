@@ -2222,6 +2222,7 @@ export function PokerTable({
     tournament?.presentationEvent?.kind === "side-pot-formed"
       ? tournament.presentationEvent
       : undefined;
+  const liveSidePots = scenario.potBreakdown?.filter((pot) => pot.kind === "side") ?? [];
   const allInEvent =
     tournament?.presentationEvent?.kind === "action" &&
     tournament.presentationEvent.command.type === "all-in"
@@ -2474,6 +2475,18 @@ export function PokerTable({
                     .join(", "),
                 })}
               </p>
+            </aside>
+          ) : null}
+          {liveSidePots.length > 0 && !sidePotEvent ? (
+            <aside className="side-pot-strip side-pot-strip--live" role="status" aria-live="polite" aria-atomic="true">
+              <span>Live pots</span>
+              {scenario.potBreakdown?.map((pot) => (
+                <p key={pot.id}>
+                  <b>{pot.kind === "main" ? "Main" : "Side"} {formatChips(pot.amount)}</b>
+                  {" · Eligible: "}
+                  {pot.eligiblePlayerIds.map((playerId) => scenario.players.find((player) => player.id === playerId)?.name ?? playerId).join(", ")}
+                </p>
+              ))}
             </aside>
           ) : null}
           {allInEvent ? (

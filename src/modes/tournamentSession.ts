@@ -1306,6 +1306,33 @@ export function createPokerTableSnapshot(
   );
   const recommendedAction: PokerAction =
     toCall > 0 ? "call" : "check";
+  // This is public ledger data only: committed amounts and folded status. It
+  // lets the table explain an all-in side pot before the board/runout resolves
+  // without reading or projecting anybody's hidden cards.
+  const builtLivePots = buildPots(
+    hand.betting.players.map((player) => ({
+      playerId: player.id,
+      amount: player.totalCommitted,
+      folded: player.status === "folded",
+    })),
+  );
+  const temporarilyUnmatched = builtLivePots.refunds.reduce(
+    (sum, refund) => sum + refund.amount,
+    0,
+  );
+  const potBreakdown = builtLivePots.pots.map((pot, index) => ({
+    id: pot.id,
+    kind: pot.kind,
+    // Before a betting round closes, buildPots correctly classifies an
+    // unmatched blind/ante as refundable. The public table's inclusive pot
+    // still contains that committed chip, so retain it on the main lane until
+    // later action contests it or the engine returns it.
+    amount: pot.amount + (index === 0 ? temporarilyUnmatched : 0),
+    eligiblePlayerIds: pot.eligiblePlayerIds.map((playerId) => {
+      const player = players.find((entry) => entry.id === playerId);
+      return player?.id ?? playerId;
+    }),
+  }));
 
   return {
     id: hand.handId,
@@ -1330,6 +1357,7 @@ export function createPokerTableSnapshot(
     bigBlindSeat: Math.max(0, bigBlindIndex),
     actingPlayerId: actingId ?? undefined,
     pot: hand.information.pot,
+    potBreakdown,
     amountToCall: toCall,
     minimumRaise:
       hand.betting.currentBet === 0

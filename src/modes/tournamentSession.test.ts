@@ -285,6 +285,19 @@ describe("six-seat tournament session", () => {
     expect(snapshot.tags).toContain(SESSION_FORMAT);
   });
 
+  it("projects a public live pot ledger without projecting opponent cards", () => {
+    const session = beginTournamentSessionHand(createSession());
+    const snapshot = createPokerTableSnapshot(session);
+
+    expect(snapshot.potBreakdown).toBeDefined();
+    expect(snapshot.potBreakdown?.reduce((sum, pot) => sum + pot.amount, 0)).toBe(
+      snapshot.pot,
+    );
+    expect(snapshot.potBreakdown?.[0]).toMatchObject({ kind: "main" });
+    expect(JSON.stringify(snapshot.potBreakdown)).not.toContain("rank");
+    expect(JSON.stringify(snapshot.potBreakdown)).not.toContain("suit");
+  });
+
   it("synthesizes title/prompt/actionReason through the message catalog with correct interpolation", () => {
     const session = beginTournamentSessionHand(createSession());
     const snapshot = createPokerTableSnapshot(session);
