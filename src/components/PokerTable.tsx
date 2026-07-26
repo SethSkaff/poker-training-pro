@@ -215,6 +215,7 @@ export function publicPresentationSound(
       return "deal";
     case "blinds-posted":
     case "bets-collected":
+    case "side-pot-formed":
       return "chip";
     case "action":
       if (event.command.type === "fold") return "fold";

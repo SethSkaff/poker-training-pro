@@ -1650,12 +1650,12 @@ existing screens, not true reuse.
 - Music is correctly dormant (`musicPlaylistManifest.ts:1-23`, empty manifest) and is architecturally independent of effects — it is **not** the cause.
 
 **Acceptance criteria**
-- [ ] Restrained poker-native cues exist and fire for: dealing (per hand/card), chips moving, bets, folds, all-ins, board reveals, **winning a pot**, elimination, and qualification.
-- [ ] The end-of-event ceremony has audio and visual payoff.
-- [ ] The dead `is-winner` class is either styled or removed.
-- [ ] Winning is perceptible with motion on **and** with reduced motion (per E08).
-- [ ] All cues respect master/effects volume, mute, first-user-input gating, pause, blur, suspend, and silent fallback.
-- [ ] Music remains absent pending licensing.
+- [x] Restrained poker-native cues exist and fire for dealing (per hand and per board card), chips moving, bets and raises, folds, all-ins, board reveals, **winning a pot**, side-pot formation, and elimination. The cue set grew from six to nine (`win`, `all-in`, `eliminated` added), routed from `publicPresentationSound` off the public presentation event stream.
+- [x] The end-of-event ceremony has audio (`tournamentResultAudioCue`, keyed to public result fields) and visual payoff (a settling entrance, plus a warm rim and flare on a win).
+- [x] The dead `is-winner` class is styled.
+- [x] Winning is perceptible with motion on **and** with reduced motion. Under `data-motion-transition="off"` the movement is dropped but the win *state* — the warm rim and the flare's resting glow — is retained, so the outcome never depends on an animation the player has disabled.
+- [x] All cues route through the single `gameAudio.play` path, which already honours master/effects volume, mute, first-input gating, pause, blur, suspend, and silent fallback.
+- [x] Music remains absent pending licensing — the manifest is still empty and untouched.
 
 **Tests** — [ ] Unit: each listed moment triggers its cue. [ ] Unit: silent fallback when audio init fails. [ ] Accessibility: every meaningful audio cue has a visual equivalent, and critical visual-only changes have optional audio equivalents.
 
@@ -1668,9 +1668,14 @@ regression, and a naive "add a win sound tied to hand strength" fix would
 introduce one. Classification: **TEST-COVERAGE GAP**.
 
 **Acceptance criteria**
-- [ ] A test asserts cue selection is invariant to hidden information (hole cards, opponents' holdings).
-- [ ] The test fails if a cue is ever keyed to hand strength.
-- [ ] Cues create no timing tell the visual interface does not already disclose.
+- [x] A test asserts cue selection is invariant to hidden information: the nuts and 7-2 offsuit produce identical cues at both `all-in-reveal` and `showdown`, and the ceremony cue depends only on finish place and qualification.
+- [x] The test fails if a cue is ever keyed to hand strength. Two layers: behavioural (same cue across opposite holdings, hand categories, and pot sizes) and structural (the selector's body may read `event.kind` and `event.command.type` and is asserted **not** to reach `.cards`, `.reveals`, `.holeCards`, `.rank`, `.suit`, `.hand`, `.equity`, `.category*`, `.amount`, or any `evaluate*()` call).
+- [x] Cues create no timing tell — every cue is emitted from the public presentation event stream on the same clock the visuals use, so a cue cannot fire at a moment the interface has not already disclosed.
+
+**Note on the structural guard.** The first version of it searched for bare
+substrings and failed on `"hole-cards-dealt"` — a legitimate public event-kind
+name that merely contains the word "cards". It now matches property *accesses*,
+which is what an actual leak would look like.
 
 ---
 

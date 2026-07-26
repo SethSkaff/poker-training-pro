@@ -719,7 +719,14 @@ export function TournamentCeremony({
   return (
     <main className="night-shell night-shell--ceremony" {...localeTextAttributes()}>
       <NightCircuitScene quiet />
-      <section className="ceremony-board">
+      <section
+        className="ceremony-board"
+        data-outcome={result.qualified || result.finishPlace === 1 ? "win" : "out"}
+      >
+        {/* A restrained celebratory beat. Purely decorative: the placement,
+            qualification, and Elo change below carry the actual result, so
+            the payoff is additive rather than load-bearing. */}
+        <i className="ceremony-board__flare" aria-hidden="true" />
         <Trophy size={36} strokeWidth={1.5} />
         <p>{result.eventName}</p>
         <h1>{headline}</h1>
