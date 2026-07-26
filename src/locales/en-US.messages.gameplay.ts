@@ -245,6 +245,19 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "flythrough.button.skipArrival": "Skip arrival",
   "flythrough.asset.backgroundLabel": "Championship-room background art",
 
+  // --- CareerTravel.tsx ----------------------------------------------------
+  "travel.status.leavingSeat": "Leaving the table",
+  "travel.status.aboveRoom": "Crossing the floor",
+  "travel.status.route": "Following the circuit",
+  "travel.status.approaching": "Arriving at {eventName}",
+  "travel.heading": "On to {eventName}",
+  "travel.from": "Leaving {eventName}",
+  "travel.routeAriaLabel": "Career route from {fromEvent} to {toEvent}",
+  "travel.button.skip": "Skip travel",
+  "travel.button.arrive": "Arrive at {eventName}",
+  "travel.announce":
+    "Travelling from {fromEvent} to {toEvent}, event {toIndex} of {total}.",
+
   "dashboard.asset.startMenuLabel": "Start-menu artwork",
   "dashboard.asset.settingsSelectedLabel": "Settings-selected artwork",
   "dashboard.asset.animatedBackgroundLabel": "Animated start-menu background",

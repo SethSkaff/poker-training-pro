@@ -2193,11 +2193,118 @@ input[type="range"]::-webkit-slider-thumb {
   transform-style: preserve-3d;
 }
 
-.venue-table:nth-child(1) { top: 8%; left: 4%; transform: scale(0.63); }
-.venue-table:nth-child(2) { top: 3%; right: 5%; transform: scale(0.68); }
-.venue-table:nth-child(3) { top: 34%; left: 18%; transform: scale(0.88); }
-.venue-table:nth-child(4) { top: 31%; right: 15%; transform: scale(0.92); }
-.venue-table:nth-child(5) { top: 58%; left: 50%; transform: translateX(-50%) scale(1.28); }
+/*
+  Table placement runs back-to-front: slot 1 sits against the far wall, the
+  last slot is the one the camera passes closest to on its way to the hero
+  chair. Every tier from `national` up asks for six to eight tables, so all
+  eight slots are placed -- an unplaced table would collapse to the layer's
+  top-left corner and read as a graphical fault rather than a room.
+*/
+.venue-table:nth-child(1) { top: 2%; left: 6%; }
+.venue-table:nth-child(2) { top: 0%; right: 7%; }
+.venue-table:nth-child(3) { top: 12%; left: 34%; }
+.venue-table:nth-child(4) { top: 27%; left: 2%; }
+.venue-table:nth-child(5) { top: 25%; right: 3%; }
+.venue-table:nth-child(6) { top: 44%; left: 14%; }
+.venue-table:nth-child(7) { top: 42%; right: 12%; }
+.venue-table:nth-child(8) { top: 62%; left: 50%; margin-left: -130px; }
+
+/*
+  Depth does the rest. Scale grows towards the camera, and the sweep the table
+  makes during the fly-through is proportional to depth, so near tables slide
+  past quickly while the far wall barely moves -- parallax, which is what makes
+  the shot read as travel through a space rather than a zoom on a picture.
+*/
+/*
+  The sweep values are set on the container and change with the fly-through
+  phase. `transform` is what transitions, not the custom property, so this
+  interpolates smoothly without needing `@property` registration: the variable
+  flips at the phase change and the transform eases to its new value.
+*/
+.venue-tables {
+  --venue-sweep: 0px;
+  --venue-rise: 0px;
+}
+
+.room-flight--room .venue-tables {
+  --venue-sweep: 26px;
+  --venue-rise: 104px;
+}
+
+.room-flight--seat .venue-tables {
+  --venue-sweep: 62px;
+  --venue-rise: 290px;
+}
+
+.venue-table {
+  --venue-depth: 0.5;
+  --venue-grandeur: 1;
+  transition: transform 1.7s cubic-bezier(0.3, 0.02, 0.15, 1);
+  transform:
+    translate3d(
+      calc(var(--venue-depth) * var(--venue-sweep, 0px)),
+      calc(var(--venue-depth) * var(--venue-rise, 0px)),
+      0
+    )
+    scale(calc((0.58 + var(--venue-depth) * 0.72) * var(--venue-grandeur)));
+}
+
+.venue-table__dealer {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 30px;
+  height: 54px;
+  transform: translateX(-50%);
+}
+
+/* Head, house jacket, and the dealer's chip tray in front of them. */
+.venue-table__dealer i {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  width: 18px;
+  height: 20px;
+  border-radius: 48% 48% 42% 42%;
+  background: #d0a077;
+}
+
+.venue-table__dealer b {
+  position: absolute;
+  right: 0;
+  bottom: 12px;
+  left: 0;
+  height: 34px;
+  border-radius: 13px 13px 3px 3px;
+  background: linear-gradient(135deg, #2b3440, #12171d);
+}
+
+.venue-table__dealer em {
+  position: absolute;
+  bottom: 0;
+  left: -9px;
+  width: 48px;
+  height: 9px;
+  border-radius: 3px;
+  background: linear-gradient(#2a1c12, #150e08);
+  box-shadow: inset 0 1px rgba(255, 205, 128, 0.35);
+}
+
+/* A guest's chips: three banded rows, enough to read as a stack in silhouette. */
+.venue-stack {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  width: 13px;
+  height: 12px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    #e8e2d6 0 2px,
+    #b3271f 2px 4px
+  );
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  transform: translateX(-50%);
+}
 
 .venue-table__felt {
   position: absolute;
@@ -2519,7 +2626,12 @@ input[type="range"]::-webkit-slider-thumb {
 .room-flight[data-event-tier="championship"] .venue-marquee { border-color: rgba(255, 210, 112, .9); transform: scale(1.1); }
 .room-flight[data-event-tier="championship"] .venue-table { filter: saturate(1.2) brightness(1.12); }
 .room-flight[data-event-tier="world"] .venue-lights i { background: #ffe39b; box-shadow: 0 0 22px rgba(255, 192, 78, .85); }
-.room-flight[data-event-tier="world"] .venue-table { transform: scale(1.1); filter: saturate(1.25) brightness(1.14); }
+/*
+  Tier grandeur scales the room up rather than replacing the transform: the
+  depth transform is what carries the parallax, so a flat `scale()` here would
+  overwrite it and flatten the whole shot back into a zoom.
+*/
+.room-flight[data-event-tier="world"] .venue-table { --venue-grandeur: 1.1; filter: saturate(1.25) brightness(1.14); }
 .room-flight[data-event-tier="world"] .venue-guest:nth-child(odd) { transform: scale(1.14); }
 
 /* A fixed status lane for the player instead of a hidden near-camera seat.
@@ -5958,10 +6070,18 @@ input[type="range"]::-webkit-slider-thumb {
   transform: scale(1.08);
 }
 
+:root[data-motion-room="off"] .venue-table {
+  transition: none !important;
+}
+
 :root[data-motion-room="reduced"] .room-flight::before,
 :root[data-motion-room="reduced"] .room-flight__background-art,
 :root[data-motion-room="reduced"] .room-flight__venue {
   animation-duration: 1.45s !important;
+}
+
+:root[data-motion-room="reduced"] .venue-table {
+  transition-duration: 0.5s !important;
 }
 
 :root[data-motion-camera="off"] .poker-scene {
@@ -9449,4 +9569,269 @@ input[type="range"]::-webkit-slider-thumb {
   color: #d9cfb8;
   font-size: 11px;
   line-height: 1.65;
+}
+
+/* --- E20-003: travel between career events -------------------------------
+   One venue, re-dressed per tier, carrying the camera from the seat just
+   vacated to the next event's room. Phase is a class on the root, so the whole
+   sequence has a single static frame under `data-motion-room="off"` rather
+   than a separate reduced-motion code path.
+   ------------------------------------------------------------------------ */
+
+.career-travel {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  min-height: 100vh;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 42px 40px 34px;
+  background: radial-gradient(120% 90% at 50% 8%, #14211d, #040706 72%);
+  color: var(--text);
+}
+
+.career-travel__venue {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  transform-origin: 50% 78%;
+  transition: transform 1.6s cubic-bezier(0.32, 0.02, 0.16, 1);
+}
+
+/* The camera: at the seat, rising above the floor, level over the route, then
+   descending toward the next room. */
+.career-travel--seat .career-travel__venue { transform: scale(1.55) translateY(6%); }
+.career-travel--rise .career-travel__venue { transform: scale(1.05) translateY(-6%); }
+.career-travel--route .career-travel__venue { transform: scale(0.82) translateY(-14%); }
+.career-travel--approach .career-travel__venue { transform: scale(1.42) translateY(4%); }
+
+.career-travel__floor {
+  position: absolute;
+  right: -12%;
+  bottom: -18%;
+  left: -12%;
+  height: 62%;
+  background:
+    radial-gradient(70% 100% at 50% 0%, rgba(28, 96, 74, 0.55), transparent 68%),
+    repeating-linear-gradient(
+      98deg,
+      rgba(255, 255, 255, 0.028) 0 3px,
+      transparent 3px 26px
+    ),
+    linear-gradient(#0c1a16, #050908);
+}
+
+/* The seat being left. It recedes as the camera rises, and is gone by the
+   time the route is drawn. */
+.career-travel__seat {
+  position: absolute;
+  bottom: 6%;
+  left: 50%;
+  width: 220px;
+  height: 130px;
+  border-radius: 90px 90px 24px 24px;
+  background: linear-gradient(150deg, #1d2b26, #060a09);
+  box-shadow: 0 28px 34px rgba(0, 0, 0, 0.55);
+  opacity: 1;
+  transform: translateX(-50%);
+  transition:
+    opacity 1s ease,
+    transform 1.6s cubic-bezier(0.32, 0.02, 0.16, 1);
+}
+
+.career-travel--rise .career-travel__seat { opacity: 0.5; transform: translate(-50%, 34px) scale(0.86); }
+.career-travel--route .career-travel__seat,
+.career-travel--approach .career-travel__seat { opacity: 0; transform: translate(-50%, 90px) scale(0.6); }
+
+/* The destination room, growing in behind the route on approach. Each plate
+   carries its own depth so it arrives at its own rate. */
+.career-travel__destination {
+  position: absolute;
+  inset: 22% 8% 26%;
+}
+
+.career-travel__destination span {
+  position: absolute;
+  bottom: calc(var(--travel-depth) * 44%);
+  left: calc(6% + var(--travel-depth) * 66%);
+  width: calc(74px + var(--travel-depth) * 150px);
+  height: calc(34px + var(--travel-depth) * 62px);
+  border: 3px solid rgba(60, 40, 24, 0.85);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #17614a, #0a2d22);
+  opacity: 0;
+  transform: translateY(40px) scale(0.7);
+  transition:
+    opacity 0.9s ease,
+    transform 1.4s cubic-bezier(0.32, 0.02, 0.16, 1);
+}
+
+.career-travel--approach .career-travel__destination span {
+  opacity: calc(0.24 + var(--travel-depth) * 0.5);
+  transform: translateY(0) scale(1);
+}
+
+.career-travel__hud {
+  position: relative;
+  z-index: 4;
+}
+
+.career-travel__hud h1 {
+  margin: 4px 0 0;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.career-travel__status {
+  display: inline-block;
+  margin-top: 10px;
+  color: var(--gold-soft);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+/* The circuit, laid out exactly like the lobby's route so the two read as the
+   same object: the player watches the marker take the step they just earned. */
+.career-travel__route {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  margin: 0;
+  padding: 0;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  list-style: none;
+}
+
+.career-travel__route::before {
+  position: absolute;
+  top: 13px;
+  right: 6%;
+  left: 6%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  content: "";
+}
+
+.career-travel__route li {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.career-travel__route li::before {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  margin-top: 8px;
+  background: #0a1210;
+  content: "";
+}
+
+.career-travel__route li[data-stop-state="cleared"]::before,
+.career-travel__route li[data-stop-state="origin"]::before {
+  border-color: var(--gold-soft);
+  background: var(--gold-soft);
+}
+
+.career-travel__route li[data-stop-state="destination"]::before {
+  border-color: #7be3b3;
+  box-shadow: 0 0 14px rgba(123, 227, 179, 0.75);
+}
+
+.career-travel__route li span {
+  max-width: 12ch;
+  color: rgba(233, 238, 235, 0.62);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.career-travel__route li[data-stop-state="destination"] span {
+  color: #b9f4d8;
+}
+
+/* The marker itself. It starts pinned over the event just played and slides to
+   the destination when the route phase lands -- one transition, so the motion
+   tiers can shorten or remove it without touching the layout. */
+.career-travel__marker {
+  position: absolute;
+  z-index: 5;
+  top: 4px;
+  left: var(--travel-from, 0%);
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  margin-left: -7px;
+  background: radial-gradient(circle at 34% 30%, #fff3cf, #e0a63a);
+  box-shadow: 0 0 18px rgba(255, 190, 84, 0.85);
+  transition: left 1.9s cubic-bezier(0.36, 0.02, 0.14, 1);
+}
+
+.career-travel--route .career-travel__marker,
+.career-travel--approach .career-travel__marker {
+  left: var(--travel-to, 0%);
+}
+
+.career-travel__skip {
+  position: absolute;
+  z-index: 25;
+  right: 34px;
+  bottom: 28px;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 0 18px;
+  color: var(--text);
+  background: rgba(3, 12, 9, 0.74);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+}
+
+/* Tier dressing, matching the arrival fly-through's vocabulary: warmer, denser
+   light the further up the circuit the destination sits. */
+.career-travel[data-to-tier="championship"] .career-travel__destination span,
+.career-travel[data-to-tier="world"] .career-travel__destination span {
+  filter: saturate(1.2) brightness(1.12);
+}
+
+.career-travel[data-to-tier="world"] .career-travel__floor {
+  background:
+    radial-gradient(70% 100% at 50% 0%, rgba(52, 120, 92, 0.6), transparent 68%),
+    repeating-linear-gradient(
+      98deg,
+      rgba(255, 226, 160, 0.04) 0 3px,
+      transparent 3px 26px
+    ),
+    linear-gradient(#101f1a, #050a08);
+}
+
+/* Motion tiers. `off` holds one readable frame -- the route, with the marker
+   already at the destination -- because the point of the screen is the step
+   being recorded, not the camera move. */
+:root[data-motion-room="off"] .career-travel__venue,
+:root[data-motion-room="off"] .career-travel__seat,
+:root[data-motion-room="off"] .career-travel__destination span,
+:root[data-motion-room="off"] .career-travel__marker {
+  transition: none !important;
+}
+
+:root[data-motion-room="reduced"] .career-travel__venue,
+:root[data-motion-room="reduced"] .career-travel__seat,
+:root[data-motion-room="reduced"] .career-travel__destination span,
+:root[data-motion-room="reduced"] .career-travel__marker {
+  transition-duration: 0.55s !important;
 }

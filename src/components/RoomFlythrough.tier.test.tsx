@@ -23,12 +23,106 @@ describe("room tier presentation", () => {
   });
 });
 
-describe("seated table tier presentation", () => {
-  const sourceRoot = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
+const sourceRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const css = readFileSync(path.join(sourceRoot, "styles.css"), "utf8");
+const app = readFileSync(path.join(sourceRoot, "App.tsx"), "utf8");
+
+describe("arrival is a route through the venue", () => {
+  const world = renderToStaticMarkup(
+    <RoomFlythrough
+      eventName="World"
+      modeLabel="Normal"
+      tier="world"
+      settings={defaultSettings}
+      onComplete={() => undefined}
+    />,
   );
-  const css = readFileSync(path.join(sourceRoot, "styles.css"), "utf8");
+
+  it("passes dealer areas and player stacks, not just felt", () => {
+    // The criterion names what the camera goes past; an empty room of green
+    // ellipses is a zoom over wallpaper, not a walk through a card room.
+    expect(world).toContain("venue-table__dealer");
+    expect(world).toContain("venue-stack");
+    // One dealer per table.
+    expect(world.match(/venue-table__dealer/g)).toHaveLength(8);
+    // One stack per seated guest.
+    expect(world.match(/venue-stack/g)?.length).toBe(
+      world.match(/class="venue-guest/g)?.length,
+    );
+  });
+
+  it("gives each table its own depth so the room parallaxes", () => {
+    // Depth must be distinct per table -- if they shared one value the room
+    // would slide as a single flat sheet.
+    const depths = [...world.matchAll(/--venue-depth:\s*([0-9.]+)/g)].map(
+      (match) => match[1],
+    );
+    expect(depths).toHaveLength(8);
+    expect(new Set(depths).size).toBe(8);
+    // Nearest table is the last one, at full depth.
+    expect(Number(depths[depths.length - 1])).toBeCloseTo(1, 3);
+    // ...and the transform actually consumes it, at both translate and scale.
+    expect(css).toContain("var(--venue-depth) * var(--venue-sweep");
+    expect(css).toContain("0.58 + var(--venue-depth) * 0.72");
+  });
+
+  it("places every table a tier can ask for", () => {
+    // `world` asks for eight. An unplaced table collapses onto the layer
+    // origin, which reads as a rendering fault rather than a venue.
+    for (let slot = 1; slot <= 8; slot += 1) {
+      expect(css).toContain(`.venue-table:nth-child(${slot})`);
+    }
+  });
+
+  it("keeps tier grandeur from overwriting the depth transform", () => {
+    // A bare `transform: scale()` on a tier used to win the cascade and flatten
+    // the parallax back into a zoom.
+    const tierTableRules = css
+      .split("\n")
+      .filter(
+        (line) =>
+          line.includes("[data-event-tier=") && line.includes(".venue-table"),
+      );
+    expect(tierTableRules.length).toBeGreaterThan(0);
+    for (const rule of tierTableRules) {
+      expect(rule).not.toMatch(/transform:/);
+    }
+  });
+
+  it("has a static alternative when room motion is off", () => {
+    expect(css).toContain(':root[data-motion-room="off"] .venue-table');
+    expect(css).toContain(':root[data-motion-room="reduced"] .venue-table');
+  });
+});
+
+describe("arrival hands off to play without a hard cut", () => {
+  it("loads the table during the fly-through, not after it", () => {
+    // The preload used to sit in `onComplete`, so the 4.3 s of authored motion
+    // finished and *then* the player waited on a chunk download.
+    const flythroughBranch = app.slice(
+      app.indexOf('if (screen === "room-transition"'),
+      app.indexOf('if (screen === "tournament-table"'),
+    );
+    expect(flythroughBranch).toContain("PokerTable.preload()");
+    expect(flythroughBranch).not.toContain(
+      "void PokerTable.preload();\n            setScreen",
+    );
+  });
+
+  it("opens the first hand with the arrival settle, like any later hand", () => {
+    // `handNumber > 1` alone meant the hand you arrive on -- the only one that
+    // follows a fly-through -- was the single hand that got no settle at all.
+    expect(app).toContain("arrivingFromFlythrough.current = true");
+    expect(app).toContain(
+      "handNumber > 1 || arrivingFromFlythrough.current",
+    );
+  });
+});
+
+describe("seated table tier presentation", () => {
   const table = readFileSync(
     path.join(sourceRoot, "components", "PokerTable.tsx"),
     "utf8",

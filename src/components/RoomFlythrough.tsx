@@ -1,4 +1,5 @@
 import { ArrowRight, FastForward, Spade } from "lucide-react";
+import type React from "react";
 import { useEffect, useState } from "react";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import { useResilientAsset } from "../lib/useResilientAsset";
@@ -112,8 +113,29 @@ export function RoomFlythrough({
         </div>
         <div className="venue-tables">
           {Array.from({ length: venueProfile.tables }).map((_, tableIndex) => (
-            <div className="venue-table" key={tableIndex}>
+            <div
+              className="venue-table"
+              key={tableIndex}
+              // Depth runs 0 (far wall) to 1 (the table the camera passes
+              // closest to). The CSS reads it to set both scale and how fast
+              // the table sweeps by, so the room parallaxes instead of
+              // sliding as one flat sheet.
+              style={
+                {
+                  "--venue-depth": (
+                    (tableIndex + 1) /
+                    venueProfile.tables
+                  ).toFixed(3),
+                  "--venue-slot": String(tableIndex),
+                } as React.CSSProperties
+              }
+            >
               <span className="venue-table__felt" />
+              <span className="venue-table__dealer">
+                <i />
+                <b />
+                <em />
+              </span>
               {Array.from({ length: venueProfile.guests }).map((__, playerIndex) => (
                 <span
                   className={`venue-guest venue-guest--${playerIndex + 1}`}
@@ -121,6 +143,7 @@ export function RoomFlythrough({
                 >
                   <i />
                   <b />
+                  <u className="venue-stack" />
                 </span>
               ))}
             </div>

@@ -18,6 +18,7 @@
  */
 
 import {
+  advanceTournamentSessionClock,
   applyTournamentSessionAction,
   beginTournamentSessionHand,
   chooseTournamentSessionPolicyAction,
@@ -32,6 +33,18 @@ import { nextToAct } from "../src/engine/betting";
 const POLICY = { simulations: 60, temperature: 0.48 } as const;
 const MAX_ACTIONS_PER_HAND = 4_000;
 const MAX_HANDS_PER_EVENT = 400;
+
+/**
+ * Nominal time a six-handed hand takes at the table.
+ *
+ * Blind levels are wall-clock timed, and the running game advances the clock
+ * from real elapsed time between actions. A headless run has no wall clock, so
+ * without a stand-in the level never escalates -- which silently erases the
+ * difference between a 4-minute level and an 8-minute one, and makes every
+ * tier pace identically. 75 s is the middle of a live six-handed hand,
+ * counting the deal.
+ */
+const MS_PER_HAND = 75_000;
 
 export interface AiBehaviorMetrics {
   mode: "normal" | "rational";
@@ -115,6 +128,39 @@ function emptyAccumulator(): EventAccumulator {
   };
 }
 
+/**
+ * Career results that unlock the requested event.
+ *
+ * Higher tiers are gated behind qualifying at the tier below, so measuring one
+ * in isolation requires synthesising the qualifications that would have got a
+ * player there. These are inputs to the *unlock check* only -- they do not
+ * change how the event plays.
+ */
+const UNLOCK_CHAIN: Record<string, readonly string[]> = {
+  "local-qualifier": [],
+  "regional-open": ["local-qualifier"],
+  "circuit-main": ["local-qualifier", "regional-open"],
+  "national-championship": ["local-qualifier", "regional-open", "circuit-main"],
+  "world-championship": [
+    "local-qualifier",
+    "regional-open",
+    "circuit-main",
+    "national-championship",
+  ],
+};
+
+function unlockingResults(eventId: string) {
+  return (UNLOCK_CHAIN[eventId] ?? []).map((id) => ({
+    eventId: id,
+    finishPlace: 1,
+    fieldSize: 6 as const,
+    sourceFieldSize: 6,
+    qualifyingPlaces: 2,
+    qualified: true,
+    tournamentEloDelta: 0,
+  }));
+}
+
 /** Plays one tournament to completion, recording public decision statistics. */
 function playEvent(
   seed: string,
@@ -130,6 +176,7 @@ function playEvent(
     mode,
     seed,
     opponents,
+    careerResults: unlockingResults(eventId),
   });
 
   const startingRemaining = session.tournament.players.length;
@@ -262,10 +309,8 @@ function playEvent(
     if (accumulator.handsToHeadsUp === undefined && remaining <= 2) {
       accumulator.handsToHeadsUp = handIndex;
     }
-    if (freezeBlinds && session.activeHand === undefined) {
-      // The blind clock is advanced by the session itself; freezing means we
-      // simply do not let level escalation be the explanation for pacing.
-      session = { ...session, tournament: { ...session.tournament, level: 0 } };
+    if (!freezeBlinds) {
+      session = advanceTournamentSessionClock(session, MS_PER_HAND);
     }
   }
 

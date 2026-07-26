@@ -7,7 +7,7 @@
  * reliably tell whether it is the entry point.
  *
  *   vite-node scripts/report-ai-behavior.ts [--seeds N] [--mode normal|rational|both]
- *                                           [--event <id>] [--json]
+ *                                           [--event <id>] [--json] [--live-blinds]
  */
 
 import { measureAiBehavior, type AiBehaviorMetrics } from "./measure-ai-behavior";
@@ -46,8 +46,14 @@ const asJson = args.includes("--json");
 const modes: Array<"normal" | "rational"> =
   modeArg === "both" ? ["normal", "rational"] : [modeArg as "normal" | "rational"];
 
+// Frozen blinds isolate the policy from the clock, which is what the behavior
+// gates want. `--live-blinds` restores level escalation, which is what pacing
+// comparisons between event tiers need -- the tiers differ chiefly in level
+// duration, so a frozen clock makes them all look alike.
+const liveBlinds = args.includes("--live-blinds");
+
 const results = modes.map((mode) =>
-  measureAiBehavior({ seeds, mode, eventId, freezeBlinds: true }),
+  measureAiBehavior({ seeds, mode, eventId, freezeBlinds: !liveBlinds }),
 );
 
 if (asJson) {

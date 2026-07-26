@@ -111,6 +111,7 @@ import type {
 } from "./modes/tournamentSession";
 import {
   createPokerTableSnapshot,
+  listTournamentSessionEvents,
   SESSION_TABLE_SIZE,
 } from "./modes/tournamentSession";
 import type {
@@ -141,6 +142,11 @@ const HandReviewScreen = lazyWithPreload(() =>
     default: module.HandReviewScreen,
   })),
 );
+const CareerTravel = lazyWithPreload(() =>
+  import("./components/CareerTravel").then((module) => ({
+    default: module.CareerTravel,
+  })),
+);
 
 type DesktopScreen =
   | "home"
@@ -150,6 +156,7 @@ type DesktopScreen =
   | "settings"
   | "timed-setup"
   | "room-transition"
+  | "career-travel"
   | "tournament-table"
   | "practice"
   | "tutorial"
@@ -404,6 +411,18 @@ export default function App() {
     () => trainingScenarios[0],
   );
   const lastPresentedHand = useRef<string | null>(null);
+  // Set when the fly-through hands off to the table, so the table's first hand
+  // opens with the same settling overlay a between-hand arrival gets. Without
+  // it the screen swap is a hard cut: the venue vanishes and the felt appears
+  // fully lit mid-deal (E09-004).
+  const arrivingFromFlythrough = useRef(false);
+  // The leg of the circuit currently being travelled (E20-003). Finishing an
+  // event used to drop straight back to a lobby list, which is what made the
+  // career read as a menu with tournaments behind it rather than a circuit.
+  const [travelLeg, setTravelLeg] = useState<{
+    fromEventId: string;
+    toEventId: string;
+  } | null>(null);
   // Worker-backed equity boundary: opponent Monte Carlo runs off the main
   // thread. Decisions stay bit-for-bit deterministic with the synchronous path;
   // a superseded/obsolete decision is cancelled and its stale result rejected.
@@ -1583,7 +1602,60 @@ export default function App() {
     );
   }
 
+  if (screen === "career-travel" && travelLeg) {
+    const stops = listTournamentSessionEvents(tourResults[tourMode]).map(
+      (event) => ({
+        id: event.id,
+        name: event.name,
+        tier: event.tier,
+        cleared: Boolean(
+          tourResults[tourMode].find(
+            (result) => result.eventId === event.id && result.qualified,
+          ),
+        ),
+      }),
+    );
+    // Skipping and completing land in the same place: the next event begins
+    // either way, so a player who never wants the sequence loses nothing but
+    // the seconds.
+    const arrive = () => {
+      const toEventId = travelLeg.toEventId;
+      setTravelLeg(null);
+      startCareerEvent(toEventId);
+    };
+    return (
+      <Suspense
+        fallback={
+          <SceneLoadingFallback
+            label={formatMessage("shell.loading.enteringEvent", {
+              eventName:
+                stops.find((stop) => stop.id === travelLeg.toEventId)?.name ??
+                travelLeg.toEventId,
+            })}
+            onCancel={() => {
+              setTravelLeg(null);
+              setScreen("tour");
+            }}
+          />
+        }
+      >
+        <CareerTravel
+          route={stops}
+          fromEventId={travelLeg.fromEventId}
+          toEventId={travelLeg.toEventId}
+          settings={effectiveSettings}
+          onComplete={arrive}
+        />
+      </Suspense>
+    );
+  }
+
   if (screen === "room-transition" && runner) {
+    // Start fetching the table chunk as the fly-through begins, not when it
+    // ends. The arrival is 4.3 s of authored motion; spending it downloading
+    // the thing the player is walking towards is the whole point of having it
+    // (E09-004: "loading is hidden behind the authored transition").
+    void PokerTable.preload();
     return (
       <Suspense
         fallback={
@@ -1611,8 +1683,7 @@ export default function App() {
           }
           settings={effectiveSettings}
           onComplete={() => {
-            // Preload the table before the fly-through hands off to it.
-            void PokerTable.preload();
+            arrivingFromFlythrough.current = true;
             setScreen("tournament-table");
           }}
         />
@@ -1643,8 +1714,10 @@ export default function App() {
     const handNumber = runner.session.tournament.tables[0]?.handNumber ?? 1;
     const handPresentationKey = `${runner.session.id}:${handNumber}`;
     const showArrival =
-      handNumber > 1 && lastPresentedHand.current !== handPresentationKey;
+      (handNumber > 1 || arrivingFromFlythrough.current) &&
+      lastPresentedHand.current !== handPresentationKey;
     lastPresentedHand.current = handPresentationKey;
+    arrivingFromFlythrough.current = false;
     const presentationEvent = pendingPresentation?.events[pendingPresentation.index];
     return (
       <Suspense
@@ -1851,9 +1924,17 @@ export default function App() {
           tournamentResult.nextEventId
             ? () => {
                 persistBoundary("lifecycle", settings, progress);
+                // The next event's scenes are what the travel sequence is
+                // buying time for, so start fetching them now.
+                void RoomFlythrough.preload();
+                void PokerTable.preload();
+                setTravelLeg({
+                  fromEventId: tournamentResult.eventId,
+                  toEventId: tournamentResult.nextEventId!,
+                });
                 setTournamentResult(null);
                 setRunner(null);
-                setScreen("tour");
+                setScreen("career-travel");
               }
             : undefined
         }

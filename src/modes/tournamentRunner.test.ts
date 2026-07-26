@@ -513,6 +513,11 @@ describe("tournament runner", () => {
         expect.any(Number),
       );
     },
+    // Plays a full six-handed event through the real policy: ~3 s on its own,
+    // which overruns the 5 s default once the suite is running files in
+    // parallel. The budget is generous because the failure mode this guards
+    // against is a hang, not a slow run.
+    30_000,
   );
 
   it("completes a Timed Table with placement Elo and no career unlocks", () => {

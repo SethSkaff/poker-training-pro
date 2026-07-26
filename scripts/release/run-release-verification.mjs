@@ -66,6 +66,8 @@ const stages = [
     command: node,
     args: [
       join("node_modules", "vite-node", "vite-node.mjs"),
+      "-c",
+      join("scripts", "vite-node.config.mjs"),
       join("scripts", "audit-training-calibration.ts"),
     ],
   },
@@ -74,7 +76,19 @@ const stages = [
     command: node,
     args: [
       join("node_modules", "vite-node", "vite-node.mjs"),
+      "-c",
+      join("scripts", "vite-node.config.mjs"),
       join("scripts", "audit-ai-behavior-gates.ts"),
+    ],
+  },
+  {
+    name: "AI exploitability gates (scripted counter-strategies vs the table)",
+    command: node,
+    args: [
+      join("node_modules", "vite-node", "vite-node.mjs"),
+      "-c",
+      join("scripts", "vite-node.config.mjs"),
+      join("scripts", "audit-exploitability-gates.ts"),
     ],
   },
   {
@@ -102,7 +116,11 @@ const stages = [
     command: node,
     args: [
       join("node_modules", "vite-node", "vite-node.mjs"),
+      "-c",
+      join("scripts", "vite-node.config.mjs"),
       join("scripts", "export-ios-training-bank.ts"),
+      // vite-node passes everything after `--` through to the script.
+      "--",
       "--check",
     ],
   },

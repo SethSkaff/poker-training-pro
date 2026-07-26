@@ -1,0 +1,30 @@
+# Line endings are part of this repo's test contract.
+#
+# Several suites read source files off disk and assert on multi-line excerpts
+# -- CSS rule bodies, App.tsx render branches, packaged-audit fixtures. Those
+# assertions match "\n"; under Git's default `core.autocrlf=true` on Windows a
+# checkout hands them "\r\n" instead and they fail on line endings alone, on a
+# machine where nothing is actually wrong. Without this file the suite's result
+# depends on the developer's Git configuration.
+#
+# So the working tree is LF everywhere, on every platform, matching what Git
+# already stores. Electron, Vite, and Node all read LF natively on Windows.
+* text=auto eol=lf
+
+# Binary assets must never be touched by EOL conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.webp binary
+*.mp3 binary
+*.ogg binary
+*.wav binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.asar binary
+*.zip binary

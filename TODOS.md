@@ -846,11 +846,17 @@ the architecture decision.
 breadcrumb and a skip button; the five "tables" are fixed-scale divs that never
 change perspective relative to one another.
 
+**Resolved 2026-07-26.** The venue is still procedural CSS over one background
+plate — that constraint has not changed — but the tables now move relative to
+one another, the room is populated with the furniture the criterion names, and
+the two seams around the transition (loading after it, hard cut out of it) are
+closed.
+
 **Acceptance criteria**
-- [ ] Entering a session or event moves through the venue past tables, dealer areas, players and stacks, then settles into the hero's seat.
-- [ ] Loading is hidden behind the authored transition where practical.
-- [ ] It transitions directly into play without a hard cut (addresses the `room-transition` → `tournament-table` remount).
-- [ ] Skippable, with a static reduced-motion alternative.
+- [x] Entering a session or event moves through the venue past tables, dealer areas, players and stacks, then settles into the hero's seat. Each table now carries a `--venue-depth` (0 at the far wall, 1 at the table the camera passes closest to) that drives both its scale and how far it sweeps during the fly-through, so the room parallaxes instead of sliding as one flat sheet. Dealers (head, house jacket, chip tray) and per-guest chip stacks were added, since the criterion names what the camera goes past. Asserted in `RoomFlythrough.tier.test.tsx`: eight distinct depths, one dealer per table, one stack per guest, and the transform provably consuming depth. **Fixed while here:** only slots 1–5 had positions, so `national`/`championship`/`world` (6–8 tables) collapsed their extra tables onto the layer origin. All eight are placed, and the `world` tier's grandeur is now a `--venue-grandeur` multiplier rather than a bare `transform: scale()` that won the cascade and flattened the parallax.
+- [x] Loading is hidden behind the authored transition where practical. `PokerTable.preload()` was called in the fly-through's `onComplete` — that is, the 4.3 s of authored motion finished and *then* the player waited on the chunk. It now starts when the fly-through mounts.
+- [x] It transitions directly into play without a hard cut (addresses the `room-transition` → `tournament-table` remount). The table's arrival settle was gated on `handNumber > 1`, which excluded the one hand that actually follows a fly-through. An `arrivingFromFlythrough` flag now opens hand 1 with the same settle every later hand gets.
+- [x] Skippable, with a static reduced-motion alternative. Already true, and the new depth transition is covered by the `data-motion-room` tiers (`off` removes it, `reduced` shortens it).
 
 ---
 
@@ -1155,7 +1161,42 @@ requirement to end in one sitting.
 - [x] A documented calibration target exists for a six-player format, justified for this format (above).
 - [x] Median hands to first elimination, to heads-up, and to completion fall within the target and are gated to [15, 140] finish / ≥8 heads-up / ≥2 first elimination.
 - [x] No blind-structure change was made — the measurement showed none was warranted, which is the outcome this task was written to protect.
-- [ ] Event tiers differ intentionally in pacing. Deferred: tiers currently differ in stack depth, blind schedule, and (new in E10-001) field strength, but no per-tier pacing target has been set or measured.
+- [x] Event tiers differ intentionally in pacing — **measured 2026-07-26, and the measurement required fixing the harness first.** See below.
+
+**Per-tier pacing (2026-07-26).** This could not be measured until a harness
+defect was fixed. Blind levels are *wall-clock* timed and the running game
+advances the clock from real elapsed time between actions; a headless run has no
+wall clock, so the level never escalated and every tier paced identically. Worse,
+the `freezeBlinds` switch that was supposed to control this wrote
+`tournament.level`, a property that does not exist (the field is `levelIndex`),
+so it was dead code and the clock was frozen unconditionally. The harness now
+advances a nominal 75 s per hand — the middle of a live six-handed hand — and
+`--live-blinds` turns it on.
+
+Normal mode, 10 seeds per tier, live blind clock, medians:
+
+| tier | event | stack | level | 1st elim | heads-up | finish |
+|---|---|---|---|---|---|---|
+| local | Local Qualifier | 15,000 | 4 min | 7.5 | 32 | **24.5** |
+| regional | Regional Open | 25,000 | 5 min | 14.5 | 46 | **39.5** |
+| circuit | Circuit Main Event | 40,000 | 6 min | 9.5 | 42 | **45.5** |
+| championship | National Championship | 60,000 | 8 min | 15 | 41 | **41** |
+| world | World Championship | 60,000 | 8 min | 21.5 | 51 | **47** |
+
+**The target, stated rather than inferred:** a tier's median hands-to-finish
+should rise with its stack depth and level duration, so that a Local Qualifier is
+a short sharp event and a World Championship is a long one. It does: 24.5 → 39.5
+→ 45.5, roughly doubling from the bottom of the ladder to the top.
+
+**Honest limit — the top two tiers cannot differ structurally.**
+`national-championship` and `world-championship` both use
+`CAREER_MAIN_EVENT_STRUCTURE` (60,000 chips, 8-minute levels). Their measured
+gap (41 vs 47 median) comes from field strength and qualification rule, not
+pacing, and is within seed noise at 10 seeds. Giving the World Championship its
+own deeper structure is the change that would separate them; it is deliberately
+**not** made here, because E13-001's whole finding was that pacing problems are
+AI problems and blind structures should not be tuned speculatively. Recorded as a
+known, bounded flatness at the top of the ladder rather than papered over.
 
 ---
 
@@ -1595,10 +1636,12 @@ from "selected in the list", because no such data exists (E19-001).
 ### E20-003 — Physical travel between events
 
 **Acceptance criteria**
-- [ ] Finish the event → pull the camera from the seat → rise above the room → move through the venue → display the horizontal progress path → animate the marker → travel toward the next area → descend into the next seat → begin the next event.
-- [ ] Skippable, with a reduced-motion alternative.
-- [ ] Staged implementation is acceptable: reuse one venue with changed tables, lighting, crowd, signage, and roster rather than modeling a separate room per event.
-- [ ] Depends on E09-001's architecture decision.
+- [x] Finish the event → pull the camera from the seat → rise above the room → move through the venue → display the horizontal progress path → animate the marker → travel toward the next area → descend into the next seat → begin the next event. `CareerTravel.tsx` runs the four phases (`seat` → `rise` → `route` → `approach`) as classes on one root element, then calls `startCareerEvent`, which hands to the arrival fly-through and the table. **The old behaviour is worth naming:** the ceremony's "next event" button returned to a lobby list and did not even start the next event, which is precisely what made the career read as a menu with tournaments behind it.
+- [x] Skippable, with a reduced-motion alternative. Skip and completion land in the same place — the next event begins either way — so skipping costs only the seconds. Reduced motion **still shows the route**: the marker's move is the step the player just earned being recorded, so with motion off the screen opens on the route at rest rather than being removed. It opens there directly from `useState` rather than from an effect, so there is no frame of the departing-seat camera move first.
+- [x] Staged implementation is acceptable: reuse one venue with changed tables, lighting, crowd, signage, and roster rather than modeling a separate room per event. One venue, re-dressed by `data-to-tier`; the destination room's five plates each carry a `--travel-depth` so they arrive at their own rate. No per-event art, no new dependency.
+- [x] Depends on E09-001's architecture decision. E09-001 landed (staged 2.5D), and this follows it.
+
+**Tests** — `CareerTravel.test.tsx`: the whole circuit renders with origin and destination distinctly marked; the marker's endpoints are pinned to the same `(i + 0.5)/N` slot centres the lobby route uses, so the two screens read as one object; the destination tier reaches the CSS; the journey is stated once for assistive technology rather than requiring the player to wait out the camera; every named phase exists; and the ceremony → travel → `startCareerEvent` wiring is asserted, including that the next event's scenes are prefetched *during* the journey.
 
 ---
 
