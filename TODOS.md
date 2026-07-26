@@ -2630,6 +2630,28 @@ overlap.
 - [x] Add dependency vulnerability, lockfile-integrity, secret,
       registry-origin, and reviewed install-lifecycle-script checks to release
       builds; generate a deterministic CycloneDX SBOM for each shipped version.
+- [ ] **Clear the 16 high-severity advisories the dependency gate reports.**
+      **This is the current release blocker — verification stops at stage 2 of
+      31.** Investigated 2026-07-26 and left unresolved deliberately.
+      - All 16 are **dev-only** and transitive through `electron-builder`:
+        `brace-expansion` → `minimatch` → `glob` → `rimraf` → `temp`, plus
+        `ejs`/`jake`/`filelist` and the `@electron/asar` chain. None reaches
+        the shipped runtime, which depends only on React, lucide-react, and
+        two Fontsource packages.
+      - `npm audit fix` (semver-compatible) bumps `brace-expansion`
+        5.0.7 → 5.0.8 and clears **nothing** — the count stays at 16. That
+        change was reverted rather than committed as a no-op.
+      - `npm audit fix --force` resolves them by **downgrading**
+        `electron-builder` 26.15.3 → 25.1.8: 301 packages added, 106 removed,
+        34 changed. That is a major change to the packaging toolchain, in the
+        wrong direction, and would invalidate the Windows packaging
+        verification already performed.
+      - **Decision needed** (not an implementation detail): accept the
+        downgrade and re-verify packaging end to end; wait for an
+        `electron-builder` 26.x release that carries patched transitives; or
+        record a documented, time-boxed exception for dev-only advisories that
+        cannot reach the shipped artifact. The gate should not simply be
+        loosened without one of these being chosen on purpose.
 - [x] Resolve and hard-gate every locked npm package license declaration with
       exact-version evidence, a reviewed allowlist, negative tests, and a
       deterministic package notices inventory.
