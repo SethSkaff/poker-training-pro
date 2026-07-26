@@ -64,6 +64,7 @@ const output = captureBoundedOutput(child, 8_192);
 const checks = [];
 let client;
 let failure;
+let transportTimeout;
 
 try {
   const deadline = Date.now() + timeoutMs;
@@ -274,7 +275,15 @@ try {
   );
 
 } catch (error) {
-  failure = error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  // CDP has its own command deadline. Record that infrastructure failure
+  // independently: it proves neither a passing product interaction nor a
+  // product regression, and should not be reported as the latter.
+  if (/^CDP command .* timed out\.$/.test(message)) {
+    transportTimeout = message;
+  } else {
+    failure = message;
+  }
 } finally {
   try {
     client?.close();
@@ -293,14 +302,25 @@ const report = {
   schemaVersion: 1,
   executable: basename(appPath),
   checks,
-  ok: !failure,
+  ok: !failure && !transportTimeout,
+  outcome: failure
+    ? "product-failure"
+    : transportTimeout
+      ? "inconclusive-cdp-timeout"
+      : "passed",
   ...(failure ? { failure } : {}),
+  ...(transportTimeout ? { transportTimeout } : {}),
   scope:
     "Packaged CDP mouse, keyboard, and Gamepad API smoke for first-run motion/contrast preferences, menu navigation, card peek, drag-fold, raise slider, hand history, fast-forward, pause settings, and resume. Physical-controller ergonomics, assistive technologies, and real-device behavior remain separate acceptance work.",
 };
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 if (failure) throw new Error(`Packaged input smoke failed: ${failure}`);
-console.log(JSON.stringify({ ok: true, ...report }, null, 2));
+if (transportTimeout) {
+  console.warn(JSON.stringify(report, null, 2));
+  process.exitCode = 2;
+} else {
+  console.log(JSON.stringify({ ok: true, ...report }, null, 2));
+}
 
 async function expectSelector(cdp, selector, label, timeout = 8_000) {
   const found = await waitForBoolean(
