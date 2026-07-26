@@ -425,6 +425,12 @@ function resultForEvent(
 interface TourLobbyProps {
   mode: TournamentPolicyMode;
   careerResults: readonly TournamentSessionCareerResult[];
+  /**
+   * The event the player left in progress, if any. Resuming it takes priority
+   * over recommending the next unqualified event, so a career picks up where
+   * it was rather than restarting at the first unlocked event.
+   */
+  activeEventId?: string;
   onBack: () => void;
   onStartEvent?: (eventId: string) => void;
 }
@@ -432,6 +438,7 @@ interface TourLobbyProps {
 export function TourLobby({
   mode,
   careerResults,
+  activeEventId,
   onBack,
   onStartEvent,
 }: TourLobbyProps) {
@@ -439,7 +446,13 @@ export function TourLobby({
     () => listTournamentSessionEvents(careerResults),
     [careerResults],
   );
+  // Priority: resume the active event -> continue the next required event ->
+  // fall back to anything unlocked.
+  const activeEvent = activeEventId
+    ? events.find((event) => event.id === activeEventId && event.unlocked)
+    : undefined;
   const initialEvent =
+    activeEvent ??
     events.find(
       (event) =>
         event.unlocked && !resultForEvent(careerResults, event.id)?.qualified,
@@ -463,6 +476,27 @@ export function TourLobby({
               : formatMessage("modes.rationalTour")}
           </p>
           <h1>{formatMessage("dashboard.tour.title")}</h1>
+          {/* Career state made visible: how far this track has come, and
+              which event is waiting. Both read from the persisted save, so
+              they survive a relaunch. */}
+          <p className="tour-lobby__progress" role="status">
+            <strong>
+              {formatMessage("dashboard.tour.progressCount", {
+                qualified: careerResults.filter((result) => result.qualified)
+                  .length,
+                total: events.length,
+              })}
+            </strong>
+            <span>
+              {activeEvent
+                ? formatMessage("dashboard.tour.resuming", {
+                    eventName: activeEvent.name,
+                  })
+                : formatMessage("dashboard.tour.nextUp", {
+                    eventName: initialEvent.name,
+                  })}
+            </span>
+          </p>
         </header>
 
         <ol

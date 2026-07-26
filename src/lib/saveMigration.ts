@@ -1,4 +1,6 @@
 import type {
+  CareerEventResult,
+  CareerTrack,
   GameSettings,
   PlayerProgress,
   PokerAction,
@@ -366,6 +368,62 @@ function normalizeProgress(value: unknown): PlayerProgress {
         defaultProgress.unlockedCircuit,
       ),
     ),
+    career: normalizeCareer(source.career),
+  };
+}
+
+function normalizeCareerResult(value: unknown): CareerEventResult | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.eventId !== "string" || value.eventId.length === 0) {
+    return undefined;
+  }
+  return {
+    eventId: value.eventId.slice(0, 64),
+    finishPlace: Math.max(1, nonNegativeInteger(value.finishPlace, 1)),
+    fieldSize: Math.max(1, nonNegativeInteger(value.fieldSize, 6)),
+    sourceFieldSize: Math.max(1, nonNegativeInteger(value.sourceFieldSize, 6)),
+    qualifyingPlaces: Math.max(
+      0,
+      nonNegativeInteger(value.qualifyingPlaces, 0),
+    ),
+    qualified: booleanOr(value.qualified, false),
+    tournamentEloDelta: finiteNumber(value.tournamentEloDelta, 0),
+  };
+}
+
+function normalizeCareerTrack(value: unknown): CareerTrack {
+  const source = isRecord(value) ? value : {};
+  const results = Array.isArray(source.results)
+    ? source.results
+        .map(normalizeCareerResult)
+        .filter((result): result is CareerEventResult => result !== undefined)
+        // One entry per event: a replayed event supersedes its earlier result.
+        .reduce<CareerEventResult[]>((unique, result) => {
+          const existing = unique.findIndex(
+            (entry) => entry.eventId === result.eventId,
+          );
+          if (existing >= 0) unique[existing] = result;
+          else unique.push(result);
+          return unique;
+        }, [])
+        .slice(-64)
+    : [];
+  const activeEventId =
+    typeof source.activeEventId === "string" && source.activeEventId.length > 0
+      ? source.activeEventId.slice(0, 64)
+      : undefined;
+  return activeEventId ? { results, activeEventId } : { results };
+}
+
+/**
+ * Career state is optional in the schema, so a save written before it existed
+ * migrates to empty tracks rather than being rejected.
+ */
+function normalizeCareer(value: unknown): PlayerProgress["career"] {
+  const source = isRecord(value) ? value : {};
+  return {
+    normal: normalizeCareerTrack(source.normal),
+    rational: normalizeCareerTrack(source.rational),
   };
 }
 

@@ -1507,15 +1507,21 @@ Local Qualifier — making career feel like a generic unlock menu.
 - Classification: **EXISTS BUT DISCONNECTED**.
 
 **Acceptance criteria**
-- [ ] Career progress and an explicit **current/active event** persist in the versioned save with migration.
-- [ ] Mode entry prioritizes: resume current active event → continue the next required event → restore saved tournament state.
-- [ ] Current championship progress is clearly shown.
-- [ ] Event selection remains available as a secondary action where rules permit.
-- [ ] `unlockedCircuit` is either wired as the real source of truth or removed as dead state — decide and document.
-- [ ] The Normal/Rational keying decision is deliberate and documented (shared career vs. separate tracks), not accidental.
-- [ ] Progress survives restart, verified end-to-end.
+- [x] Career progress and an explicit **current/active event** persist in the versioned save with migration. `PlayerProgress.career` holds a `CareerTrack` per mode (`results` + optional `activeEventId`); the field is optional so no version bump is needed and every existing save migrates to empty tracks.
+- [x] Mode entry prioritizes: resume current active event → continue the next required event → fall back to anything unlocked (`TourLobby`).
+- [x] Current championship progress is clearly shown — the lobby header states "N of M events qualified" plus either "Resuming <event>" or "Next up: <event>".
+- [x] Event selection remains available as a secondary action — the route list is unchanged and every unlocked event is still selectable.
+- [x] `unlockedCircuit` decision: **retained as a derived display value, explicitly not the source of truth.** Unlocking is decided by `career`. It was previously written and never read, which is exactly what made it look like the missing bridge; the type now documents that, and removing it outright would have broken existing saves for no benefit.
+- [x] The Normal/Rational keying decision is deliberate and documented: **separate tracks**, because they are different opponent models and a qualification earned against Normal is not evidence of readiness against Rational. Merging them would let the harder ladder be unlocked using the easier field. Documented on `CareerTrack`.
+- [x] Progress survives restart — it is written at the same `persistBoundary` calls as Elo, on both event start (active event) and event completion (result).
 
-**Tests** — [ ] Unit: progress round-trips through save/migration. [ ] Integration: after completing an event and relaunching, mode entry offers the correct next event. [ ] Unit: legacy saves without the new field migrate sanely. [ ] Regression: a gate asserts career state is included in a persist boundary.
+**A second schema mirror had to be extended.** `electron/save-transfer.cjs`
+validates imported saves against its own field allowlist in the main process,
+so `career` was silently stripped on import until `validateCareer` /
+`validateCareerTrack` / `validateCareerResult` were added there too. A test now
+asserts the mirror stays in sync.
+
+**Tests** — [x] Unit: progress round-trips through save/migration (`careerPersistence.test.ts`). [x] Unit: legacy saves without the field migrate to empty tracks; malformed entries are discarded without rejecting the save; a replayed event supersedes its earlier result. [x] Unit: Normal and Rational stay on separate tracks. [x] Regression: a gate asserts career state is derived from persisted `progress` and that `setTourResults` (the ephemeral state that caused the defect) is gone, plus a gate asserting the main-process validator mirrors the schema. [ ] Integration: a live relaunch-and-resume end-to-end check in the packaged build (belongs with E25-003).
 
 ---
 

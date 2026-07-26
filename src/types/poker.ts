@@ -100,6 +100,43 @@ export interface TrainingResult {
   eloDelta: number;
 }
 
+/**
+ * One completed career event, persisted so a career survives a relaunch.
+ *
+ * Structurally identical to `TournamentSessionCareerResult`, but declared here
+ * because `PlayerProgress` is the save schema and must not depend on a mode
+ * module. The two are asserted compatible where they meet.
+ */
+export interface CareerEventResult {
+  eventId: string;
+  finishPlace: number;
+  fieldSize: number;
+  sourceFieldSize: number;
+  qualifyingPlaces: number;
+  qualified: boolean;
+  tournamentEloDelta: number;
+}
+
+/**
+ * Persisted career state.
+ *
+ * **Normal and Rational keep separate tracks, deliberately.** They are
+ * different opponent models, so a Circuit Main qualification earned against
+ * Normal does not evidence readiness against Rational, and merging them would
+ * let a player unlock the harder ladder using the easier field. The previous
+ * behavior — per-mode keying that was simply never persisted — had the same
+ * shape by accident; this makes it a decision.
+ */
+export interface CareerTrack {
+  results: CareerEventResult[];
+  /**
+   * The event the player is currently working on. Set when an event begins and
+   * cleared when it completes, so mode entry can resume rather than
+   * re-recommending the first locked-open event.
+   */
+  activeEventId?: string;
+}
+
 export interface PlayerProgress {
   onboardingCompleted: boolean;
   /** One-time interactive play-chip disclosure acknowledgment. */
@@ -113,7 +150,19 @@ export interface PlayerProgress {
   bestStreak: number;
   totalDecisionMs: number;
   results: TrainingResult[];
+  /**
+   * Highest circuit index reached. Retained as a **derived display value**
+   * only: event unlocking is decided by `career` below, never by this number.
+   * It was previously written and never read, which made it look like the
+   * missing progression bridge; keeping it explicitly derived removes the
+   * ambiguity without breaking existing saves that carry it.
+   */
   unlockedCircuit: number;
+  /** Optional so pre-existing saves migrate without a version bump. */
+  career?: {
+    normal: CareerTrack;
+    rational: CareerTrack;
+  };
 }
 
 // Persisted per-device control remaps. Only differences from the built-in

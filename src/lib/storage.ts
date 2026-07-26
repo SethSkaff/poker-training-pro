@@ -40,6 +40,7 @@ export const defaultProgress: PlayerProgress = {
   totalDecisionMs: 0,
   results: [],
   unlockedCircuit: 1,
+  career: { normal: { results: [] }, rational: { results: [] } },
 };
 
 function readValue<T>(key: string, fallback: T, legacyKey?: string): T {

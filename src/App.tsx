@@ -1,4 +1,11 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   HomeView,
   ModeSelect,
@@ -96,8 +103,15 @@ import type {
   TournamentSessionCareerResult,
   TournamentSessionResult,
 } from "./modes/tournamentSession";
-import { createPokerTableSnapshot } from "./modes/tournamentSession";
-import type { GameSettings, PlayerProgress } from "./types/poker";
+import {
+  createPokerTableSnapshot,
+  SESSION_TABLE_SIZE,
+} from "./modes/tournamentSession";
+import type {
+  CareerEventResult,
+  GameSettings,
+  PlayerProgress,
+} from "./types/poker";
 
 // Mode-specific heavy scenes are code-split so the initial bundle stays small.
 // Each keeps an idempotent `preload()` used to fetch the next likely scene.
@@ -149,13 +163,66 @@ type AllInRevealPresentation = Extract<
   { kind: "all-in-reveal" }
 >;
 
-const emptyTourResults: Record<
-  TournamentPolicyMode,
-  TournamentSessionCareerResult[]
-> = {
-  normal: [],
-  rational: [],
-};
+const emptyCareer = (): NonNullable<PlayerProgress["career"]> => ({
+  normal: { results: [] },
+  rational: { results: [] },
+});
+
+/**
+ * Narrows persisted results to the session's career-result type.
+ *
+ * The save schema stores `fieldSize` as a plain number because it must
+ * faithfully record whatever was written, including by a future build; the
+ * session type pins it to the six-seat table. Anything else is a save from a
+ * format this build does not model, so it is dropped rather than coerced into
+ * a shape the session would then reason about incorrectly.
+ */
+function toSessionCareerResults(
+  results: readonly CareerEventResult[] | undefined,
+): TournamentSessionCareerResult[] {
+  return (results ?? [])
+    .filter((result) => result.fieldSize === SESSION_TABLE_SIZE)
+    .map((result) => ({ ...result, fieldSize: SESSION_TABLE_SIZE }));
+}
+
+/** Records a completed career event and clears that track's active event. */
+function careerWithCompletedEvent(
+  career: PlayerProgress["career"],
+  mode: TournamentPolicyMode,
+  result: TournamentSessionResult,
+): NonNullable<PlayerProgress["career"]> {
+  const base = career ?? emptyCareer();
+  const track = base[mode];
+  return {
+    ...base,
+    [mode]: {
+      // Replaying an event supersedes its earlier result rather than
+      // accumulating duplicates.
+      results: [
+        ...track.results.filter((entry) => entry.eventId !== result.eventId),
+        {
+          eventId: result.eventId,
+          finishPlace: result.finishPlace,
+          fieldSize: result.fieldSize,
+          sourceFieldSize: result.sourceFieldSize,
+          qualifyingPlaces: result.qualifyingPlaces,
+          qualified: result.qualified,
+          tournamentEloDelta: result.tournamentEloDelta,
+        },
+      ],
+    },
+  };
+}
+
+/** Marks an event as the one in progress for a track. */
+function careerWithActiveEvent(
+  career: PlayerProgress["career"],
+  mode: TournamentPolicyMode,
+  eventId: string,
+): NonNullable<PlayerProgress["career"]> {
+  const base = career ?? emptyCareer();
+  return { ...base, [mode]: { ...base[mode], activeEventId: eventId } };
+}
 
 function asTournamentReplay(
   value?: Record<string, unknown>,
@@ -295,7 +362,17 @@ export default function App() {
   const tournamentPausedAtRef = useRef<number | null>(null);
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
   const [progress, setProgress] = useState(() => loadProgress());
-  const [tourResults, setTourResults] = useState(emptyTourResults);
+  // Career progress is read from the persisted save, not held in ephemeral
+  // component state. The previous `useState(emptyTourResults)` was never
+  // written to disk, so every relaunch restarted the career at Local
+  // Qualifier no matter how far the player had actually progressed.
+  const tourResults = useMemo(
+    () => ({
+      normal: toSessionCareerResults(progress.career?.normal.results),
+      rational: toSessionCareerResults(progress.career?.rational.results),
+    }),
+    [progress.career],
+  );
   const [tournamentResult, setTournamentResult] =
     useState<TournamentSessionResult | null>(null);
   const [lastPublicReplay, setLastPublicReplay] =
@@ -729,12 +806,23 @@ export default function App() {
       const result = nextRunner.session.result;
       if (!result) return;
       setLastPublicReplay(replay as unknown as Record<string, unknown>);
-      const nextProgress = {
+      // A finished career event updates the persisted track inside the same
+      // progress object that gets written to disk, and clears the active
+      // event so mode entry advances instead of resuming what just finished.
+      const nextProgress: PlayerProgress = {
         ...progress,
         tournamentElo: Math.max(
           100,
           progress.tournamentElo + result.tournamentEloDelta,
         ),
+        career:
+          nextRunner.kind === "career"
+            ? careerWithCompletedEvent(
+                progress.career,
+                nextRunner.session.mode,
+                result,
+              )
+            : progress.career,
       };
       setProgress(nextProgress);
       persistBoundary(
@@ -743,25 +831,6 @@ export default function App() {
         nextProgress,
         replay as unknown as Record<string, unknown>,
       );
-      if (nextRunner.kind === "career") {
-        setTourResults((current) => ({
-          ...current,
-          [nextRunner.session.mode]: [
-            ...current[nextRunner.session.mode].filter(
-              (entry) => entry.eventId !== result.eventId,
-            ),
-            {
-              eventId: result.eventId,
-              finishPlace: result.finishPlace,
-              fieldSize: result.fieldSize,
-              sourceFieldSize: result.sourceFieldSize,
-              qualifyingPlaces: result.qualifyingPlaces,
-              qualified: result.qualified,
-              tournamentEloDelta: result.tournamentEloDelta,
-            },
-          ],
-        }));
-      }
       gameAudio.play(tournamentResultAudioCue(result));
       setTournamentResult(result);
     },
@@ -771,6 +840,13 @@ export default function App() {
   const startCareerEvent = useCallback(
     (eventId: string) => {
       setActiveAllInReveal(undefined);
+      // Mark the event active before play begins, so quitting or crashing
+      // mid-event resumes it rather than losing which event was underway.
+      const startedProgress: PlayerProgress = {
+        ...progress,
+        career: careerWithActiveEvent(progress.career, tourMode, eventId),
+      };
+      setProgress(startedProgress);
       const created = createCareerTournamentRunner({
         eventId,
         hero: {
@@ -801,7 +877,7 @@ export default function App() {
       persistBoundary(
         "action",
         settings,
-        progress,
+        startedProgress,
         replay as unknown as Record<string, unknown>,
       );
       gameAudio.play("deal");
@@ -1754,6 +1830,7 @@ export default function App() {
         key={tourMode}
         mode={tourMode}
         careerResults={tourResults[tourMode]}
+        activeEventId={progress.career?.[tourMode].activeEventId}
         onBack={() => navigate("play")}
         onStartEvent={startCareerEvent}
       />
