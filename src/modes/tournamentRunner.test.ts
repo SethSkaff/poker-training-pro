@@ -228,6 +228,34 @@ describe("tournament runner", () => {
     expect(showdown.awards.length).toBeGreaterThan(0);
   });
 
+  it("keeps an early all-in reveal limited to live all-in players", () => {
+    let reveal: Extract<
+      ReturnType<typeof advanceTournamentRunnerOneStep>["events"][number],
+      { kind: "all-in-reveal" }
+    > | undefined;
+    let runner = createCareerTournamentRunner({
+      eventId: "local-qualifier",
+      hero,
+      mode: "normal",
+      seed: "runner-all-in-reveal",
+    });
+    for (let step = 0; step < 160 && !reveal; step += 1) {
+      const transition = advanceTournamentRunnerOneStep(runner, { policy: { simulations: 50 } });
+      reveal = transition.events.find(
+        (event): event is Extract<typeof event, { kind: "all-in-reveal" }> => event.kind === "all-in-reveal",
+      );
+      runner = transition.runner;
+      if (transition.awaitingHero) {
+        const legal = heroTournamentLegalActions(runner);
+        if (!legal) throw new Error("Expected legal hero action");
+        runner = applyHeroTournamentActionOneStep(runner, { action: legal.allIn ? "all-in" : "fold" }).runner;
+      }
+    }
+    if (!reveal) return; // The seed can legitimately finish without a preflop all-in.
+    expect(reveal.playerIds).toHaveLength(reveal.reveals.length);
+    expect(reveal.reveals.every((entry) => entry.cards.length === 2)).toBe(true);
+  });
+
   it("keeps emitting public milestones after the hero folds until the hand settles", () => {
     let runner = advanceTournamentRunnerToHero(
       createCareerTournamentRunner({
