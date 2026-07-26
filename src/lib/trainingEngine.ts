@@ -17,6 +17,7 @@ import {
   parseQuizMathAnswer,
   type NumericLocaleResource,
 } from "./localeNumbers";
+import { compareHandValues, createDeck, createSeededRandom, evaluateBestHand } from "../engine";
 
 const TABLE_CLOCK_MS = 30_000;
 
@@ -633,4 +634,61 @@ export function selectTrainingSessionStartScenario(
     .filter(({ score }) => score >= highestScore - 10)
     .map(({ scenario }) => scenario);
   return suitable[(hash >>> 0) % suitable.length];
+}
+
+/**
+ * Estimated hero equity for a Training scenario.
+ *
+ * Training scenarios author hero cards and a board but **no villain range**, so
+ * there is no stated range to run against. Rather than invent one, this
+ * measures equity against a uniformly random opponent hand from the remaining
+ * deck and the caller labels it as exactly that. It is the honest baseline a
+ * learner needs to compare against the required equity: "you needed 28% and
+ * you had roughly 61% against a random hand" is a true and useful statement,
+ * whereas a fabricated range would be neither.
+ *
+ * Deterministic: seeded from the scenario id, so the same scenario always
+ * reports the same figure and the feedback panel never flickers.
+ */
+export function estimateTrainingEquity(
+  scenario: RatedTrainingScenario,
+  simulations = 400,
+): { equity: number; simulations: number; assumption: "random-hand" } {
+  const known = new Set(
+    [...scenario.heroCards, ...scenario.board].map(
+      (card) => `${card.rank}${card.suit}`,
+    ),
+  );
+  const deck = createDeck().filter(
+    (card) => !known.has(`${card.rank}${card.suit}`),
+  );
+  const runout = 5 - scenario.board.length;
+  // Two villain cards plus the remaining board must fit in the stub.
+  if (runout < 0 || deck.length < runout + 2 || scenario.heroCards.length !== 2) {
+    return { equity: 0, simulations: 0, assumption: "random-hand" };
+  }
+
+  const random = createSeededRandom(`training-equity:${scenario.id}`);
+  let score = 0;
+  for (let trial = 0; trial < simulations; trial += 1) {
+    const stub = deck.map((card) => ({ ...card }));
+    const drawn = runout + 2;
+    for (let index = 0; index < drawn; index += 1) {
+      const target = index + Math.floor(random() * (stub.length - index));
+      [stub[index], stub[target]] = [stub[target], stub[index]];
+    }
+    const board = [...scenario.board, ...stub.slice(0, runout)];
+    const villain = stub.slice(runout, runout + 2);
+    const heroValue = evaluateBestHand([...scenario.heroCards, ...board]);
+    const villainValue = evaluateBestHand([...villain, ...board]);
+    const comparison = compareHandValues(heroValue, villainValue);
+    if (comparison > 0) score += 1;
+    else if (comparison === 0) score += 0.5;
+  }
+
+  return {
+    equity: score / simulations,
+    simulations,
+    assumption: "random-hand",
+  };
 }

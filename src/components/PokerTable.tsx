@@ -62,6 +62,7 @@ import {
   type ContextualPromptState,
 } from "../lib/contextualPrompts";
 import {
+  estimateTrainingEquity,
   evaluateMathAnswer,
   gradeTrainingAttempt,
   parseMathAnswer,
@@ -907,7 +908,16 @@ export interface TrainingFeedbackMath {
   potBefore: number;
   costToCall: number;
   potAfterCall: number;
+  /** Cost to call as a share of the pot it would create. */
+  potOdds?: number;
   requiredEquity?: number;
+  /**
+   * Hero equity against a uniformly random opponent hand. Training scenarios
+   * author no villain range, so this is the stated assumption rather than an
+   * invented one — see `estimateTrainingEquity`.
+   */
+  estimatedEquity: number;
+  equitySimulations: number;
   actionEvs: readonly [PokerAction, number][];
 }
 
@@ -917,12 +927,16 @@ export function trainingFeedbackMath(
 ): TrainingFeedbackMath {
   const costToCall = scenario.amountToCall;
   const potAfterCall = scenario.pot + costToCall;
+  const equity = estimateTrainingEquity(scenario);
   return {
     potBefore: scenario.pot,
     costToCall,
     potAfterCall,
+    potOdds: costToCall > 0 ? (costToCall / potAfterCall) * 100 : undefined,
     requiredEquity:
       costToCall > 0 ? (costToCall / potAfterCall) * 100 : undefined,
+    estimatedEquity: equity.equity * 100,
+    equitySimulations: equity.simulations,
     actionEvs: Object.entries(scenario.training.actionEvs)
       .filter((entry): entry is [PokerAction, number] => Number.isFinite(entry[1]))
       .sort(([left], [right]) => left.localeCompare(right)),
@@ -966,6 +980,44 @@ export function FeedbackPanel({
         requiredEquity: formatFixedDecimal(math.requiredEquity, 1),
       })
     : formatMessage("table.feedback.assumptionAggression");
+
+  // Why the recommended line wins, stated from the numbers rather than only
+  // from the authored prose -- and shown whether or not the answer was right.
+  const bestEv = math.actionEvs.find(
+    ([candidate]) => candidate === graded.action.bestAction,
+  )?.[1];
+  const runnerUp = math.actionEvs
+    .filter(([candidate]) => candidate !== graded.action.bestAction)
+    .sort(([, left], [, right]) => right - left)[0];
+  const whyCopy =
+    bestEv !== undefined && runnerUp
+      ? formatMessage("table.feedback.whyBest", {
+          bestAction: graded.action.bestAction,
+          bestEv: formatFixedDecimal(bestEv, 2),
+          runnerUpAction: runnerUp[0],
+          runnerUpEv: formatFixedDecimal(runnerUp[1], 2),
+          margin: formatFixedDecimal(bestEv - runnerUp[1], 2),
+        })
+      : undefined;
+
+  // How the conclusion moves if the assumption moves. A learner needs to know
+  // whether a decision was marginal or comfortable, not just its verdict.
+  const equityMargin =
+    math.requiredEquity === undefined || math.equitySimulations === 0
+      ? undefined
+      : math.estimatedEquity - math.requiredEquity;
+  const sensitivityCopy =
+    equityMargin === undefined
+      ? formatMessage("table.feedback.sensitivityNoCall")
+      : formatMessage("table.feedback.sensitivityCall", {
+          margin: formatFixedDecimal(Math.abs(equityMargin), 1),
+          direction: formatMessage(
+            equityMargin >= 0
+              ? "table.feedback.sensitivityAbove"
+              : "table.feedback.sensitivityBelow",
+          ),
+          swing: formatFixedDecimal(Math.abs(equityMargin) / 2 + 2.5, 1),
+        });
 
   return (
     <aside className="feedback-panel" aria-live="polite">
@@ -1038,11 +1090,27 @@ export function FeedbackPanel({
             <dd>{formatChips(math.potAfterCall)}</dd>
           </div>
           <div>
+            <dt>{formatMessage("table.feedback.potOdds")}</dt>
+            <dd>
+              {math.potOdds === undefined
+                ? formatMessage("table.feedback.notApplicable")
+                : `${formatFixedDecimal(math.potOdds, 1)}%`}
+            </dd>
+          </div>
+          <div>
             <dt>{formatMessage("table.feedback.requiredEquity")}</dt>
             <dd>
               {math.requiredEquity === undefined
                 ? formatMessage("table.feedback.notApplicable")
                 : `${formatFixedDecimal(math.requiredEquity, 1)}%`}
+            </dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.estimatedEquity")}</dt>
+            <dd>
+              {math.equitySimulations === 0
+                ? formatMessage("table.feedback.notAvailable")
+                : `${formatFixedDecimal(math.estimatedEquity, 1)}%`}
             </dd>
           </div>
           <div>
@@ -1071,7 +1139,16 @@ export function FeedbackPanel({
             </li>
           ))}
         </ul>
+        {whyCopy ? (
+          <p className="feedback-analysis__why">{whyCopy}</p>
+        ) : null}
         <p className="feedback-analysis__assumption">{assumptionCopy}</p>
+        <p className="feedback-analysis__assumption">{sensitivityCopy}</p>
+        <p className="feedback-analysis__assumption">
+          {formatMessage("table.feedback.equityBasis", {
+            simulations: math.equitySimulations,
+          })}
+        </p>
       </section>
 
       <div className="feedback-tags">

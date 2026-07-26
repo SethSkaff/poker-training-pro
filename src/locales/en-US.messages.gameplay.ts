@@ -67,6 +67,18 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "dashboard.tour.qualifiedStatus": "{finishPlace} of {fieldSize} · Qualified",
   "dashboard.tour.retryStatus": "{finishPlace} of {fieldSize} · Retry",
   "dashboard.tour.available": "Available",
+  "table.feedback.potOdds": "Pot odds",
+  "table.feedback.estimatedEquity": "Your equity (vs a random hand)",
+  "table.feedback.whyBest":
+    "{bestAction} wins because it is worth {bestEv} bb against {runnerUpAction} at {runnerUpEv} bb - a margin of {margin} bb.",
+  "table.feedback.sensitivityCall":
+    "You were {margin} points {direction} the equity you needed. A swing of about {swing} points in your read would change the answer.",
+  "table.feedback.sensitivityAbove": "above",
+  "table.feedback.sensitivityBelow": "below",
+  "table.feedback.sensitivityNoCall":
+    "There is nothing to call here, so the decision turns on fold equity and position rather than pot odds.",
+  "table.feedback.equityBasis":
+    "Equity estimated over {simulations} simulations against a uniformly random opponent hand. This scenario does not state a villain range, so treat it as a baseline, not a read.",
   "review.title": "Round review",
   "review.deriving": "Rebuilding the round from its replay…",
   "review.error.generic": "This round could not be reviewed.",

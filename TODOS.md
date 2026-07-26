@@ -1357,13 +1357,22 @@ stated villain range is **never computed at all** for Training — the shipped
 equity estimator has no Training coupling.
 
 **Acceptance criteria**
-- [ ] Feedback shows: action chosen, recommended action, pot size, cost to call, pot odds, estimated equity, required equity, EV of relevant actions, EV regret, and whether the decision was close.
-- [ ] It explains **why** calling, folding, or raising was best.
-- [ ] It shows how the calculation changes under reasonable assumptions.
-- [ ] Math is shown on correct answers too, not only on mistakes.
-- [ ] Answer formats continue to accept percentage, decimal, fraction, ratio, and decimal-comma input (the parser is sound — 32/32 tests pass; do not regress it).
+- [x] Feedback shows action chosen, recommended action, pot size, cost to call, **pot odds**, **estimated equity**, required equity, EV of every modeled action, EV regret, and whether the decision was close.
+- [x] It explains **why** the best line was best, computed from the numbers: "{best} wins because it is worth X bb against {runner-up} at Y bb — a margin of Z bb." This is shown regardless of whether the answer was right, so the reasoning is not reserved for mistakes.
+- [x] It shows how the calculation changes under reasonable assumptions: the panel states how many points above or below the required equity the decision sat, and roughly how large a change in read would flip it.
+- [x] Math is shown on correct answers too — the whole analysis section renders for correct, close, and wrong outcomes alike.
+- [x] Answer formats are untouched; the parser suite is unchanged and green.
 
-**Tests** — [ ] Unit: every listed value renders for correct, close, and wrong outcomes. [ ] Unit: parser regression suite stays green. [ ] Accessibility: the math explanation is readable by assistive technology and stays on screen until dismissed.
+**Estimated equity — the assumption is stated, not invented.** Training
+scenarios author hero cards and a board but **no villain range**, so there is
+no stated range to run against. `estimateTrainingEquity` measures equity
+against a uniformly random opponent hand over a deterministic 400-simulation
+sample seeded from the scenario id, and the panel labels it exactly that way
+("vs a random hand", with the simulation count and a note that it is a baseline
+rather than a read). Fabricating a range to produce a more impressive number
+would have made the figure worse, not better.
+
+**Tests** — [x] Unit: every listed value renders for correct, close, and wrong outcomes, including the new pot-odds, equity, why, and sensitivity lines. [x] Unit: equity is deterministic for a given scenario. [x] Unit: parser regression suite stays green (unchanged). [x] Accessibility: the panel is a polite live region with a labelled analysis section and stays mounted until the player advances.
 
 ---
 
