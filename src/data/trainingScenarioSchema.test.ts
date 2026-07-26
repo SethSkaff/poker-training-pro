@@ -112,6 +112,42 @@ describe("versioned training scenario schema", () => {
     );
   });
 
+  it("refuses verified provenance without an approved review", () => {
+    // The two fields describe the same fact. Validated in isolation they could
+    // disagree, letting content claim human sign-off with no reviewer and no
+    // date -- which is exactly what a generator with no human in the loop
+    // would produce by default (E15-002).
+    const invalid = clone(trainingScenarios[0]) as unknown as Record<
+      string,
+      unknown
+    >;
+    invalid.source = {
+      ...(invalid.source as Record<string, unknown>),
+      verificationStatus: "verified",
+    };
+    const errors = validateTrainingScenario(invalid).join("\n");
+    expect(errors).toContain(
+      "cannot be verified while review.status is \"pending\"",
+    );
+  });
+
+  it("allows an approved review to precede verified provenance", () => {
+    // The rule runs one way only: an instructional reviewer approving the
+    // wording does not by itself verify the mathematics, so approval must be
+    // recordable while provenance stays pending.
+    const scenario = clone(trainingScenarios[0]) as unknown as Record<
+      string,
+      unknown
+    >;
+    scenario.review = {
+      status: "approved",
+      reviewerId: "reviewer-1",
+      reviewedAt: "2026-07-26T00:00:00.000Z",
+      notes: "Instructional wording approved; maths review outstanding.",
+    };
+    expect(validateTrainingScenario(scenario)).toEqual([]);
+  });
+
   it("detects duplicate ids and structurally duplicate renamed scenarios", () => {
     const first = clone(trainingScenarios[0]);
     const duplicateId = { ...clone(trainingScenarios[1]), id: first.id };

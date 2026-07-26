@@ -227,6 +227,38 @@ function validateReview(value: unknown, errors: string[]): void {
   }
 }
 
+/**
+ * `source.verificationStatus` and `review.status` describe the same fact and
+ * must not be able to disagree.
+ *
+ * Each was validated in isolation, so a scenario could claim its analysis was
+ * `verified` while its review was still `pending` -- a claim of human sign-off
+ * with no reviewer and no date attached to it. That is the one failure mode
+ * this metadata exists to prevent, and it is the failure mode a *generator*
+ * would produce by default: content with a plausible provenance block and no
+ * human in the loop (E15-002).
+ *
+ * The rule runs one way only. `verified` requires an approved review, but an
+ * approved review may sit alongside `pending-human-review` -- an instructional
+ * reviewer approving the wording does not by itself verify the mathematics.
+ */
+function validateReviewProvenanceAgreement(
+  source: unknown,
+  review: unknown,
+  errors: string[],
+): void {
+  if (!isRecord(source) || !isRecord(review)) return;
+  if (
+    source.verificationStatus === "verified" &&
+    review.status !== "approved"
+  ) {
+    errors.push(
+      "source.verificationStatus: cannot be verified while review.status is " +
+        `${JSON.stringify(review.status)}. Verified provenance requires an approved review.`,
+    );
+  }
+}
+
 function legalActionsForScenario(scenario: Record<string, unknown>): Set<PokerAction> {
   const legal = new Set<PokerAction>(["fold"]);
   const call = finite(scenario.amountToCall) ? scenario.amountToCall : 0;
@@ -459,6 +491,7 @@ export function validateTrainingScenario(scenario: unknown): string[] {
   }
   validateSource(scenario.source, errors);
   validateReview(scenario.review, errors);
+  validateReviewProvenanceAgreement(scenario.source, scenario.review, errors);
 
   if (
     !Array.isArray(scenario.blinds) ||
