@@ -298,6 +298,43 @@ describe("six-seat tournament session", () => {
     expect(JSON.stringify(snapshot.potBreakdown)).not.toContain("suit");
   });
 
+  it("separates live main and side pots before a runout", () => {
+    const session = beginTournamentSessionHand(createSession());
+    const hand = session.activeHand;
+    if (!hand) throw new Error("Expected an active hand");
+    const amounts = [400, 1_000, 1_000, 0, 0, 0];
+    const withAllIns = {
+      ...session,
+      activeHand: {
+        ...hand,
+        betting: {
+          ...hand.betting,
+          players: hand.betting.players.map((player, index) => ({
+            ...player,
+            totalCommitted: amounts[index] ?? 0,
+            status: index < 3 ? "all-in" as const : "folded" as const,
+          })),
+        },
+        information: {
+          ...hand.information,
+          pot: 2_400,
+          players: hand.information.players.map((player, index) => ({
+            ...player,
+            totalCommitted: amounts[index] ?? 0,
+            status: index < 3 ? "all-in" as const : "folded" as const,
+          })),
+        },
+      },
+    };
+    const snapshot = createPokerTableSnapshot(withAllIns);
+
+    expect(snapshot.potBreakdown).toMatchObject([
+      { kind: "main", amount: 1_200 },
+      { kind: "side", amount: 1_200 },
+    ]);
+    expect(snapshot.potBreakdown?.[1]?.eligiblePlayerIds).toHaveLength(2);
+  });
+
   it("synthesizes title/prompt/actionReason through the message catalog with correct interpolation", () => {
     const session = beginTournamentSessionHand(createSession());
     const snapshot = createPokerTableSnapshot(session);
