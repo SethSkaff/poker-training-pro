@@ -17,6 +17,7 @@ import { lazyWithPreload, SceneLoadingFallback } from "./components/SceneLoader"
 import { SettingsPanel } from "./components/SettingsPanel";
 import { trainingScenarios } from "./data/trainingScenarios";
 import { gameAudio } from "./lib/audio";
+import { tournamentResultAudioCue } from "./lib/tournamentResultAudio";
 import { productionMusicManifest } from "./data/musicPlaylistManifest";
 import {
   createMusicPlaylist,
@@ -751,6 +752,7 @@ export default function App() {
           ],
         }));
       }
+      gameAudio.play(tournamentResultAudioCue(result));
       setTournamentResult(result);
     },
     [persistBoundary, progress, settings],
