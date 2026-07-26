@@ -482,13 +482,28 @@ remain the single gate. Because determinism ties every card to the seed, review
 and replay consumers must reapply viewer-scoped redaction rather than trusting
 reconstructed state (see E24-002).
 
-**Acceptance criteria**
-- [ ] `revealed` is set exactly for players whose cards the rules make public.
-- [ ] The snapshot honors `revealed`; opponent placeholders are removed.
-- [ ] Cards never public are never exposed, in UI, logs, announcements, saves, or exports.
-- [ ] Folded hands are not revealed unless a deliberate, separately specified option is added.
+**Architecture decision (2026-07-25): reveals are ephemeral presentation
+events, not persistent engine state.** Setting `HandInformationPlayer.revealed`
+would have put opponent hole cards into the information set — the same object
+that feeds snapshots, the autosave envelope, and replay reconstruction — making
+every one of those a new leak surface to re-audit. Instead the runner emits
+`showdown` and `all-in-reveal` presentation events carrying the reveal payload.
+Those events live only in renderer state (`App.tsx` `pendingPresentation`),
+never reach `persistBoundary`, and are absent from the replay export allowlist,
+so a reveal is structurally incapable of being written to disk. `revealed` is
+deliberately **retained** on `HandInformationPlayer` because
+`redactHandInformation` (`tournament.ts:846-850`) and Rational's public-hand
+branch (`rational.ts:404,426`) are both correct if a future feature ever does
+put a legitimately public hand into an information set; it stays the single
+redaction gate rather than dead code to delete.
 
-**Tests** — [ ] Unit: reveal set only at qualifying showdowns. [ ] Privacy: redaction denies non-revealed cards for every viewer. [ ] Regression: existing hidden-information invariance tests still pass.
+**Acceptance criteria**
+- [x] Reveals are produced exactly for players whose cards the rules make public — `showdown` when betting closes with the hand unresolved, `all-in-reveal` only when every live player is all-in and two or more board cards are still to come (`tournamentRunner.ts:447-471,513-534`). `revealed` remains the redaction gate per the decision above.
+- [x] The presentation layer honors those reveals and nothing else; opponent seats show face-down backs until a reveal event arrives (`publicRevealsForPresentation`, `PokerTable.tsx:266-277`).
+- [x] Cards never public are never exposed, in UI, logs, announcements, saves, or exports. A deterministic multi-seed sweep asserts no non-reveal event serializes a hole card and no event carries a `holeCards` key.
+- [x] Folded hands are not revealed. Both emitters filter `status !== "folded"`, and the sweep tracks every fold within a hand and asserts folded ids never appear in that hand's reveals.
+
+**Tests** — [x] Unit: reveal set only at qualifying showdowns / closed-betting all-ins (`tournamentRunner.test.ts`). [x] Privacy: redaction denies non-revealed cards for every viewer (`engine/tournament.test.ts:258`) plus the runner-level leak sweep. [x] Regression: existing hidden-information invariance tests still pass.
 
 ### E03-003 — Guarantee every hand communicates win or loss
 

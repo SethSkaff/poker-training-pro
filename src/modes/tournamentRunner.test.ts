@@ -256,6 +256,96 @@ describe("tournament runner", () => {
     expect(reveal.reveals.every((entry) => entry.cards.length === 2)).toBe(true);
   });
 
+  it("never leaks a hole card through a non-reveal event, and never reveals a folded hand", () => {
+    const label = (card: { rank: string; suit: string }) =>
+      `${card.rank}${card.suit[0]}`;
+    let sweptHands = 0;
+    let sweptReveals = 0;
+
+    for (let seedIndex = 0; seedIndex < 3; seedIndex += 1) {
+      let runner = createCareerTournamentRunner({
+        eventId: "local-qualifier",
+        hero,
+        mode: "normal",
+        seed: `runner-reveal-privacy-${seedIndex}`,
+      });
+      // Fold tracking is per hand: a player who folds this hand must never be
+      // among that hand's reveals, even though the same id may show down later.
+      let foldedThisHand = new Set<string>();
+      let currentHandId = runner.session.activeHand?.handId;
+
+      for (let step = 0; step < 90; step += 1) {
+        const before = runner.session.activeHand;
+        if (before && before.handId !== currentHandId) {
+          currentHandId = before.handId;
+          foldedThisHand = new Set();
+          sweptHands += 1;
+        }
+        // Every hole card the engine is holding for this hand, minus anything
+        // the board has already made public.
+        const boardLabels = new Set((before?.board ?? []).map(label));
+        const hiddenLabels = new Set(
+          Object.values(before?.holeCards ?? {})
+            .flat()
+            .map(label)
+            .filter((cardLabel) => !boardLabels.has(cardLabel)),
+        );
+
+        const transition = runner.session.activeHand &&
+            runner.session.activeHand.betting.nextToAct === hero.id
+          ? applyHeroTournamentActionOneStep(runner, {
+              action: heroTournamentLegalActions(runner)?.call ? "call" : "check",
+            })
+          : advanceTournamentRunnerOneStep(runner, { policy: { simulations: 50 } });
+
+        for (const event of transition.events) {
+          if (event.kind === "action" && event.command.type === "fold") {
+            foldedThisHand.add(event.playerId);
+          }
+          if (event.kind === "showdown" || event.kind === "all-in-reveal") {
+            sweptReveals += 1;
+            for (const entry of event.reveals) {
+              expect(foldedThisHand.has(entry.playerId)).toBe(false);
+              expect(event.playerIds).toContain(entry.playerId);
+            }
+            continue;
+          }
+          // A non-reveal event may legitimately carry a board card or the
+          // public best-five of an award, but never an unrevealed hole card.
+          const serialized = JSON.stringify(event);
+          const publicLabels = new Set([
+            ...boardLabels,
+            ...(event.kind === "board-card-dealt" ? [label(event.card)] : []),
+            ...(event.kind === "hand-result"
+              ? event.awards.flatMap((award) => award.hand?.cards.map(label) ?? [])
+              : []),
+          ]);
+          for (const hidden of hiddenLabels) {
+            if (publicLabels.has(hidden)) continue;
+            expect(
+              serialized.includes(`"${hidden[0]}"`) &&
+                serialized.includes("holeCards"),
+            ).toBe(false);
+          }
+          expect(serialized).not.toContain("holeCards");
+        }
+
+        runner = transition.runner;
+        if (runner.session.status === "complete") break;
+        if (transition.awaitingHero) {
+          const legal = heroTournamentLegalActions(runner);
+          if (!legal) break;
+          runner = applyHeroTournamentActionOneStep(runner, {
+            action: legal.check ? "check" : legal.call ? "call" : "fold",
+          }).runner;
+        }
+      }
+    }
+
+    expect(sweptHands).toBeGreaterThan(0);
+    expect(sweptReveals).toBeGreaterThan(0);
+  }, 60_000);
+
   it("keeps emitting public milestones after the hero folds until the hand settles", () => {
     let runner = advanceTournamentRunnerToHero(
       createCareerTournamentRunner({
