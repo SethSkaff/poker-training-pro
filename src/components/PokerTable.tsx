@@ -231,6 +231,20 @@ export function publicActionLabel(action: BettingActionType): string {
   }
 }
 
+/**
+ * Derives the exact public cards that form any awarded best-five hand. This is
+ * deliberately driven by the engine's award payload instead of recalculating
+ * a hand in the UI, so board-playing hands, ties, and separate side-pot
+ * winners remain faithful to the authoritative result.
+ */
+export function winningCardLabelsForAwards(
+  awards: readonly { hand?: HandValue }[],
+): ReadonlySet<string> {
+  return new Set(
+    awards.flatMap((award) => award.hand?.cards.map(cardLabel) ?? []),
+  );
+}
+
 export interface SeatPresentationUpdate {
   action?: BettingActionType;
   label?: string;
@@ -2219,10 +2233,8 @@ export function PokerTable({
   const revealedCardsByPlayer = new Map(
     showdownEvent?.reveals.map((reveal) => [reveal.playerId, reveal.cards]) ?? [],
   );
-  const winningCardLabels = new Set(
-    showdownEvent?.awards.flatMap((award) =>
-      award.hand?.cards.map(cardLabel) ?? [],
-    ) ?? [],
+  const winningCardLabels = winningCardLabelsForAwards(
+    showdownEvent?.awards ?? [],
   );
   const showdownAwards = resultEvent?.awards ?? tournament?.lastPotAwards ?? [];
   const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
