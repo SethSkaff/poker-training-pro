@@ -108,3 +108,48 @@ describe("deterministic bot league", () => {
     }
   });
 });
+
+describe("position, stack depth, and street reach the policy", () => {
+  const rational = report.policies.rational;
+
+  const actionMix = (slice: { chosenActions: Record<string, number> }) =>
+    JSON.stringify(slice.chosenActions);
+
+  it("measurably changes behaviour by street", () => {
+    const byStreet = rational.byStreet;
+    // The river is the clearest case: a fold appears where earlier streets
+    // continue, because the hand can no longer improve.
+    expect(byStreet.river.chosenActions.fold ?? 0).toBeGreaterThan(
+      byStreet.preflop.chosenActions.fold ?? 0,
+    );
+    expect(
+      new Set(Object.values(byStreet).map(actionMix)).size,
+    ).toBeGreaterThan(1);
+    // Equity falls as the board runs out and ranges narrow.
+    expect(byStreet.preflop.meanEquity).toBeGreaterThan(byStreet.river.meanEquity);
+  });
+
+  it("carries position and stack depth into the decision inputs", () => {
+    // The canonical cells are mostly clear calls, so the *action mix* barely
+    // moves across position and stack -- see the note in E11-004. What must
+    // hold is that the inputs genuinely differ, so a close spot would resolve
+    // differently. A regression that dropped position or stack from the
+    // information set would flatten these to a single value.
+    const positions = Object.values(rational.byPosition);
+    expect(
+      new Set(positions.map((slice) => slice.meanPositionScore)).size,
+    ).toBe(positions.length);
+
+    const stacks = Object.values(rational.byStack);
+    expect(
+      new Set(stacks.map((slice) => slice.meanEffectiveStackBigBlinds)).size,
+    ).toBe(stacks.length);
+    expect(
+      new Set(stacks.map((slice) => slice.meanStackToPotRatio)).size,
+    ).toBe(stacks.length);
+    // And they are ordered the way the labels claim.
+    expect(rational.byStack.short.meanEffectiveStackBigBlinds).toBeLessThan(
+      rational.byStack.deep.meanEffectiveStackBigBlinds,
+    );
+  });
+});
