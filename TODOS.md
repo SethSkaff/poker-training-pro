@@ -1094,7 +1094,77 @@ inexplicable repeated aggression, no hidden-card access, no reliably exploitable
 single pattern.
 
 **Acceptance criteria**
-- [ ] No single exploitable pattern lets a competent player win reliably (measure hero win-rate and exploitability against scripted strategies). **Partly addressed:** the one dominant exploitable pattern the review found — a 94% raise-back response — is gone and gated to [5%, 42%], and a "never 3-bets" pattern is gated against too. A hero win-rate measurement against scripted strategies has **not** been built, so this stays open.
+- [x] No single exploitable pattern lets a competent player win reliably (measure hero win-rate and exploitability against scripted strategies). **Measured 2026-07-26 — and the measurement found something the criterion's wording does not cover. See below.**
+
+**Hero win-rate and exploitability measurement (E11-004).**
+`scripts/measure-exploitability.ts` seats a **scripted** hero against a full
+table of the production policy and plays real tournaments to completion. The
+strategies are deliberately crude and deliberately *fixed* — none adapts,
+models an opponent, or sees a card it was not dealt — because a strategy crude
+enough to write down in twenty lines is exactly what a player finds by accident
+and then repeats forever. Seeds are shared across strategies, so every strategy
+meets the same decks and opponents and differences are the strategy, not luck.
+
+20 seeds per strategy, live blind clock. Chance is a 16.7% win rate and a 3.50
+mean finish place:
+
+| strategy | Normal win / qualify / finish | Rational win / qualify / finish |
+|---|---|---|
+| always-fold | 0% / **100%** / 2.00 | 0% / **90%** / 2.10 |
+| calling-station | 0% / 0% / 5.90 | 0% / 0% / 5.80 |
+| always-shove | 15% / 25% / 4.15 | 20% / 20% / 4.75 |
+| min-raise-bot | 0% / 0% / 5.95 | 0% / 0% / 5.90 |
+| max-raise-bot | 20% / 35% / 3.75 | 20% / 25% / 4.40 |
+| nit | 0% / 75% / 2.45 | 0% / 70% / 2.65 |
+| premium-value | 0% / 85% / 2.30 | 5% / 75% / 2.50 |
+
+**On the criterion as written: it passes.** No fixed line wins reliably. The
+highest win rate anywhere is 20%, against a 16.7% baseline — variance, not
+edge. And the field discriminates hard rather than being flat: calling every
+bet or min-raising every spot finishes 5.80–5.95 and is dead inside four hands,
+a spread of 3.80–3.95 between the best and worst lines. Gated by
+`audit-exploitability-gates.ts` (31st release stage), two-sided so that a table
+which stopped punishing anything would fail even though nothing "wins".
+
+**The finding the criterion does not cover — folding every hand qualifies.**
+`always-fold` reaches a qualifying place (top 2 of the compressed 6-seat field)
+in **100%** of Normal events and 90% of Rational ones, surviving ~48 hands
+while the field busts itself, and inheriting second. It never wins a single
+event — a seat that never contests a pot cannot accumulate chips — so it does
+not violate "win reliably". But career progression rewards *qualifying*, not
+winning, and against that objective this is a reliable exploit available to
+anyone who notices it.
+
+Two honest qualifications. Folding into the money is a real strategy in small
+fields with steep qualification, so some of this is the format behaving
+correctly rather than the AI misbehaving. And 100% is still too reliable to
+call intended.
+
+**Deliberately not gated.** The number is already at its ceiling: no bound
+below 1.0 passes today, so the gate would fail on the day it landed and block
+release verification while telling nobody anything new. Closing it means either
+slowing how fast the field self-destructs or changing the qualification rule —
+both design decisions, not defects to patch silently. The gate prints the rate
+every run as an ungated note so it cannot quietly drift out of view.
+
+**A gate bug caught by this data.** The win-rate bound originally read
+`best.winRate`, where `best` is whichever strategy *finishes* highest — the
+fold-bot, at 0% wins. It was checking a strategy guaranteed to score zero and
+could never have failed. It now takes the maximum win rate across all
+strategies.
+
+**And a band set from the wrong number.** The gate runs at 6 seeds where the
+measurement used 20, so its win rate moves in steps of 1/6: `always-shove`
+showed 33% in the gate run against 15% at 20 seeds. A bound of 0.5 trips at 4
+wins of 6, which a strategy whose true rate is 20% reaches by luck in ~1.7% of
+runs — flaky enough to teach people that a red gate means "run it again". Set
+to 0.6 (5 of 6, ~0.2%). The band comes from the gate's own granularity, not
+from the measured value.
+
+Gate run 2026-07-26, both modes, all four bounds pass: best finish 2.00/2.17
+(floor 1.5), highest win rate 0.333/0.167 (ceiling 0.6), worst finish
+5.83/6.00 (floor 4), spread 3.83/3.83 (floor 1.2). The stage takes ~15 minutes,
+most of it the passive strategies surviving 40-50 hands per event.
 - [x] Personalities are behaviorally distinguishable in measurement, not just labelled. Asserted directly in `botLeague.test.ts`: the loosest profile must exercise its budget (>2% deviation), the spread between loosest and tightest must exceed 4×, and all five must be distinct measured points. This replaced the previous `selectedBestRate <= 0.98` proxy, which had been calibrated against the miscalibrated utility model.
 - [x] Position, stack depth, and tournament stage reach the policy, now asserted rather than assumed — **with an honest split in the result.** Street *measurably changes the action mix*: the river folds 44% where preflop folds 0%, and mean equity falls 0.51 → 0.12 as ranges narrow. Position and stack depth **do not** move the action mix on the 36 canonical cells — early/middle/late call 83/100/83% — because those cells are mostly clear calls rather than close spots, so a positional adjustment worth a fraction of a big blind cannot flip them. What is asserted instead is that the *inputs* differ and are correctly ordered (`meanPositionScore` 0/0.5/1, effective stacks 8/30/100 BB, SPR 1.25/4.69/15.6), so a regression that dropped position or stack from the information set would flatten them and fail. Demonstrating that position changes the *chosen action* needs a fixture of deliberately close spots, which the canonical matrix is not.
 
