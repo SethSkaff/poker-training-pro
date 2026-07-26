@@ -1936,7 +1936,7 @@ overlap.
       raise-slider sizing, settings, keyboard pause/resume, corrupt-current-save
       recovery, and first-run reduced-motion/high-contrast preferences; physical
       assistive-input acceptance is still pending.
-- [ ] Establish a re-runnable gameplay layout-collision gate at every supported
+- [x] Establish a re-runnable gameplay layout-collision gate at every supported
       size: no card may cover another card's rank or suit, opponent bet
       chips/amounts must remain visually separate from total stack balances, and
       labels, controls, cards, chips, and status overlays must never obscure one

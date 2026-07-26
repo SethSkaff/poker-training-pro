@@ -507,7 +507,10 @@ function PlayerSeat({
       : isFolded
         ? "folded"
         : player.status;
-  const isShowingCards = !isHero && !isOut && cardsDealt;
+  // A folded hand is mucked, not a still-visible two-card hand. The public
+  // fold gesture/state cue supplies the animation beat; retaining card DOM
+  // through a queued event caused folded placeholder corners to overlap.
+  const isShowingCards = !isHero && !isOut && cardsDealt && !isFolded;
   const hasRevealedCards = revealedCards?.length === 2;
   const shouldHoldCards =
     isShowingCards && !hasRevealedCards && player.status === "active" && !isMucking;

@@ -12,7 +12,7 @@ describe("hole-card deal presentation", () => {
     expect(tableSource).toContain('presentationEvent?.kind === "hole-cards-dealt"');
     expect(tableSource).toContain("cardsDealt={cardsDealt}");
     expect(tableSource).toContain("disabled={Boolean(action) || !cardsDealt}");
-    expect(tableSource).toContain("const isShowingCards = !isHero && !isOut && cardsDealt");
+    expect(tableSource).toContain("const isShowingCards = !isHero && !isOut && cardsDealt && !isFolded");
     expect(tableSource).toContain("hasRevealedCards");
     expect(tableSource).toContain("revealedCards.map((card)");
     expect(tableSource).toContain('card={{ rank: "A", suit: "spades" }}');
