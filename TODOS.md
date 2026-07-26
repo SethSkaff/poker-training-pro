@@ -671,8 +671,8 @@ winner. 9. Highlight the winning five. 10. Award main and side pots visibly.
 **Audit**
 - The Monte Carlo machinery is real and production-reachable: `estimateRangeEquity`/`estimateRangeEquitySliced` (`src/modes/rational.ts`), the versioned worker protocol (`rationalEquityProtocol.ts`), and the service with cancellation and stale-result rejection (`rationalEquityService.ts`), already off-main-thread via `createDesktopEquityService()` (`App.tsx:66,82,817-826,864-879`).
 - It is **viewer-agnostic** — it accepts any `PlayerInformationSet`, so it works for the hero.
-- But a repo-wide search shows it is consumed **only** by AI decision-making. There is no call site in `PokerTable.tsx` or any presentation path. No "chance to win" is ever computed for the player.
-- Classification: **MISSING FEATURE** (presentation) over **EXISTS BUT DISCONNECTED** (compute).
+- The table now has a public post-reveal estimator (`estimatePublicAllInEquitySliced`) which uses only legally revealed all-in hands plus the board, yields every deterministic 25-simulation slice, and is discarded when the hand changes. `PokerTable` shows win/tie/lose/equity plus the unseen-card and simulation basis after the reveal. It is not yet routed through the worker service's cancellation protocol, so that remaining acceptance item stays open.
+- Classification: **PARTIALLY CONNECTED** (correct public presentation exists; worker-backed cancellation is still pending).
 
 **Implementation notes**
 Reuse the existing sliced/worker path; do not add a second estimator. Budget
@@ -681,11 +681,11 @@ awareness matters: `docs/rational-equity-work-budget.md:64-71` measures median
 readout must be sliced/backgrounded and must not block the runout.
 
 **Acceptance criteria**
-- [ ] Win/tie/lose probabilities are shown per live all-in player.
-- [ ] Values update after each board card.
-- [ ] The basis (remaining unseen cards, simulation count) is disclosed.
+- [x] Win/tie/lose probabilities are shown per live all-in player.
+- [x] Values update after each board card.
+- [x] The basis (remaining unseen cards, simulation count) is disclosed.
 - [ ] Computation is cancellable and rejects stale results.
-- [ ] It never uses information the player is not entitled to.
+- [x] It never uses information the player is not entitled to. The request is assembled only after `all-in-reveal` and includes its legal public cards plus the public board.
 - [ ] It never blocks the presentation thread.
 
 **Tests** — [ ] Unit: equity for a known board matches an expected range. [ ] Unit: cancellation and stale rejection. [ ] Determinism: fixed seed yields identical displayed values.

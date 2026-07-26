@@ -67,6 +67,10 @@ import type {
   HeroTournamentAction,
   TournamentPresentationEvent,
 } from "../modes/tournamentRunner";
+import {
+  estimatePublicAllInEquitySliced,
+  type PublicAllInEquityEstimate,
+} from "../modes/rational";
 import { calculateAiDecisionTiming } from "../modes/decisionTiming";
 import {
   keyEventToken,
@@ -1274,6 +1278,8 @@ export function PokerTable({
   const [stagedBoard, setStagedBoard] = useState<Card[]>(() =>
     scenario.board.map((card) => ({ ...card })),
   );
+  const [allInEquity, setAllInEquity] =
+    useState<PublicAllInEquityEstimate>();
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
   const actionGateRef = useRef(createTableActionGate());
@@ -2288,6 +2294,35 @@ export function PokerTable({
     (tournament?.presentationEvent?.kind === "all-in-reveal"
       ? tournament.presentationEvent
       : undefined);
+  useEffect(() => {
+    if (!allInRevealEvent || allInRevealEvent.reveals.length < 2) {
+      setAllInEquity(undefined);
+      return;
+    }
+    let cancelled = false;
+    setAllInEquity(undefined);
+    const publicCardSeed = [
+      allInRevealEvent.handId,
+      ...stagedBoard.map(cardLabel),
+      ...allInRevealEvent.reveals.flatMap((reveal) => [
+        reveal.playerId,
+        ...reveal.cards.map(cardLabel),
+      ]),
+    ].join(":");
+    void estimatePublicAllInEquitySliced({
+      players: allInRevealEvent.reveals,
+      board: stagedBoard,
+      seed: `public-all-in:${publicCardSeed}`,
+      simulations: 500,
+      simulationsPerSlice: 25,
+    }).then((estimate) => {
+      if (!cancelled) setAllInEquity(estimate);
+    }).catch(() => {
+      // A stale/cancelled visual calculation is intentionally silent. The
+      // authoritative engine is already progressing independently.
+    });
+    return () => { cancelled = true; };
+  }, [allInRevealEvent, stagedBoard]);
   const revealedCardsByPlayer = new Map(
     publicRevealsForPresentation(
       tournament?.presentationEvent,
@@ -2568,6 +2603,28 @@ export function PokerTable({
                 })}
               </strong>
               <small>{formatMessage("table.allIn.runoutHint")}</small>
+            </aside>
+          ) : null}
+          {allInRevealEvent ? (
+            <aside className="all-in-equity-strip" role="status" aria-live="polite" aria-atomic="true">
+              <span>All-in showdown odds</span>
+              {allInEquity ? allInEquity.players.map((player) => {
+                const name = scenario.players.find((seat) => seat.id === player.playerId)?.name ?? player.playerId;
+                const win = formatFixedDecimal((player.wins / allInEquity.simulations) * 100, 1);
+                const tie = formatFixedDecimal((player.ties / allInEquity.simulations) * 100, 1);
+                const lose = formatFixedDecimal((player.losses / allInEquity.simulations) * 100, 1);
+                return (
+                  <p key={player.playerId}>
+                    <b>{name}</b> <strong>{formatFixedDecimal(player.equity * 100, 1)}%</strong>
+                    <small> win {win}% · tie {tie}% · lose {lose}%</small>
+                  </p>
+                );
+              }) : <p>Calculating public odds…</p>}
+              <small>
+                {allInEquity
+                  ? `From ${allInEquity.unseenCards} unseen cards · ${allInEquity.simulations} simulations`
+                  : "From the remaining unseen cards"}
+              </small>
             </aside>
           ) : null}
           {actionError ? (

@@ -6,6 +6,7 @@ import type {
   LegalActionSet,
 } from "../engine/betting";
 import {
+  assertUniqueCards,
   cardKey,
   createDeck,
   createSeededRandom,
@@ -697,6 +698,112 @@ export async function estimateRangeEquitySliced(
     if (state.completed < state.simulations) await yieldControl();
   }
   return finishRangeEquityWork(state);
+}
+
+/** Public, post-reveal all-in equity. Unlike the policy estimator above this
+ * has no ranges: it evaluates only hole cards which poker rules have already
+ * made public after betting is closed. Keeping it in this module gives the
+ * table the same deterministic, sliced work discipline as Rational decisions.
+ */
+export interface PublicAllInEquityRequest {
+  players: readonly { playerId: string; cards: readonly Card[] }[];
+  board: readonly Card[];
+  seed: DeckSeed;
+  simulations?: number;
+  simulationsPerSlice?: number;
+}
+
+export interface PublicAllInEquityPlayer {
+  playerId: string;
+  wins: number;
+  ties: number;
+  losses: number;
+  equity: number;
+}
+
+export interface PublicAllInEquityEstimate {
+  players: readonly PublicAllInEquityPlayer[];
+  simulations: number;
+  unseenCards: number;
+}
+
+function validatePublicAllInEquity(request: PublicAllInEquityRequest): void {
+  if (request.players.length < 2) {
+    throw new Error("Public all-in equity requires at least two revealed players");
+  }
+  if (request.board.length > 5) throw new Error("A Hold'em board has at most five cards");
+  if (request.players.some((player) => player.cards.length !== 2)) {
+    throw new Error("Each public all-in player must have exactly two hole cards");
+  }
+  assertUniqueCards([
+    ...request.board,
+    ...request.players.flatMap((player) => player.cards),
+  ]);
+  const simulations = request.simulations ?? 500;
+  if (!Number.isInteger(simulations) || simulations < 1 || simulations > 5_000) {
+    throw new Error("Public all-in simulations must be an integer from 1 to 5000");
+  }
+}
+
+/**
+ * Deterministic Monte Carlo from only publicly known cards. Each slice yields
+ * to the event loop; callers can disregard a stale promise on a board/hand
+ * update without touching the authoritative tournament engine.
+ */
+export async function estimatePublicAllInEquitySliced(
+  request: PublicAllInEquityRequest,
+  options: Pick<SlicedEquityOptions, "yieldControl"> = {},
+): Promise<PublicAllInEquityEstimate> {
+  validatePublicAllInEquity(request);
+  const simulations = request.simulations ?? 500;
+  const simulationsPerSlice = Math.max(1, request.simulationsPerSlice ?? 25);
+  const knownKeys = new Set(
+    [...request.board, ...request.players.flatMap((player) => player.cards)].map(cardKey),
+  );
+  const unseen = createDeck().filter((card) => !knownKeys.has(cardKey(card)));
+  const runoutCount = 5 - request.board.length;
+  const random = createSeededRandom(request.seed);
+  const totals = request.players.map(() => ({ wins: 0, ties: 0, losses: 0, equity: 0 }));
+  const yieldControl = options.yieldControl ??
+    (() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+
+  for (let completed = 0; completed < simulations; completed += 1) {
+    const deck = unseen.map((card) => ({ ...card }));
+    for (let index = 0; index < runoutCount; index += 1) {
+      const target = index + Math.floor(random() * (deck.length - index));
+      [deck[index], deck[target]] = [deck[target], deck[index]];
+    }
+    const board = [...request.board, ...deck.slice(0, runoutCount)];
+    const values = request.players.map((player) => evaluateBestHand([...player.cards, ...board]));
+    const best = values.reduce((winner, value, index) =>
+      compareHandValues(value, values[winner]) > 0 ? index : winner, 0);
+    const winners = values
+      .map((value, index) => ({ value, index }))
+      .filter(({ value }) => compareHandValues(value, values[best]) === 0)
+      .map(({ index }) => index);
+    totals.forEach((total, index) => {
+      if (!winners.includes(index)) total.losses += 1;
+      else if (winners.length === 1) {
+        total.wins += 1;
+        total.equity += 1;
+      } else {
+        total.ties += 1;
+        total.equity += 1 / winners.length;
+      }
+    });
+    if ((completed + 1) % simulationsPerSlice === 0 && completed + 1 < simulations) {
+      await yieldControl();
+    }
+  }
+  return {
+    players: request.players.map((player, index) => ({
+      playerId: player.playerId,
+      ...totals[index],
+      equity: totals[index].equity / simulations,
+    })),
+    simulations,
+    unseenCards: unseen.length,
+  };
 }
 
 function positionScore(informationSet: PlayerInformationSet): number {

@@ -4,6 +4,7 @@ import type { LegalActionSet } from "../engine/betting";
 import type { PlayerInformationSet } from "../engine/tournament";
 import {
   decideRationalAction,
+  estimatePublicAllInEquitySliced,
   estimateRangeEquity,
   estimateRangeEquitySliced,
   MAX_EQUITY_SIMULATIONS_PER_DECISION,
@@ -364,6 +365,47 @@ describe("range-aware equity", () => {
     expect(wide.audit.summary).toBe(narrow.audit.summary);
     expect(wide.audit.equityWork.slices).toBe(10);
     expect(narrow.audit.equityWork.slices).toBe(300);
+  });
+});
+
+describe("public all-in equity", () => {
+  it("uses only legal public cards and produces a known forced winner", async () => {
+    const estimate = await estimatePublicAllInEquitySliced({
+      players: [
+        { playerId: "hero", cards: cards("Th", "2c") },
+        { playerId: "villain", cards: cards("9c", "9d") },
+      ],
+      board: cards("Ah", "Kh", "Qh", "Jh"),
+      seed: "public-royal-flush",
+      simulations: 100,
+      simulationsPerSlice: 11,
+    });
+
+    expect(estimate.unseenCards).toBe(44);
+    expect(estimate.players).toEqual([
+      { playerId: "hero", wins: 100, ties: 0, losses: 0, equity: 1 },
+      { playerId: "villain", wins: 0, ties: 0, losses: 100, equity: 0 },
+    ]);
+  });
+
+  it("is deterministic and yields only between public-work slices", async () => {
+    let yields = 0;
+    const request = {
+      players: [
+        { playerId: "hero", cards: cards("As", "Kd") },
+        { playerId: "villain", cards: cards("Qh", "Qs") },
+      ],
+      board: cards("2c", "7d", "Th"),
+      seed: "public-sliced",
+      simulations: 60,
+      simulationsPerSlice: 13,
+    };
+    const first = await estimatePublicAllInEquitySliced(request, {
+      yieldControl: async () => { yields += 1; },
+    });
+    const second = await estimatePublicAllInEquitySliced(request);
+    expect(first).toEqual(second);
+    expect(yields).toBe(4);
   });
 });
 
