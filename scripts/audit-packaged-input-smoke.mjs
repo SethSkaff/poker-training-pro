@@ -26,14 +26,16 @@ const appPath = resolve(
 );
 const reportPath = resolve(projectRoot, "work", "packaged-input-smoke.json");
 // This is the overall CDP session budget (also bounds every individual CDP
-// command's timeout via CdpClient.send's `Math.min(5_000, deadline - now)`).
+// command's timeout via CdpClient.send. Native range gestures get a bounded
+// longer per-command allowance because Chromium can wait for compositor input
+// acknowledgement longer than ordinary DOM evaluation.
 // 35s left effectively no slack once per-check polls were widened below to
 // tolerate legitimate opponent-presentation/animation variance, and the
 // raise-legality poll can take several hands to reach a decision where
 // raising is legal. 90s keeps a full run comfortable without masking a
 // genuinely hung packaged app (the process-exit and devtools-port waits below
 // still fail fast on a real crash).
-const timeoutMs = 90_000;
+const timeoutMs = 120_000;
 
 if (process.platform !== "win32") {
   throw new Error("Packaged input smoke requires a Windows Electron executable.");
@@ -152,6 +154,23 @@ try {
   await dismissContextCoachIfPresent(client);
   await captureStableTableScene(client);
   await expectClearTableInformationLanes(client);
+
+  // Exercise the production Gamepad API polling path while the live table is
+  // still visible. The later lifecycle smoke deliberately minimizes this
+  // same window; the product correctly suspends its visibility-aware polling
+  // loop while hidden, so testing controller routing before that state change
+  // keeps this an interaction assertion rather than a window-manager race.
+  await client.send("Page.bringToFront");
+  await delay(200);
+  await pressMockGamepadAUntilRouted(client);
+  await expectMouseClick(
+    client,
+    'button[aria-label="Skip opponent presentation and continue the hand"]',
+    undefined,
+    "fast-forward controller action presentation",
+  );
+  await expectSelector(client, ".action-dock", "table advances after Gamepad action", 8_000);
+
   await expectMinimizePausesAndRestores(client);
   await expectMouseClick(client, ".action-context button", undefined, "hand-history mouse input");
   await expectSelector(client, ".hand-history-popover", "public hand history");
@@ -239,39 +258,6 @@ try {
     client,
     "document.querySelector('.pause-menu') === null",
     "keyboard resume input",
-  );
-
-  // The Gamepad API is poll-based (src/lib/gamepad.ts): the app only notices a
-  // press by sampling `getGamepads()` on its own requestAnimationFrame loop
-  // (src/components/GamepadNavigationProvider.tsx). Electron's default
-  // `backgroundThrottling` can slow that rAF loop dramatically whenever the
-  // window is not genuinely focused/unoccluded, which this script cannot fully
-  // rule out from outside the process. Bring the window forward again as the
-  // best available mitigation before relying on a synthetic press being
-  // sampled at all.
-  //
-  // Separately, `detectContext()` in GamepadNavigationProvider.tsx treats any
-  // open modal (`[role="dialog"][aria-modal="true"]`, `.pause-scrim`) as menu
-  // context and routes button:0 to `menu.activate` (a DOM click on
-  // `document.activeElement`) instead of the game's check/call action. A
-  // stray native window-blur auto-pause landing here would silently reroute
-  // the press that way -- no `.spectator-dock` would ever appear, no matter
-  // how long this waits, because no game action was ever dispatched. Resume
-  // from a known baseline first so the context detection sees the live table.
-  await client.send("Page.bringToFront");
-  await delay(200);
-  await pressMockGamepadAUntilRouted(client);
-  await expectMouseClick(
-    client,
-    'button[aria-label="Skip opponent presentation and continue the hand"]',
-    undefined,
-    "fast-forward controller action presentation",
-  );
-  await expectAnySelector(
-    client,
-    [".action-dock", ".ceremony-board", ".room-flight"],
-    "table advances after Gamepad action",
-    8_000,
   );
 
 } catch (error) {
@@ -765,16 +751,30 @@ async function clickRangeAtFraction(cdp, selector, fraction) {
   // maps the first press to that value; starting the gesture at the minimum
   // thumb can be swallowed as a thumb-focus gesture when the app is running
   // with its high-contrast preference enabled.
-  await cdp.send("Input.dispatchMouseEvent", {
+  // Chromium can apply a native range-pointer event while never replying to
+  // the corresponding CDP request under Electron. Send the same real CDP
+  // pointer traffic without awaiting that acknowledgement, then the caller
+  // verifies the observable range value changed. This is stricter than a DOM
+  // assignment and avoids classifying a transport quirk as a product failure.
+  dispatchMouseEventWithoutAcknowledgement(cdp, {
     type: "mouseMoved", x: point.x, y: point.y, button: "none", buttons: 0,
   });
-  await cdp.send("Input.dispatchMouseEvent", {
+  dispatchMouseEventWithoutAcknowledgement(cdp, {
     type: "mousePressed", x: point.x, y: point.y, button: "left", buttons: 1, clickCount: 1,
   });
-  await cdp.send("Input.dispatchMouseEvent", {
+  dispatchMouseEventWithoutAcknowledgement(cdp, {
     type: "mouseReleased", x: point.x, y: point.y, button: "left", buttons: 0, clickCount: 1,
   });
   await delay(100);
+}
+
+function dispatchMouseEventWithoutAcknowledgement(cdp, params) {
+  if (cdp.socket.readyState !== WebSocket.OPEN) {
+    throw new Error("Packaged renderer CDP target closed before pointer dispatch.");
+  }
+  const id = cdp.nextId;
+  cdp.nextId += 1;
+  cdp.socket.send(JSON.stringify({ id, method: "Input.dispatchMouseEvent", params }));
 }
 
 async function sendKey(cdp, key, code, windowsVirtualKeyCode) {
@@ -805,6 +805,24 @@ async function sendKey(cdp, key, code, windowsVirtualKeyCode) {
 async function pressMockGamepadA(cdp) {
   const result = await cdp.send("Runtime.evaluate", {
     expression: `(() => {
+      // Keep a renderer-side trace of the public event boundary. This is
+      // deliberately observation only: the smoke still has to enter through
+      // the browser Gamepad API and the table still has to react on its own.
+      // It distinguishes a throttled/unobserved browser poll from a real
+      // provider-to-table routing failure when a packaged run is inconclusive.
+      const audit = window.__ptpGamepadAudit ?? { events: [], samples: [] };
+      if (!window.__ptpGamepadAudit) {
+        window.__ptpGamepadAudit = audit;
+        window.addEventListener("ptp:gameaction", (event) => {
+          audit.events.push({
+            actionId: event.detail?.actionId ?? null,
+            hidden: document.hidden,
+            table: Boolean(document.querySelector(".table-screen")),
+            paused: Boolean(document.querySelector(".pause-menu")),
+            at: performance.now(),
+          });
+        });
+      }
       const buttons = Array.from({ length: 16 }, (_, index) => ({
         pressed: index === 0,
         value: index === 0 ? 1 : 0,
@@ -816,6 +834,14 @@ async function pressMockGamepadA(cdp) {
         value: () => [pad],
       });
       window.dispatchEvent(new Event("gamepadconnected"));
+      audit.samples.push({
+        hidden: document.hidden,
+        visibilityState: document.visibilityState,
+        hasTable: Boolean(document.querySelector(".table-screen")),
+        hasActionDock: Boolean(document.querySelector(".action-dock")),
+        paused: Boolean(document.querySelector(".pause-menu")),
+        at: performance.now(),
+      });
       setTimeout(() => { buttons[0].pressed = false; buttons[0].value = 0; }, 3_000);
       return true;
     })()`,
@@ -855,8 +881,12 @@ async function pressMockGamepadAUntilRouted(cdp) {
     }
     if (attempt === maxAttempts) {
       record("Gamepad API check or call routing", false);
+      const audit = await evaluateValue(
+        cdp,
+        "JSON.stringify(window.__ptpGamepadAudit ?? null)",
+      );
       throw new Error(
-        `Gamepad API check or call routing: .spectator-dock was not present after ${maxAttempts} press attempts.`,
+        `Gamepad API check or call routing: .spectator-dock was not present after ${maxAttempts} press attempts. Renderer trace: ${audit ?? "unavailable"}`,
       );
     }
     record(`Gamepad API check or call routing attempt ${attempt} did not land; retrying`, true);

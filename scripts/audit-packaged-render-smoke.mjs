@@ -236,7 +236,7 @@ export class CdpClient {
     });
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, maximumCommandTimeoutMs = 5_000) {
     if (this.socket.readyState !== WebSocket.OPEN) {
       return Promise.reject(
         new RenderSmokeFailure(
@@ -250,7 +250,7 @@ export class CdpClient {
     return new Promise((resolvePromise, reject) => {
       const commandTimeoutMs = Math.max(
         1,
-        Math.min(5_000, this.deadline - Date.now()),
+        Math.min(maximumCommandTimeoutMs, this.deadline - Date.now()),
       );
       const timer = setTimeout(() => {
         this.pending.delete(id);
