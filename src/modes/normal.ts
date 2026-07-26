@@ -622,6 +622,20 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
   );
   const best = ranked[0];
   const bestEv = best.estimatedEv;
+  // The EV budget bounds how far a personality may stray from the best line.
+  //
+  // E11-002 named a narrow budget as "Cause 4" -- the personality layer had
+  // nothing to choose from. Measurement after fixing Causes 1-3 shows the
+  // premise no longer holds the same way: the median gap to the second-best
+  // action across the 36 canonical league cells is 1.05 BB, so widening the
+  // budget far enough to manufacture deviations also admits genuine blunders
+  // (at a 27 BB pot a pot-scaled budget admitted a 3.3 BB EV loss, and
+  // profiles began folding and shoving where continuing is clearly right).
+  //
+  // A skilled professional facing clearly-separated options *should* take the
+  // best line. Personality distinctness is therefore enforced directly, by
+  // asserting the profiles differ from one another (see botLeague.test.ts),
+  // rather than by inflating this budget until they diverge by accident.
   const hardBudget = profile.maxEvLossBb * input.bigBlind;
   const signals = derivePublicExploitSignals(
     input.informationSet,

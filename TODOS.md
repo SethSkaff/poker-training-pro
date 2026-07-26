@@ -1026,11 +1026,33 @@ near-unmodified.
 - Stale/async divergence: `decideRationalActionAsync` (`rational.ts:1121-1130`) reconstructs an identical decision; the sliced path never reads elapsed time and is tested bit-identical; each decision re-derives its own seed (`tournamentSession.ts:1130`).
 - `roundChips` unit interpretation: no recurrence. `additionalRisk` consistently means incremental chips and `command.to` consistently means the new street total (`betting.ts:326-337`).
 
+**Status:** Done — 2026-07-25. The harness is now a permanent, re-runnable
+script (`scripts/measure-ai-behavior.ts` library +
+`scripts/report-ai-behavior.ts` CLI, `npm run measure:ai`), so every number
+below is reproducible rather than a one-off transcript.
+
+**Before → after (8 seeds per mode, blind clock frozen)**
+
+| Metric | Normal before | Normal after | Rational before | Rational after |
+|---|---|---|---|---|
+| Max consecutive-raise chain | **631** | **3** | 599 | **3** |
+| Chains ≥4 / ≥8 / ≥10 | 54 / 34 / 27 | **0 / 0 / 0** | 51 / 25 / 16 | **0 / 0 / 0** |
+| Facing a bet: fold / call / raise | 3 / 3 / **94%** | **40 / 42 / 19%** | 7 / 13 / **80%** | **30 / 43 / 27%** |
+| Preflop all-in hand rate | 21.0% | **0.3%** | 21.2% | **0.0%** |
+| Median raise ÷ pot | 0.50 (min-raise) | **1.00** | 0.50 | **1.00** |
+| Median hands to finish | **8** | **42.5** | **9** | **36** |
+
+**Fixes, one per cause**
+- **Cause 1** — `buildCandidates` no longer offers `legal.raise.minTo` as a routine option; it is reinstated only when the stack leaves no larger legal sizing. Pot-fraction floors also rise with the aggression already shown on the street (0.5/0.8/1.1× opening → 0.75/1.1/1.5× → 1.0/1.4/2.0× after three raises).
+- **Cause 2** — the raise-utility model gained its missing third outcome. It priced a raise as "they fold, or they call and we see a showdown"; the branch that actually occurs in a war — the opponent re-raises and the chips just wagered are dead — is now modeled, with its probability rising as `streetAggressionCount` grows (6% → capped 72%).
+- **Cause 3** — a stack-preservation brake, quadratic in the fraction of the effective stack committed past a 25% threshold and scaled by the risk premium. The threshold matters: a brake applying from zero suppressed ordinary value betting too (measured: Normal's raise rate fell to 2.8%).
+- **Cause 4** — investigated and **re-scoped, not "fixed by widening the budget."** Widening `maxEvLossBb` far enough to manufacture deviations also admitted genuine blunders (at a 27 BB pot a pot-scaled budget admitted a 3.3 BB EV loss and profiles began folding and shoving where continuing was clearly right). Measurement showed why: with the corrected utility model the median gap to the second-best action across the 36 canonical cells is **1.05 BB**, so a competent professional *should* take the best line in most of them. The budget was left at its original values and personality distinctness is now asserted **directly** instead — see E11-004.
+
 **Acceptance criteria**
-- [ ] Each of Causes 1-4 has a targeted fix with a before/after measurement from the E11-001 harness.
-- [ ] Raise-back-facing-a-bet falls from 84-91% into a documented plausible band.
-- [ ] Median raise ÷ pot moves off 0.01 — min-raise stops dominating.
-- [ ] Median hands to finish a 6-max tournament rises into the E13 target band.
+- [x] Each of Causes 1-4 has a targeted fix (or, for Cause 4, a measured re-scope) with a before/after measurement from the E11-001 harness.
+- [x] Raise-back-facing-a-bet falls from 84-91% into a documented plausible band — 19% (Normal) and 27% (Rational), gated to [5%, 42%].
+- [x] Median raise ÷ pot moves off min-raise dominance — the minimum legal raise is no longer a routine candidate and the median sizing is a full pot.
+- [x] Median hands to finish a 6-max tournament rises into the E13 target band — 8-9 → 36-42.5, gated to [15, 140].
 
 ### E11-003 — Correct the action-comparison model (framing corrected by measurement)
 
@@ -1044,13 +1066,13 @@ the **candidate set is dominated by minimum raises** (Cause 1). Fix the model an
 the candidates — do not rewrite a working comparison framework.
 
 **Acceptance criteria**
-- [ ] The utility model accounts for the realistic continuation cost of an ongoing raise war, so raising again stops being self-reinforcing.
-- [ ] Minimum-raise candidates no longer dominate; sizing is plausible relative to pot and effective stack.
-- [ ] Every raise still has an identifiable reason to outperform calling: value, protection, fold equity, range leverage, stack pressure, tournament pressure, exploitation, or a personality-consistent bluff.
-- [ ] Call frequency rises and raise frequency falls to calibrated levels.
-- [ ] The comparison stays inspectable, so a decision can be explained by the action values considered (feeds E17 and E18).
+- [x] The utility model accounts for the realistic continuation cost of an ongoing raise war. `streetAggressionCount` makes the war visible to the policy for the first time, and `reRaiseRisk` turns it into a rising probability that the wager is dead — so raising again stops being self-reinforcing.
+- [x] Minimum-raise candidates no longer dominate; sizing is pot-relative and its floor rises with the aggression already shown.
+- [x] Every raise still has an identifiable reason to outperform calling — the `role` classification (value / semi-bluff / bluff / showdown) and per-option rationale are unchanged and still attached to every candidate.
+- [x] Call frequency rises and raise frequency falls to calibrated levels (2.5% → 42% call; 94% → 19% raise-back).
+- [x] The comparison stays inspectable: the full scored distribution with utilities, fold equity, role, and rationale is still returned for every action (feeds E17 and E18).
 
-**Tests** — [ ] Unit: constructed spots where calling strictly beats raising produce a call. [ ] Unit: a 4-bet sequence does not produce an unbounded chain. [ ] Statistical: call/raise mix and chain-length distribution within gated bounds.
+**Tests** — [x] Unit: constructed spots where calling strictly beats raising produce a call (`rational.test.ts` — "calls rather than raises when calling strictly dominates"). [x] Unit: an escalating sequence measurably reduces willingness to re-raise, and the minimum legal raise is not offered as a routine candidate. [x] Unit: a deep stack is not shoved without a commanding edge. [x] Statistical: call/raise mix and chain-length distribution within gated bounds (`scripts/audit-ai-behavior-gates.ts`).
 
 ### E11-004 — Reach the Normal AI target
 

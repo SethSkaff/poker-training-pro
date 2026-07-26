@@ -25,7 +25,9 @@
     "release:verify-ios-training-bank": "vite-node scripts/export-ios-training-bank.ts --check",
     "release:verify-ios-tournament-engine": "node scripts/export-ios-tournament-engine.mjs --check",
     "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs",
-    "diagnose:motion": "node scripts/diagnose-motion.mjs"
+    "diagnose:motion": "node scripts/diagnose-motion.mjs",
+    "measure:ai": "vite-node scripts/report-ai-behavior.ts",
+    "release:audit-ai-behavior": "vite-node scripts/audit-ai-behavior-gates.ts"
   },
   "engines": {
     "node": ">=22.12.0",

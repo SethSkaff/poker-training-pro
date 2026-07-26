@@ -891,6 +891,49 @@ function tournamentRiskPremium(
   return clamp(premium, 0, 0.22);
 }
 
+/**
+ * How many aggressive actions have already been made on the current street.
+ *
+ * This is the single input that makes an escalating raise war *visible* to the
+ * policy. Without it every re-raise is scored as if it were the first bet of
+ * the street, which is precisely what let a chain run to 600+ actions: each
+ * decision in isolation looked like a fresh, profitable aggression spot.
+ *
+ * Public information only — it counts the same betting actions any player at
+ * the table can see, and never inspects a hand.
+ */
+export function streetAggressionCount(
+  informationSet: PlayerInformationSet,
+): number {
+  let count = 0;
+  for (const action of informationSet.actions) {
+    // Street markers are emitted by the dealer and reset the count.
+    if (action.type === "flop" || action.type === "turn" || action.type === "river") {
+      count = 0;
+      continue;
+    }
+    if (
+      action.type === "bet" ||
+      action.type === "raise" ||
+      action.type === "all-in"
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * The probability that raising again is met by another raise rather than a
+ * fold or a call. It climbs with the number of raises already made, because a
+ * table that has re-raised four times has demonstrated it will do so again.
+ * Capped below 1 so a raise never becomes strictly impossible to justify.
+ */
+function reRaiseRisk(aggression: number): number {
+  if (aggression <= 0) return 0.06;
+  return Math.min(0.72, 0.06 + aggression * 0.17);
+}
+
 function addCandidate(
   map: Map<string, CandidateAction>,
   command: BettingActionCommand,
@@ -936,7 +979,17 @@ function buildCandidates(
 
   if (legal.raise) {
     const potAfterCall = informationSet.pot + legal.toCall;
-    const desired = [0.5, 0.8, 1.1].map((fraction) =>
+    const aggression = streetAggressionCount(informationSet);
+    // A re-raise into an escalating war is a larger commitment than an opening
+    // raise, both in real poker and in what it signals. Sizing floors rise
+    // with the aggression already shown.
+    const fractions =
+      aggression >= 3
+        ? [1.0, 1.4, 2.0]
+        : aggression >= 1
+          ? [0.75, 1.1, 1.5]
+          : [0.5, 0.8, 1.1];
+    const desired = fractions.map((fraction) =>
       clamp(
         roundChips(
           informationSet.currentBet + potAfterCall * fraction,
@@ -946,7 +999,18 @@ function buildCandidates(
         legal.raise?.maxTo ?? 0,
       ),
     );
-    for (const to of new Set([legal.raise.minTo, ...desired, legal.raise.maxTo])) {
+    // The minimum legal raise is deliberately **not** offered as a routine
+    // option. It was the cheapest way to stay aggressive, so it dominated the
+    // candidate set and produced arithmetic (not geometric) escalation:
+    // `lastFullRaise` only ever grew by the previous increment, so a chain of
+    // min re-raises needs hundreds of iterations to exhaust a deep stack.
+    // It is reinstated only when the stack leaves no larger legal sizing.
+    const smallestDesired = Math.min(...desired);
+    const sizes = new Set(desired);
+    if (legal.raise.maxTo <= smallestDesired) sizes.add(legal.raise.minTo);
+    sizes.add(legal.raise.maxTo);
+
+    for (const to of sizes) {
       addCandidate(
         candidates,
         { type: "raise", to },
@@ -1067,6 +1131,7 @@ function scoreCandidates(
   const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
   const spr = effectiveStack / Math.max(1, informationSet.pot);
   const equityEdge = equity - requiredEquity;
+  const aggression = streetAggressionCount(informationSet);
 
   return candidates.map((candidate) => {
     const type = candidate.command.type;
@@ -1102,9 +1167,25 @@ function scoreCandidates(
         1,
       );
       const calledPot = informationSet.pot + wager * 2;
+
+      // Three outcomes, not two. The previous model priced a raise as "they
+      // fold, or they call and we see a showdown", which made raising again
+      // self-reinforcing: the fold-equity reward scaled with the pot the war
+      // itself had created, while the cost grew only by a flat increment. The
+      // missing branch is the one that actually happens in a raise war -- the
+      // opponent comes back over the top and the chips just wagered are dead.
+      const reRaised = reRaiseRisk(aggression);
+      const called = Math.max(0, 1 - foldEquity - reRaised * (1 - foldEquity));
+      const reRaisedShare = (1 - foldEquity) * reRaised;
+      // Facing a re-raise we usually give up the wager; occasionally the hand
+      // is strong enough to continue and recover part of it.
+      const reRaisedValue = -wager * (1 - clamp(equity - 0.25, 0, 0.55));
+
       chipUtility =
         foldEquity * informationSet.pot +
-        (1 - foldEquity) * (calledEquity * calledPot - wager);
+        called * (calledEquity * calledPot - wager) +
+        reRaisedShare * reRaisedValue;
+
       chipUtility -= riskPremium * wager * (1.4 + Math.min(1, wager / Math.max(1, effectiveStack)));
       chipUtility += position * bigBlind * 0.1;
       if (role === "bluff") {
@@ -1114,6 +1195,23 @@ function scoreCandidates(
       if (spr >= 8 && wager > informationSet.pot && equity < 0.7) {
         chipUtility -= bigBlind * 0.5;
       }
+
+      // Stack-preservation brake. Busting out of a tournament is worse than
+      // the chip-EV arithmetic says, and the old model had no term at all for
+      // it: the risk premium alone computes to 0.04-0.07 in career play, which
+      // never restrained a deep-stack shove.
+      //
+      // It engages only past a threshold share of the effective stack. A
+      // brake that applied from zero suppressed ordinary value betting too
+      // (measured: Normal's raise rate fell to 2.8%), which is the opposite
+      // failure -- the goal is a table that stops shoving 300 BB with a
+      // marginal edge, not one that never raises.
+      const committedShare = clamp(wager / Math.max(1, effectiveStack), 0, 1);
+      const exposure = Math.max(0, committedShare - 0.25) / 0.75;
+      const survivalWeight = clamp(0.55 + riskPremium * 3, 0.55, 1.6);
+      chipUtility -=
+        exposure * exposure *
+        effectiveStack * survivalWeight * clamp(0.62 - equity, 0, 0.62);
     }
 
     // Reward continuing only when range equity clears the relevant threshold.

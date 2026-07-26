@@ -70,6 +70,14 @@ const stages = [
     ],
   },
   {
+    name: "AI behavior regression gates (raise chains, aggression mix, pacing)",
+    command: node,
+    args: [
+      join("node_modules", "vite-node", "vite-node.mjs"),
+      join("scripts", "audit-ai-behavior-gates.ts"),
+    ],
+  },
+  {
     name: "Production renderer build",
     command: node,
     args: [

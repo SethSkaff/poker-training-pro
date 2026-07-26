@@ -50,9 +50,33 @@ describe("deterministic bot league", () => {
           report.frozenInputs.matrixSeedsPerProfile,
       );
       expect(profile.evBudgetBreaches).toBe(0);
+      // A profile must never become a random-action generator. The upper
+      // bound that used to sit here (<= 0.98) was calibrated against the
+      // pre-balance utility model, where miscalibrated raise utilities
+      // produced many near-ties and every profile deviated often. With the
+      // corrected model the 36 canonical cells have a median 1.05 BB gap to
+      // the second-best action, so a competent professional *should* take the
+      // best line in almost all of them. Distinctness is asserted directly in
+      // the next test instead of inferred from a deviation-rate floor.
       expect(profile.selectedBestRate).toBeGreaterThanOrEqual(0.86);
-      expect(profile.selectedBestRate).toBeLessThanOrEqual(0.98);
+      expect(profile.selectedBestRate).toBeLessThanOrEqual(1);
     }
+  });
+
+  it("keeps the named personalities behaviorally distinguishable", () => {
+    const profiles = Object.values(report.policies.normalProfiles);
+    const deviationRates = profiles.map((profile) => profile.deviationRate);
+    const loosest = Math.max(...deviationRates);
+    const tightest = Math.min(...deviationRates);
+
+    // At least one profile must actually exercise its personality budget,
+    // otherwise the layer is decorative.
+    expect(loosest).toBeGreaterThan(0.02);
+    // And the spread between the most and least disciplined profile must be
+    // large enough to be a behavioral difference rather than sampling noise.
+    expect(loosest / Math.max(tightest, 1e-6)).toBeGreaterThan(4);
+    // Every profile is a distinct measured point, not a relabelled clone.
+    expect(new Set(deviationRates).size).toBe(profiles.length);
   });
 
   it("keeps decision difficulty below the anti-tell leakage threshold", () => {
