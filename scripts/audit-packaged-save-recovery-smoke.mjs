@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { projectRoot } from "./release/shared.mjs";
+import { classifyCdpFailure, reportCdpOutcome } from "./lib/cdp-outcome.mjs";
 import {
   CdpClient,
   captureBoundedOutput,
@@ -49,6 +50,7 @@ const output = captureBoundedOutput(child, 8_192);
 const checks = [];
 let client;
 let failure;
+let transportTimeout;
 
 try {
   const deadline = Date.now() + timeoutMs;
@@ -79,24 +81,26 @@ try {
   record("fresh autosave replaces recovery record", validFreshSave);
   if (!validFreshSave) throw new Error("Fresh recovery save did not have the expected durable envelope.");
 } catch (error) {
-  failure = error instanceof Error ? error.message : String(error);
+  // A CDP command deadline proves neither a passing check nor a regression;
+  // it must not be reported as a product failure (E25-003).
+  ({ failure, transportTimeout } = classifyCdpFailure(error));
 } finally {
   try { client?.close(); } catch { /* process cleanup remains authoritative */ }
   try { await terminateProcessTree(child); } catch { /* retrying profile cleanup below is safe */ }
   await removeProfile(profile);
 }
 
-const report = {
-  schemaVersion: 1,
-  executable: basename(appPath),
-  checks,
-  ok: !failure,
-  ...(failure ? { failure } : {}),
-  scope: "Packaged corrupt-current-save recovery: recovery UI, explicit archive confirmation, archived evidence, durable fresh profile, and first-run continuation. Previous/last-known-good restoration remains separately covered by save-store unit tests.",
-};
+const report = reportCdpOutcome(
+  {
+    schemaVersion: 1,
+    executable: basename(appPath),
+    checks,
+    scope:
+      "Packaged corrupt-current-save recovery: recovery UI, explicit archive confirmation, archived evidence, durable fresh profile, and first-run continuation. Previous/last-known-good restoration remains separately covered by save-store unit tests.",
+  },
+  { failure, transportTimeout },
+);
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-if (failure) throw new Error(`Packaged save recovery smoke failed: ${failure}`);
-console.log(JSON.stringify({ ok: true, ...report }, null, 2));
 
 async function expectText(cdp, selector, text, label) {
   const found = await waitForBoolean(cdp, `(() => {

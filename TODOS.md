@@ -1923,7 +1923,7 @@ revisit only with that trade-off explicit.)
 **Acceptance criteria**
 - [ ] Every Part I acceptance criterion is verified in the **packaged** build, not only the dev renderer.
 - [ ] Verification covers normal and heavy CPU load, all supported resolutions, all UI scales, reduced motion, window blur, minimize, suspend/resume, and screen lock where possible.
-- [ ] Any CDP transport timeout is recorded separately from a genuine product failure.
+- [x] Any CDP transport timeout is recorded separately from a genuine product failure. **This was true in two of the nine CDP audits and false in the other seven**, so the same infrastructure hiccup was inconclusive in `audit-packaged-input-smoke` and `audit-packaged-flash-capture` and a product regression everywhere else. The inline logic is now `scripts/lib/cdp-outcome.mjs`, used by all nine. Exit codes are the contract — **0 passed, 1 product failure, 2 inconclusive** — so a caller can tell the two apart without parsing prose. The match is deliberately narrow (the CDP client's own command deadline, the DevTools-endpoint wait, and a socket that closed before the session opened): a broad match on "timeout" would swallow a scene stuck on its loading fallback or a hero decision that never arrives, which is precisely what these audits exist to catch. `scripts/lib/cdp-outcome.test.ts` pins both directions and asserts no CDP audit is left unclassified.
 
 ---
 

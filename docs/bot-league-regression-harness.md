@@ -100,3 +100,70 @@ The tournament sample is deliberately shallow and small. It is a deterministic
 regression sentinel, not statistical proof that one policy is stronger. Larger
 league calibration belongs in an opt-in developer benchmark so normal CI stays
 bounded.
+
+## Companion instruments
+
+The bot league evaluates **isolated decisions** on a 36-cell matrix. Three
+harnesses in `scripts/` cover what a per-decision matrix structurally cannot
+see. They are separate tools with separate standing, and it matters which is
+which.
+
+| Harness | Question it answers | Standing |
+|---|---|---|
+| `measure-ai-behavior.ts` → `audit-ai-behavior-gates.ts` | Does the action mix over whole tournaments stay inside documented bands? | **Release gate.** Runs in `run-release-verification.mjs`. |
+| `measure-exploitability.ts` → `audit-exploitability-gates.ts` | Can a crude fixed counter-strategy beat the table? | **Release gate.** Runs in `run-release-verification.mjs`. |
+| `critic-harness.ts` → `report-critic-harness.ts` | Does a hand *read* as something a person would do? | **Research only.** Deliberately not a gate; a test asserts it stays out of release verification. |
+
+### Behavior gates (E14-001)
+
+Whole-tournament statistics at realistic 300 BB depth: raise-chain length,
+aggression mix, all-in rates, raise sizing, and pacing. Every bound carries the
+value measured when it was set and the reason it exists. This is what caught the
+2026-07-25 defect — a 631-action raise chain produced by decisions that each
+looked defensible in isolation.
+
+### Exploitability gates (E11-004)
+
+Seats a **scripted** hero against a full table of the production policy and
+plays real tournaments. The strategies are deliberately dumb and deliberately
+fixed: fold everything, call everything, shove everything, min-raise, max-raise,
+wait for premiums, or play premiums for value. None adapts, models an opponent,
+or sees a card it was not dealt.
+
+The pass condition is two-sided, and the second half matters as much as the
+first:
+
+- No scripted strategy may win far above its share of a six-handed field. That
+  is the exploit test.
+- The strategies must **not all score the same**. If folding every hand and
+  shoving every hand finish alike, the table is not punishing anything, and a
+  flat result would satisfy the first condition for the wrong reason.
+
+**A harness fault this exposed.** Blind levels are wall-clock timed and a
+headless run has no wall clock, so without a stand-in the level never escalates.
+That is not a neutral simplification here: "fold every hand" is only a losing
+strategy *because* the blinds eventually eat the stack, so a frozen clock scored
+the most passive strategy on the board as one of the best. Both this harness and
+the pacing harness now advance a nominal 75 s per hand.
+
+### Critic harness (E14-002)
+
+Plays hands headlessly, samples the suspicious and the representative, renders
+them as hand histories, and asks a critic for one of six qualitative labels.
+
+Three constraints are enforced rather than documented:
+
+- **Offline by construction.** The default critic is an offline heuristic, so
+  the whole path runs on a machine with no network. Reaching a model requires
+  `--endpoint` and `--model` typed explicitly; there is no default URL and no
+  environment fallback, asserted by a test.
+- **Excluded from the bundle.** It lives in `scripts/`, which the
+  production-composition audit cannot reach from any production entrypoint, so
+  exclusion is structural rather than a rule someone must remember.
+- **No hidden cards.** Histories come from a spectator view with hole cards
+  dropped outright, and `assertNoHiddenCards` walks the record asking "is this
+  object a card?" rather than searching for the key `holeCards` — so a card
+  smuggled in under any other name is caught, while `board` stays allowed.
+
+Its output carries `status: "qualitative-signal-only"` and its own disclaimer
+**in the data**, so a consumer cannot render the labels without the caveat.

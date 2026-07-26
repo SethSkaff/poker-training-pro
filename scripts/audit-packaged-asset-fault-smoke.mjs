@@ -31,6 +31,7 @@ import {
 import { RenderSmokeFailure } from "./release/packaged-render-smoke-lib.mjs";
 import { canonicalJson } from "./release/runtime-performance-profile-lib.mjs";
 import { projectRoot } from "./release/shared.mjs";
+import { isCdpTransportTimeout } from "./lib/cdp-outcome.mjs";
 
 const DEFAULT_APP = join(
   projectRoot,
@@ -1307,9 +1308,19 @@ if (isMain) {
       error instanceof Error
         ? error.message
         : "Unknown packaged asset-fault smoke failure.";
-    console.error(
-      `Packaged asset-fault smoke failed [${code}]: ${message}`,
-    );
-    process.exitCode = 1;
+    // A CDP command deadline proves neither a graceful asset fallback nor a
+    // broken one. Exit 2 so a caller can tell an inconclusive run from a
+    // regression without parsing this text (E25-003).
+    if (isCdpTransportTimeout(error)) {
+      console.error(
+        `Packaged asset-fault smoke inconclusive [cdp-transport-timeout]: ${message}`,
+      );
+      process.exitCode = 2;
+    } else {
+      console.error(
+        `Packaged asset-fault smoke failed [${code}]: ${message}`,
+      );
+      process.exitCode = 1;
+    }
   }
 }

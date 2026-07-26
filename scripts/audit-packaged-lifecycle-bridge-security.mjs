@@ -15,6 +15,7 @@ import {
   waitForDevToolsPort,
   waitForPageTarget,
 } from "./audit-packaged-render-smoke.mjs";
+import { classifyCdpFailure, reportCdpOutcome } from "./lib/cdp-outcome.mjs";
 
 const projectRoot = resolve(new URL("..", import.meta.url).pathname.slice(1));
 const appPath = resolve(
@@ -44,6 +45,7 @@ const child = spawn(
 const output = captureBoundedOutput(child, 8_192);
 let client;
 let failure;
+let transportTimeout;
 
 try {
   const deadline = Date.now() + 20_000;
@@ -59,20 +61,22 @@ try {
     throw new Error("Normal packaged preload was unavailable or exposed the lifecycle smoke bridge.");
   }
 } catch (error) {
-  failure = error instanceof Error ? error.message : String(error);
+  // A CDP command deadline proves neither a passing check nor a regression;
+  // it must not be reported as a product failure (E25-003).
+  ({ failure, transportTimeout } = classifyCdpFailure(error));
 } finally {
   try { client?.close(); } catch {}
   try { await terminateProcessTree(child); } catch {}
   await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 80 });
 }
 
-const report = {
-  schemaVersion: 1,
-  executable: basename(appPath),
-  ok: !failure,
-  ...(failure ? { failure } : {}),
-  scope: "Normal packaged preload has no lifecycle smoke bridge; the native minimize control is test-launch-only.",
-};
+const report = reportCdpOutcome(
+  {
+    schemaVersion: 1,
+    executable: basename(appPath),
+    scope:
+      "Normal packaged preload has no lifecycle smoke bridge; the native minimize control is test-launch-only.",
+  },
+  { failure, transportTimeout },
+);
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-if (failure) throw new Error(`Packaged lifecycle bridge security audit failed: ${failure}`);
-console.log(JSON.stringify(report, null, 2));

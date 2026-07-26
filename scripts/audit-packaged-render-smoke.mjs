@@ -22,6 +22,7 @@ import {
   assertNoFatalCdpEvents,
   waitForRenderSmoke,
 } from "./release/packaged-render-smoke-lib.mjs";
+import { isCdpTransportTimeout } from "./lib/cdp-outcome.mjs";
 
 const DEFAULT_APP = join(
   projectRoot,
@@ -566,6 +567,16 @@ if (isMain) try {
       : "smoke-failed";
   const message =
     error instanceof Error ? error.message : "Unknown renderer smoke failure.";
-  console.error(`Packaged renderer smoke failed [${code}]: ${message}`);
-  process.exitCode = 1;
+  // A CDP command deadline proves neither a rendered app nor a broken one.
+  // Exit 2 so a caller can tell an inconclusive run from a regression without
+  // parsing this text (E25-003).
+  if (isCdpTransportTimeout(error)) {
+    console.error(
+      `Packaged renderer smoke inconclusive [cdp-transport-timeout]: ${message}`,
+    );
+    process.exitCode = 2;
+  } else {
+    console.error(`Packaged renderer smoke failed [${code}]: ${message}`);
+    process.exitCode = 1;
+  }
 }

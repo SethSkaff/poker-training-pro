@@ -17,6 +17,7 @@ import {
   waitForDevToolsPort,
   waitForPageTarget,
 } from "./audit-packaged-render-smoke.mjs";
+import { classifyCdpFailure, reportCdpOutcome } from "./lib/cdp-outcome.mjs";
 
 const PROFILE_PREFIX = "poker-training-pro-mode-completion-";
 const MODES = Object.freeze(["normal", "rational", "timed"]);
@@ -42,6 +43,7 @@ if (modes.some((mode) => !MODES.includes(mode))) {
 
 const results = [];
 let failure;
+let transportTimeout;
 for (const [index, mode] of modes.entries()) {
   try {
     results.push(await completeMode(mode));
@@ -54,23 +56,34 @@ for (const [index, mode] of modes.entries()) {
     // can be attributed to the following mode's CDP target.
     if (index < modes.length - 1) await delay(1_500);
   } catch (error) {
-    failure = `${mode}: ${error instanceof Error ? error.message : String(error)}`;
+    // A CDP command deadline proves neither a passing mode nor a regression;
+    // it must not be reported as a product failure (E25-003).
+    const classified = classifyCdpFailure(error);
+    if (classified.transportTimeout) {
+      transportTimeout = `${mode}: ${classified.transportTimeout}`;
+    } else {
+      failure = `${mode}: ${classified.failure}`;
+    }
     break;
   }
 }
 
-const report = {
-  schemaVersion: 1,
-  executable: basename(appPath),
-  modes,
-  results,
-  ok: !failure && results.length === modes.length,
-  ...(failure ? { failure } : {}),
-  scope: "Packaged UI completion smoke for Normal, Rational, and Timed Table using only ordinary displayed controls. Each completed event also records heap/DOM/listener deltas and rejects retained history rows, blob URLs, or excessive heap growth. It is bounded event coverage, not a 60-minute hardware soak.",
-};
+if (!failure && !transportTimeout && results.length !== modes.length) {
+  failure = "one or more modes did not finish";
+}
+
+const report = reportCdpOutcome(
+  {
+    schemaVersion: 1,
+    executable: basename(appPath),
+    modes,
+    results,
+    scope:
+      "Packaged UI completion smoke for Normal, Rational, and Timed Table using only ordinary displayed controls. Each completed event also records heap/DOM/listener deltas and rejects retained history rows, blob URLs, or excessive heap growth. It is bounded event coverage, not a 60-minute hardware soak.",
+  },
+  { failure, transportTimeout },
+);
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-if (!report.ok) throw new Error(`Packaged mode completion smoke failed: ${failure ?? "one or more modes did not finish"}`);
-console.log(JSON.stringify({ ok: true, ...report }, null, 2));
 
 async function completeMode(mode) {
   const profile = await mkdtemp(join(tmpdir(), PROFILE_PREFIX));
