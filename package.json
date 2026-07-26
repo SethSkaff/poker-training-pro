@@ -28,6 +28,7 @@
     "diagnose:motion": "node scripts/diagnose-motion.mjs",
     "measure:ai": "vite-node -c scripts/vite-node.config.mjs scripts/report-ai-behavior.ts --",
     "measure:exploitability": "vite-node -c scripts/vite-node.config.mjs scripts/report-exploitability.ts --",
+    "measure:critic": "vite-node -c scripts/vite-node.config.mjs scripts/report-critic-harness.ts --",
     "release:audit-ai-behavior": "vite-node -c scripts/vite-node.config.mjs scripts/audit-ai-behavior-gates.ts",
     "release:audit-exploitability": "vite-node -c scripts/vite-node.config.mjs scripts/audit-exploitability-gates.ts"
   },

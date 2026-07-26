@@ -1236,10 +1236,29 @@ live LLM opponent, no online dependency. This is a development evaluation tool
 only.
 
 **Acceptance criteria**
-- [ ] A dev/research harness plays large numbers of hands headlessly, samples suspicious or representative hands, and submits **public** hand histories to a low-cost or local model for qualitative labels: implausible aggression, passive missed value, unjustified raise, strange all-in, repeated action pattern, human-plausible play.
-- [ ] Results are used as qualitative signal **alongside** mathematical metrics, never as source of truth.
-- [ ] The harness lives outside the shipped bundle and is excluded from production packages (extend the existing production-hygiene audit).
-- [ ] No hidden-card information is ever sent.
+- [x] A dev/research harness plays large numbers of hands headlessly, samples suspicious or representative hands, and submits **public** hand histories to a low-cost or local model for qualitative labels: implausible aggression, passive missed value, unjustified raise, strange all-in, repeated action pattern, human-plausible play. `scripts/critic-harness.ts` + `scripts/report-critic-harness.ts` (`npm run measure:critic`). All six labels are the fixed vocabulary in `CRITIC_LABELS`; a reply outside it is discarded rather than allowed to invent a category. Suspicion signals: raise chains ≥4, multiple all-ins, a preflop all-in, a **postflop** raise over 3× pot, and four identical actions from one player.
+- [x] Results are used as qualitative signal **alongside** mathematical metrics, never as source of truth. `CriticReport.status` is the literal `"qualitative-signal-only"` and the report carries its own disclaimer **in the data**, so a consumer cannot render the labels without also carrying the caveat. Asserted in `critic-harness.test.ts`, along with the harness being absent from `run-release-verification.mjs` — the specific risk recorded against this task.
+- [x] The harness lives outside the shipped bundle and is excluded from production packages (extend the existing production-hygiene audit). It sits in `scripts/`, which the production-composition audit **cannot reach**: that audit walks the import graph from `src/main.tsx` and the Electron entrypoints, so exclusion is structural rather than a rule someone must remember. Two tests pin it: no production entrypoint is under `scripts/`, and nothing in `src/` or `electron/` imports `critic-harness`.
+- [x] No hidden-card information is ever sent. Histories are built from a **spectator** view — `createInformationSet` with hole cards then dropped outright, so not even one seat's cards survive — and `assertNoHiddenCards` walks the finished record structurally, asking "is this object a card?" rather than searching for the key `holeCards`. That catches a card smuggled in under any other name (tested) while still permitting `board`, which is public by definition. The check runs again immediately before an HTTP request leaves, the last point at which it can still be stopped.
+
+**Offline by construction, not by policy.** The default critic is offline and
+heuristic, so the whole harness — recording, redaction, sampling, rendering,
+reporting — is exercised by the test suite on a machine with no network. Reaching
+a model is opt-in through `httpCritic()`, which the CLI constructs only when
+`--endpoint` and `--model` are both typed. There is **no default URL and no
+environment fallback**, asserted by a test that the source contains neither
+`process.env` nor an `http(s)://` literal: an endpoint read from the environment
+would make an egress path appear on any machine that happened to have a variable
+set.
+
+**Two flaws a real run exposed, both fixed.** Flagging any raise over 3× pot fired
+on ordinary preflop opens — a standard 2.5 BB open faces a pot of nothing but the
+blinds, so it is *always* several times the pot; the signal is postflop-only now.
+And taking suspicious hands first and truncating to the budget crowded
+representative hands out entirely (a 20-hand run at limit 8 sampled eight
+suspicious and zero representative), so the representative share is reserved
+before suspicious hands fill in — a table only ever asked about its worst moments
+produces a damning report however it plays.
 
 **Risks** — Must not become a release gate, and must not create an offline-policy
 violation or a data-egress path for hidden information.
