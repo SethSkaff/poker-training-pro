@@ -422,16 +422,22 @@ readability defect found.
 
 ### E02-004 — Make the dealer button visibly move between hands
 
+**Status:** Done — `button-moved` is emitted before `blinds-posted` by the
+runner, rendered as `dealer-button-travel`, and verified in both packaged
+motion passes on 2026-07-25 (820 ms full motion, 120 ms reduced motion).
+
 **Audit** — No transition or animation is attached to `.dealer-button` or its
 position change; it re-renders at the new seat. Empirically confirmed: between
 hands the "D" jumped instantly to another seat. Classification: **MISSING FEATURE (motion)**.
 
 **Acceptance criteria**
-- [ ] The button visibly travels to the next seat during the between-hand sequence (E07).
-- [ ] The move happens at the correct moment in the sequence, before blinds are posted.
-- [ ] Reduced-motion provides an instant-but-clear alternative that still communicates the change.
+- [x] The button visibly travels to the next seat during the between-hand sequence (E07).
+- [x] The move happens at the correct moment in the sequence, before blinds are posted.
+- [x] Reduced-motion provides an instant-but-clear alternative that still communicates the change.
 
-**Tests** — [ ] Unit: a button-move event is emitted between hands. [ ] Packaged: perceptual gate observes the move.
+**Tests** — [x] Unit: a button-move event is emitted between hands
+(`tournamentRunner.test.ts`). [x] Packaged: the perceptual gate observes the
+move in full and reduced motion.
 
 ---
 
