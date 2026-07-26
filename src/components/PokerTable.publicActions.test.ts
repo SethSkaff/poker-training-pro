@@ -135,4 +135,24 @@ describe("public tournament action presentation", () => {
       awards: [],
     })).toBeUndefined();
   });
+
+  it("does not let different showdown hole cards select an audio cue", () => {
+    const publicShowdown = (cards: readonly [{ rank: "A" | "2"; suit: "spades" | "hearts" }, { rank: "A" | "2"; suit: "spades" | "hearts" }]) => ({
+      id: "showdown",
+      kind: "showdown" as const,
+      handId,
+      playerIds: ["hero", "opponent"],
+      reveals: [{ playerId: "opponent", cards }],
+      awards: [],
+    });
+
+    expect(publicPresentationSound(publicShowdown([
+      { rank: "A", suit: "spades" },
+      { rank: "A", suit: "hearts" },
+    ]))).toBeUndefined();
+    expect(publicPresentationSound(publicShowdown([
+      { rank: "2", suit: "spades" },
+      { rank: "2", suit: "hearts" },
+    ]))).toBeUndefined();
+  });
 });

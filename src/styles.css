@@ -3499,6 +3499,19 @@ input[type="range"]::-webkit-slider-thumb {
   animation: opponent-win-label 780ms ease-out both;
 }
 
+/* The public pot-award event adds this class to its recipient. Pair the
+   readable winner badge with a modest seat halo, so a win is perceptible even
+   when the player is not looking directly at the text label. */
+.player-seat.is-winner .seat-avatar {
+  box-shadow: 0 0 0 3px rgba(255, 209, 63, 0.52), 0 0 22px rgba(255, 190, 58, 0.38);
+  animation: opponent-win-seat 520ms ease-out both;
+}
+
+@keyframes opponent-win-seat {
+  from { filter: brightness(1.35) saturate(1.28); transform: scale(1.08); }
+  to { filter: brightness(1) saturate(1); transform: scale(1); }
+}
+
 .dealer-button {
   position: absolute;
   top: 60px;
@@ -5516,6 +5529,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="off"] .chip-travel,
 :root[data-motion-table="off"] .all-in-banner,
 :root[data-motion-table="off"] .player-seat.is-out .seat-avatar,
+:root[data-motion-table="off"] .player-seat.is-winner .seat-avatar,
 :root[data-motion-table="off"] .seat-state--winner {
   animation-duration: 120ms !important;
 }
@@ -5533,6 +5547,7 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="reduced"] .chip-travel,
 :root[data-motion-table="reduced"] .all-in-banner,
 :root[data-motion-table="reduced"] .player-seat.is-out .seat-avatar,
+:root[data-motion-table="reduced"] .player-seat.is-winner .seat-avatar,
 :root[data-motion-table="reduced"] .seat-state--winner {
   animation-duration: 140ms;
 }
