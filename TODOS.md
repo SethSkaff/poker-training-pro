@@ -822,8 +822,10 @@ the architecture decision.
 **Acceptance criteria**
 - [x] Opponents read as seated presences grounded to the table, not floating portraits. `PlayerSeat` now renders a `.seat-figure` — ground shadow, chair, torso with a collar and neck, and the portrait sitting on top of it — instead of a bare avatar tile.
 - [x] Portrait selection is keyed to **player identity**, not seat slot. `describeOpponentAppearance(playerId)` is the single source; `opponentAppearance.test.ts` asserts the same id always yields the same figure.
-- [ ] Felt, lighting, and depth cues are improved; the table no longer reads as a flat coloured ellipse. (Note: the felt is `#164938`, a dark desaturated green — the "neon" characterization was an exaggeration, but the flatness is real.)
-- [ ] Layered parallax between room, table, and foreground within the vestibular tier of E08.
+- [x] Felt, lighting, and depth cues are improved; the table no longer reads as a flat coloured ellipse. The single `background: #164938` fill is replaced by an overhead key light, a far-edge falloff, a woven nap, inset top/bottom shading, and a lit rail highlight (`.poker-table` / `.poker-table::before`). All static gradients, so the motion tiers are unaffected.
+- [x] Layered parallax between room, table, and foreground within the vestibular tier of E08. Three planes translate at different fractions of `--camera-pan` — distant hall 0.72×, mid-ground tables 0.38×, table plane 1× — so looking left changes the relationship between layers instead of sliding one flat image. The group is `aria-hidden`, sits behind all table state, and comes fully to rest under `data-camera-motion="off"`.
+
+**Tests** — [x] `PokerTable.roomDepth.test.ts`: the planes render behind the table and are hidden from assistive technology; the pan factors are strictly ordered and all below the table's own 1×; motion-off zeroes both transform and transition; the felt is a lit surface rather than one flat fill.
 
 ### E09-003 — Make the seated camera meaningful
 

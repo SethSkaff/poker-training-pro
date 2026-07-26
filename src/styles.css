@@ -2709,6 +2709,105 @@ input[type="range"]::-webkit-slider-thumb {
   content: "";
 }
 
+/* ---------------------------------------------------------------------------
+   Room depth (E09-002 parallax / E09-003 spatial look).
+
+   Three planes translate at different fractions of --camera-pan: distant hall
+   at 0.28x, mid-ground tables at 0.62x, the table plane itself at 1x. That
+   ratio is the entire illusion -- looking left genuinely reveals a different
+   relationship between the layers instead of sliding one flat image.
+
+   The parallax is a transform on a `translateX` the camera already sets, so it
+   inherits the camera's own transition and the vestibular motion tier. It is
+   suppressed with camera motion off, where the layers simply sit at rest.
+--------------------------------------------------------------------------- */
+
+.room-depth {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.room-depth__far,
+.room-depth__mid {
+  position: absolute;
+  right: -14%;
+  left: -14%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  transition: transform 320ms ease;
+}
+
+.room-depth__far {
+  bottom: 61%;
+  height: 116px;
+  /* 0.28x: the far wall barely shifts, which is what reads as distance. */
+  transform: translateX(calc(var(--camera-pan, 0px) * -0.72));
+  opacity: 0.5;
+  filter: blur(1.6px);
+}
+
+.room-depth__mid {
+  bottom: 52%;
+  height: 84px;
+  transform: translateX(calc(var(--camera-pan, 0px) * -0.38));
+  opacity: 0.72;
+  filter: blur(0.6px);
+}
+
+/* Distant tables: an ellipse with a rail and a suggestion of seated players. */
+.room-depth__far i,
+.room-depth__mid i {
+  position: relative;
+  width: 92px;
+  height: 34px;
+  border: 3px solid rgba(14, 22, 19, 0.9);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #1b5240, #0e3125);
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.45);
+}
+
+.room-depth__mid i {
+  width: 128px;
+  height: 46px;
+}
+
+.room-depth__far i::before,
+.room-depth__mid i::before {
+  content: "";
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 15px;
+  height: 15px;
+  transform: translateX(-50%);
+  border-radius: 50% 50% 40% 40%;
+  background: #2b2119;
+}
+
+.room-depth__far i::after,
+.room-depth__mid i::after {
+  content: "";
+  position: absolute;
+  right: -8px;
+  bottom: -4px;
+  left: -8px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.42);
+  filter: blur(3px);
+}
+
+:root[data-camera-motion="off"] .room-depth__far,
+:root[data-camera-motion="off"] .room-depth__mid,
+.table-screen[data-camera-motion="off"] .room-depth__far,
+.table-screen[data-camera-motion="off"] .room-depth__mid {
+  transform: none;
+  transition: none;
+}
+
 .room-lights {
   position: absolute;
   inset: 0;
@@ -2794,12 +2893,51 @@ input[type="range"]::-webkit-slider-thumb {
   transform: translateX(-50%) scale(var(--camera-zoom, 1)) perspective(900px) rotateX(56deg);
   border: 22px solid #171a17;
   border-radius: 50%;
-  background: #164938;
+  /* A lit surface rather than a flat fill: an overhead key light above and
+     slightly behind the centre, a subtle woven nap so the green is not one
+     uniform colour, and a cool rim bounce along the far edge. All static
+     gradients -- no animation, so this costs nothing at the motion tiers. */
+  background:
+    radial-gradient(
+      ellipse 62% 48% at 50% 30%,
+      rgba(88, 176, 141, 0.34),
+      rgba(22, 73, 56, 0) 68%
+    ),
+    radial-gradient(
+      ellipse 90% 70% at 50% 108%,
+      rgba(3, 14, 11, 0.62),
+      rgba(3, 14, 11, 0) 62%
+    ),
+    repeating-linear-gradient(
+      52deg,
+      rgba(255, 255, 255, 0.014) 0 2px,
+      rgba(0, 0, 0, 0.014) 2px 4px
+    ),
+    linear-gradient(178deg, #1a5540, #143f31 62%, #0f3226);
   box-shadow:
     0 0 0 3px #916f39,
     0 0 0 11px #0b110e,
     0 47px 60px rgba(0, 0, 0, 0.57),
-    inset 0 0 100px rgba(0, 0, 0, 0.43);
+    inset 0 22px 44px rgba(0, 0, 0, 0.28),
+    inset 0 -30px 46px rgba(0, 0, 0, 0.46),
+    inset 0 2px 0 rgba(190, 236, 214, 0.14);
+}
+
+/* Rail highlight: the padded edge catches the same overhead light, which is
+   what stops the ellipse reading as a cut-out shape. */
+.poker-table::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: -22px;
+  border-radius: 50%;
+  background: linear-gradient(
+    182deg,
+    rgba(255, 255, 255, 0.11),
+    rgba(255, 255, 255, 0) 34%,
+    rgba(0, 0, 0, 0.3)
+  );
+  pointer-events: none;
 }
 
 /* At 1080p and ultrawide widths, an 800px table leaves the championship room

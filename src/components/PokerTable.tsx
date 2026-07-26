@@ -2704,6 +2704,21 @@ export function PokerTable({
               <small>{formatMessage("table.arrival.settling")}</small>
             </div>
           )}
+          {/*
+            Depth layers behind the table. Each moves at a different fraction
+            of the camera pan (see --camera-pan consumers in styles.css), which
+            is what turns a flat sideways slide into a look. Purely decorative:
+            no table state is conveyed here, and the whole group is hidden from
+            assistive technology.
+          */}
+          <div className="room-depth" aria-hidden="true">
+            <div className="room-depth__far">
+              <i /><i /><i /><i /><i /><i />
+            </div>
+            <div className="room-depth__mid">
+              <i /><i /><i /><i />
+            </div>
+          </div>
           <div className="room-lights" aria-hidden="true">
             <i />
             <i />
