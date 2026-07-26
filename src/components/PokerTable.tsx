@@ -39,7 +39,7 @@ import {
   formatChips,
   formatFixedDecimal,
 } from "../lib/format";
-import { gameAudio } from "../lib/audio";
+import { gameAudio, type SoundName } from "../lib/audio";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import {
   useTableAnnouncer,
@@ -180,6 +180,36 @@ export function presentationEventLabel(event: TournamentPresentationEvent): stri
       return `Pot awarded: ${formatChips(event.amount)}`;
     case "eliminated":
       return "Player eliminated";
+  }
+}
+
+/**
+ * Maps only public presentation milestones to supplementary audio. Keeping
+ * this pure and event-scoped prevents hidden hole cards, simulated equity, or
+ * bot decision internals from ever selecting a cue or changing its timing.
+ */
+export function publicPresentationSound(
+  event: TournamentPresentationEvent,
+): SoundName | undefined {
+  switch (event.kind) {
+    case "hole-cards-dealt":
+    case "board-card-dealt":
+      return "deal";
+    case "blinds-posted":
+    case "bets-collected":
+      return "chip";
+    case "action":
+      if (event.command.type === "fold") return "fold";
+      if (event.command.type === "all-in") return "all-in";
+      return ["bet", "raise", "call"].includes(event.command.type)
+        ? "chip"
+        : undefined;
+    case "pot-awarded":
+      return "win";
+    case "eliminated":
+      return "eliminated";
+    default:
+      return undefined;
   }
 }
 
@@ -1193,6 +1223,7 @@ export function PokerTable({
   const pauseDialogRef = useRef<HTMLElement | null>(null);
   const raiseComposerRef = useRef<HTMLDivElement | null>(null);
   const historyRef = useRef<HTMLElement | null>(null);
+  const soundedPresentationEvents = useRef<Set<string>>(new Set());
   const gamepadActive = useIsGamepadActive();
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
@@ -1596,6 +1627,19 @@ export function PokerTable({
   useEffect(() => {
     if (tournament?.showArrival) setArrivalVisible(true);
   }, [tournament?.showArrival]);
+
+  useEffect(() => {
+    const event = tournament?.presentationEvent;
+    if (!event || soundedPresentationEvents.current.has(event.id)) return;
+    soundedPresentationEvents.current.add(event.id);
+    // Event ids are monotonic for a live session. Keep the short-lived guard
+    // bounded without ever replaying a current event.
+    if (soundedPresentationEvents.current.size > 256) {
+      soundedPresentationEvents.current = new Set([event.id]);
+    }
+    const sound = publicPresentationSound(event);
+    if (sound) gameAudio.play(sound);
+  }, [tournament?.presentationEvent]);
 
   const handleAction = useCallback(
     (nextAction: PokerAction, requestedRaiseTo = raiseAmount) => {

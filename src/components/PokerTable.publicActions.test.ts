@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   presentationEventLabel,
   publicActionLabel,
+  publicPresentationSound,
   seatPresentationUpdate,
 } from "./PokerTable";
 
@@ -98,5 +99,40 @@ describe("public tournament action presentation", () => {
         awards: [{ potId: "main", playerId: "winner", amount: 600 }],
       }),
     ).toBe("Hand result");
+  });
+
+  it("selects audio only from public presentation events", () => {
+    expect(publicPresentationSound({
+      id: "flop",
+      kind: "board-card-dealt",
+      handId,
+      street: "flop",
+      cardIndex: 0,
+      card: { rank: "A", suit: "spades" },
+    })).toBe("deal");
+    expect(publicPresentationSound({
+      id: "all-in",
+      kind: "action",
+      handId,
+      playerId: "opponent",
+      command: { type: "all-in" },
+    })).toBe("all-in");
+    expect(publicPresentationSound({
+      id: "award",
+      kind: "pot-awarded",
+      handId,
+      playerId: "winner",
+      amount: 600,
+    })).toBe("win");
+    expect(publicPresentationSound({
+      id: "showdown",
+      kind: "showdown",
+      handId,
+      playerIds: ["hero", "opponent"],
+      reveals: [
+        { playerId: "hero", cards: [{ rank: "A", suit: "spades" }, { rank: "K", suit: "spades" }] },
+      ],
+      awards: [],
+    })).toBeUndefined();
   });
 });

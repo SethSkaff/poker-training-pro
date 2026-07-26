@@ -4,7 +4,10 @@ export type SoundName =
   | "fold"
   | "success"
   | "error"
-  | "deal";
+  | "deal"
+  | "win"
+  | "all-in"
+  | "eliminated";
 
 export type AudioPreviewResult = "played" | "silenced" | "unavailable";
 
@@ -182,6 +185,11 @@ export class GameAudio {
       success: { frequency: 660, duration: 0.2, type: "triangle" },
       error: { frequency: 120, duration: 0.24, type: "sawtooth" },
       deal: { frequency: 420, duration: 0.055, type: "triangle" },
+      // These are deliberately keyed only to public presentation events. They
+      // communicate a visible result or action, never hand strength.
+      win: { frequency: 740, duration: 0.28, type: "triangle" },
+      "all-in": { frequency: 260, duration: 0.18, type: "sawtooth" },
+      eliminated: { frequency: 150, duration: 0.22, type: "sine" },
     };
 
     try {
@@ -193,9 +201,9 @@ export class GameAudio {
         profile.frequency,
         context.currentTime,
       );
-      if (sound === "success") {
+      if (sound === "success" || sound === "win") {
         oscillator.frequency.exponentialRampToValueAtTime(
-          990,
+          sound === "win" ? 1_110 : 990,
           context.currentTime + profile.duration,
         );
       }
