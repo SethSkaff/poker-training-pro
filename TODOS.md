@@ -925,9 +925,11 @@ rather than leaving the table.
 `RoomFlythrough` always uses the same PNG regardless of event.
 
 **Acceptance criteria**
-- [ ] Room scale, crowd density, lighting, table presentation, signage, and background activity vary by tier.
-- [ ] Achieved procedurally where possible — a full art set per event is not required.
-- [ ] Reduced-motion and performance budgets respected.
+- [x] Room scale, crowd density, lighting, table presentation, signage, and background activity vary by tier — now at the **seated table** as well as in the fly-through, which was the real gap: every event looked identical once the player sat down. Crowd density comes from how many distant tables stay visible, room scale from their spread, lighting from house-light warmth and width, and table presentation from a warmer rail at the top tiers.
+- [x] Achieved procedurally — the tier rules are asserted to contain no `url(` anywhere, so a new venue costs nothing at build time.
+- [x] Reduced-motion and performance budgets respected: the tier rules are static (they add no animation) and the bundle budgets still pass.
+
+**Tests** — [x] `RoomFlythrough.tier.test.tsx`: the tier reaches the seated table; scale, density, lighting, and table presentation each vary; no tier rule loads an image.
 
 ---
 
