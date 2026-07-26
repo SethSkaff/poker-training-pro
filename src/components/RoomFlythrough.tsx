@@ -25,6 +25,14 @@ export function RoomFlythrough({
   settings,
   onComplete,
 }: RoomFlythroughProps) {
+  const venueProfile = {
+    local: { tables: 3, guests: 2 },
+    regional: { tables: 4, guests: 3 },
+    circuit: { tables: 5, guests: 3 },
+    national: { tables: 6, guests: 4 },
+    championship: { tables: 7, guests: 4 },
+    world: { tables: 8, guests: 4 },
+  }[tier];
   const [phase, setPhase] = useState<"loading" | "room" | "seat">("loading");
   const freezeGroup = useAwayFreezeGroup();
   const backgroundArt = useResilientAsset(
@@ -76,6 +84,7 @@ export function RoomFlythrough({
       className={`room-flight motion-vestibular room-flight--${phase}`}
       data-background-status={backgroundArt.status}
       data-event-tier={tier}
+      data-venue-scale={venueProfile.tables}
       aria-labelledby="room-flight-title"
       aria-describedby="room-flight-mode"
       {...localeTextAttributes()}
@@ -102,10 +111,10 @@ export function RoomFlythrough({
           ))}
         </div>
         <div className="venue-tables">
-          {Array.from({ length: 5 }).map((_, tableIndex) => (
+          {Array.from({ length: venueProfile.tables }).map((_, tableIndex) => (
             <div className="venue-table" key={tableIndex}>
               <span className="venue-table__felt" />
-              {Array.from({ length: 4 }).map((__, playerIndex) => (
+              {Array.from({ length: venueProfile.guests }).map((__, playerIndex) => (
                 <span
                   className={`venue-guest venue-guest--${playerIndex + 1}`}
                   key={playerIndex}

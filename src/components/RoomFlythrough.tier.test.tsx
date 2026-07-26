@@ -10,4 +10,12 @@ describe("room tier presentation", () => {
     );
     expect(markup).toContain('data-event-tier="world"');
   });
+
+  it("grows the visible venue and crowd with event tier", () => {
+    const local = renderToStaticMarkup(<RoomFlythrough eventName="Local" modeLabel="Normal" tier="local" settings={defaultSettings} onComplete={() => undefined} />);
+    const world = renderToStaticMarkup(<RoomFlythrough eventName="World" modeLabel="Normal" tier="world" settings={defaultSettings} onComplete={() => undefined} />);
+    expect(local.match(/class="venue-table"/g)).toHaveLength(3);
+    expect(world.match(/class="venue-table"/g)).toHaveLength(8);
+    expect(local.match(/venue-guest/g)?.length).toBeLessThan(world.match(/venue-guest/g)?.length ?? 0);
+  });
 });
