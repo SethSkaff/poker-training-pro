@@ -291,10 +291,9 @@ describe("tournament runner", () => {
             .filter((cardLabel) => !boardLabels.has(cardLabel)),
         );
 
-        const transition = runner.session.activeHand &&
-            runner.session.activeHand.betting.nextToAct === hero.id
+        const transition = heroTournamentLegalActions(runner)
           ? applyHeroTournamentActionOneStep(runner, {
-              action: heroTournamentLegalActions(runner)?.call ? "call" : "check",
+              action: heroTournamentLegalActions(runner)?.check ? "check" : "call",
             })
           : advanceTournamentRunnerOneStep(runner, { policy: { simulations: 50 } });
 
