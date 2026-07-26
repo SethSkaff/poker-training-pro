@@ -248,6 +248,32 @@ export function winningCardLabelsForAwards(
   );
 }
 
+/**
+ * Explains a live side pot exclusively from public table information. A side
+ * pot is never an excuse to infer an opponent's hand: the only inputs are
+ * committed chips, public all-in status, and the contenders that the engine
+ * has already declared eligible for that pot.
+ */
+export function describeLiveSidePot(
+  pot: NonNullable<TrainingScenario["potBreakdown"]>[number],
+  players: readonly SeatPlayer[],
+): string {
+  const eligible = new Set(pot.eligiblePlayerIds);
+  const cappedPlayers = players
+    .filter((player) => player.status === "all-in" && !eligible.has(player.id))
+    .sort((left, right) => (left.totalCommitted ?? 0) - (right.totalCommitted ?? 0));
+  const contenders = pot.eligiblePlayerIds
+    .map((playerId) => players.find((player) => player.id === playerId)?.name ?? playerId)
+    .join(", ");
+
+  if (cappedPlayers.length > 0) {
+    const cap = cappedPlayers[0];
+    return `${cap.name} is all-in for ${formatChips(cap.totalCommitted ?? 0)}. Chips committed above that cap form this side pot; only ${contenders} can win it.`;
+  }
+
+  return `This side pot contains chips outside the main-pot cap. Only ${contenders} can win it.`;
+}
+
 export interface SeatPresentationUpdate {
   action?: BettingActionType;
   label?: string;
@@ -2481,6 +2507,10 @@ export function PokerTable({
                     .join(", "),
                 })}
               </p>
+              <small>
+                Chips above an all-in player's cap form a separate pot. Only
+                the eligible players can win it.
+              </small>
             </aside>
           ) : null}
           {liveSidePots.length > 0 && !sidePotEvent ? (
@@ -2491,6 +2521,9 @@ export function PokerTable({
                   <b>{pot.kind === "main" ? "Main" : "Side"} {formatChips(pot.amount)}</b>
                   {" · Eligible: "}
                   {pot.eligiblePlayerIds.map((playerId) => scenario.players.find((player) => player.id === playerId)?.name ?? playerId).join(", ")}
+                  {pot.kind === "side" && (
+                    <small>{describeLiveSidePot(pot, scenario.players)}</small>
+                  )}
                 </p>
               ))}
             </aside>

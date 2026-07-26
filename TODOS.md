@@ -624,10 +624,10 @@ with no amounts and no eligible players.
 **Acceptance criteria**
 - [x] Main pot and each side pot are visually separated with their own amounts.
 - [x] Eligible players are shown per pot.
-- [ ] The reason a side pot exists is explained in context, not as a one-shot tip.
+- [x] The reason a side pot exists is explained in context, not as a one-shot tip. The live ledger names the all-in player and public cap, then names only the contenders eligible for each side pot; it does not depend on the persisted contextual-prompt `seen` state (`describeLiveSidePot`, `PokerTable.showdownPresentation.test.ts`).
 - [x] Side-pot creation is announced, every time, not once per save.
 - [x] At showdown each pot is evaluated and awarded separately and visibly.
-- [ ] Understandable to a player who knows poker but is not tracking every chip.
+- [x] Understandable to a player who knows poker but is not tracking every chip. Each live side lane now states the cap that created it and the only players who can win it, alongside the amount and eligibility list.
 - [x] Live pot structure is available before resolution for all-in situations.
 
 **Tests** — [ ] Unit: multi-side-pot hand renders correct amounts and eligibility. [ ] Unit: the explanation is not gated by a once-ever `seen` flag. [ ] Unit: per-pot award attribution reaches the UI. [ ] Accessibility: side-pot amounts and eligibility announced.

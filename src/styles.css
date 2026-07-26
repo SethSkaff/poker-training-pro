@@ -2634,6 +2634,14 @@ input[type="range"]::-webkit-slider-thumb {
 .side-pot-strip > span { color: var(--cyan); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .side-pot-strip > strong { margin-left: 6px; font-size: 14px; }
 .side-pot-strip p { margin: 3px 0 0; color: #c9e9ee; font-size: 9px; }
+.side-pot-strip small {
+  display: block;
+  max-width: 285px;
+  margin: 5px auto 0;
+  color: #b7dbe5;
+  font-size: 8px;
+  line-height: 1.35;
+}
 
 .all-in-banner {
   position: absolute;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { evaluateFive } from "../engine/evaluator";
 import { cardLabel } from "../lib/format";
-import type { Card, Rank, Suit } from "../types/poker";
-import { winningCardLabelsForAwards } from "./PokerTable";
+import type { Card, Rank, SeatPlayer, Suit } from "../types/poker";
+import { describeLiveSidePot, winningCardLabelsForAwards } from "./PokerTable";
 
 const suits: Record<string, Suit> = {
   c: "clubs",
@@ -48,5 +48,37 @@ describe("showdown best-five presentation", () => {
     expect(labels).toEqual(
       new Set([...boardPlaying.cards, ...sidePotWinner.cards].map(cardLabel)),
     );
+  });
+});
+
+describe("live side-pot explanation", () => {
+  const players: SeatPlayer[] = [
+    { id: "short", name: "Avery", seat: 0, stack: 0, status: "all-in", bet: 0, totalCommitted: 600 },
+    { id: "deep-1", name: "Blake", seat: 1, stack: 900, status: "active", bet: 0, totalCommitted: 1200 },
+    { id: "deep-2", name: "Casey", seat: 2, stack: 900, status: "active", bet: 0, totalCommitted: 1200 },
+  ];
+
+  it("explains the public all-in cap and the side-pot contenders", () => {
+    expect(
+      describeLiveSidePot(
+        {
+          id: "side-1",
+          kind: "side",
+          amount: 1200,
+          eligiblePlayerIds: ["deep-1", "deep-2"],
+        },
+        players,
+      ),
+    ).toBe(
+      "Avery is all-in for 600. Chips committed above that cap form this side pot; only Blake, Casey can win it.",
+    );
+  });
+
+  it("never needs a private card to explain a side pot", () => {
+    const explanation = describeLiveSidePot(
+      { id: "side-1", kind: "side", amount: 1200, eligiblePlayerIds: ["deep-1", "deep-2"] },
+      players,
+    );
+    expect(explanation).not.toMatch(/rank|suit|hand|pair|flush/i);
   });
 });
