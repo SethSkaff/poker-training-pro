@@ -16,7 +16,10 @@ import {
   TourLobby,
 } from "./components/Dashboard";
 import { RecoveryScreen } from "./components/RecoveryScreen";
-import { PokerReferenceContent } from "./components/PokerReference";
+import {
+  PokerReferenceContent,
+  TrainerOrientationContent,
+} from "./components/PokerReference";
 import { ArrowLeft } from "lucide-react";
 import { useGamepadNavigation } from "./components/GamepadNavigationProvider";
 import { AboutSupport } from "./components/AboutSupport";
@@ -1750,6 +1753,8 @@ export default function App() {
           </button>
           <h1 id="reference-title">{formatMessage("reference.title")}</h1>
           <p className="reference-intro">{formatMessage("reference.intro")}</p>
+          <TrainerOrientationContent />
+          <h2 className="reference-heading">{formatMessage("reference.pokerHeading")}</h2>
           <PokerReferenceContent />
         </section>
       </main>

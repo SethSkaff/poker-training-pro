@@ -1675,9 +1675,11 @@ explanation. No surface explains the trainer end-to-end; this is new copy on
 existing screens, not true reuse.
 
 **Acceptance criteria**
-- [ ] An optional orientation explains Normal, Rational, Training, Timed Table, Decision Elo, Math Elo, and the accuracy review. Partly served today: the mode-select screen carries a one-line description of what each mode optimizes, and the reference covers the maths. A single consolidated orientation page is **not** built.
+- [x] An optional orientation explains Normal, Rational, Training, Timed Table, Decision Elo, Math Elo, Tournament Elo, and the round review — as a single consolidated section at the top of the reference screen (`TrainerOrientationContent`). It states what each mode *optimizes for* rather than what it contains, and covers the scoring behaviour a real player was surprised by: Math Elo does not move at all when the question is skipped.
 - [x] It is skippable and replayable — the tutorial link is optional, sits below the mode grid, and can be re-entered at any time.
-- [ ] It explains **what each mode optimizes**, including that Rational uses only information legally available to its seat. The mode descriptions state the first half; the information-boundary guarantee is not surfaced to the player anywhere.
+- [x] It explains what each mode optimizes, **including the information boundary**, which was previously a code invariant the player was never told about: "No opponent, in any mode, can see your cards. Rational in particular decides using only the information legally available to its own seat… Its advantage is arithmetic, not access." Worth stating plainly — "the maths opponent" is otherwise easy to mistake for one that can see your hand.
+
+**Tests** — [x] `PokerReference.test.tsx`: every mode and every rating is explained; the Math Elo skip behaviour is stated; the information boundary is stated; and the orientation is reached from a screen the player opens deliberately rather than a forced gate.
 
 ---
 

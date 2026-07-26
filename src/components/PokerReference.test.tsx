@@ -3,7 +3,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PokerReferenceContent } from "./PokerReference";
+import {
+  PokerReferenceContent,
+  TrainerOrientationContent,
+} from "./PokerReference";
 
 const sourceRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -70,5 +73,41 @@ describe("standalone poker reference", () => {
     // shared component rather than its own hand-rank list.
     expect(table).not.toContain('<ol className="hand-ranking-list">');
     expect(table).not.toContain("table.formula.potOdds.label");
+  });
+});
+
+describe("trainer orientation", () => {
+  const markup = renderToStaticMarkup(<TrainerOrientationContent />);
+
+  it("explains what each mode optimizes", () => {
+    for (const mode of ["Normal", "Rational", "Training", "Timed Table"]) {
+      expect(markup).toContain(mode);
+    }
+    expect(markup).toContain("optimizes");
+  });
+
+  it("explains every rating the player is scored on", () => {
+    for (const rating of [
+      "Decision Elo",
+      "Math Elo",
+      "Tournament Elo",
+      "Round review",
+    ]) {
+      expect(markup).toContain(rating);
+    }
+    // Math Elo's skip behaviour is the one that surprised a real player.
+    expect(markup).toContain("Skipping the question leaves it untouched");
+  });
+
+  it("states the Rational information boundary explicitly", () => {
+    // "The maths opponent" is easy to mistake for one that can see your cards.
+    expect(markup).toContain("No opponent, in any mode, can see your cards");
+    expect(markup).toContain("legally available to its own seat");
+  });
+
+  it("is optional and replayable, reached from the reference screen", () => {
+    expect(app).toContain("<TrainerOrientationContent />");
+    // It sits on a screen the player opens deliberately, not a forced gate.
+    expect(app).toContain('screen === "reference"');
   });
 });

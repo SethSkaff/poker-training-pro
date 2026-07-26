@@ -53,6 +53,31 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "dashboard.modeSelect.tutorialCta": "Learn the basics",
   "dashboard.modeSelect.referencePrompt": "Need the numbers?",
   "dashboard.modeSelect.referenceCta": "Open the poker reference",
+  "reference.pokerHeading": "Poker quick reference",
+  "orientation.modesHeading": "What each mode optimizes",
+  "orientation.mode.normal":
+    "A field of distinct personalities playing near-best poker with bounded, deliberate deviations. Optimizes for a table that feels human without making random mistakes.",
+  "orientation.mode.rational":
+    "The same mathematics without the personality layer. Optimizes for the highest-value line from its own seat, so it is the sterner, more predictable test.",
+  "orientation.mode.training":
+    "One decision at a time with a linked maths question. Optimizes for isolating a single skill and telling you why the best line was best.",
+  "orientation.mode.timed":
+    "One table for a fixed length of time. Optimizes for fitting a session into the time you actually have; it does not advance your career.",
+  "orientation.ratingsHeading": "How you are scored",
+  "orientation.rating.decisionElo.label": "Decision Elo",
+  "orientation.rating.decisionElo.desc":
+    "Moves on how much expected value your Training action gave up, not on whether you matched an answer key.",
+  "orientation.rating.mathElo.label": "Math Elo",
+  "orientation.rating.mathElo.desc":
+    "Moves only when you submit a maths answer. Skipping the question leaves it untouched, in either direction.",
+  "orientation.rating.tournamentElo.label": "Tournament Elo",
+  "orientation.rating.tournamentElo.desc":
+    "Moves on where you finish an event relative to the field you faced.",
+  "orientation.rating.review.label": "Round review",
+  "orientation.rating.review.desc":
+    "Rebuilds a finished round from its replay and scores every decision you made against the game's own model. Estimates, not solved play.",
+  "orientation.informationBoundary":
+    "No opponent, in any mode, can see your cards. Rational in particular decides using only the information legally available to its own seat — the same public actions, board, and stacks you can see. Its advantage is arithmetic, not access.",
   "reference.title": "Poker reference",
   "reference.intro":
     "Hand rankings, betting and tournament terms, probability shortcuts, and worked examples. Available any time, in a hand or out of one.",

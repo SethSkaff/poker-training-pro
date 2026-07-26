@@ -9409,3 +9409,44 @@ input[type="range"]::-webkit-slider-thumb {
   background: linear-gradient(180deg, #ffd98a, #d9a445) !important;
   font-weight: 600;
 }
+
+/* "How this trainer works" orientation, above the poker reference (E21-004). */
+.reference-orientation h2,
+.reference-heading {
+  margin: 26px 0 10px;
+  color: #cfa451;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 19px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.reference-orientation dl {
+  display: grid;
+  max-width: 78ch;
+  gap: 10px;
+  margin: 0;
+}
+
+.reference-orientation dt {
+  color: #f0e9da;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reference-orientation dd {
+  margin: 2px 0 0;
+  color: #a9a49a;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.reference-orientation__boundary {
+  max-width: 78ch;
+  margin: 18px 0 0;
+  border-left: 2px solid #cfa451;
+  padding-left: 12px;
+  color: #d9cfb8;
+  font-size: 11px;
+  line-height: 1.65;
+}
