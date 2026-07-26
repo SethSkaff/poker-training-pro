@@ -563,7 +563,27 @@ export function selectNearTransferScenario(
     .map((id) => pool.find((scenario) => scenario.id === id))
     .filter((scenario): scenario is RatedTrainingScenario => scenario !== undefined);
   const preferDifferentStreet = options.preferDifferentStreet ?? true;
-  const candidates = pool
+
+  // Constraint-driven reject stage (E15-002), run before scoring so a
+  // near-duplicate cannot win on weights alone. It is soft by design: with a
+  // twelve-scenario bank a hard filter would eventually reject everything, so
+  // an empty survivor set falls back to scoring the whole pool. Serving a
+  // repeat is worse than serving something fresh, but better than serving
+  // nothing.
+  const rejection = rejectUnsuitableScenarios(current, pool, {
+    recentScenarios,
+  });
+  const rejectedIds = new Set(
+    rejection.rejected
+      .filter((entry) => entry.reason === "near-duplicate-of-recent")
+      .map((entry) => entry.id),
+  );
+  const eligible =
+    rejection.considered > 0
+      ? pool.filter((scenario) => !rejectedIds.has(scenario.id))
+      : pool;
+
+  const candidates = eligible
     .filter((scenario) => scenario.id !== current.id)
     .map((scenario) => {
       let score = 0;
@@ -691,4 +711,103 @@ export function estimateTrainingEquity(
     simulations,
     assumption: "random-hand",
   };
+}
+
+/**
+ * How alike two scenarios feel to a player, on 0..1.
+ *
+ * The schema's structural fingerprint is strict equality, so a scenario
+ * differing by a single chip passes as distinct while still feeling like the
+ * same question. A learner does not experience "pot 2700" and "pot 2750" as
+ * different problems, and serving both in a row wastes a rep. This measures
+ * the dimensions that actually drive the decision.
+ */
+export function trainingScenarioSimilarity(
+  left: RatedTrainingScenario,
+  right: RatedTrainingScenario,
+): number {
+  if (left.id === right.id) return 1;
+
+  const near = (a: number, b: number, tolerance: number) =>
+    Math.abs(a - b) <= Math.max(1, Math.max(Math.abs(a), Math.abs(b)) * tolerance);
+
+  // Weighted so the shape of the decision dominates cosmetic differences.
+  const checks: Array<[weight: number, same: boolean]> = [
+    [3, left.street === right.street],
+    [3, left.mathQuestion.topic === right.mathQuestion.topic],
+    [3, left.recommendedAction === right.recommendedAction],
+    [2, left.training.transferGroup === right.training.transferGroup],
+    // Pot and price within 10% read as the same spot.
+    [2, near(left.pot, right.pot, 0.1)],
+    [2, near(left.amountToCall, right.amountToCall, 0.1)],
+    [1, left.heroSeat === right.heroSeat],
+    [1, Math.abs(left.difficulty - right.difficulty) <= 0.5],
+    [1, left.board.length === right.board.length],
+  ];
+
+  const total = checks.reduce((sum, [weight]) => sum + weight, 0);
+  const matched = checks.reduce(
+    (sum, [weight, same]) => sum + (same ? weight : 0),
+    0,
+  );
+  return matched / total;
+}
+
+/** Above this, two scenarios are treated as the same question. */
+export const NEAR_DUPLICATE_SIMILARITY = 0.82;
+
+export type ScenarioRejectionReason =
+  | "current"
+  | "recently-served"
+  | "near-duplicate-of-recent"
+  | "off-target-difficulty";
+
+export interface ScenarioSelectionTrace {
+  selected?: RatedTrainingScenario;
+  /** Every candidate the reject stage removed, with the reason it went. */
+  rejected: Array<{ id: string; reason: ScenarioRejectionReason }>;
+  considered: number;
+}
+
+/**
+ * The explicit reject stage E15-002 asks for, exposed separately from
+ * scoring so the reasons are inspectable rather than buried in a weight.
+ *
+ * Rejection is deliberately *soft*: if every candidate is rejected the caller
+ * falls back to scoring the full pool, because serving a repeat beats serving
+ * nothing. A hard filter would deadlock a twelve-scenario bank.
+ */
+export function rejectUnsuitableScenarios(
+  current: RatedTrainingScenario,
+  pool: readonly RatedTrainingScenario[],
+  options: {
+    recentScenarios?: readonly RatedTrainingScenario[];
+    decisionElo?: number;
+  } = {},
+): ScenarioSelectionTrace {
+  const recent = options.recentScenarios ?? [];
+  const rejected: ScenarioSelectionTrace["rejected"] = [];
+  const survivors: RatedTrainingScenario[] = [];
+
+  for (const scenario of pool) {
+    if (scenario.id === current.id) {
+      rejected.push({ id: scenario.id, reason: "current" });
+      continue;
+    }
+    if (recent.some((entry) => entry.id === scenario.id)) {
+      rejected.push({ id: scenario.id, reason: "recently-served" });
+      continue;
+    }
+    const duplicateOfRecent = [current, ...recent].some(
+      (entry) =>
+        trainingScenarioSimilarity(entry, scenario) >= NEAR_DUPLICATE_SIMILARITY,
+    );
+    if (duplicateOfRecent) {
+      rejected.push({ id: scenario.id, reason: "near-duplicate-of-recent" });
+      continue;
+    }
+    survivors.push(scenario);
+  }
+
+  return { rejected, considered: survivors.length };
 }

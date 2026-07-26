@@ -1282,12 +1282,31 @@ tournament pressure, side pots, preflop ranges, multiway decisions.
 - Deterministic replay — the checkpoint persists only a `scenarioId`. Generated scenarios must be persisted **verbatim**, not regenerated from a seed on load, or replay breaks.
 - EV-regret grading — reusable, but requires the generator to compute real EVs, which requires the equity estimator.
 
+**Scope decision (2026-07-25): selection now, generation deferred as a product
+call.** The reject stage and near-duplicate detection are implemented against
+the existing bank. Runtime *generation* is not, and the reason is the iOS
+parity constraint the audit itself records: `release:verify-ios-training-bank`
+fails unless the checked-in JSON byte-matches a fresh export, and iOS consumes
+static JSON with no constraint-solving runtime. The three ways out — ship the
+generator into the JavaScriptCore bridge, pre-generate a frozen corpus at build
+time, or accept platform divergence — are product decisions with different
+costs, not implementation details, so they are left to be chosen rather than
+picked silently here.
+
 **Acceptance criteria**
-- [ ] Selection/generation is constraint-driven with an explicit reject stage.
-- [ ] The validated 12-scenario bank is **retained**, not discarded, when generation is added.
-- [ ] Near-duplicate rejection exists.
-- [ ] Generated scenarios persist verbatim for replay.
-- [ ] Every guarantee above is enforced, with the reviewer-metadata policy decided in writing.
+- [x] Selection is constraint-driven with an **explicit** reject stage. `rejectUnsuitableScenarios` runs before scoring and returns every removed candidate with its reason (`current`, `recently-served`, `near-duplicate-of-recent`), so rejections are inspectable rather than buried in a score weight.
+- [x] The validated 12-scenario bank is retained and untouched.
+- [x] Near-duplicate rejection exists. `trainingScenarioSimilarity` scores two scenarios on the dimensions that actually drive the decision — street, math topic, recommended action, transfer group, pot and price within 10%, hero seat, difficulty, board length — because the schema's structural fingerprint is strict equality and passes a one-chip difference as distinct while it still feels like the same question.
+- [ ] Generated scenarios persist verbatim for replay. Not applicable until generation lands; the checkpoint still stores only a `scenarioId`, which is correct for a fixed bank.
+- [ ] Generation guarantees enforced end-to-end, with the reviewer-metadata policy decided in writing. Deferred with generation.
+
+**Rejection is deliberately soft.** With twelve scenarios a hard filter would
+eventually reject the entire pool. An empty survivor set falls back to scoring
+the full bank, because serving a repeat is worse than serving something fresh
+but far better than serving nothing — asserted by a test that rejects every
+scenario and still requires a selection.
+
+**Tests** — [x] A one-chip pot difference scores as a near-duplicate; a preflop and a river spot do not. [x] The metric is reflexive and symmetric. [x] Every rejection carries a documented reason. [x] Rejecting the whole pool still yields a scenario.
 
 **Risks / constraint — iOS parity**
 `scripts/export-ios-training-bank.ts` statically snapshots the bank into

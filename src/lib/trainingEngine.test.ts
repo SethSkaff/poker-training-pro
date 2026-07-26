@@ -17,6 +17,9 @@ import {
   trainingScenarioHistorySimilarity,
   validateTrainingScenario,
   validateTrainingScenarioBank,
+  trainingScenarioSimilarity,
+  rejectUnsuitableScenarios,
+  NEAR_DUPLICATE_SIMILARITY,
 } from "./trainingEngine";
 import { defaultProgress, defaultSettings } from "./storage";
 import { createSaveEnvelope, restoreSaveBackup } from "./saveMigration";
@@ -418,5 +421,76 @@ describe("near-transfer selection", () => {
       decisionElo: 1700,
       mathElo: 1700,
     })?.id).toBe(high?.id);
+  });
+});
+
+describe("near-duplicate rejection", () => {
+  it("treats a scenario differing by a chip as the same question", () => {
+    // Strict structural fingerprinting passes this pair as distinct, which is
+    // exactly the gap E15-002 names: a learner does not experience "pot 2700"
+    // and "pot 2750" as different problems.
+    const [base] = trainingScenarios;
+    const nudged = {
+      ...base,
+      id: `${base.id}-nudged`,
+      pot: Math.round(base.pot * 1.01),
+    };
+    expect(
+      trainingScenarioSimilarity(base, nudged),
+    ).toBeGreaterThanOrEqual(NEAR_DUPLICATE_SIMILARITY);
+  });
+
+  it("treats a genuinely different spot as different", () => {
+    const byStreet = new Map(
+      trainingScenarios.map((scenario) => [scenario.street, scenario]),
+    );
+    const preflop = byStreet.get("preflop");
+    const river = byStreet.get("river");
+    if (!preflop || !river) return;
+    expect(trainingScenarioSimilarity(preflop, river)).toBeLessThan(
+      NEAR_DUPLICATE_SIMILARITY,
+    );
+  });
+
+  it("is reflexive and symmetric", () => {
+    const [first, second] = trainingScenarios;
+    expect(trainingScenarioSimilarity(first, first)).toBe(1);
+    expect(trainingScenarioSimilarity(first, second)).toBe(
+      trainingScenarioSimilarity(second, first),
+    );
+  });
+
+  it("reports why each candidate was rejected", () => {
+    const [current, recent] = trainingScenarios;
+    const trace = rejectUnsuitableScenarios(current, trainingScenarios, {
+      recentScenarios: [recent],
+    });
+
+    expect(trace.rejected.find((entry) => entry.id === current.id)?.reason).toBe(
+      "current",
+    );
+    expect(trace.rejected.find((entry) => entry.id === recent.id)?.reason).toBe(
+      "recently-served",
+    );
+    // Reasons are inspectable rather than buried in a score weight.
+    for (const entry of trace.rejected) {
+      expect([
+        "current",
+        "recently-served",
+        "near-duplicate-of-recent",
+        "off-target-difficulty",
+      ]).toContain(entry.reason);
+    }
+  });
+
+  it("falls back rather than deadlocking when everything is rejected", () => {
+    // A hard filter over a twelve-scenario bank would eventually reject the
+    // whole pool. Serving a repeat is worse than serving something fresh, but
+    // far better than serving nothing.
+    const [current] = trainingScenarios;
+    const next = selectNearTransferScenario(current, {
+      recentScenarioIds: trainingScenarios.map((scenario) => scenario.id),
+    });
+    expect(next).toBeDefined();
   });
 });
