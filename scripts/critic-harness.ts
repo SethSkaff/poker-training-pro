@@ -35,6 +35,7 @@
  */
 
 import {
+  advanceTournamentSessionClock,
   applyTournamentSessionAction,
   beginTournamentSessionHand,
   chooseTournamentSessionPolicyAction,
@@ -49,6 +50,12 @@ import type { Card, Street } from "../src/types/poker";
 
 const POLICY = { simulations: 60, temperature: 0.48 } as const;
 const MAX_ACTIONS_PER_HAND = 4_000;
+/**
+ * Nominal time a six-handed hand takes, matching the pacing and exploitability
+ * harnesses. Advancing it is what lets the sample span blind levels rather than
+ * sitting forever at the opening stack depth.
+ */
+const MS_PER_HAND = 75_000;
 
 /**
  * The labels the criterion names. A critic must answer with one of these; a
@@ -328,6 +335,11 @@ export function playPublicHands(options: {
     assertNoHiddenCards(recorder.history);
     histories.push(recorder.history);
     chains.push(recorder.raiseChains);
+    // Without this the level never escalates -- blind levels run on wall time
+    // and a headless run has none -- so every sampled hand sits at the opening
+    // 300 BB depth. That is the one depth where nothing is ever short, and
+    // short stacks are exactly where "strange all-in" is worth asking about.
+    session = advanceTournamentSessionClock(session, MS_PER_HAND);
   }
 
   return { histories, chains };
