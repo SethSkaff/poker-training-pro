@@ -41,6 +41,16 @@ import {
   formatFixedDecimal,
 } from "../lib/format";
 import { gameAudio, type SoundName } from "../lib/audio";
+import { describeCallAction } from "../lib/actionLabels";
+import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
+import {
+  areHeroCardsMucked,
+  canStartHeroGesture,
+  foldOffsetProgress,
+  isFoldReleaseArmed,
+  shouldShowFoldRelease,
+  type HeroFoldState,
+} from "../lib/heroFoldPresentation";
 import { PlayingCard } from "./PlayingCard";
 import { PokerReferenceContent } from "./PokerReference";
 import {
@@ -1413,6 +1423,17 @@ export function PokerTable({
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
   const elapsedStartedAt = useRef<number | null>(null);
+  /*
+    The authoritative feed for the blind schedule (E27-004), deliberately
+    separate from `elapsedMs`. `elapsedMs` is the *display* and Training grading
+    timer: it starts at the hand and is meant to show how long this decision is
+    taking. Using it to advance the blind clock meant re-submitting the whole
+    running total on every hero action. This clock is drained instead, so each
+    millisecond of real, unpaused table time reaches the blind schedule once.
+  */
+  const blindClock = useRef(
+    createTournamentDecisionClock({ now: () => performance.now() }),
+  );
   const mathStartedAt = useRef<number | null>(null);
   const mathElapsedMs = useRef(0);
   const pauseStartedAt = useRef<number | null>(null);
@@ -1622,6 +1643,17 @@ export function PokerTable({
   });
   useModalFocusTrap({ active: historyOpen, containerRef: historyRef });
 
+  /*
+    Keyed on `paused`, which every pause path funnels through -- manual, window
+    blur, document hidden, minimize, system suspend, and screen lock all call
+    `requestPause`. So the blind schedule stops whenever play stops, including
+    while the player is away, without hooking each call site (E27-004).
+  */
+  useEffect(() => {
+    if (paused) blindClock.current.pause();
+    else blindClock.current.resume();
+  }, [paused]);
+
   useEffect(() => {
     if (action || paused) return;
     // Do not key this effect to elapsedMs: that would recreate the interval ten
@@ -1786,7 +1818,16 @@ export function PokerTable({
     );
     previousSceneVersionRef.current = next.stateVersion;
     previousHandIdRef.current = next.handId;
-    if (!update.changed) return;
+    /*
+      `update.changed` must not gate the hand-boundary reset (E27-001).
+
+      The refs are committed above, so returning here on a render where the hand
+      id changed but the state version did not would advance the hand ref while
+      skipping the reset -- and every later render then sees `handChanged:
+      false`, so that boundary's reset is lost permanently. That is how a fold
+      banner survived into the next hand in the packaged run.
+    */
+    if (!update.changed && !update.handChanged) return;
 
     if (update.clearDecisionTransientState) {
       setAction(null);
@@ -1875,7 +1916,19 @@ export function PokerTable({
       setRaiseOpen(false);
       setPeeked(false);
       if (nextAction === "fold") {
-        setFoldProgress(100);
+        /*
+          Deliberately does NOT write `foldProgress` (E27-001).
+
+          It used to set it to 100 to drive the card-slide, borrowing the drag
+          gesture's progress bar as an animation channel. But the "Release to
+          fold" banner renders on `foldProgress > 10 && !action`, and `action`
+          is cleared by the next engine update while `foldProgress` survives
+          until the next hand -- so a button fold made the drag banner appear
+          seconds later and stay through the showdown. The slide is now driven
+          by the submitted action instead, and `foldProgress` means only what
+          its name says: how far the player has dragged.
+        */
+        setDragging(false);
         gameAudio.play("fold");
       } else {
         gameAudio.play("chip");
@@ -1955,7 +2008,9 @@ export function PokerTable({
         const request: HeroTournamentAction = {
           action: nextAction,
           ...(nextAction === "raise" ? { raiseTo: requestedRaiseTo } : {}),
-          decisionElapsedMs: Math.max(0, Math.round(elapsedMs)),
+          // Real unpaused time since the previous hero action, counted once --
+          // not the running per-hand total this used to send (E27-004).
+          decisionElapsedMs: blindClock.current.drain(),
         };
         const publicPotOdds =
           scenario.amountToCall /
@@ -2206,7 +2261,7 @@ export function PokerTable({
   ]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (action) return;
+    if (!canStartHeroGesture(heroFoldState)) return;
     dragStart.current = { x: event.clientX, y: event.clientY };
     didDrag.current = false;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -2303,6 +2358,22 @@ export function PokerTable({
     (player) => player.seat === scenario.heroSeat,
   );
   const heroStack = heroPlayer?.stack ?? scenario.minimumRaise;
+  /*
+    Whether the hero has folded is read from the authoritative seat status, not
+    from the local `action` state (E27-001). `action` is transient -- it is
+    cleared by the next engine update, which is why folded hero cards used to
+    come back face-up and interactive for the rest of the hand. Seat status is
+    owned by the engine and resets with the hand, which is exactly the lifetime
+    this needs. `action === "fold"` is still ORed in so the muck begins on the
+    submitting frame rather than waiting for the engine to answer.
+  */
+  const heroFoldState: HeroFoldState = {
+    dragging,
+    foldProgress,
+    action,
+    seatStatus: heroPlayer?.status as HeroFoldState["seatStatus"],
+  };
+  const heroFolded = areHeroCardsMucked(heroFoldState);
   const heroStreetCommitted = heroPlayer?.bet ?? 0;
   const heroTotalCommitted = heroPlayer?.totalCommitted ?? heroStreetCommitted;
   const positionLabelForSeat = (seat: number): string =>
@@ -2372,6 +2443,41 @@ export function PokerTable({
   const heroDecisionActive =
     mode === "training" || tournament?.heroDecision !== false;
   const callAction = scenario.amountToCall > 0 ? "call" : "check";
+  /*
+    The label is derived from the hero's stack as well as the bet, so a call
+    that commits their last chip says "All in" (E27-005). The legal action is
+    unchanged -- the engine still resolves this as a call and still caps the
+    main pot -- only what the player is told about it changes.
+  */
+  const callDescription = describeCallAction({
+    amountToCall: scenario.amountToCall,
+    heroStack,
+  });
+  const callControlLabel =
+    callDescription.kind === "check"
+      ? formatMessage("table.action.check")
+      : callDescription.kind === "all-in"
+        ? formatMessage("table.action.allInAmount", {
+            amount: formatChips(callDescription.committed),
+          })
+        : formatMessage("table.action.callAmount", {
+            amount: formatChips(callDescription.committed),
+          });
+  const callControlAriaLabel =
+    callDescription.kind === "check"
+      ? formatMessage("table.action.checkAriaLabel")
+      : callDescription.kind === "all-in"
+        ? callDescription.shortOfCall
+          ? formatMessage("table.action.allInShortAriaLabel", {
+              amount: formatChips(callDescription.committed),
+              facing: formatChips(callDescription.facing),
+            })
+          : formatMessage("table.action.allInAriaLabel", {
+              amount: formatChips(callDescription.committed),
+            })
+        : formatMessage("table.action.callAriaLabel", {
+            amount: formatChips(callDescription.committed),
+          });
   const tablePlayers = [...scenario.players].sort((left, right) => {
     if (left.seat === scenario.heroSeat) return -1;
     if (right.seat === scenario.heroSeat) return 1;
@@ -2418,6 +2524,46 @@ export function PokerTable({
       ? tournament.presentationEvent
       : undefined;
   const liveSidePots = scenario.potBreakdown?.filter((pot) => pot.kind === "side") ?? [];
+  /*
+    Pots to draw on the felt. Falls back to a single synthetic main pot when the
+    engine reports no breakdown, so the ordinary single-pot hand renders exactly
+    as it always did and only a genuine side pot splits the pile (E27-002).
+  */
+  const potGroups = (
+    scenario.potBreakdown && scenario.potBreakdown.length > 0
+      ? scenario.potBreakdown
+      : [
+          {
+            id: "main",
+            kind: "main" as const,
+            amount: scenario.pot,
+            eligiblePlayerIds: scenario.players.map((player) => player.id),
+          },
+        ]
+  ).map((pot) => ({
+    id: pot.id,
+    kind: pot.kind,
+    amount: pot.amount,
+    /*
+      The full public explanation still exists -- it is just no longer printed
+      on the felt. Side pots carry `describeLiveSidePot`, which derives its
+      wording only from committed chips and declared eligibility and so cannot
+      leak a hand; main pots carry the contender list. Both reach assistive
+      technology, and neither occupies the table.
+    */
+    description:
+      pot.kind === "side"
+        ? describeLiveSidePot(pot, scenario.players)
+        : formatMessage("table.pot.eligibleAriaLabel", {
+            players: pot.eligiblePlayerIds
+              .map(
+                (playerId) =>
+                  scenario.players.find((player) => player.id === playerId)
+                    ?.name ?? playerId,
+              )
+              .join(", "),
+          }),
+  }));
   const allInEvent =
     tournament?.presentationEvent?.kind === "action" &&
     tournament.presentationEvent.command.type === "all-in"
@@ -2474,7 +2620,42 @@ export function PokerTable({
   const winningCardLabels = winningCardLabelsForAwards(
     showdownEvent?.awards ?? [],
   );
-  const showdownAwards = resultEvent?.awards ?? tournament?.lastPotAwards ?? [];
+  /*
+    Who won this hand, held for as long as the hand is paying out (E27-003).
+
+    `lastPotAwards` is derived from `session.lastHand`, which is not populated
+    until the hand is over -- so during the `pot-awarded` milestones, which are
+    the payout of the very result being shown, the awards array is empty and the
+    winner strip blanked. Remembering the last non-empty awards for this hand id
+    keeps the outcome on screen while its chips are still moving, and drops it
+    automatically when a new hand starts.
+  */
+  const liveAwards = resultEvent?.awards ?? tournament?.lastPotAwards ?? [];
+  const rememberedAwards = useRef<{
+    handId: string;
+    awards: typeof liveAwards;
+  } | null>(null);
+  useEffect(() => {
+    if (liveAwards.length > 0) {
+      rememberedAwards.current = { handId: scenario.id, awards: liveAwards };
+    }
+  }, [liveAwards, scenario.id]);
+  const showdownAwards =
+    liveAwards.length > 0
+      ? liveAwards
+      : rememberedAwards.current?.handId === scenario.id
+        ? rememberedAwards.current.awards
+        : [];
+  /*
+    The stretch of the queue that belongs to "who won this hand": the result
+    itself and every milestone that pays it out. Keeping the winner on screen
+    across all of them is what makes the outcome readable (E27-003).
+  */
+  const resultPhaseKind = tournament?.presentationEvent?.kind;
+  const resultPhaseActive =
+    Boolean(resultEvent) ||
+    resultPhaseKind === "pot-awarded" ||
+    resultPhaseKind === "side-pot-formed";
   const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
   const tableAnnouncement = buildPokerTableAnnouncement({
     action,
@@ -2681,13 +2862,23 @@ export function PokerTable({
               </span>
             )}
           </aside>
-          {showdownAwards.length > 0 && (resultEvent || arrivalVisible) ? (
+          {/*
+            The result stays up through the whole payout, not just the single
+            `showdown` frame (E27-003). It used to be gated on `resultEvent`
+            alone, so the moment the queue moved to `side-pot-formed` or
+            `pot-awarded` the winner disappeared -- measured in the packaged
+            build as the result being on screen for about one second while the
+            chips it was describing were still moving. Those events *are* the
+            result being paid out, so they belong to the same readable moment.
+          */}
+          {showdownAwards.length > 0 && (resultPhaseActive || arrivalVisible) ? (
             <aside className="showdown-result-strip" role="status" aria-live="polite" aria-atomic="true">
               <span>
                 {showdownEvent
                   ? "Showdown result"
-                  : handResultEvent
-                    ? "Hand result"
+                  : handResultEvent || resultPhaseActive
+                    ? // Still paying out: the hand is resolving, not history.
+                      "Hand result"
                     : "Previous hand result"}
               </span>
               {showdownAwards.map((award) => {
@@ -2719,21 +2910,16 @@ export function PokerTable({
               </small>
             </aside>
           ) : null}
-          {liveSidePots.length > 0 && !sidePotEvent ? (
-            <aside className="side-pot-strip side-pot-strip--live" role="status" aria-live="polite" aria-atomic="true">
-              <span>Live pots</span>
-              {scenario.potBreakdown?.map((pot) => (
-                <p key={pot.id}>
-                  <b>{pot.kind === "main" ? "Main" : "Side"} {formatChips(pot.amount)}</b>
-                  {" · Eligible: "}
-                  {pot.eligiblePlayerIds.map((playerId) => scenario.players.find((player) => player.id === playerId)?.name ?? playerId).join(", ")}
-                  {pot.kind === "side" && (
-                    <small>{describeLiveSidePot(pot, scenario.players)}</small>
-                  )}
-                </p>
-              ))}
-            </aside>
-          ) : null}
+          {/*
+            The persistent live-pot panel that used to sit here is gone
+            (E27-002). It listed every pot and a full eligibility roster as
+            standing prose, appeared before the hero had acted, and stayed up for
+            the whole hand -- explaining in text what the felt should be showing
+            in chips. Pot structure is now grouped chip stacks on the table (see
+            `.pot-groups` below); the transient `side-pot-formed` announcement
+            above still marks the moment a side pot appears, and the eligibility
+            detail is available on demand rather than permanently.
+          */}
           {allInEvent ? (
             <aside className="all-in-banner" role="status" aria-live="assertive" aria-atomic="true">
               <span>{formatMessage("table.allIn.label")}</span>
@@ -2965,14 +3151,60 @@ export function PokerTable({
                   )}
                 </div>
 
+                {/*
+                  Pot structure as chips rather than a paragraph (E27-002).
+                  With one pot this is the single centre pile it always was.
+                  With side pots each pot becomes its own labelled pile, so a
+                  player can watch which chips form which pot and, at the award,
+                  which pile goes to whom -- the thing the old text panel was
+                  trying to say. Amounts sit with their chips; eligibility is
+                  carried by the accessible name rather than printed on the felt.
+                */}
                 <div
-                  className="center-pot"
-                  aria-hidden="true"
-                  data-chip-stacks={potChipStackCount(scenario.pot)}
+                  className={`pot-groups ${potGroups.length > 1 ? "pot-groups--split" : ""}`}
+                  role="group"
+                  aria-label={formatMessage("table.pot.groupsAriaLabel")}
                 >
-                  {Array.from({ length: potChipStackCount(scenario.pot) }).map(
-                    (_, index) => <ChipStack bet key={index} />,
-                  )}
+                  {potGroups.map((group) => (
+                    <div
+                      className={`pot-group pot-group--${group.kind}`}
+                      key={group.id}
+                      data-pot-kind={group.kind}
+                    >
+                      <div
+                        className="center-pot"
+                        aria-hidden="true"
+                        data-chip-stacks={potChipStackCount(group.amount)}
+                      >
+                        {Array.from({
+                          length: potChipStackCount(group.amount),
+                        }).map((_, index) => (
+                          <ChipStack bet key={index} />
+                        ))}
+                      </div>
+                      {/*
+                        Per-pile amounts appear only once the pot has actually
+                        split. With a single pot the felt readout above already
+                        says "Pot 125", and repeating it under the chips would
+                        be the same number twice.
+                      */}
+                      {potGroups.length > 1 && (
+                        <span className="pot-group__amount">
+                          <b>
+                            {formatMessage(
+                              group.kind === "main"
+                                ? "table.pot.mainLabel"
+                                : "table.pot.sideLabel",
+                            )}
+                          </b>
+                          {formatChips(group.amount)}
+                        </span>
+                      )}
+                      <span className="visually-hidden">
+                        {group.description}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -3009,14 +3241,19 @@ export function PokerTable({
               );
             })}
 
-            {foldProgress > 10 && !action && (
+            {/*
+              Gated on an active drag, not on a progress number alone. Any
+              non-drag fold path -- button, keyboard, controller -- must never
+              raise a gesture affordance (E27-001).
+            */}
+            {shouldShowFoldRelease(heroFoldState) && (
               <div
                 className={`fold-release-zone ${
-                  foldProgress >= 82 ? "is-ready" : ""
+                  isFoldReleaseArmed(heroFoldState) ? "is-ready" : ""
                 }`}
               >
                 <span>
-                  {foldProgress >= 82
+                  {isFoldReleaseArmed(heroFoldState)
                     ? formatMessage("table.fold.release")
                     : formatMessage("table.fold.keepDragging")}
                 </span>
@@ -3027,7 +3264,7 @@ export function PokerTable({
             <button
               className={`hero-hole-cards ${peeked ? "is-peeked" : ""} ${
                 dragging ? "is-dragging" : ""
-              } ${action === "fold" ? "is-folded" : ""}`}
+              } ${heroFolded ? "is-folded" : ""}`}
               type="button"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
@@ -3035,7 +3272,10 @@ export function PokerTable({
               onPointerCancel={(event) => endPointerGesture(event, true)}
               style={
                 {
-                  "--fold-offset": `${Math.min(foldProgress, 82) * -0.55}px`,
+                  // The drag drives the offset while dragging; once folded the
+                  // cards sit at the full offset regardless of how the fold was
+                  // submitted, so button and gesture folds look the same.
+                  "--fold-offset": `${foldOffsetProgress(heroFoldState) * -0.55}px`,
                 } as CSSProperties
               }
               aria-label={formatMessage("table.holeCards.ariaLabel", {
@@ -3043,7 +3283,9 @@ export function PokerTable({
                   ? formatMessage("table.holeCards.hide")
                   : formatMessage("table.holeCards.peek"),
               })}
-              disabled={Boolean(action) || !cardsDealt}
+              // A mucked hand is not interactive: no peeking, no dragging it
+              // back onto the table for the rest of the hand.
+              disabled={Boolean(action) || !cardsDealt || heroFolded}
             >
               <span className="hero-hole-cards__cards">
                 {scenario.heroCards.map((card, index) => (
@@ -3151,15 +3393,10 @@ export function PokerTable({
                       : !tournament?.legalActions.check || presentationActive
                 }
                 onClick={() => handleAction(callAction)}
+                aria-label={callControlAriaLabel}
               >
                 <span>C</span>
-                <strong>
-                  {scenario.amountToCall > 0
-                    ? formatMessage("table.action.callAmount", {
-                        amount: formatChips(scenario.amountToCall),
-                      })
-                    : formatMessage("table.action.check")}
-                </strong>
+                <strong>{callControlLabel}</strong>
               </button>
               <button
                 className={`action-button action-button--raise ${

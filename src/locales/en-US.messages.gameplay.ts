@@ -471,6 +471,13 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.felt.brand": "PTP · CHAMPIONSHIP",
   "table.felt.dealerLabel": "DEALER",
   "table.readout.potLabel": "Pot",
+  // Pot structure is shown as grouped chips on the felt; these label the piles
+  // only when there is more than one, and carry eligibility to assistive tech
+  // rather than printing it on the table (E27-002).
+  "table.pot.groupsAriaLabel": "Pots on the table",
+  "table.pot.mainLabel": "Main",
+  "table.pot.sideLabel": "Side",
+  "table.pot.eligibleAriaLabel": "Contested by {players}",
   "table.readout.blinds": "Blinds {smallBlind}/{bigBlind}",
   "table.communityCards.ariaLabel": "Community cards",
   "table.sidePot.label": "Side pot",
@@ -509,6 +516,16 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.action.callAmount": "Call {amount}",
   "table.action.check": "Check",
   "table.action.raiseTo": "Raise to…",
+  // Shown instead of "Call" when the call commits the hero's last chip. The
+  // amount is what actually leaves the stack, not the bet being faced.
+  "table.action.allInAmount": "All in {amount}",
+  "table.action.checkAriaLabel": "Check",
+  "table.action.callAriaLabel": "Call {amount}",
+  // Names the shortfall explicitly: the hero is all in for less than the bet,
+  // which is the moment a side pot forms.
+  "table.action.allInAriaLabel": "All in for {amount}",
+  "table.action.allInShortAriaLabel":
+    "All in for {amount}, short of the {facing} bet, creating a side pot",
 
   "table.spectator.actionLocked": "Action locked: {action}",
   "table.spectator.returnTo1x": "Return to 1×",

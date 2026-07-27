@@ -114,6 +114,77 @@ describe("tournament presentation clock", () => {
     ).toBe(563);
   });
 
+  /*
+    E27-003. Speed and reduced motion scale motion; they must not scale reading.
+    At the old 1,100 ms base with no floor, a reduced-motion player at 2x was
+    given 1_100 * 0.45 / 2 = 247 ms to read who had won and with what -- the
+    reported quarter-second flash, measured in the packaged build as a result
+    that appeared and was replaced within one second.
+  */
+  describe("the outcome stays readable at every speed and motion setting", () => {
+    const resultKinds = [
+      {
+        id: "1:hand-1:showdown:0",
+        kind: "showdown",
+        handId: "hand-1",
+        awards: [],
+        reveals: [],
+      },
+      {
+        id: "1:hand-1:hand-result:0",
+        kind: "hand-result",
+        handId: "hand-1",
+        awards: [],
+      },
+      {
+        id: "1:hand-1:pot-awarded:0",
+        kind: "pot-awarded",
+        handId: "hand-1",
+        potId: "main",
+        amount: 100,
+        playerIds: ["hero"],
+      },
+    ] as unknown as TournamentPresentationEvent[];
+
+    it("never drops a result below the readable floor, however it is compressed", () => {
+      for (const event of resultKinds) {
+        for (const speed of [1, 2, 4, 8]) {
+          for (const settings of [
+            { reducedMotion: false, transitionMotion: "full" } as const,
+            { reducedMotion: false, transitionMotion: "reduced" } as const,
+            { reducedMotion: true, transitionMotion: "off" } as const,
+          ]) {
+            expect(
+              presentationEventDelayMs(event, speed, settings),
+            ).toBeGreaterThanOrEqual(1_200);
+          }
+        }
+      }
+    });
+
+    it("gives the exact case that failed at least a second and a fifth", () => {
+      const showdown = resultKinds[0];
+      // Reduced motion at 2x: 247 ms before the floor existed.
+      expect(
+        presentationEventDelayMs(showdown, 2, {
+          reducedMotion: true,
+          transitionMotion: "full",
+        }),
+      ).toBe(1_200);
+    });
+
+    it("leaves ordinary milestones as responsive as they were", () => {
+      // The floor is for outcomes, not for everything: an action at 4x is still
+      // brisk, and reduced motion still shortens it.
+      expect(
+        presentationEventDelayMs(actionEvent, 4, {
+          reducedMotion: false,
+          transitionMotion: "full",
+        }),
+      ).toBe(245);
+    });
+  });
+
   it("freezes the exact remaining queue-item duration and completes only once", () => {
     const clock = new FakeClock();
     let completions = 0;

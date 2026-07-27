@@ -251,22 +251,36 @@ the two-flag split arrived with `8459e50` "keep tournament table mounted across
 updates", which is what made the two clear at different times.
 
 **Acceptance criteria**
-- [ ] The banner is gated on an actual active drag (`dragging`), not on a
+- [x] The banner is gated on an actual active drag (`dragging`), not on a
   progress number the button path also writes. A fold submitted by button, key,
   or controller must never render drag-gesture affordances.
-- [ ] Clicking Fold releases pointer capture and zeroes gesture state in the same
-  commit that submits the action.
-- [ ] Folded hero cards muck or leave the table. They must not sit face-up and
-  interactive for the rest of the hand, which is what the run above shows.
-- [ ] The hand-boundary reset cannot be swallowed: refs advance only on the path
-  that also applies the reset, or the reset is keyed off the observed hand id
-  rather than a ref delta. Add a direct unit test for the
-  changed-hand/unchanged-version render.
-- [ ] Every new hand starts with clean hero interaction state — verified by a
-  test that asserts the exact sequence above, not by remounting the table
-  subtree (which E01-001 exists to prevent).
+- [x] Clicking Fold releases pointer capture and zeroes gesture state in the same
+  commit that submits the action. The button path no longer writes
+  `foldProgress` at all; it sets `dragging` false and lets the submitted action
+  drive the card slide.
+- [x] Folded hero cards muck or leave the table. `areHeroCardsMucked` reads the
+  engine's seat status (which lives exactly as long as the hand) ORed with the
+  just-submitted action, so the muck starts on the submitting frame and persists
+  until the hand ends. The `.is-folded` rule already animated the cards away;
+  the defect was that its trigger was transient.
+- [x] The hand-boundary reset cannot be swallowed: the early return is now
+  `if (!update.changed && !update.handChanged) return;`, so a hand change is
+  never discarded because the version happened not to move.
+  `tableSceneLifecycle.test.ts` covers the changed-hand/unchanged-version render
+  directly.
+- [x] Every new hand starts with clean hero interaction state. The rules were
+  extracted to `src/lib/heroFoldPresentation.ts` and
+  `heroFoldPresentation.test.ts` walks the exact reported sequence as a state
+  machine. No remount was introduced.
 - [ ] Pointer-up, pointer-cancel, pause, modal interruption, and hand completion
-  all clear the gesture. Mouse and touch parity.
+  all clear the gesture. Mouse and touch parity. **Partly done:** the affordance
+  can no longer survive any of these because it requires `dragging`, and a
+  gesture cannot start on a mucked hand (`canStartHeroGesture`). A dedicated
+  pointer-cancel/touch-parity test is still outstanding.
+
+**Implemented 2026-07-27.** Files: `src/lib/heroFoldPresentation.ts` (new),
+`src/components/PokerTable.tsx`, `src/lib/tableSceneLifecycle.test.ts`.
+Tests: 14 new in `heroFoldPresentation.test.ts`, 2 new lifecycle cases.
 
 ### E27-002 — P0: the live-pot panel is a permanent text overlay
 
@@ -284,6 +298,18 @@ This is both the bug in §5.1 (present when it should not be, never cleared) and
 the design failure in §5.2 (pot structure explained as a persistent paragraph
 instead of shown as chips). E05-004 is **reopened** rather than duplicated here.
 
+**Implemented 2026-07-27.** The persistent panel is deleted. Pot structure is now
+grouped chip piles on the felt (`.pot-groups`): a single pot renders exactly as
+before, and a genuine side pot splits into labelled piles with their amounts.
+The public explanation survives as the pile's accessible description via
+`describeLiveSidePot`, which derives its wording only from committed chips and
+declared eligibility and so cannot leak a hand -- it is no longer printed on the
+table. Files: `src/components/PokerTable.tsx`, `src/styles.css`,
+`src/locales/en-US.messages.gameplay.ts`. Tests: 7 new in
+`PokerTable.potPresentation.test.ts`, asserting the overlay cannot return.
+**Still open under E05-004:** chips moving into their pile per pot, and the
+award sequence paying each pile separately.
+
 Also observed, and separately wrong: the `side-pot-formed` presentation event
 fires **after** the showdown result strip has already been shown and replaced it
 (t+22s showdown → t+23s "Side pot formed"). A pot that formed during betting is
@@ -296,6 +322,17 @@ being announced after the hand is decided.
 t+23s**, replaced by the side-pot event. The result was legible for at most one
 sampling interval. E03-001/E03-002 are **reopened**; the missing criterion is a
 minimum readable dwell time that survives the events queued behind it.
+
+**Implemented 2026-07-27.** Two causes, both fixed. (1) `presentationEventDelayMs`
+had a 120 ms floor for every event, so a reduced-motion player at 2x got
+`1100 * 0.45 / 2 = 247 ms` -- the reported quarter-second. Result-class events
+(`showdown`, `hand-result`, `pot-awarded`) now have a 1,200 ms floor that speed
+and reduced motion cannot compress: those settings shorten *motion*, never
+*reading*. (2) The result strip was gated on `resultEvent` alone, so it vanished
+the instant the queue reached `side-pot-formed` or `pot-awarded` -- the payout of
+the very result it was describing. It now stays up for the whole result phase.
+Files: `src/lib/tournamentPresentationClock.ts`, `src/components/PokerTable.tsx`.
+Tests: 3 new cases covering every speed/motion combination.
 
 ### E27-004 — P0 (SUSPECTED): the blind clock is fed multiply-counted wall time
 
@@ -319,18 +356,38 @@ qualifier's four-minute levels that can cross a boundary mid-hand, which is
 consistent with the reported blinds rising on the turn of hand one.
 
 **Acceptance criteria**
-- [ ] The blind clock advances by elapsed wall time once, not once per hero
-  action. Decide explicitly whether opponent thinking time counts, and write the
-  decision down.
-- [ ] A deterministic regression test: a fresh Normal event does not change blind
-  level during hand one under any hero decision timing.
-- [ ] A test that N seconds of real time advance the clock by N seconds
-  regardless of how many hero actions occur in that window.
+- [x] The blind clock advances by elapsed wall time once, not once per hero
+  action. `createTournamentDecisionClock` drains: each read returns the time
+  since the previous read and re-anchors, so every millisecond reaches the
+  schedule exactly once. **Decision, recorded:** opponent thinking time *does*
+  count, because a real blind clock runs regardless of whose turn it is. What
+  does not count is paused time.
+- [x] A deterministic regression test: `src/modes/blindSchedule.test.ts` starts a
+  fresh Local Qualifier (four-minute levels) and asserts six decisions across
+  three real minutes leave the level unchanged. It also reconstructs the old
+  cumulative feed and asserts it *did* cross a boundary, so the fix is
+  demonstrated rather than merely asserted.
+- [x] A test that N seconds of real time advance the clock by N seconds
+  regardless of how many hero actions occur in that window -- covered at both
+  the clock level (1, 3, 6 and 12 drains over the same span) and the session
+  level.
 - [ ] The current level and the next increase are visible to the player, so the
-  schedule is inspectable rather than inferred (see E27-008).
-- [ ] Blinds do not advance while paused or while the window is away — the
-  packaged lifecycle audit already proves play freezes when minimized, so this is
-  about the pause path specifically.
+  schedule is inspectable rather than inferred. **Deferred to E27-008**, which
+  owns the tournament HUD; the clock is now correct but still not shown.
+- [x] Blinds do not advance while paused or while the window is away. The clock
+  is paused from an effect keyed on `paused`, which every path funnels through --
+  manual, window blur, document hidden, minimize, system suspend, and screen
+  lock all call `requestPause`. A single drain is also clamped to five minutes so
+  a sleeping machine cannot skip levels on wake.
+
+**Implemented 2026-07-27, and the SUSPECTED label is now resolved.** The
+mechanism was confirmed by reading the feed: `elapsedMs` starts at the hand,
+runs during opponents' turns, resets only on a new hand, and was submitted in
+full on every hero action. Files: `src/lib/tournamentDecisionClock.ts` (new),
+`src/components/PokerTable.tsx`. Tests: 10 new clock cases, 6 new schedule cases.
+**Not yet re-observed end to end in the packaged build** -- reproducing the
+original symptom needs a slow multi-decision hand, so the evidence here is the
+unit and engine level plus the corrected feed.
 
 ### E27-005 — Player-facing action labels are computed without the hero's stack
 
@@ -341,12 +398,22 @@ the hero's entire stack is presented as a call for the full outstanding bet.
 The legal-action calculation is correct; only the label is wrong.
 
 **Acceptance criteria**
-- [ ] When the legal call commits the hero's whole remaining stack, the primary
-  label is **All In** with the true committed amount.
-- [ ] Tests: stack exactly equal to the call, stack below the call, multiple side
-  pots, short-stack all-in. Assert the visible label **and** the accessible name.
-- [ ] Labelling is tested independently of legal-action calculation, so a correct
-  engine cannot mask a lying button.
+- [x] When the legal call commits the hero's whole remaining stack, the primary
+  label is **All in** with the true committed amount -- what leaves the stack,
+  not the bet being faced.
+- [x] Tests: `src/lib/actionLabels.test.ts` covers stack exactly equal to the
+  call (the easiest case to misread), stack below the call, one chip short of
+  all-in, a busted stack, and negative-input clamping. The accessible name is
+  distinct from the visible label and names the shortfall explicitly when one
+  exists, because that is the moment a side pot forms.
+- [x] Labelling is tested independently of legal-action calculation:
+  `describeCallAction` is a pure function of two numbers, so a correct engine can
+  no longer mask a lying button.
+
+**Implemented 2026-07-27.** Files: `src/lib/actionLabels.ts` (new),
+`src/components/PokerTable.tsx`, `src/locales/en-US.messages.gameplay.ts`.
+Tests: 8 new. The engine is untouched -- it always resolved this correctly as a
+call; only what the player was told has changed.
 
 ### E27-006 — Opponent faces collide at a six-handed table
 
@@ -541,9 +608,32 @@ only place some of that appears at all.
 - [ ] Named presentation speeds (cinematic / standard / fast) that change
   presentation only — the policy must be identical across them, with a test.
 - [ ] Standard is the Normal default.
-- [ ] The skip affordance is findable at the moment the hero stops acting; it
-  states what it will skip, and never duplicates an action, recalculates a
-  decision, corrupts replay, or skips the final result.
+
+**Skip control — specified 2026-07-27.** The control exists but is wrong in
+label, size, and placement: a small secondary button in the bottom dock, sitting
+beside the 2× toggle where it reads as another speed option. Redesign it to this
+specification rather than iterating on the current one.
+
+- [ ] The primary label is **Skip**. Not "Skip to result", not an icon alone.
+- [ ] It appears **immediately** once the hero's fold has been accepted — on the
+  frame the action is submitted, not after the next presentation event.
+- [ ] It is large and visually prominent: a primary control, sized and weighted
+  so it is found without being hunted for.
+- [ ] It sits near the **upper or central table area**, where the player is
+  already looking during a hand. It does not live in the small bottom dock.
+- [ ] The **2× speed toggle stays separate and secondary**, visually
+  distinguishable from Skip so the two are never confused. Speed changes
+  presentation rate; Skip advances to the outcome. They are different promises.
+- [ ] Skip advances directly to the hand's result **and leaves the final
+  showdown or winner state readable** — it must honour the E27-003 result floor
+  rather than flashing past it. Skipping the *watching* is the point; skipping
+  the *result* is not.
+- [ ] Skip never duplicates an action, recalculates an AI decision, corrupts
+  deterministic replay, or bypasses pot resolution. Assert replay equality
+  between a skipped hand and the same hand watched in full.
+- [ ] Reachable and operable by keyboard and controller, with a correct
+  accessible name that states what will be skipped, and correct behaviour under
+  reduced motion (where the result must still hold its readable minimum).
 
 ### E27-016 — Early elimination: keep measuring, do not gate on one bust
 

@@ -53,8 +53,40 @@ export function presentationEventDelayMs(
       : settings.transitionMotion === "reduced"
         ? 0.7
         : 1;
-  return Math.max(120, Math.round((base * motionMultiplier) / Math.max(1, speed)));
+  const scaled = Math.round((base * motionMultiplier) / Math.max(1, speed));
+  return Math.max(minimumReadableMs(event), scaled);
 }
+
+/**
+ * The floor a milestone may not be compressed below (E27-003).
+ *
+ * Speed and reduced motion shorten *motion*. They must not shorten *reading*:
+ * who won, with what hand, and for how much is the point of the hand, and at
+ * 1,100 ms base a reduced-motion player at 2x was given 247 ms to read it --
+ * the reported quarter-second flash. Reduced motion in particular should never
+ * cost comprehension time; it exists for vestibular safety, not for haste.
+ *
+ * Everything else keeps the old 120 ms floor, so ordinary milestones stay as
+ * responsive as they were.
+ */
+export function minimumReadableMs(
+  event: TournamentPresentationEvent,
+): number {
+  return RESULT_EVENT_KINDS.has(event.kind) ? RESULT_MINIMUM_MS : 120;
+}
+
+/**
+ * Milestones that state the outcome. These are the ones a player reads rather
+ * than watches, and the ones that were unreadable.
+ */
+const RESULT_EVENT_KINDS: ReadonlySet<string> = new Set([
+  "showdown",
+  "hand-result",
+  "pot-awarded",
+]);
+
+/** Roughly the low end of "one to two seconds" at standard speed. */
+export const RESULT_MINIMUM_MS = 1_200;
 
 /**
  * Creates the one-shot clock used by the table for the current queue item.

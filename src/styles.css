@@ -3310,6 +3310,57 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 6px;
 }
 
+/*
+  Pot structure lives on the felt as chips (E27-002), replacing the persistent
+  "Live pots" text panel that listed every pot and its eligibility roster for
+  the whole hand. One pot renders exactly as it always did -- a single centre
+  pile, with the amount coming from the felt readout above. A genuine side pot
+  splits the pile into labelled groups, so the player can watch which chips form
+  which pot and which pile goes where at the award.
+*/
+.pot-groups {
+  position: absolute;
+  top: 77%;
+  left: 50%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 22px;
+  transform: translateX(-50%);
+}
+
+.pot-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.pot-group__amount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: rgba(255, 249, 236, 0.9);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+.pot-group__amount b {
+  color: rgba(255, 209, 63, 0.92);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* The pile itself is laid out by `.pot-groups`, not absolutely placed. */
+.pot-groups .center-pot {
+  position: static;
+  transform: none;
+}
+
 .center-pot {
   position: absolute;
   top: 77%;

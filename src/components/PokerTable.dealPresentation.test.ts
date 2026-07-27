@@ -11,7 +11,16 @@ describe("hole-card deal presentation", () => {
   it("gates hero interaction on the public deal event and passes deal state to seats", () => {
     expect(tableSource).toContain('presentationEvent?.kind === "hole-cards-dealt"');
     expect(tableSource).toContain("cardsDealt={cardsDealt}");
-    expect(tableSource).toContain("disabled={Boolean(action) || !cardsDealt}");
+    /*
+      Hero interaction stays gated on the public deal event and on a pending
+      action, and is now additionally gated on the hand being mucked (E27-001):
+      folded cards must not be peekable or draggable for the rest of the hand.
+      Asserted as three separate conditions rather than one exact expression, so
+      strengthening the gate does not read as breaking it.
+    */
+    expect(tableSource).toMatch(
+      /disabled=\{Boolean\(action\) \|\| !cardsDealt \|\| heroFolded\}/,
+    );
     expect(tableSource).toContain("const isShowingCards = !isHero && !isOut && cardsDealt && !isFolded");
     expect(tableSource).toContain("hasRevealedCards");
     expect(tableSource).toContain("revealedCards.map((card)");
