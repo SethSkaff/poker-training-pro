@@ -1991,6 +1991,44 @@ another window takes focus. (A prior decision deliberately declined to set it
 revisit only with that trade-off explicit.)
 
 **Acceptance criteria**
+**2026-07-26: the packaged suite ran for the first time since 2026-07-24, and
+five of its ten audits were broken.** Two things had made it unrunnable, which
+is why nobody knew: `node_modules/electron/dist` was missing (electron's
+postinstall never completed, almost certainly lost to the `npm ci` during the
+dependency-audit experiment), so *no* packaging could succeed; and the audits
+require Node >= 22 while this machine's system Node is 20.9. With Node 22
+installed and the dist restored from the local cache, a fresh package built and
+all ten now pass. **Every failure was in the audits, not the product.** Four
+shared one root cause — they were calibrated on 2026-07-24, one day before the
+E11-002 correction took a six-handed event from 8-9 hands to 24-46:
+
+| Audit | What was stale |
+|---|---|
+| `mode-completion` | 105 s per mode. The failing run spent its whole budget skipping: 25 hero actions, 2038 presentation skips, no ceremony. Raised to 300 s, and skipping now costs one CDP round trip instead of two. |
+| `input-smoke` | Clicked "skip presentation" once then waited. Post-correction a hand emits far more milestones per orbit, so the driver was waiting on a queue it had stopped advancing — observed directly: table present, ceremony absent, dock absent, skip button *still there*. Now drains the queue while waiting. |
+| `flash-capture` | Every "wait for the game to reach state X" step was budgeted like a *navigation* step (12 s). Whole-hand and betting-round waits now have their own allowances. |
+| `flash-capture` | Assumed the hero calling guarantees a flop. True when the field never folded; the corrected policy folds 46% facing a bet, so hands often end preflop. It now plays on until a flop is actually dealt. |
+
+Two were independent of pacing:
+
+- **`input-smoke` acting-indicator check had never run.** Added in `684df75`, it selected `.thinking-ring` unscoped, which finds the hero's ring inside `.player-seat--hero` — `visibility: hidden` by design, since the hero is the stack HUD and action dock, not an avatar. The smoke waits for a *hero* decision before measuring, so this failed at all 20 viewport/scale combinations, every run. Scoped to opponents.
+- **`flash-capture` required an animation in the pass that exists to suppress it.** `board-card-progression` demanded staged board entry in the reduced-motion pass. Measured board counts were `[1,1,1,2,2,2,3,3]` with full motion and `[4,4,4,…]` with it reduced — the board complete before the burst began. Both are correct; the signal is now waived where motion is reduced, and the waiver is recorded in the report.
+
+**Diagnostics were the bottleneck and are now fixed too.** Every one of these
+reported only "X was not present" or "present, not ok", which is equally true of
+a crashed renderer, a finished event, and a hand that never reached that state.
+Failures now name the screen that was actually up, and the geometry check says
+whether a surface was unreadable or merely overlapping.
+
+**One finding is real and unresolved.** In one input-smoke run, two seats that
+were *active with a live bet* reported `cardsOverlap`, `betOverlapsStack`, and
+`betReadable: false` at all 20 viewport/scale combinations; folded seats were
+clean. It did not recur, because the smoke seeds each run from `Date.now()` and
+therefore plays a different hand with a different seating every time. That
+non-determinism is itself a weakness — a geometry gate whose verdict depends on
+which chairs the roster lands in will pass or fail by luck. Reproducing it needs
+a fixed-seed entry point the app does not currently expose.
+
 - [ ] Every Part I acceptance criterion is verified in the **packaged** build, not only the dev renderer. **Open, with the gap now stated rather than implied.** Nine CDP audits run against the packaged EXE and between them cover: the renderer booting over the custom protocol (`render-smoke`), completing a full event in all three modes through ordinary controls (`mode-completion`), zero network egress across a representative play walk-through (`network`), safe mode and its continue path (`safe-mode`), corrupt-save recovery (`save-recovery-smoke`), graceful asset/font/audio-device fault handling (`asset-fault-smoke`), the lifecycle bridge's absence from the normal preload (`lifecycle-bridge-security`), input across mouse/keyboard/gamepad plus table geometry at five viewports and every interface scale (`input-smoke`), and flash luminance (`flash-capture`). **Not covered in the packaged build:** the Part I criteria that are asserted only against source or in jsdom — motion tiers, locale/RTL/pseudo-locale, hand review, the arrival fly-through's depth behaviour, and career travel. Closing this needs those surfaces added to the packaged suite, which is where the remaining work is.
 - [ ] Verification covers normal and heavy CPU load, all supported resolutions, all UI scales, reduced motion, window blur, minimize, suspend/resume, and screen lock where possible. **Open.** Resolutions and interface scales are covered by the packaged input smoke; the rest — CPU load, blur, minimize, suspend/resume, screen lock — is not exercised in a packaged run today. Suspend/resume and screen lock in particular need the machine states listed under E26-001.
 - [x] Any CDP transport timeout is recorded separately from a genuine product failure. **This was true in two of the nine CDP audits and false in the other seven**, so the same infrastructure hiccup was inconclusive in `audit-packaged-input-smoke` and `audit-packaged-flash-capture` and a product regression everywhere else. The inline logic is now `scripts/lib/cdp-outcome.mjs`, used by all nine. Exit codes are the contract — **0 passed, 1 product failure, 2 inconclusive** — so a caller can tell the two apart without parsing prose. The match is deliberately narrow (the CDP client's own command deadline, the DevTools-endpoint wait, and a socket that closed before the session opened): a broad match on "timeout" would swallow a scene stuck on its loading fallback or a hero decision that never arrives, which is precisely what these audits exist to catch. `scripts/lib/cdp-outcome.test.ts` pins both directions and asserts no CDP audit is left unclassified.

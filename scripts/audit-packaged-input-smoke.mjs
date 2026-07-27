@@ -177,7 +177,14 @@ try {
     undefined,
     "fast-forward controller action presentation",
   );
-  await expectSelector(client, ".action-dock", "table advances after Gamepad action", 8_000);
+  // 20 s, matching the wait for the *opening* hero decision above. After the
+  // controller action the queue has to carry a full orbit of opponents, and
+  // possibly a street change, before the hero acts again -- no shorter than
+  // the opening sequence, so an 8 s budget here was never consistent with the
+  // 20 s one there. Post-E11-002 hands are 24-46 hands long rather than 8-9,
+  // with correspondingly more milestones per orbit. Skipping only accelerates
+  // the queue; it advances on its own delays regardless, so waiting is enough.
+  await expectHeroDecisionDrainingPresentation(client, "table advances after Gamepad action");
 
   await expectMinimizePausesAndRestores(client);
   await expectMouseClick(client, ".action-context button", undefined, "hand-history mouse input");
@@ -237,7 +244,7 @@ try {
   // menu -- so accepting them here would let the script march on assuming
   // table context that no longer exists. Widen only the timeout; the very
   // next hero decision must still be a real `.action-dock`.
-  await expectSelector(client, ".action-dock", "table advances after fast-forward", 8_000);
+  await expectHeroDecisionDrainingPresentation(client, "table advances after fast-forward");
 
   // Keyboard uses the same running package: Escape opens the pause menu, then
   // mouse toggles audio settings inside its accessible labelled control.
@@ -323,7 +330,99 @@ async function expectSelector(cdp, selector, label, timeout = 8_000) {
     timeout,
   );
   record(label, found);
-  if (!found) throw new Error(`${label}: ${selector} was not present.`);
+  if (!found) {
+    // "X was not present" is true of a crashed renderer, a finished event, and
+    // a hand still mid-presentation alike, and those have nothing in common.
+    // Say which screen was actually up.
+    const state = await describeScreen(cdp);
+    throw new Error(`${label}: ${selector} was not present. On screen: ${state}`);
+  }
+}
+
+/**
+ * Waits for the hero's next decision, draining the presentation queue as it goes.
+ *
+ * Clicking skip once and then waiting a fixed period was enough when a hand was
+ * a handful of milestones. It is not now: after the E11-002 policy correction a
+ * hand runs a full orbit of five opponents and often several streets, so the
+ * queue keeps producing events long after that single skip. The observed
+ * failure was unambiguous -- table present, ceremony absent, action dock
+ * absent, and the skip button *still there* -- so the driver was waiting on a
+ * queue it had stopped advancing.
+ *
+ * Skipping only accelerates the queue; it advances on its own delays anyway.
+ * This just stops the driver from falling behind it.
+ */
+async function expectHeroDecisionDrainingPresentation(cdp, label, timeout = 30_000) {
+  const deadline = Date.now() + timeout;
+  const skipSelector =
+    'button[aria-label="Skip opponent presentation and continue the hand"]';
+  while (Date.now() < deadline) {
+    const state = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const dock = document.querySelector('.action-dock') !== null;
+        const skip = document.querySelector(${JSON.stringify(skipSelector)});
+        if (!dock && skip instanceof HTMLButtonElement && !skip.disabled) {
+          skip.click();
+          return 'skipped';
+        }
+        if (dock) return 'dock';
+        if (document.querySelector('.ceremony-board')) return 'ceremony';
+        return 'waiting';
+      })()`,
+      returnByValue: true,
+    });
+    const value = state.result?.value;
+    if (value === "dock") {
+      record(label, true);
+      return;
+    }
+    if (value === "ceremony") {
+      // The event ended before the hero was asked again. That is a legitimate
+      // outcome of playing, not a product failure, but it means this
+      // interaction assertion could not be made -- say so rather than pass.
+      record(label, false);
+      throw new Error(
+        `${label}: the event reached its ceremony before the hero was asked to act again.`,
+      );
+    }
+    await delay(40);
+  }
+  record(label, false);
+  const screen = await describeScreen(cdp);
+  throw new Error(
+    `${label}: no hero decision within ${timeout} ms. On screen: ${screen}`,
+  );
+}
+
+/** A one-line description of which screen the renderer is currently showing. */
+async function describeScreen(cdp) {
+  try {
+    const result = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const has = (selector) => document.querySelector(selector) !== null;
+        const marks = {
+          ceremony: has('.ceremony-board'),
+          table: has('.poker-table'),
+          arrival: has('.room-progress-overlay'),
+          flythrough: has('.room-flight'),
+          actionDock: has('.action-dock'),
+          skipButton: has('button[aria-label="Skip opponent presentation and continue the hand"]'),
+          pause: has('.pause-overlay'),
+          loading: has('.scene-loading'),
+        };
+        const place = document.querySelector('.ceremony-board__place');
+        return JSON.stringify({
+          ...marks,
+          ...(place ? { placement: (place.textContent || '').trim() } : {}),
+        });
+      })()`,
+      returnByValue: true,
+    });
+    return String(result.result?.value ?? "unavailable");
+  } catch {
+    return "unavailable (the renderer did not answer)";
+  }
 }
 
 async function expectAnySelector(cdp, selectors, label, timeout = 8_000) {
@@ -468,6 +567,10 @@ async function inspectTableInformationLanes(cdp) {
       const intersects = (left, right) =>
         left.left < right.right && left.right > right.left &&
         left.top < right.bottom && left.bottom > right.top;
+      const roundRect = (rect) => ({
+        x: Math.round(rect.x), y: Math.round(rect.y),
+        w: Math.round(rect.width), h: Math.round(rect.height),
+      });
       const readable = (element) => {
         if (!(element instanceof HTMLElement)) return false;
         const rect = element.getBoundingClientRect();
@@ -484,6 +587,18 @@ async function inspectTableInformationLanes(cdp) {
           const bet = seat.querySelector('.seat-bet');
           return {
             player: seat.getAttribute('aria-label') || 'unknown player',
+            // Which seat position this is. The lanes are laid out per position,
+            // so a failure that names only the player says nothing about where
+            // to look -- and the roster is reseeded each run, so the same
+            // player never lands in the same chair twice.
+            seatClass: [...seat.classList]
+              .filter((name) => name.startsWith('player-seat--'))
+              .join(' '),
+            rects: {
+              label: label ? roundRect(label.getBoundingClientRect()) : null,
+              bet: bet ? roundRect(bet.getBoundingClientRect()) : null,
+              cards: cards.map((card) => roundRect(card.getBoundingClientRect())),
+            },
           cardsOverlap: cards.length === 2 && intersects(
               cards[0].getBoundingClientRect(), cards[1].getBoundingClientRect(),
             ),
@@ -515,15 +630,41 @@ async function inspectTableInformationLanes(cdp) {
         const element = document.querySelector(selector);
         if (!element) return { present: false, ok: true };
         const rect = element.getBoundingClientRect();
+        // Each clause is reported separately. "present, not ok" on its own
+        // says nothing about whether the surface was too small, off-screen,
+        // invisible, or simply sitting on top of something -- and those have
+        // completely different fixes.
+        const isReadable = readable(element);
+        const overCards = Boolean(heroCardsRect && intersects(rect, heroCardsRect));
+        const overActions = Boolean(actionDockRect && intersects(rect, actionDockRect));
+        const ok = isReadable && !overCards && !overActions;
         return {
           present: true,
-          ok: readable(element) &&
-            !(heroCardsRect && intersects(rect, heroCardsRect)) &&
-            !(actionDockRect && intersects(rect, actionDockRect)),
+          ok,
+          ...(ok
+            ? {}
+            : {
+                why: { readable: isReadable, overCards, overActions },
+                rect: {
+                  x: Math.round(rect.x), y: Math.round(rect.y),
+                  w: Math.round(rect.width), h: Math.round(rect.height),
+                },
+                opacity: getComputedStyle(element).opacity,
+              }),
         };
       };
       const surfaces = {
-        actingIndicator: conditional('.thinking-ring'),
+        // Scoped to opponents. The hero seat is visibility:hidden by design --
+        // the hero's presence is the stack HUD and the action dock, not an
+        // avatar -- so an unscoped .thinking-ring selector finds the hero's
+        // ring inside that hidden seat and reports the surface broken. This
+        // smoke waits for a hero decision before measuring, so that was not an
+        // edge case: it failed at all 20 viewport/scale combinations, every
+        // run. The check is about an indicator a player can actually see,
+        // which is an opponent's.
+        actingIndicator: conditional(
+          '.player-seat:not(.player-seat--hero) .thinking-ring',
+        ),
         sidePots: conditional('.side-pot-strip'),
         equityReadout: conditional('.all-in-equity-strip'),
         showdownHighlight: conditional('.showdown-card.is-winning'),

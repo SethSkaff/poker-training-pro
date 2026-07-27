@@ -33,7 +33,20 @@ const reportPath = resolve(projectRoot, "work", "packaged-mode-completion.json")
 // equity work. This is a completion smoke, not a frame-time benchmark, so the
 // ceiling must cover a progressing legal event without silently changing its
 // visible action policy.
-const perModeTimeoutMs = 105_000;
+//
+// Raised from 105 s on 2026-07-26. The old value was set on 2026-07-24, one day
+// before the E11-002 policy correction, and was therefore calibrated against an
+// AI that collapsed a six-handed field in 8-9 hands. Corrected, the same events
+// run 24-29 hands (Normal) and 40-46 (Rational) -- see E13's pacing table -- so
+// a full event no longer fits. The failing run reached the ceremony's doorstep:
+// 25 hero actions and 2038 presentation skips, with the whole budget spent
+// skipping. This is the same class of stale threshold as the bot league's
+// `selectedBestRate <= 0.98` bound, which was replaced for the same reason.
+//
+// The hero policy here is check/call-else-fold, so the run length is bimodal:
+// bust early and the ceremony arrives in seconds, survive and the entire event
+// must play out. The ceiling covers the surviving case with margin.
+const perModeTimeoutMs = 300_000;
 
 if (process.platform !== "win32") throw new Error("Packaged mode completion smoke requires Windows.");
 if (!existsSync(appPath)) throw new Error(`Packaged executable not found: ${appPath}`);
@@ -179,12 +192,18 @@ async function driveToCeremony(cdp, child, deadline) {
         .filter((button) => button instanceof HTMLButtonElement && !button.disabled);
       const preferred = choices.find((button) => button.classList.contains('action-button--call')) ||
         choices.find((button) => button.classList.contains('action-button--fold'));
+      const canSkip = skip instanceof HTMLButtonElement && !skip.disabled;
+      // Skipping is driven from here so one round trip both observes and
+      // advances the presentation. The ceremony is checked first, so a run
+      // that has already finished is never charged an extra skip.
+      const finished = ceremony instanceof HTMLElement;
+      if (!finished && canSkip) skip.click();
       return {
-        ceremony: ceremony instanceof HTMLElement,
-        placement: ceremony instanceof HTMLElement
+        ceremony: finished,
+        placement: finished
           ? (ceremony.querySelector('.ceremony-board__place')?.textContent || '').trim()
           : undefined,
-        skip: skip instanceof HTMLButtonElement && !skip.disabled,
+        skip: !finished && canSkip,
         action: preferred instanceof HTMLButtonElement ? preferred.className : undefined,
       };
     })()`);
@@ -193,7 +212,10 @@ async function driveToCeremony(cdp, child, deadline) {
       return { actions, skips, placement: state.placement };
     }
     if (state?.skip) {
-      await evaluate(cdp, `document.querySelector('button[aria-label="Skip opponent presentation and continue the hand"]')?.click()`);
+      // The click happens inside the state query above, not in a second
+      // round trip. A full Rational event now emits a couple of thousand
+      // presentation milestones, and at two CDP round trips each the driver
+      // spent its entire budget skipping rather than playing.
       skips += 1;
       await delay(35);
       continue;
