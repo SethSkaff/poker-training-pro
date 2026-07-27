@@ -171,9 +171,16 @@ try {
   await client.send("Page.bringToFront");
   await delay(200);
   await pressMockGamepadAUntilRouted(client);
+  /*
+    The skip control moved out of the bottom dock to a prominent button over the
+    table (E27-015), and its accessible name was reworded to say what is *not*
+    skipped as well as what is. Selecting on the class is stable across further
+    copy changes; the exact accessible name is asserted by the unit tests that
+    own that wording.
+  */
   await expectMouseClick(
     client,
-    'button[aria-label="Skip opponent presentation and continue the hand"]',
+    "button.skip-hand",
     undefined,
     "fast-forward controller action presentation",
   );
@@ -225,12 +232,12 @@ try {
   await expectMouseClick(client, ".bet-composer .primary-button", undefined, "confirm raise mouse input");
   await expectSelector(
     client,
-    'button[aria-label="Skip opponent presentation and continue the hand"]',
+    'button.skip-hand',
     "fast-forward control after action",
   );
   await expectMouseClick(
     client,
-    'button[aria-label="Skip opponent presentation and continue the hand"]',
+    'button.skip-hand',
     undefined,
     "fast-forward mouse input",
   );
@@ -356,7 +363,7 @@ async function expectSelector(cdp, selector, label, timeout = 8_000) {
 async function expectHeroDecisionDrainingPresentation(cdp, label, timeout = 30_000) {
   const deadline = Date.now() + timeout;
   const skipSelector =
-    'button[aria-label="Skip opponent presentation and continue the hand"]';
+    'button.skip-hand';
   while (Date.now() < deadline) {
     const state = await cdp.send("Runtime.evaluate", {
       expression: `(() => {
@@ -407,7 +414,7 @@ async function describeScreen(cdp) {
           arrival: has('.room-progress-overlay'),
           flythrough: has('.room-flight'),
           actionDock: has('.action-dock'),
-          skipButton: has('button[aria-label="Skip opponent presentation and continue the hand"]'),
+          skipButton: has('button.skip-hand'),
           pause: has('.pause-overlay'),
           loading: has('.scene-loading'),
         };
@@ -797,7 +804,7 @@ async function advanceOneDecisionWithoutRaising(cdp) {
   await delay(200);
 
   const fastForwardSelector =
-    'button[aria-label="Skip opponent presentation and continue the hand"]';
+    'button.skip-hand';
   const fastForwardAppeared = await waitForBoolean(
     cdp,
     `document.querySelector(${JSON.stringify(fastForwardSelector)}) !== null`,

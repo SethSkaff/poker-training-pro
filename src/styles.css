@@ -3407,6 +3407,45 @@ input[type="range"]::-webkit-slider-thumb {
   transform: translateX(-50%);
 }
 
+/*
+  A seat's resting pile, drawn as real stacked chips whose height tracks the
+  stack in big blinds (E27-009). Seats previously carried one fixed three-chip
+  glyph, so the only way to learn a player was short was to read the number and
+  divide by the blind.
+
+  Anchored to the seat's lower edge and stacking upward, so piles at different
+  seats are comparable at a glance and a short stack is visibly stubby before
+  any number is read.
+*/
+.seat-chip-stack {
+  position: absolute;
+  z-index: 3;
+  bottom: 4px;
+  left: -14px;
+  display: flex;
+  width: 17px;
+  flex-direction: column-reverse;
+  align-items: center;
+  pointer-events: none;
+}
+
+.seat-chip-stack i {
+  display: block;
+  width: 17px;
+  height: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  margin-top: -1px;
+  background: linear-gradient(180deg, #6f9ad8, #3a5f96);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+}
+
+/* Under ten big blinds: the pile turns amber as well as short, so the state is
+   not carried by height alone. */
+.seat-chip-stack--short i {
+  background: linear-gradient(180deg, #ffcf6b, #d68a1f);
+}
+
 .chip-stack {
   position: relative;
   display: inline-block;

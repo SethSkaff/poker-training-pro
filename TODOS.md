@@ -486,11 +486,23 @@ is represented with chips. E05-001 covers bet movement and is complete for the
 motion contract, but nothing covers a **resting** stack at each seat.
 
 **Acceptance criteria**
-- [ ] Visible chip stacks for the hero, every opponent, each committed wager, the
+- [x] Visible chip stacks for the hero, every opponent, each committed wager, the
   main pot, and each side pot, with numerals accompanying rather than replacing
-  them.
-- [ ] Stack height reads roughly proportionally, so short stacks are visible
-  before the number is read.
+  them. Seats now render a real pile (`SeatChipStack`); committed wagers already
+  had `.seat-bet` chips; main and side pots became grouped piles under E27-002.
+- [x] Stack height reads roughly proportionally, so short stacks are visible
+  before the number is read. **Measured in big blinds, not chips**, because that
+  is what "short" means at a tournament table: 15,000 is deep at 25/50 and
+  desperate at 1,000/2,000, and a pile sized by raw chips would look identical
+  in both. Piles therefore shrink as the level climbs even when nobody has lost
+  a chip. Under ten big blinds the pile also turns amber, so the state is not
+  carried by height alone.
+
+**Implemented 2026-07-27.** Files: `src/lib/chipStackDepth.ts` (new),
+`src/components/PokerTable.tsx`, `src/styles.css`. Tests: 12 new. Verified in the
+packaged build; the packaged input smoke's 54 geometry/input checks still pass at
+every viewport and interface scale, so the new piles do not collide with seat
+labels, bets, or cards.
 
 ### E27-010 — Routine play is narrated instead of shown
 

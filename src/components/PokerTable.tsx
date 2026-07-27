@@ -44,6 +44,7 @@ import {
 } from "../lib/format";
 import { gameAudio, type SoundName } from "../lib/audio";
 import { describeCallAction } from "../lib/actionLabels";
+import { isShortStack, seatChipStackCount } from "../lib/chipStackDepth";
 import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
 /*
   Lazy so three.js stays out of the initial bundle entirely, which is what keeps
@@ -592,6 +593,38 @@ function ChipStack({ bet = false }: { bet?: boolean }) {
   );
 }
 
+/**
+ * A seat's resting pile, as tall as the stack is deep in big blinds (E27-009).
+ *
+ * The fixed three-chip glyph above says only "chips exist here". This says how
+ * many, in the unit that decides how the hand is played -- and it shrinks as
+ * the level climbs even when nobody has lost a chip, which is the pressure a
+ * tournament is supposed to apply.
+ */
+function SeatChipStack({
+  stack,
+  bigBlind,
+}: {
+  stack: number;
+  bigBlind: number;
+}) {
+  const chips = seatChipStackCount(stack, bigBlind);
+  if (chips === 0) return null;
+  return (
+    <span
+      className={`seat-chip-stack ${
+        isShortStack(stack, bigBlind) ? "seat-chip-stack--short" : ""
+      }`}
+      data-chips={chips}
+      aria-hidden="true"
+    >
+      {Array.from({ length: chips }).map((_, index) => (
+        <i key={index} />
+      ))}
+    </span>
+  );
+}
+
 /** Stable visual identity, intentionally unrelated to policy/personality. */
 export function avatarVariantForPlayerId(playerId: string): number {
   let hash = 2166136261;
@@ -613,6 +646,8 @@ export function potChipStackCount(pot: number): number {
 }
 
 interface PlayerSeatProps {
+  /** Current big blind, so a seat's pile can be drawn in blinds (E27-009). */
+  bigBlind: number;
   dealer: boolean;
   isHero: boolean;
   player: SeatPlayer;
@@ -680,6 +715,7 @@ export function playerSeatAriaLabel({
 }
 
 function PlayerSeat({
+  bigBlind,
   dealer,
   isHero,
   player,
@@ -810,6 +846,12 @@ function PlayerSeat({
           )}
         </div>
       </div>
+      {/*
+        The seat's own pile, sized in big blinds (E27-009). It sits with the
+        name and number rather than replacing them: chips answer "how deep is
+        this player" at a glance, the numeral answers "exactly how much".
+      */}
+      <SeatChipStack stack={player.stack} bigBlind={bigBlind} />
       <div className="seat-label" aria-hidden="true">
         <strong>{isHero ? formatMessage("table.seat.you") : player.name}</strong>
         <span>
@@ -3358,6 +3400,7 @@ export function PokerTable({
                   key={player.id}
                   player={player}
                   position={seatPositions[index]}
+                  bigBlind={scenario.blinds[1]}
                   isHero={player.seat === scenario.heroSeat}
                   dealer={player.seat === scenario.buttonSeat}
                   wonPot={
