@@ -100,6 +100,13 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
 // The facts a Training decision cannot be judged without (E27-013). Short
   // labels beside numbers, not prose: the screen states the position, the
   // feedback explains it after the decision.
+// The restrained tournament HUD (E27-008): global state only, corner
+  // placement, short labels beside numbers. No paragraphs.
+  "table.hud.blinds": "Blinds",
+  "table.hud.ante": "Ante",
+  "table.hud.level": "Level",
+  "table.hud.nextLevel": "Next",
+  "table.hud.players": "Left",
   "table.context.stack": "Stack",
   "table.context.effective": "Effective",
   "table.context.blinds": "Blinds",

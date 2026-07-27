@@ -1772,6 +1772,18 @@ export default function App() {
           playersRemaining: runner.session.tournament.players.filter(
             (player) => player.status === "active",
           ).length,
+          /*
+            The blind schedule, made inspectable (E27-004 / E27-008). The clock
+            was corrected but never shown, so a player had no way to see when
+            the level would turn -- or to notice if it turned early.
+          */
+          blindLevel: runner.session.tournament.levelIndex + 1,
+          nextLevelInMs: Math.max(
+            0,
+            (runner.session.tournament.structure.levels[
+              runner.session.tournament.levelIndex
+            ]?.durationMs ?? 0) - runner.session.tournament.levelElapsedMs,
+          ),
           elapsedMs:
             runner.kind === "timed" && runner.timed
               ? Math.max(0, Date.now() - runner.timed.startedAtMs)

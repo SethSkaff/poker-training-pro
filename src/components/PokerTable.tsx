@@ -40,6 +40,7 @@ import {
   cardAriaLabel,
   cardLabel,
   formatChips,
+  formatClock,
   formatFixedDecimal,
 } from "../lib/format";
 import { gameAudio, type SoundName } from "../lib/audio";
@@ -164,6 +165,10 @@ interface TournamentTableControls {
   handNumber: number;
   fieldSize: number;
   playersRemaining: number;
+  /** Current blind level, 1-based, for the tournament HUD (E27-004/E27-008). */
+  blindLevel?: number;
+  /** Milliseconds until the blinds next rise, so the schedule is inspectable. */
+  nextLevelInMs?: number;
   elapsedMs: number;
   durationMs?: number;
   actionHistory: string[];
@@ -857,9 +862,26 @@ function PlayerSeat({
         <strong>{isHero ? formatMessage("table.seat.you") : player.name}</strong>
         <span>
           <ChipStack /> {formatChips(player.stack)}
+          {/*
+            Depth in big blinds, beside the chips it describes (E27-008). A
+            tournament decision is made in blinds, and a raw chip count cannot
+            be compared against a rising level without doing the division.
+          */}
+          {bigBlind > 0 ? (
+            <em className="seat-label__depth">
+              {formatMessage("table.context.bigBlinds", {
+                count: Number((player.stack / bigBlind).toFixed(1)),
+              })}
+            </em>
+          ) : null}
         </span>
       </div>
-      {!isHero && player.bet > 0 && (
+      {/*
+        The hero's committed wager sits at the hero's seat, exactly as every
+        opponent's does (E27-008). It used to be excluded here and duplicated in
+        a floating panel instead.
+      */}
+      {player.bet > 0 && (
         <div className="seat-bet" aria-hidden="true">
           <ChipStack bet />
           <span>{formatMessage("table.seat.committed")}</span>
@@ -2948,13 +2970,18 @@ export function PokerTable({
           aria-label={formatMessage("table.stageAriaLabel")}
         >
           {/*
-            The hero's physical cards occupy the near-camera table position.
-            Keep the stack in a fixed HUD lane so it never competes with those
-            cards or the action dock, while remaining available throughout
-            every tournament presentation state.
+            The hero's state lives at the hero's seat, not in a floating panel
+            (E27-008). A panel titled "Your stack" in the top-left corner is a
+            dashboard widget; a poker player reads their stack from the chips in
+            front of them. Stack, chips, committed wager, position marker and
+            big-blind depth are all on the seat now, with an accessible summary
+            that carries the same facts in one utterance.
+
+            What remains up here is the tournament HUD below: global state only,
+            in a corner, no paragraphs.
           */}
           <aside
-            className="hero-stack-hud"
+            className="tournament-hud"
             role="status"
             aria-live="polite"
             aria-atomic="true"
@@ -2965,21 +2992,34 @@ export function PokerTable({
               position: heroPositionLabel || undefined,
             })}
           >
-            <span>{formatMessage("table.heroStack.label")}</span>
-            <strong>
-              <ChipStack /> {formatChips(heroStack)}
-            </strong>
-            <span className="hero-stack-hud__commitment">
-              {formatMessage("table.heroStack.commitment", {
-                street: formatChips(heroStreetCommitted),
-                total: formatChips(heroTotalCommitted),
-              })}
+            <span>
+              <b>{formatMessage("table.hud.blinds")}</b>
+              {formatChips(scenario.blinds[0])}/{formatChips(scenario.blinds[1])}
             </span>
-            {heroPositionLabel && (
-              <span className="hero-stack-hud__position">
-                {formatMessage("table.heroStack.position", { position: heroPositionLabel })}
+            {scenario.ante ? (
+              <span>
+                <b>{formatMessage("table.hud.ante")}</b>
+                {formatChips(scenario.ante)}
               </span>
-            )}
+            ) : null}
+            {tournament?.blindLevel ? (
+              <span>
+                <b>{formatMessage("table.hud.level")}</b>
+                {tournament.blindLevel}
+              </span>
+            ) : null}
+            {tournament?.nextLevelInMs !== undefined ? (
+              <span>
+                <b>{formatMessage("table.hud.nextLevel")}</b>
+                {/* `formatClock` takes milliseconds; dividing first turned four
+                    minutes into 240 ms and printed 0:00. */}
+                {formatClock(Math.max(0, tournament.nextLevelInMs))}
+              </span>
+            ) : null}
+            <span>
+              <b>{formatMessage("table.hud.players")}</b>
+              {tournament?.playersRemaining ?? scenario.players.length}
+            </span>
           </aside>
           {/*
             The situation, stated (E27-013). The reported ace-five all-in could

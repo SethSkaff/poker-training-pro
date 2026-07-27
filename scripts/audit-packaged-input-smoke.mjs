@@ -618,7 +618,11 @@ async function inspectTableInformationLanes(cdp) {
             positionReadable: !seat.querySelector('.seat-position-marker') || readable(seat.querySelector('.seat-position-marker')),
           };
         });
-      const heroHud = document.querySelector('.hero-stack-hud');
+      // The hero's stack moved to the hero's seat and the corner panel became
+      // a global tournament readout (E27-008). The geometry contract is
+      // unchanged in substance: whatever occupies that corner must stay
+      // readable and must not cover the hero's cards or the action dock.
+      const heroHud = document.querySelector('.tournament-hud');
       const heroCards = document.querySelector('.hero-hole-cards');
       const actionDock = document.querySelector('.action-dock');
       const heroHudRect = heroHud?.getBoundingClientRect();

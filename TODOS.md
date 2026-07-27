@@ -469,15 +469,39 @@ E02-001 is **reopened with tightened criteria**, not deleted: the requirement wa
 right, the realisation was not.
 
 **Acceptance criteria**
-- [ ] Hero stack, committed wager, and position read from the hero's seat: chips,
-  cards, and a marker, with numerals attached to those objects.
-- [ ] Amount required to call belongs in the action area, next to the control
-  that acts on it.
-- [ ] Big-blind depth shown where it aids a tournament decision.
-- [ ] No panel titled "Your stack".
-- [ ] A restrained tournament HUD may keep global state only: blinds, ante, time
-  or hands to the next level, players remaining, event, and qualification state
-  when relevant. Corner placement. No paragraphs.
+- [x] Hero stack, committed wager, and position read from the hero's seat.
+  The stack and its chip pile were already there; the committed wager was
+  excluded from the hero's seat and duplicated in the panel instead, and now
+  renders at the seat exactly as every opponent's does. Position is the seat's
+  own marker.
+- [x] Amount required to call belongs in the action area — already satisfied by
+  the call control itself, which names the amount it commits (E27-005).
+- [x] Big-blind depth shown where it aids a tournament decision. Every seat now
+  reads e.g. `15,000 300 bb`, so depth is comparable across seats and against a
+  rising level without doing the division.
+- [x] No panel titled "Your stack". Removed.
+- [x] A restrained tournament HUD keeps global state only, in the corner, with
+  short labels beside numbers and no paragraphs. Verified in the packaged build:
+  `BLINDS 25/50 · ANTE 50 · LEVEL 1 · NEXT 4:00 · LEFT 6`.
+
+**Implemented 2026-07-27.** Files: `PokerTable.tsx`, `App.tsx`, `styles.css`,
+`en-US.messages.gameplay.ts`, plus the two gates that pinned the old panel
+(`PokerTable.heroStack.test.ts`, `audit-packaged-input-smoke.mjs`) and the
+committed-wager test. Both packaged geometry gates pass, so the seat now
+carrying stack, depth, chips, and wager does not collide with cards, labels, or
+the action dock at any viewport or interface scale.
+
+**This also closes E27-004's deferred criterion**: the blind level and the time
+to the next increase are now visible, so the schedule is inspectable rather than
+inferred. The clock was corrected earlier but never shown.
+
+**Two defects found by looking at the packaged screenshot and fixed:** the
+next-level countdown printed `0:00` because `formatClock` takes milliseconds and
+the value was divided by 1000 first; and the Skip control, centred at the top of
+the table, sat squarely over the top-centre opponent's avatar -- prominent, but
+covering the player whose action was being skipped. Neither was caught by a
+gate: the geometry audits check that *controls* are not covered, not that a
+control covers a seat.
 
 ### E27-009 — Seats have no chips
 

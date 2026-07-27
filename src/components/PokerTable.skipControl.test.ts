@@ -48,7 +48,9 @@ describe("the skip control is findable and distinct from speed", () => {
   it("is a large, prominent target rather than a quiet secondary button", () => {
     expect(styles).toMatch(/\.skip-hand \{[^}]*min-height: 48px/);
     // Placed toward the top of the table, where the eye already is.
-    expect(styles).toMatch(/\.skip-hand \{[^}]*top: 18px/);
+    // Upper-centre band of the table, not the bottom dock, and clear of the
+    // top-centre seat it was originally drawn over.
+    expect(styles).toMatch(/\.skip-hand \{[^}]*top: 30%/);
     expect(styles).toMatch(/\.skip-hand \{[^}]*left: 50%/);
   });
 
