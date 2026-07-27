@@ -4464,6 +4464,67 @@ input[type="range"]::-webkit-slider-thumb {
   `z-index: 45` puts it above the table and the 3D canvas but below the pause
   scrim, so a paused table cannot be skipped through the overlay.
 */
+/*
+  The Training situation strip (E27-013): the facts a decision cannot be judged
+  without, as short labels beside numbers. Deliberately a single quiet row -- it
+  states the position and stops. The explanation of *why* a line is right stays
+  in the post-decision feedback, where the player has already committed.
+*/
+.training-context {
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  max-width: min(94%, 940px);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 7px 14px;
+  background: rgba(6, 16, 13, 0.82);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transform: translateX(-50%);
+}
+
+.training-context > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: #fffaf0;
+  white-space: nowrap;
+}
+
+.training-context b {
+  color: rgba(255, 249, 236, 0.52);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.training-context em {
+  color: #5de4ce;
+  font-size: 11px;
+  font-style: normal;
+}
+
+/* Under about twelve big blinds the shove stops being exotic and becomes the
+   default question, so the depth is named rather than left to be inferred. */
+.training-context__flag {
+  border: 1px solid rgba(255, 209, 63, 0.5);
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: #ffd13f;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .skip-hand {
   position: absolute;
   z-index: 45;

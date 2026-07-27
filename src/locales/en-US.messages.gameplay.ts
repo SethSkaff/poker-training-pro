@@ -97,6 +97,19 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "dashboard.tour.qualifiedStatus": "{finishPlace} of {fieldSize} · Qualified",
   "dashboard.tour.retryStatus": "{finishPlace} of {fieldSize} · Retry",
   "dashboard.tour.available": "Available",
+// The facts a Training decision cannot be judged without (E27-013). Short
+  // labels beside numbers, not prose: the screen states the position, the
+  // feedback explains it after the decision.
+  "table.context.stack": "Stack",
+  "table.context.effective": "Effective",
+  "table.context.blinds": "Blinds",
+  "table.context.ante": "Ante",
+  "table.context.players": "Players",
+  "table.context.pot": "Pot",
+  "table.context.toCall": "To call",
+  "table.context.bigBlinds": "{count} bb",
+  "table.context.pushFold": "Push/fold depth",
+  "table.context.ariaLabel": "Situation: {stack} chips, {bigBlinds} big blinds, blinds {blinds}, pot {pot}, {toCall} to call, {players} players.",
   "table.feedback.potOdds": "Pot odds",
   "table.feedback.estimatedEquity": "Your equity (vs a random hand)",
   "table.feedback.whyBest":

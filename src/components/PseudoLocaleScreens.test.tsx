@@ -51,6 +51,7 @@ import {
   type DurablePersistence,
 } from "../lib/durablePersistence";
 import { formatChips, formatFixedDecimal } from "../lib/format";
+import { describeTrainingContext } from "../lib/trainingScenarioContext";
 import { formatMessage } from "../lib/localeMessages";
 import { defaultProgress, defaultSettings } from "../lib/storage";
 import type { TournamentSessionResult } from "../modes/tournamentSession";
@@ -449,15 +450,22 @@ describe("pseudo-locale completeness sweep", () => {
         onExit={() => undefined}
       />,
     );
-    // "Scenario {number} of {total}" -> the interpolated numbers must
-    // survive pseudo-wrapping intact (digits are never transliterated). The
-    // imported `formatMessage` here resolves through the same pseudo-locale
-    // mock the rendered screen used, so this is the exact expected string,
-    // not a guessed transliteration.
+    /*
+      The scenario counter was removed from the player interface (E27-013): it
+      framed Training as a twelve-question pack with an end. Training now
+      reports street and field like every other mode, so that is the
+      interpolated string checked here. The point of the assertion is unchanged
+      -- interpolated values must survive pseudo-wrapping intact, and digits are
+      never transliterated -- and `formatMessage` resolves through the same
+      pseudo-locale mock the rendered screen used, so this is the exact expected
+      string rather than a guessed transliteration.
+    */
+    expect(markup).not.toContain("scenarioProgress");
+    const street = `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`;
     expect(markup).toContain(
-      formatMessage("table.status.scenarioProgress", {
-        number: 1,
-        total: trainingScenarios.length,
+      formatMessage("table.status.streetPlayersRemain", {
+        street,
+        playersRemaining: describeTrainingContext(scenario).players,
       }),
     );
     // The decision clock's visible "{seconds}s" label keeps its digits.

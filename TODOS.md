@@ -599,18 +599,50 @@ the screen. E17-001 already requires showing the mathematics and is complete for
 *decision feedback*; what is missing is the **scenario context** needed to check
 the recommendation at all.
 
+**The A5s audit, resolved 2026-07-27.** The scenario is
+`preflop-button-shove-fold-equity`: A♦5♦, blinds 500/1,000, **ante 125**, hero
+11,000 behind — **11.0 big blinds** — four players, 1,000 to call, and
+`actionEvs` of `fold 0, raise 0.18, all-in 0.62`. An eleven-big-blind button
+shove with a suited ace is textbook push/fold, so the verdict is **correct but
+under-explained**: not a wrong evaluator and not a stale recommendation, but a
+screen that showed none of the numbers the judgement rests on. The stack was
+shown only in chips, and eleven thousand chips means nothing without the blind
+beside it.
+
+One further finding: this scenario has **no EV for `call`**, so the player could
+not have called even to test the recommendation. That is one of the nine gaps
+recorded under E27-012.
+
 **Acceptance criteria**
-- [ ] Every scenario shows hero stack in chips and in big blinds, blinds, ante,
-  position, player count, prior action, effective stack, pot, and amount to call.
+- [x] Every scenario shows hero stack in chips and in big blinds, blinds, ante,
+  player count, effective stack, pot, and amount to call. A compact strip states
+  them as short labels beside numbers, never prose. Verified in the packaged
+  Training Lab: `Stack 7,800 / 39 bb · Effective 2,000 / 10 bb · Blinds 100/200 ·
+  Players 2 · Pot 6,000 · To call 2,000`, with a matching accessible label.
+  **The effective stack is the number this buys**: in that spot the hero holds
+  39 bb but only 10 bb is at risk, because the opponent is all-in — and reading
+  the raw stack gets the decision exactly backwards. *Position* and *prior
+  action* are still shown only by the seat marker and the prompt text; naming
+  them explicitly in the strip is outstanding.
+- [x] Effective stack accounts for an all-in opponent's committed chips, not
+  just what is behind them. A zero-stack all-in opponent is not an irrelevance;
+  they hold a live claim on everything they pushed in, and reading `stack` alone
+  collapsed the effective stack to nothing in exactly the spots where the all-in
+  is the whole question.
 - [ ] An all-in recommendation names its reason: push/fold range, position,
-  effective stack, dead money, fold equity, or tournament pressure.
-- [ ] Audit the specific A5s scenario and record which of these it was: correct
-  but under-explained, wrong stack/blind context, wrong evaluator, incomplete
-  display, or a recommendation stale against the visible state.
-- [ ] `table.status.scenarioProgress` ("Scenario {number} of {total}") and the
-  authored scenario titles leave the player-facing UI. The validated bank stays
-  as regression fixtures and fallback content — see E15-002, which already owns
-  generation and remains blocked on the iOS parity decision recorded there.
+  effective stack, dead money, fold equity, or tournament pressure. **Partly
+  done:** the strip flags *push/fold depth* when the hero is at or under twelve
+  big blinds, which is what made the A5s shove ordinary. The recommendation
+  itself still does not state its reason in words; that belongs with the
+  feedback text and is outstanding.
+- [x] Audit the specific A5s scenario and record which of these it was:
+  **correct but under-explained**, recorded above with the numbers.
+- [x] `table.status.scenarioProgress` ("Scenario {number} of {total}") has left
+  the player-facing UI. Training now reports street and field like every other
+  mode; verified in the packaged build. Authored scenario **titles** are still
+  shown in the header and remain outstanding. The validated bank stays as
+  regression fixtures and fallback content — see E15-002, which owns generation
+  and remains blocked on the iOS parity decision recorded there.
 
 ### E27-014 — The desktop 3D vision must not be closed by decoration
 

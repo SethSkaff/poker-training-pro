@@ -45,6 +45,7 @@ import {
 import { gameAudio, type SoundName } from "../lib/audio";
 import { describeCallAction } from "../lib/actionLabels";
 import { isShortStack, seatChipStackCount } from "../lib/chipStackDepth";
+import { describeTrainingContext } from "../lib/trainingScenarioContext";
 import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
 /*
   Lazy so three.js stays out of the initial bundle entirely, which is what keeps
@@ -2445,6 +2446,14 @@ export function PokerTable({
     this needs. `action === "fold"` is still ORed in so the muck begins on the
     submitting frame rather than waiting for the engine to answer.
   */
+  /*
+    The facts a Training decision cannot be judged without (E27-013). Derived
+    for every mode -- it is cheap and the numbers are the same ones the table
+    already holds -- but surfaced as a strip only in Training, where the player
+    is being asked to justify a choice rather than just make one.
+  */
+  const trainingContext = describeTrainingContext(scenario);
+
   const heroFoldState: HeroFoldState = {
     dragging,
     foldProgress,
@@ -2859,10 +2868,17 @@ export function PokerTable({
           <p className="eyebrow">{modeTitle}</p>
           <strong>{scenario.title}</strong>
           <span>
+            {/*
+              The scenario counter is gone from the player interface
+              (E27-013 / §18). "Scenario 6 of 12" framed Training as a
+              twelve-question content pack with an end, which is the opposite of
+              what the mode is for. Training now reports the street and the
+              field, exactly as every other mode does.
+            */}
             {mode === "training"
-              ? formatMessage("table.status.scenarioProgress", {
-                  number: Math.max(1, scenarioNumber),
-                  total: trainingScenarios.length,
+              ? formatMessage("table.status.streetPlayersRemain", {
+                  street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
+                  playersRemaining: trainingContext.players,
                 })
               : formatMessage("table.status.streetPlayersRemain", {
                   street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
@@ -2965,6 +2981,80 @@ export function PokerTable({
               </span>
             )}
           </aside>
+          {/*
+            The situation, stated (E27-013). The reported ace-five all-in could
+            not be judged because none of this was on screen: eleven thousand
+            chips means nothing without the blind beside it, and it is eleven
+            big blinds -- push/fold depth -- which is what makes the shove
+            ordinary. Short labels beside numbers, never prose; the explanation
+            belongs in the feedback after the decision, not around the table.
+          */}
+          {mode === "training" ? (
+            <aside
+              className="training-context"
+              aria-label={formatMessage("table.context.ariaLabel", {
+                stack: formatChips(trainingContext.stackChips),
+                bigBlinds: trainingContext.stackBigBlinds ?? 0,
+                blinds: `${formatChips(trainingContext.smallBlind)}/${formatChips(trainingContext.bigBlind)}`,
+                pot: formatChips(trainingContext.pot),
+                toCall: formatChips(trainingContext.amountToCall),
+                players: trainingContext.players,
+              })}
+            >
+              <span>
+                <b>{formatMessage("table.context.stack")}</b>
+                {formatChips(trainingContext.stackChips)}
+                {trainingContext.stackBigBlinds !== null ? (
+                  <em>
+                    {formatMessage("table.context.bigBlinds", {
+                      count: trainingContext.stackBigBlinds,
+                    })}
+                  </em>
+                ) : null}
+              </span>
+              <span>
+                <b>{formatMessage("table.context.effective")}</b>
+                {formatChips(trainingContext.effectiveStackChips)}
+                {trainingContext.effectiveStackBigBlinds !== null ? (
+                  <em>
+                    {formatMessage("table.context.bigBlinds", {
+                      count: trainingContext.effectiveStackBigBlinds,
+                    })}
+                  </em>
+                ) : null}
+              </span>
+              <span>
+                <b>{formatMessage("table.context.blinds")}</b>
+                {formatChips(trainingContext.smallBlind)}/
+                {formatChips(trainingContext.bigBlind)}
+              </span>
+              {trainingContext.ante > 0 ? (
+                <span>
+                  <b>{formatMessage("table.context.ante")}</b>
+                  {formatChips(trainingContext.ante)}
+                </span>
+              ) : null}
+              <span>
+                <b>{formatMessage("table.context.players")}</b>
+                {trainingContext.players}
+              </span>
+              <span>
+                <b>{formatMessage("table.context.pot")}</b>
+                {formatChips(trainingContext.pot)}
+              </span>
+              {trainingContext.amountToCall > 0 ? (
+                <span>
+                  <b>{formatMessage("table.context.toCall")}</b>
+                  {formatChips(trainingContext.amountToCall)}
+                </span>
+              ) : null}
+              {trainingContext.shortStacked ? (
+                <span className="training-context__flag">
+                  {formatMessage("table.context.pushFold")}
+                </span>
+              ) : null}
+            </aside>
+          ) : null}
           {/*
             The result stays up through the whole payout, not just the single
             `showdown` frame (E27-003). It used to be gated on `resultEvent`
