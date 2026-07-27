@@ -196,6 +196,384 @@ A rating that cannot fall on repeated failure is not a rating.
 
 ---
 
+## Epic E27 — Second-pass corrective playtest (2026-07-26)
+
+**This is a correction ledger, not a second backlog.** It does not restate Part I.
+Every item below either reopens an existing task whose acceptance criteria are
+not actually met, tightens wording that allowed a superficial implementation, or
+adds an ID for something no existing task covers. Where an existing task already
+covers an issue, the detail lives there and this section only points at it.
+
+**How the evidence was gathered.** The packaged build was driven over CDP through
+a real Normal career event, folding with the fold *button* and sampling the DOM
+once a second for sixty seconds across the hand boundary. Everything marked
+CONFIRMED below was observed in that run or read directly out of the shipping
+source; everything marked SUSPECTED has a mechanism identified in code but was
+not reproduced end to end, and says so.
+
+### E27-001 — P0: fold interaction state leaks across hands
+
+**CONFIRMED, and the mechanism is exact.** Two independent defects compound.
+
+*Defect one — the fold button reuses the drag progress bar as an animation
+driver.* `PokerTable.tsx:1878` runs `setFoldProgress(100)` when the hero folds by
+**button**. The "Release to fold" banner renders on
+`foldProgress > 10 && !action` (`PokerTable.tsx:3012`). While the action is
+pending, `!action` hides it. But `planTableSceneUpdate`
+(`src/lib/tableSceneLifecycle.ts:33-34`) sets `clearDecisionTransientState` from
+`changed` (**any** state version bump — every opponent action) and
+`resetHandVisualState` from `handChanged` (**only** a new hand). So the first
+opponent action after the fold clears `action` while `foldProgress` is still 100,
+and the banner appears and stays.
+
+Measured timeline from the packaged run, hero folded preflop at t+0:
+
+| t | `heroClass` | `foldZone` |
+|---|---|---|
+| +1s | `hero-hole-cards is-folded` | none |
+| +3s | `hero-hole-cards is-folded` | none |
+| **+4s** | `hero-hole-cards` | **"Release to fold"** |
+| +22s (showdown) | `hero-hole-cards` | "Release to fold" |
+| **+28s (Hand 2)** | `hero-hole-cards` | **"Release to fold"** |
+| +31s (hero's turn again) | `hero-hole-cards` | **"Release to fold"** |
+
+*Defect two — the hand-boundary reset can be silently swallowed.*
+`PokerTable.tsx:1785-1789` commits `previousSceneVersionRef` and
+`previousHandIdRef` **before** `if (!update.changed) return;`. Any render where
+the hand id changed but the state version did not returns early having already
+advanced the hand-id ref, so `handChanged` is false forever after and
+`resetHandVisualState` never runs for that boundary. This is why the banner
+survives into Hand 2 above, and it is a general hazard for every reset that hangs
+off `resetHandVisualState`.
+
+Origin: `setFoldProgress(100)` predates the current work (`6fdd6f1` baseline);
+the two-flag split arrived with `8459e50` "keep tournament table mounted across
+updates", which is what made the two clear at different times.
+
+**Acceptance criteria**
+- [ ] The banner is gated on an actual active drag (`dragging`), not on a
+  progress number the button path also writes. A fold submitted by button, key,
+  or controller must never render drag-gesture affordances.
+- [ ] Clicking Fold releases pointer capture and zeroes gesture state in the same
+  commit that submits the action.
+- [ ] Folded hero cards muck or leave the table. They must not sit face-up and
+  interactive for the rest of the hand, which is what the run above shows.
+- [ ] The hand-boundary reset cannot be swallowed: refs advance only on the path
+  that also applies the reset, or the reset is keyed off the observed hand id
+  rather than a ref delta. Add a direct unit test for the
+  changed-hand/unchanged-version render.
+- [ ] Every new hand starts with clean hero interaction state — verified by a
+  test that asserts the exact sequence above, not by remounting the table
+  subtree (which E01-001 exists to prevent).
+- [ ] Pointer-up, pointer-cancel, pause, modal interruption, and hand completion
+  all clear the gesture. Mouse and touch parity.
+
+### E27-002 — P0: the live-pot panel is a permanent text overlay
+
+**CONFIRMED.** `PokerTable.tsx:2722` renders an `aside.side-pot-strip--live`
+whenever `liveSidePots.length > 0`, and when it renders it lists **every** pot
+including the main one with a full eligibility roster
+(`PokerTable.tsx:2724-2734`). In the packaged run it was on screen **before the
+hero had acted at all** and stayed up for the entire hand:
+
+> `Live pots — Main 125 · Eligible: Kai Frost, Player, Tam Abara … Side 1,950`
+
+Origin: `d68be4d` "show live tournament side pots".
+
+This is both the bug in §5.1 (present when it should not be, never cleared) and
+the design failure in §5.2 (pot structure explained as a persistent paragraph
+instead of shown as chips). E05-004 is **reopened** rather than duplicated here.
+
+Also observed, and separately wrong: the `side-pot-formed` presentation event
+fires **after** the showdown result strip has already been shown and replaced it
+(t+22s showdown → t+23s "Side pot formed"). A pot that formed during betting is
+being announced after the hand is decided.
+
+### E27-003 — P0: showdown result is unreadable
+
+**CONFIRMED.** The showdown strip appeared at t+22s reading
+`Showdown result — main · Kai Frost wins 75 with One Pair …` and was **gone by
+t+23s**, replaced by the side-pot event. The result was legible for at most one
+sampling interval. E03-001/E03-002 are **reopened**; the missing criterion is a
+minimum readable dwell time that survives the events queued behind it.
+
+### E27-004 — P0 (SUSPECTED): the blind clock is fed multiply-counted wall time
+
+**Mechanism identified in code; the first-hand jump was not reproduced in a
+two-hand run, so this is stated as suspected.**
+
+`PokerTable.tsx:1958` submits `decisionElapsedMs: Math.round(elapsedMs)` with
+every hero action, and `tournamentRunner.ts:598` feeds exactly that into
+`advanceTournamentSessionClock`, which advances the blind level. But `elapsedMs`
+is **not** a per-decision timer:
+
+- its interval runs whenever `!action && !paused` (`PokerTable.tsx:1625-1639`),
+  so it accumulates through *opponents'* turns as well as the hero's;
+- it is zeroed only on a new hand (`:1802`) or `resetHand` (`:1759`), never after
+  a hero action.
+
+So within one hand the value grows monotonically from the hand's start and each
+hero action re-submits the whole cumulative total. A hand with hero decisions at
+t=60s, 120s, 180s advances the blind clock by 360s, not 180s. At the local
+qualifier's four-minute levels that can cross a boundary mid-hand, which is
+consistent with the reported blinds rising on the turn of hand one.
+
+**Acceptance criteria**
+- [ ] The blind clock advances by elapsed wall time once, not once per hero
+  action. Decide explicitly whether opponent thinking time counts, and write the
+  decision down.
+- [ ] A deterministic regression test: a fresh Normal event does not change blind
+  level during hand one under any hero decision timing.
+- [ ] A test that N seconds of real time advance the clock by N seconds
+  regardless of how many hero actions occur in that window.
+- [ ] The current level and the next increase are visible to the player, so the
+  schedule is inspectable rather than inferred (see E27-008).
+- [ ] Blinds do not advance while paused or while the window is away — the
+  packaged lifecycle audit already proves play freezes when minimized, so this is
+  about the pause path specifically.
+
+### E27-005 — Player-facing action labels are computed without the hero's stack
+
+**CONFIRMED by inspection.** `PokerTable.tsx:3156-3162` labels the call button
+purely from `scenario.amountToCall`: `Call {amount}` when positive, `Check`
+otherwise. The hero's remaining stack is never consulted, so a call that commits
+the hero's entire stack is presented as a call for the full outstanding bet.
+The legal-action calculation is correct; only the label is wrong.
+
+**Acceptance criteria**
+- [ ] When the legal call commits the hero's whole remaining stack, the primary
+  label is **All In** with the true committed amount.
+- [ ] Tests: stack exactly equal to the call, stack below the call, multiple side
+  pots, short-stack all-in. Assert the visible label **and** the accessible name.
+- [ ] Labelling is tested independently of legal-action calculation, so a correct
+  engine cannot mask a lying button.
+
+### E27-006 — Opponent faces collide at a six-handed table
+
+**CONFIRMED, with the real number.** `src/lib/opponentAppearance.ts` composes an
+appearance from several independently hashed dimensions, but the face comes from
+`portrait: dimensionHash(playerId, "portrait") % 6` — **six** sprite cells in
+`public/opponent-avatar-sheet-v1.png`. For five opponents drawn independently
+from six cells, the chance that no two share a face is
+`6/6 × 5/6 × 4/6 × 3/6 × 2/6 ≈ 9%`. **About nine tables in ten show a repeated
+face.** The code comments rely on hair, clothing, and posture to differentiate,
+which is why this was not caught: the composed avatars are not identical, but the
+*faces* are, and that is what a player sees.
+
+Origin: `84dd560` "seat procedurally distinct opponents keyed to identity".
+
+E10-001 is **reopened**. Note for whoever takes it: the complaint of "about five
+portraits randomly reused" is accurate in effect but wrong in mechanism — this is
+not a random pool, it is a deterministic hash into a six-cell sheet. Fixing it by
+adding duplicate *prevention* alone will make seating order significant; the face
+space has to grow as well.
+
+### E27-007 — Turn indication reads as instability, not attention
+
+The report describes rounded rectangles stacked over avatars, gradient blocks
+covering portraits, and shapes shaking side to side. The acting indicator is a
+`timer-spin` animation on `.thinking-ring` (measured at 3.2s full / 7s reduced /
+none by the packaged presentation audit), plus per-seat gesture and label layers
+added by `af0d987`.
+
+**Not yet reproduced visually** — the packaged screenshots capture single frames
+and the geometry gate (E25-002) checks boxes, not motion. That gap is the finding:
+the layout gate cannot see an element that oscillates within its own box.
+
+**Acceptance criteria**
+- [ ] Reproduce with a multi-frame capture of an opponent's acting state at full,
+  reduced, and off motion, and attach the frames.
+- [ ] Whose turn it is must be legible without oscillation: seat light, a small
+  action indicator, camera attention, or chip/card movement.
+- [ ] No decorative layer may cover a character's face; every layer states its
+  purpose.
+- [ ] Extend the geometry gate to sample an animating seat across frames so
+  intra-box motion and layer stacking are actually measurable.
+
+### E27-008 — Hero state belongs at the hero seat, not in a floating panel
+
+**CONFIRMED.** `.hero-stack-hud` renders a top-left panel titled "Your stack"
+carrying stack, amount committed this round and this hand, and position. E02-001
+is marked complete and its acceptance criteria are met *as written* — the stack
+is always visible — but the wording allowed a floating dashboard panel, which is
+the opposite of the intended physical table.
+
+E02-001 is **reopened with tightened criteria**, not deleted: the requirement was
+right, the realisation was not.
+
+**Acceptance criteria**
+- [ ] Hero stack, committed wager, and position read from the hero's seat: chips,
+  cards, and a marker, with numerals attached to those objects.
+- [ ] Amount required to call belongs in the action area, next to the control
+  that acts on it.
+- [ ] Big-blind depth shown where it aids a tournament decision.
+- [ ] No panel titled "Your stack".
+- [ ] A restrained tournament HUD may keep global state only: blinds, ante, time
+  or hands to the next level, players remaining, event, and qualification state
+  when relevant. Corner placement. No paragraphs.
+
+### E27-009 — Seats have no chips
+
+Opponent seats carry a name, a numeric stack, and an avatar; only the centre pot
+is represented with chips. E05-001 covers bet movement and is complete for the
+motion contract, but nothing covers a **resting** stack at each seat.
+
+**Acceptance criteria**
+- [ ] Visible chip stacks for the hero, every opponent, each committed wager, the
+  main pot, and each side pot, with numerals accompanying rather than replacing
+  them.
+- [ ] Stack height reads roughly proportionally, so short stacks are visible
+  before the number is read.
+
+### E27-010 — Routine play is narrated instead of shown
+
+Table tips (`table.coach.badge` = "Table tip", toggled by "Show first-time table
+tips", default on) fire for ordinary events such as blind increases. Combined
+with the live-pot panel (E27-002), the hero panel (E27-008), and the per-event
+status text, ordinary play is explained in prose while the table stays static.
+
+**Acceptance criteria**
+- [ ] Table tips are off by default in normal play, or removed from it.
+- [ ] A blind increase is communicated by the HUD changing plus a brief indicator
+  and an accessible announcement — not a paragraph.
+- [ ] Nothing that can be shown by cards, chips, the dealer button, seat
+  emphasis, or camera attention is delivered as standing text.
+- [ ] Optional detail stays available on request; it does not sit on screen.
+
+### E27-011 — Game Review corrections
+
+- **CONFIRMED** the screen is titled "Round review" (`review.title`). Rename to
+  **Game Review**.
+- **CONFIRMED** `notableOnly` (`HandReviewScreen.tsx:65`, `review.filter.notable`
+  = "Noteworthy only") is a destructive filter: selecting it removes ordinary
+  decisions from the timeline. The intent is a **playback mode** —
+  keep the whole timeline, fast-forward routine hands, stop at each noteworthy
+  decision, resume with Space or a Continue control, and leave every ordinary
+  decision manually selectable. E18-002 is **reopened** on this point alone.
+- **Export event replay** is on the ceremony screen
+  (`dashboard.ceremony.exportReplay`), not on the review screen. Move it behind a
+  developer/support flag; the player-facing path should not expose a raw replay
+  workflow. Recorded here because §14.3 named the wrong screen.
+
+### E27-012 — Training presents a pre-solved decision
+
+**CONFIRMED.** `PokerTable.tsx:3146-3149`: in Training the action buttons are
+disabled on `trainingMeta?.actionEvs[action] === undefined`. The scenario bank's
+EV coverage therefore decides which legal actions the player may take, which is
+why only Fold and Raise appear in some spots. Removing the tempting alternative
+is precisely what makes the exercise worthless.
+
+**Acceptance criteria**
+- [ ] Every action legal in the scenario is offered: fold, check, call, valid
+  raise sizes, all-in, and a custom raise where sensible.
+- [ ] Missing EV coverage is a **content defect that fails validation**, not a
+  reason to hide a button.
+- [ ] The grade explains where the chosen action sits (best / strong /
+  acceptable / small mistake / large mistake).
+
+### E27-013 — Training recommendations must be justifiable from what is shown
+
+The reported A5-suited preflop all-in recommendation could not be assessed from
+the screen. E17-001 already requires showing the mathematics and is complete for
+*decision feedback*; what is missing is the **scenario context** needed to check
+the recommendation at all.
+
+**Acceptance criteria**
+- [ ] Every scenario shows hero stack in chips and in big blinds, blinds, ante,
+  position, player count, prior action, effective stack, pot, and amount to call.
+- [ ] An all-in recommendation names its reason: push/fold range, position,
+  effective stack, dead money, fold equity, or tournament pressure.
+- [ ] Audit the specific A5s scenario and record which of these it was: correct
+  but under-explained, wrong stack/blind context, wrong evaluator, incomplete
+  display, or a recommendation stale against the visible state.
+- [ ] `table.status.scenarioProgress` ("Scenario {number} of {total}") and the
+  authored scenario titles leave the player-facing UI. The validated bank stays
+  as regression fixtures and fallback content — see E15-002, which already owns
+  generation and remains blocked on the iOS parity decision recorded there.
+
+### E27-014 — The desktop 3D vision must not be closed by decoration
+
+E09-002 ("raise perceived depth without a new engine") and E09-003/E09-004 are
+complete **as interim measures**, and the packaged presentation audit does prove
+the arrival fly-through composites real per-table depth. None of that satisfies
+the product direction, and no combination of CSS depth work will.
+
+**This is recorded so no future pass reads E09-002 as the 3D requirement being
+met.** E09-001, the architecture research spike, remains the gating task: it must
+choose a rendering approach and state the asset, performance, accessibility, and
+bundle consequences before any of the below is attempted.
+
+Explicitly **not** acceptable as the environment: background circles, a flat
+still with a zoom, parallax alone, floating portraits, gradients behind avatars,
+sprites in a void, small CSS translations described as a camera, or overlays that
+do not create a space.
+
+**Acceptance criteria (post-E09-001, not startable before it)**
+- [ ] A seated first-person view inside an authored championship room with real
+  perspective, multiple tables, warm casino lighting, and background activity.
+- [ ] Limited left/right looking, a recentre control, smooth motion, and a
+  fixed-camera alternative for reduced motion.
+- [ ] Camera travel through the venue on arrival and between events, settling
+  into the seat.
+- [ ] Seated character bodies, not floating faces, performing the physical
+  actions of poker: receiving, peeking, holding, folding, checking, calling,
+  raising, moving chips, all-in, winning, and leaving on elimination. Stylised
+  low-poly is fine; photorealism is not required.
+- [ ] Original work throughout: no protected WSOP branding or visual expression.
+
+### E27-015 — Pacing: measured, and not what was reported
+
+The reported "ten second hand" was **not** reproduced. In the packaged run the
+hand after the hero's preflop fold took **27 seconds**, with presentation events
+about one second apart and one five-second gap. The Skip control **exists and is
+visible**: `.spectator-dock` appeared one second after the fold with a
+"Skip to result" button (`table.spectator.skipToResult`), alongside a 2× toggle.
+
+So §9.3 is a **discoverability failure, not a missing control**, and E04-002 is
+not reopened for absence. What the run does support is readability: at roughly
+one second per event there is no time to see whose turn it is, what they did, and
+what it cost before the next event replaces it — and the per-event text is the
+only place some of that appears at all.
+
+**Acceptance criteria**
+- [ ] Each action holds long enough to read actor, action, and amount; measured,
+  not asserted.
+- [ ] Named presentation speeds (cinematic / standard / fast) that change
+  presentation only — the policy must be identical across them, with a test.
+- [ ] Standard is the Normal default.
+- [ ] The skip affordance is findable at the moment the hero stops acting; it
+  states what it will skip, and never duplicates an action, recalculates a
+  decision, corrupts replay, or skips the final result.
+
+### E27-016 — Early elimination: keep measuring, do not gate on one bust
+
+One player out around hand eight is not by itself evidence of a defect, and this
+audit does not treat it as one. It belongs with the pacing measurements already
+under E13-001 (whose per-tier medians were measured on 2026-07-26) and with
+E27-004, since a blind clock that runs multiply-fast would produce exactly this.
+Re-measure hands-to-first-elimination **after** E27-004 is fixed, because the
+current numbers were gathered with the suspect clock in place.
+
+### Recommended implementation sequence
+
+State bugs first — they are cheap, they are certain, and they corrupt the
+evidence for everything else:
+
+1. E27-001 fold-state leak (P0, root cause known)
+2. E27-002 live-pot overlay (P0, one render condition plus a redesign)
+3. E27-004 blind-clock double counting (P0; do this before re-measuring pacing)
+4. E27-003 showdown dwell time
+5. E27-005 Call versus All In label
+6. E27-015 pacing and skip discoverability
+7. E27-008 / E27-009 hero state and seat chips
+8. E27-010 tips removal, and the tutorial entry under E21-001
+9. E27-011 Game Review playback
+10. E27-012 / E27-013 Training legal actions and scenario context
+11. E15-002 procedural Training generation (still blocked on the iOS decision)
+12. E09-001 architecture spike, then E27-014
+
+---
+
 ## Epic E01 — Visible hand lifecycle (P0)
 
 The single most important requirement: **a hand must visibly progress from
@@ -361,6 +739,14 @@ Classification: **STATE-SYNC BUG** over a **MISSING FEATURE**.
 
 ### E02-001 — Make the hero's stack always visible
 
+**REOPENED 2026-07-26 by E27-008.** The criteria below are met as written and the
+realisation is still wrong: the stack lives in a floating top-left panel titled
+"Your stack" rather than at the hero's seat. Treat the criteria as necessary but
+not sufficient, and satisfy E27-008's placement requirements as well.
+
+- [ ] **Reopened:** hero state reads from the hero's seat, and no panel titled "Your stack" remains (E27-008).
+
+
 **Observed problem**
 The player could not see their own remaining chips, and had to open the raise
 controls and drag toward all-in to infer them. This is the most damning
@@ -445,6 +831,13 @@ move in full and reduced motion.
 
 ### E03-001 — Stop discarding the winning hand from the result
 
+**REOPENED 2026-07-26 by E27-003.** The winning hand is computed and rendered, but
+in the packaged run the result strip was replaced within one second by the next
+queued event. A result the player cannot read is not a result that was shown.
+
+- [ ] **Reopened:** the result holds long enough to read, measured, and is not replaced by a queued event (E27-003).
+
+
 **Observed problem**
 At showdown the player often cannot tell whether they won or lost; winning hands
 are not named and winning cards are not highlighted.
@@ -469,6 +862,12 @@ are not named and winning cards are not highlighted.
 **Tests** — [ ] Unit: award mapping preserves `potId` and `hand`. [ ] Unit: best-five highlighting for pair/two-pair/trips/straight/flush/full house/quads/straight flush/board-plays. [ ] Unit: split pot and multi-side-pot rendering. [ ] Accessibility: winner, category, and amount announced.
 
 ### E03-002 — Implement legitimate showdown reveals
+
+**REOPENED 2026-07-26 by E27-003.** Reveals are legitimate; their dwell time is
+not. Needs a minimum readable duration that survives the events queued behind it.
+
+- [ ] **Reopened:** showdown reveals hold for a readable minimum under every presentation speed (E27-003).
+
 
 **Audit**
 - A `revealed?: boolean` field exists on `HandInformationPlayer` (`engine/tournament.ts:127`) and redaction already honors it (`:848`) — but **nothing ever sets it to `true`**. The only `revealed: true` in the repo is a test fixture (`engine/tournament.test.ts:249`). `createPokerTableSnapshot` doesn't branch on it.
@@ -623,6 +1022,15 @@ collected into the centre without a clear reason.
 **Tests** — [ ] Unit: one award event per pot with correct recipient. [ ] Unit: split awards animate to multiple seats.
 
 ### E05-004 — Build a real side-pot display
+
+**REOPENED 2026-07-26 by E27-002.** What shipped is a persistent text panel that
+lists every pot and a full eligibility roster, on screen before the hero has
+acted and for the whole hand. It must not appear when there is no side pot, must
+clear at hand boundaries, and should communicate pot structure through grouped
+chips and the award sequence rather than standing prose.
+
+- [ ] **Reopened:** no pot overlay without a side pot, cleared at every hand boundary, structure shown as grouped chips (E27-002).
+
 
 **Observed problem**
 Side pots are communicated only by a small message in the bottom-right corner,
@@ -816,6 +1224,12 @@ spatial presentation that could not be mistaken for a mobile web screen.
 
 ### E09-002 — Interim: raise perceived depth without a new engine
 
+**Scope note added 2026-07-26 by E27-014.** This task is complete *as an interim
+measure only*. It is not, and cannot become, the 3D desktop requirement. Do not
+read its completion as the spatial experience being delivered; E09-001 remains
+the gating decision.
+
+
 **Rationale** — De-risks E09-001 by delivering visible improvement regardless of
 the architecture decision.
 
@@ -863,6 +1277,13 @@ closed.
 ## Epic E10 — Characters and roster variety (P2)
 
 ### E10-001 — Replace the hardcoded roster with a deterministic procedural field
+
+**REOPENED 2026-07-26 by E27-006.** Names and personalities vary, but faces come
+from `dimensionHash(playerId, "portrait") % 6` -- six sprite cells -- so about
+nine six-handed tables in ten seat two opponents with the same face.
+
+- [ ] **Reopened:** no repeated face at one table, and the face space is large enough that uniqueness is not seating-order dependent (E27-006).
+
 
 **Observed problem**
 The same opponents, names, and portraits appear in Normal, in Rational, across
@@ -1588,6 +2009,13 @@ reconstructed decision point — it must not expose replay-computed full state.
 
 ### E18-002 — Full decision review and notable-decision playback
 
+**REOPENED 2026-07-26 by E27-011.** "Noteworthy" shipped as a destructive filter
+that removes ordinary decisions from the timeline. It must be a playback mode
+over the full timeline instead, and the screen is still titled "Round review".
+
+- [ ] **Reopened:** the screen is titled Game Review, and Noteworthy is playback navigation over the full timeline, not a filter (E27-011).
+
+
 **Acceptance criteria**
 - [x] Every hero decision is inspectable across all four streets and all six action types.
 - [x] A "Noteworthy only" filter restricts the timeline to decisions worth stopping on, each labelled with why it matters. Timed auto-advancing playback is **not** built; the filter plus keyboard stepping covers inspection.
@@ -1737,6 +2165,15 @@ from "selected in the list", because no such data exists (E19-001).
 ## Epic E21 — Tutorial removal or reduction (P7)
 
 ### E21-001 — Decide and execute removal-versus-reduction
+
+**REOPENED 2026-07-26 by E27-010.** The mode-select screen still offers "New to
+the table?" / "Learn the basics" (`dashboard.modeSelect.tutorialPrompt` and
+`tutorialCta`). Remove the beginner tutorial entry. Keep Poker Reference, which
+is not a tutorial, and give it a more central place in the bottom menu without
+onboarding language around it.
+
+- [ ] **Reopened:** the beginner tutorial entry is gone from mode select; Poker Reference remains and is centrally placed (E27-010).
+
 
 **Context** — The target audience already understands poker. Do not invest in a
 beginner course. Preferred direction: remove the full tutorial, or reduce it to a
