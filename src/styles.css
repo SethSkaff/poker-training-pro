@@ -6358,6 +6358,41 @@ input[type="range"]::-webkit-slider-thumb {
   animation-duration: 0.9s;
 }
 
+/*
+  Poker Reference, centred and on its own (E21-001 / E27-010). It used to sit as
+  the second of two competing footer offers next to a beginner tutorial link;
+  the tutorial is gone and this is simply what remains, without onboarding
+  language wrapped around it.
+*/
+.mode-stage__secondary--single {
+  display: flex;
+  justify-content: center;
+}
+
+.mode-stage__reference-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  gap: 9px;
+  margin: 18px auto 0;
+  border: 1px solid rgba(93, 228, 206, 0.34);
+  border-radius: 999px;
+  padding: 10px 20px;
+  color: #5de4ce;
+  background: rgba(10, 32, 28, 0.55);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.mode-stage__reference-link:hover,
+.mode-stage__reference-link:focus-visible {
+  border-color: #5de4ce;
+  color: #7ff0dc;
+}
+
 .mode-stage__tutorial-link {
   display: inline-flex;
   align-items: center;

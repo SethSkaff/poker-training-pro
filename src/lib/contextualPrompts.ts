@@ -95,8 +95,20 @@ export const CONTEXTUAL_PROMPT_ORDER: ContextualPromptId[] = [
   "decision-mistake",
 ];
 
+/*
+  Tips are **off by default** (E27-010).
+
+  They fired for ordinary poker events -- blinds going up, stacks getting
+  shorter in big blinds, waiting before acting -- so routine play arrived as
+  paragraphs of commentary in the corner of a table that was meanwhile showing
+  none of it. A player who wants the commentary can switch it on in the pause
+  menu; a player who does not should never have had to.
+
+  Critical state still reaches the player without this: the blind level is in
+  the HUD, and level changes announce through the table's live region.
+*/
 export function defaultContextualPromptState(): ContextualPromptState {
-  return { enabled: true, seen: [] };
+  return { enabled: false, seen: [] };
 }
 
 export function loadContextualPromptState(): ContextualPromptState {
@@ -109,7 +121,9 @@ export function loadContextualPromptState(): ContextualPromptState {
       seen?: unknown;
     };
     return {
-      enabled: value.enabled !== false,
+      // Absent means off, so an existing save that never expressed a
+      // preference gets the new default rather than inheriting the old one.
+      enabled: value.enabled === true,
       seen: Array.isArray(value.seen)
         ? value.seen.filter(
             (id): id is ContextualPromptId =>
@@ -137,6 +151,11 @@ export function saveContextualPromptState(state: ContextualPromptState) {
  * prompt can appear again. Backs the "Replay contextual tips" control.
  */
 export function resetContextualPromptState(): ContextualPromptState {
+  /*
+    Explicitly enabled, not the default. Tips are off by default (E27-010), but
+    "Replay contextual tips" is a player asking for them: honouring that request
+    by handing back the off-by-default state would make the control do nothing.
+  */
   return { enabled: true, seen: [] };
 }
 

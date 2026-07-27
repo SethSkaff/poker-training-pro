@@ -562,7 +562,9 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.pause.resume": "Resume table",
   "table.pause.controlsLink": "Controls & hotkeys",
   "table.pause.referenceLink": "Hand & math reference",
-  "table.pause.showTips": "Show first-time table tips",
+  // Opt-in, not opt-out (E27-010): the wording no longer implies they are
+  // already running.
+  "table.pause.showTips": "Show table tips while I play",
   "table.pause.replayTips": "Replay contextual tips",
   "table.pause.restartPractice": "Restart practice scenario (unscored)",
   "table.pause.leaveTournament": "Leave scored tournament and return to menu",

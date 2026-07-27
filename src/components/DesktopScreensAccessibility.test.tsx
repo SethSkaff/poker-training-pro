@@ -50,7 +50,7 @@ describe("non-gameplay desktop accessibility", () => {
     expect(markup).not.toContain("autofocus");
   });
 
-  it("keeps the four game modes primary and the tutorial secondary", () => {
+  it("keeps the four game modes primary and the reference secondary", () => {
     const markup = renderToStaticMarkup(
       <ModeSelect onBack={() => undefined} onSelect={() => undefined} />,
     );
@@ -63,9 +63,16 @@ describe("non-gameplay desktop accessibility", () => {
         markup.indexOf(`>${labels[index]}<`),
       );
     }
-    expect(markup).toContain("New to the table?");
+    /*
+      The beginner tutorial entry was removed (E21-001 / E27-010). Poker
+      Reference stays -- it is not a tutorial -- and is now the single secondary
+      item, still ordered after the four modes.
+    */
+    expect(markup).not.toContain("New to the table?");
+    expect(markup).not.toContain("Learn the basics");
+    expect(markup).toContain("Open the poker reference");
     expect(markup.indexOf(">Timed Table<")).toBeLessThan(
-      markup.indexOf("New to the table?"),
+      markup.indexOf("Open the poker reference"),
     );
   });
 

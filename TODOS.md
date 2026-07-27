@@ -512,11 +512,19 @@ with the live-pot panel (E27-002), the hero panel (E27-008), and the per-event
 status text, ordinary play is explained in prose while the table stays static.
 
 **Acceptance criteria**
-- [ ] Table tips are off by default in normal play, or removed from it.
+- [x] Table tips are off by default in normal play. `defaultContextualPromptState`
+  returns `enabled: false`, and the loader now reads an absent value as off, so a
+  save that never expressed a preference gets the new default rather than
+  inheriting the old one. "Replay contextual tips" still enables them
+  explicitly -- honouring that request with the off-by-default state would make
+  the control do nothing. The pause-menu label is opt-in wording now.
 - [ ] A blind increase is communicated by the HUD changing plus a brief indicator
   and an accessible announcement — not a paragraph.
 - [ ] Nothing that can be shown by cards, chips, the dealer button, seat
-  emphasis, or camera attention is delivered as standing text.
+  emphasis, or camera attention is delivered as standing text. **Partly done:**
+  the live-pot panel (E27-002) and the tip panel are gone, and seats now carry
+  chips that show depth (E27-009). The hero panel (E27-008) is still standing
+  text and remains open.
 - [ ] Optional detail stays available on request; it does not sit on screen.
 
 ### E27-011 — Game Review corrections
@@ -2366,7 +2374,11 @@ the table?" / "Learn the basics" (`dashboard.modeSelect.tutorialPrompt` and
 is not a tutorial, and give it a more central place in the bottom menu without
 onboarding language around it.
 
-- [ ] **Reopened:** the beginner tutorial entry is gone from mode select; Poker Reference remains and is centrally placed (E27-010).
+- [x] **Reopened and now done 2026-07-27:** the beginner tutorial entry is gone
+  from mode select -- "New to the table?" / "Learn the basics" removed along with
+  its `onSelect("tutorial")` path from that screen. Poker Reference remains, is
+  centred on its own rather than being the second of two competing offers, and
+  carries no onboarding language. Verified in the packaged build.
 
 
 **Context** — The target audience already understands poker. Do not invest in a

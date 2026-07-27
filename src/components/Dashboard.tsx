@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   Check,
   ChevronRight,
   LockKeyhole,
@@ -329,25 +330,24 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
             <ArrowRight size={21} />
           </button>
         </div>
-        <div className="mode-stage__secondary">
+        {/*
+          The beginner tutorial entry is gone (E21-001 / E27-010). The decision
+          was to remove the weak tutorial rather than keep advertising it, and
+          "New to the table? Learn the basics" was the last thing still doing so.
+
+          Poker Reference stays and takes the central place: it is not a
+          tutorial, it is a compact reference a player of any level wants
+          mid-thought, and it is now the single item here rather than the second
+          of two competing offers. The onboarding framing around it is gone too
+          -- it is simply what it is.
+        */}
+        <div className="mode-stage__secondary mode-stage__secondary--single">
           <button
-            className="mode-stage__tutorial-link"
-            type="button"
-            onClick={() => onSelect("tutorial")}
-          >
-            {formatMessage("dashboard.modeSelect.tutorialPrompt")}{" "}
-            <strong>{formatMessage("dashboard.modeSelect.tutorialCta")}</strong>
-            <ArrowRight size={16} aria-hidden="true" />
-          </button>
-          {/* The reference used to be reachable only from the in-hand pause
-              menu -- unavailable at exactly the moment a player is most likely
-              to want it, which is before sitting down. */}
-          <button
-            className="mode-stage__tutorial-link"
+            className="mode-stage__reference-link"
             type="button"
             onClick={() => onSelect("reference")}
           >
-            {formatMessage("dashboard.modeSelect.referencePrompt")}{" "}
+            <BookOpen size={17} aria-hidden="true" />
             <strong>{formatMessage("dashboard.modeSelect.referenceCta")}</strong>
             <ArrowRight size={16} aria-hidden="true" />
           </button>

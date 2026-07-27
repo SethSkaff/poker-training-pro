@@ -206,13 +206,15 @@ describe("detectContextualPromptOccurrences", () => {
 
 describe("first-occurrence, dismiss, and replay", () => {
   it("offers only the first unseen prompt for the current occurrences", () => {
-    const state = defaultContextualPromptState();
+    // Prompts are off by default now (E27-010); these tests exercise the
+    // prompt mechanics, so they opt in explicitly.
+    const state = { ...defaultContextualPromptState(), enabled: true };
     const prompt = nextContextualPrompt(state, ["all-in", "side-pot"]);
     expect(prompt?.id).toBe("all-in");
   });
 
   it("does not repeat a dismissed prompt (first occurrence only)", () => {
-    let state = defaultContextualPromptState();
+    let state = { ...defaultContextualPromptState(), enabled: true };
     const first = nextContextualPrompt(state, ["all-in"]);
     expect(first?.id).toBe("all-in");
 
@@ -229,7 +231,7 @@ describe("first-occurrence, dismiss, and replay", () => {
 
   it("marks seen idempotently", () => {
     const once = markContextualPromptSeen(
-      defaultContextualPromptState(),
+      { ...defaultContextualPromptState(), enabled: true },
       "elimination",
     );
     const twice = markContextualPromptSeen(once, "elimination");
@@ -240,6 +242,20 @@ describe("first-occurrence, dismiss, and replay", () => {
   it("suppresses all prompts while coaching is disabled", () => {
     const disabled = { enabled: false, seen: [] as ContextualPromptId[] };
     expect(nextContextualPrompt(disabled, ["all-in"])).toBeUndefined();
+  });
+
+  /*
+    E27-010. Tips fired for ordinary poker events -- blinds going up, stacks
+    shortening, waiting before acting -- so routine play arrived as paragraphs
+    of commentary beside a table that was showing none of it. They are opt-in
+    now, and a save that never expressed a preference gets the new default
+    rather than inheriting the old one.
+  */
+  it("is off by default, so ordinary play is not narrated", () => {
+    expect(defaultContextualPromptState().enabled).toBe(false);
+    expect(
+      nextContextualPrompt(defaultContextualPromptState(), ["blind-increase"]),
+    ).toBeUndefined();
   });
 
   it("replay clears seen history and re-enables coaching", () => {
