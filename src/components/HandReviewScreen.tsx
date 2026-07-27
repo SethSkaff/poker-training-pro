@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { formatChips, formatFixedDecimal } from "../lib/format";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
+import {
+  countNotable,
+  nextPlaybackStep,
+  type ReviewPlaybackMode,
+} from "../lib/reviewPlayback";
 import { PlayingCard } from "./PlayingCard";
 import {
   deriveHandReview,
@@ -62,7 +67,17 @@ export function HandReviewScreen({
   const [review, setReview] = useState<HandReview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
-  const [notableOnly, setNotableOnly] = useState(false);
+  /*
+    Playback replaces the old "Noteworthy only" filter (E27-011). The filter
+    removed every ordinary decision from the timeline, so the player lost the
+    shape of their round. The timeline is now always complete; this only drives
+    what playback does.
+  */
+  const [playback, setPlayback] = useState<{
+    mode: ReviewPlaybackMode;
+    running: boolean;
+    paused: boolean;
+  } | null>(null);
   const [mistakesOnly, setMistakesOnly] = useState(false);
   const [streetFilter, setStreetFilter] = useState<string | undefined>();
 
@@ -106,12 +121,12 @@ export function HandReviewScreen({
     () =>
       review
         ? filterDecisions(review, {
-            notableOnly,
+            notableOnly: false,
             mistakesOnly,
             street: streetFilter as ReviewDecision["street"] | undefined,
           })
         : [],
-    [review, notableOnly, mistakesOnly, streetFilter],
+    [review, mistakesOnly, streetFilter],
   );
 
   const decision =
@@ -136,11 +151,55 @@ export function HandReviewScreen({
           .slice(position + 1)
           .find((entry) => entry.quality !== "best" && entry.quality !== "close");
         if (next) setSelected(next.index);
+      } else if (event.key === " " || event.code === "Space") {
+        // Space continues a paused noteworthy run, which is the resume control
+        // the design calls for. Only meaningful while playback is paused, so it
+        // never swallows the spacebar during ordinary browsing.
+        if (playback?.running && playback.paused) {
+          event.preventDefault();
+          setPlayback({ ...playback, paused: false });
+        }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [visible, decision]);
+  }, [visible, decision, playback]);
+
+  /*
+    The playback driver. It moves the *selection* through the timeline; it never
+    changes what the timeline contains. A noteworthy run pauses on arrival at
+    each notable decision and waits for Continue or Space (E27-011).
+  */
+  useEffect(() => {
+    if (!review || !playback?.running || playback.paused) return;
+    const decisions = review.decisions.map((entry) => ({
+      index: entry.index,
+      notable: Boolean(entry.notable),
+    }));
+    const step = nextPlaybackStep(
+      decisions,
+      decision?.index ?? null,
+      playback.mode,
+    );
+    if (step.index === null) {
+      setPlayback(null);
+      return;
+    }
+    // Routine decisions in a noteworthy run go by quickly; a decision the run
+    // stopped at is held until the player continues.
+    const dwellMs = playback.mode === "noteworthy" ? 240 : 900;
+    const timer = window.setTimeout(() => {
+      setSelected(step.index as number);
+      if (step.pause) {
+        setPlayback((current) =>
+          current ? { ...current, paused: true } : current,
+        );
+      } else if (step.finished) {
+        setPlayback(null);
+      }
+    }, dwellMs);
+    return () => window.clearTimeout(timer);
+  }, [review, playback, decision]);
 
   if (error) {
     return (
@@ -431,13 +490,58 @@ export function HandReviewScreen({
         </div>
 
         <footer className="review-controls">
+          {/*
+            Playback controls, not filters (E27-011). The timeline behind them
+            stays complete in every mode: Play all walks every decision, Play
+            noteworthy passes over the routine ones and stops at each notable
+            one so it can be read. Both leave every decision selectable by hand.
+          */}
           <button
             type="button"
-            aria-pressed={notableOnly}
-            onClick={() => setNotableOnly((value) => !value)}
+            aria-pressed={playback?.mode === "all" && playback.running}
+            onClick={() =>
+              setPlayback((current) =>
+                current?.mode === "all" && current.running
+                  ? null
+                  : { mode: "all", running: true, paused: false },
+              )
+            }
           >
             <Play size={14} aria-hidden="true" />{" "}
-            {formatMessage("review.filter.notable")}
+            {playback?.mode === "all" && playback.running
+              ? formatMessage("review.playback.stop")
+              : formatMessage("review.playback.all")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={playback?.mode === "noteworthy" && playback.running}
+            onClick={() =>
+              setPlayback((current) =>
+                current?.mode === "noteworthy" && current.running
+                  ? null
+                  : { mode: "noteworthy", running: true, paused: false },
+              )
+            }
+          >
+            <Play size={14} aria-hidden="true" />{" "}
+            {playback?.mode === "noteworthy" && playback.running
+              ? playback.paused
+                ? formatMessage("review.playback.continue")
+                : formatMessage("review.playback.stop")
+              : formatMessage("review.playback.notable")}
+            {review ? (
+              <small>
+                {" "}
+                {formatMessage("review.playback.notableCount", {
+                  count: countNotable(
+                    review.decisions.map((entry) => ({
+                      index: entry.index,
+                      notable: Boolean(entry.notable),
+                    })),
+                  ),
+                })}
+              </small>
+            ) : null}
           </button>
           <button
             type="button"

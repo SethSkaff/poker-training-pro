@@ -2215,7 +2215,20 @@ reconstructed decision point — it must not expose replay-computed full state.
 that removes ordinary decisions from the timeline. It must be a playback mode
 over the full timeline instead, and the screen is still titled "Round review".
 
-- [ ] **Reopened:** the screen is titled Game Review, and Noteworthy is playback navigation over the full timeline, not a filter (E27-011).
+- [x] **Reopened and now done 2026-07-27:** the screen is titled **Game Review**,
+  and Noteworthy is playback navigation over the full timeline rather than a
+  filter. Verified in the packaged build: title "Game Review", controls
+  "Play all" / "Play noteworthy (6 noteworthy)" / "Mistakes only", and the
+  timeline **stays at 42 rows** when a noteworthy run starts -- previously
+  selecting it removed every ordinary decision. Play All walks every decision in
+  order; Play Noteworthy passes over routine ones, stops at each notable one,
+  and resumes on Continue or Space. Every decision remains directly selectable.
+  Files: `src/lib/reviewPlayback.ts` (new), `HandReviewScreen.tsx`,
+  `en-US.messages.gameplay.ts`. Tests: 13 new.
+  Replay export is gone from the player-facing ceremony, compiled out behind
+  `VITE_ENABLE_REPLAY_EXPORT` rather than merely hidden, so a raw JSON workflow
+  cannot reappear through a styling change. Verified absent in the packaged
+  ceremony.
 
 
 **Acceptance criteria**

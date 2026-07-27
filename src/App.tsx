@@ -183,6 +183,15 @@ type AllInRevealPresentation = Extract<
   { kind: "all-in-reveal" }
 >;
 
+/*
+  Replay export is a support and diagnostics path, not a player feature
+  (E27-011). It is compiled out of ordinary builds rather than merely hidden, so
+  a raw JSON workflow cannot reappear on the ceremony screen through a styling
+  change. Support builds set VITE_ENABLE_REPLAY_EXPORT to turn it back on.
+*/
+const replayExportEnabled =
+  import.meta.env?.VITE_ENABLE_REPLAY_EXPORT === "true";
+
 const emptyCareer = (): NonNullable<PlayerProgress["career"]> => ({
   normal: { results: [] },
   rational: { results: [] },
@@ -1887,8 +1896,14 @@ export default function App() {
     return (
       <TournamentCeremony
         result={tournamentResult}
-        {...(persistence && completedReplay
+        {...(persistence && completedReplay && replayExportEnabled
           ? {
+              /*
+                Replay export is a support and diagnostics workflow, not a
+                player feature (E27-011). "Export event replay" sat on the
+                ceremony beside Next event and Review, offering an ordinary
+                player a raw JSON file they have no use for.
+              */
               onExportReplay: async () => {
                 const result =
                   await persistence.exportPublicReplay(completedReplay);

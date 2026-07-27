@@ -109,7 +109,8 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
     "There is nothing to call here, so the decision turns on fold equity and position rather than pot odds.",
   "table.feedback.equityBasis":
     "Equity estimated over {simulations} simulations against a uniformly random opponent hand. This scenario does not state a villain range, so treat it as a baseline, not a read.",
-  "review.title": "Round review",
+  // Renamed from "Round review" (E27-011): simpler, and what players call it.
+  "review.title": "Game Review",
   "review.deriving": "Rebuilding the round from its replay…",
   "review.error.generic": "This round could not be reviewed.",
   "review.accuracy": "{accuracy}% matched the model's best line",
@@ -131,6 +132,14 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "review.sampleCount": "{count} decisions",
   "review.sampleTooSmall": "only {count} — too few to read into",
   "review.keyboardHint": "arrows move · M jumps to the next mistake",
+  // Playback navigation, not a filter (E27-011). The old "Noteworthy only"
+  // removed every other decision from the timeline.
+  "review.playback.all": "Play all",
+  "review.playback.notable": "Play noteworthy",
+  "review.playback.stop": "Stop",
+  "review.playback.continue": "Continue",
+  "review.playback.notableCount": "{count} noteworthy",
+  "review.playback.pausedHint": "Paused at a noteworthy decision. Space continues.",
   "review.filter.notable": "Noteworthy only",
   "review.filter.mistakes": "Mistakes only",
   "review.segment.street": "By street",
