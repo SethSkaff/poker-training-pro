@@ -58,27 +58,36 @@ function driveEvent(seed: string): {
 }
 
 describe("long-session memory bounds", () => {
-  it("keeps the automatic decision log bounded across many events", () => {
-    let observedMax = 0;
-    let maxReplayActions = 0;
-    let abortedEvents = 0;
-    for (let event = 0; event < 6; event += 1) {
+  /*
+    One case per event rather than a loop inside a single test.
+
+    The bounds asserted below are per-event maxima, so checking each event
+    separately is exactly as strong -- but driving six whole tournaments inside
+    one synchronous `it` blocked the worker for 60-75 s, and Vitest cannot
+    interrupt synchronous work. Past 60 s the worker's `onTaskUpdate` RPC to the
+    reporter times out, and the run exits non-zero while reporting every test
+    green: `npm test` failing with "831 passed" is not a failure anyone can act
+    on. Split, each case blocks for roughly ten seconds and the worker stays
+    responsive between them.
+  */
+  it.each([0, 1, 2, 3, 4, 5])(
+    "keeps the automatic decision log bounded across event %i of a long session",
+    (event) => {
       const { maxDecisions, replayActions, resolved } = driveEvent(
         `soak-${event}`,
       );
-      observedMax = Math.max(observedMax, maxDecisions);
-      maxReplayActions = Math.max(maxReplayActions, replayActions);
-      if (!resolved) abortedEvents += 1;
-    }
-    // Every scored event must finish; an opponent policy proposing an illegal
-    // bet target would throw above (no tolerance) or leave the event unresolved.
-    expect(abortedEvents).toBe(0);
-    // decisions is capped via slice(-79) => at most 80 retained.
-    expect(observedMax).toBeLessThanOrEqual(80);
-    // A single six-seat event cannot generate an unbounded replay log; each
-    // hero action appends exactly one entry and a busted hero ends the event.
-    expect(maxReplayActions).toBeLessThan(400);
-  }, 120_000);
+      // Every scored event must finish; an opponent policy proposing an illegal
+      // bet target would throw in `driveEvent` (no tolerance) or leave the
+      // event unresolved.
+      expect(resolved).toBe(true);
+      // decisions is capped via slice(-79) => at most 80 retained.
+      expect(maxDecisions).toBeLessThanOrEqual(80);
+      // A single six-seat event cannot generate an unbounded replay log; each
+      // hero action appends exactly one entry and a busted hero ends the event.
+      expect(replayActions).toBeLessThan(400);
+    },
+    60_000,
+  );
 
   it("does not grow retained runner state without bound within one event", () => {
     let runner: TournamentRunner = advanceTournamentRunnerToHero(

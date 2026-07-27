@@ -2031,6 +2031,35 @@ a fixed-seed entry point the app does not currently expose.
 
 - [ ] Every Part I acceptance criterion is verified in the **packaged** build, not only the dev renderer. **Open, with the gap now stated rather than implied.** Nine CDP audits run against the packaged EXE and between them cover: the renderer booting over the custom protocol (`render-smoke`), completing a full event in all three modes through ordinary controls (`mode-completion`), zero network egress across a representative play walk-through (`network`), safe mode and its continue path (`safe-mode`), corrupt-save recovery (`save-recovery-smoke`), graceful asset/font/audio-device fault handling (`asset-fault-smoke`), the lifecycle bridge's absence from the normal preload (`lifecycle-bridge-security`), input across mouse/keyboard/gamepad plus table geometry at five viewports and every interface scale (`input-smoke`), and flash luminance (`flash-capture`). **Not covered in the packaged build:** the Part I criteria that are asserted only against source or in jsdom — motion tiers, locale/RTL/pseudo-locale, hand review, the arrival fly-through's depth behaviour, and career travel. Closing this needs those surfaces added to the packaged suite, which is where the remaining work is.
 - [ ] Verification covers normal and heavy CPU load, all supported resolutions, all UI scales, reduced motion, window blur, minimize, suspend/resume, and screen lock where possible. **Open.** Resolutions and interface scales are covered by the packaged input smoke; the rest — CPU load, blur, minimize, suspend/resume, screen lock — is not exercised in a packaged run today. Suspend/resume and screen lock in particular need the machine states listed under E26-001.
+**A release blocker in stage 1 itself, found 2026-07-26 and fixed.** Release
+verification's first stage is the unfiltered test suite, and it was **exiting
+non-zero while reporting every test as passed** — `844 passed`, no failing test
+named, exit code 1. The cause was not a test. Much of this suite plays whole
+six-handed tournaments through the production policy, which is seconds of
+solid, uninterruptible CPU per test; with one worker per core those workers
+starve the main thread whose job is to answer their RPCs, and a worker whose
+`onTaskUpdate` call goes unanswered for 60 s makes Vitest raise an unhandled
+error and fail the run. Measured on a 12-core machine: 12 workers gave 1–4 such
+errors per run and always exited 1, 6 workers still exited 1, 4 exited 0.
+`vite.config.ts` now caps workers at a third of the cores — the rule rather
+than the measured number, so the headroom travels to other machines — and the
+suite exits 0 on repeated runs. It costs ~20 s of wall time.
+
+Two tests were repaired for the same underlying reason, because a single
+synchronous `it` that never yields is what lets a worker block past the
+timeout: `longSessionMemory` drove six whole tournaments in one test (63–76 s;
+now one case per event, 13.8 s total, longest block 7.7 s) and
+`betTargetLegality` drove five seeds per test (now one case per seed, which
+also names the offending seed on failure). `critic-harness.test.ts` did its
+simulation at describe scope, where it runs during *collection* and blocks
+before any test starts; it moved to `beforeAll`, cutting suite collection time
+from 121 s to 83 s.
+
+**Worth stating plainly:** this failure mode is invisible in the default
+reporter's summary, which prints a green test count next to a non-zero exit.
+Anything that checks only the summary — a human skimming, or a CI step reading
+the log rather than the exit code — would have called this suite healthy.
+
 - [x] Any CDP transport timeout is recorded separately from a genuine product failure. **This was true in two of the nine CDP audits and false in the other seven**, so the same infrastructure hiccup was inconclusive in `audit-packaged-input-smoke` and `audit-packaged-flash-capture` and a product regression everywhere else. The inline logic is now `scripts/lib/cdp-outcome.mjs`, used by all nine. Exit codes are the contract — **0 passed, 1 product failure, 2 inconclusive** — so a caller can tell the two apart without parsing prose. The match is deliberately narrow (the CDP client's own command deadline, the DevTools-endpoint wait, and a socket that closed before the session opened): a broad match on "timeout" would swallow a scene stuck on its loading fallback or a hero decision that never arrives, which is precisely what these audits exist to catch. `scripts/lib/cdp-outcome.test.ts` pins both directions and asserts no CDP audit is left unclassified.
 
 ---

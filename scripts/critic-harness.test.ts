@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   assertNoHiddenCards,
   CRITIC_LABELS,
@@ -20,11 +20,24 @@ const projectRoot = path.resolve(
 );
 
 describe("public hand histories carry no hidden information", () => {
-  const { histories, chains } = playPublicHands({
-    hands: 6,
-    mode: "normal",
-    seed: "critic-test",
-  });
+  /*
+    Built in `beforeAll`, not at describe scope. Work placed directly in a
+    describe body runs during *collection*, where it blocks the worker's event
+    loop before any test has started -- and a worker that cannot answer the
+    reporter's `onTaskUpdate` RPC within 60 s fails the whole run while
+    reporting every test green. `beforeAll` is awaited, so the worker stays
+    responsive.
+  */
+  let histories: ReturnType<typeof playPublicHands>["histories"];
+  let chains: ReturnType<typeof playPublicHands>["chains"];
+
+  beforeAll(() => {
+    ({ histories, chains } = playPublicHands({
+      hands: 6,
+      mode: "normal",
+      seed: "critic-test",
+    }));
+  }, 60_000);
 
   it("plays real hands through the production policy", () => {
     expect(histories.length).toBeGreaterThan(0);
@@ -91,11 +104,16 @@ describe("public hand histories carry no hidden information", () => {
 });
 
 describe("sampling picks the hands worth a second opinion", () => {
-  const { histories, chains } = playPublicHands({
-    hands: 12,
-    mode: "normal",
-    seed: "critic-sample",
-  });
+  let histories: ReturnType<typeof playPublicHands>["histories"];
+  let chains: ReturnType<typeof playPublicHands>["chains"];
+
+  beforeAll(() => {
+    ({ histories, chains } = playPublicHands({
+      hands: 12,
+      mode: "normal",
+      seed: "critic-sample",
+    }));
+  }, 60_000);
 
   it("returns both suspicious and representative hands", () => {
     const sampled = sampleHands(histories, chains, 12);
