@@ -21,6 +21,7 @@
   "bundle": {
     "distTotalMiB": 64,
     "initialJavaScriptGzipMiB": 0.3,
+    "largestDeferredChunkGzipMiB": 0.35,
     "initialCssGzipMiB": 0.1,
     "singleImageMiB": 4,
     "singleFontMiB": 0.05

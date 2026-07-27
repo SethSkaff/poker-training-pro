@@ -1284,7 +1284,84 @@ analysis (Part II) green for the vestibular tier.
 
 ### E09-001 — Research spike: choose the desktop presentation architecture
 
-**Status:** Done — decision record landed in `docs/desktop-presentation-architecture.md`; implementation remains staged 2.5D.
+**Status:** REDECIDED 2026-07-27 — real 3D chosen; M1 vertical slice implemented
+and verified in the packaged build.
+
+The earlier record (`docs/desktop-presentation-architecture.md`) chose staged
+2.5D and deferred real 3D behind a future decision. That deferral is **no longer
+in force**: the owner directed that this must not remain an indefinite research
+item. The new decision is `docs/desktop-3d-architecture.md`, which supersedes it
+and covers rendering technology, asset pipeline, bundle impact, performance
+budget, accessibility structure, and the staged migration path.
+
+**Chosen: three.js on WebGL2, imperative, drawn behind the DOM table.**
+three.js has **zero runtime dependencies** (verified against the registry) and
+is MIT; `@react-three/fiber` was rejected because it pulls ten transitive
+dependencies into a repository that runs a dependency-security gate, an SBOM, a
+licence catalogue, and runtime notice generation. GLSL compiles through the
+WebGL API, never `eval`, so `script-src 'self'` is satisfied.
+
+**Bundle, measured not estimated.** The initial budget did not move and did not
+need to: the scene is lazily imported, so three.js never enters the initial
+chunk. Initial JS is **144,576 bytes gzip** against the unchanged 0.3 MiB
+ceiling; the scene chunk is **133,108 bytes gzip** against a newly added
+`largestDeferredChunkGzipMiB: 0.35`.
+
+**A budget bug was found and fixed on the way.** `audit-static-budgets.mjs`
+summed *every* `.js` file in `dist` and called it "initial JavaScript", so it
+charged for lazily-loaded routes as though they were startup cost. It read
+313,660 bytes against a 314,573 ceiling — passing by 912 bytes and about to fail
+for a reason that says nothing about startup. Initial is now derived from what
+`dist/index.html` actually loads eagerly, and deferred chunks are reported and
+budgeted separately.
+
+**Two further gates behaved exactly as designed and were satisfied honestly, not
+bypassed.** The offline/CSP audit flagged two URLs inside three.js; both were
+checked and are inert — `http://www.w3.org/1999/xhtml` is an XML namespace
+handed to `createElementNS`, and `https://jcgt.org/...` is a paper citation
+inside a GLSL comment — so they were added to the existing allowlist with that
+reasoning recorded. The packaged licence gate then refused the build until
+three.js had runtime notice evidence, which was regenerated through the
+documented acknowledgement flow.
+
+### M1 vertical slice — implemented and verified
+
+Files: `src/scene3d/tableSceneModel.ts`, `src/scene3d/tableScene.ts`,
+`src/components/TableScene3D.tsx`, wired in `PokerTable.tsx` behind the new
+`spatialScene` setting (Settings → Display → "3D room (preview)", off by
+default). Tests: 21 in `tableSceneModel.test.ts` covering seat placement, the
+clamped seated camera, object travel, and reduced-motion end-state parity.
+
+Verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
+(`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
+rendered in perspective, the camera yawing on the existing look-left/right
+controls and returning on recentre, and **zero fatal renderer events**. The DOM
+layer was unchanged with the scene on: 6 seats, 6 live regions, the action dock,
+and the pot groups all still present, with the canvas `aria-hidden="true"` and
+`tabIndex="-1"`.
+
+- [x] One playable table inside a spatial room, driven by the real engine.
+- [x] Seated camera with limited left/right look (±28°) and recentring, wired to
+  the controls that previously only translated CSS by 18px per step.
+- [x] Physical cards and chip stacks — per-seat stacks, per-seat bets, and pot
+  piles, positioned by the tested model rather than by the renderer.
+- [x] Seated low-poly bodies performing deal, fold, and betting actions, chosen
+  from **public actions only**, so movement can never become a hand-strength
+  tell.
+- [x] DOM accessibility layer, deterministic engine, offline operation, and a
+  reduced-motion alternative all preserved. Reduced motion renders once per
+  state change at each action's end state; the model's easing is clamped so
+  progress 1 is a legal input and both paths agree on where objects finish.
+- [x] Geometry is procedural, so the slice is original by construction with no
+  external mesh to license and nothing fetched at runtime.
+
+**Known defects in the slice, recorded rather than glossed:** heads read too
+large and too saturated at the seats nearest the camera; the DOM label layer
+floats over the 3D table rather than being composed with it (decoration is faded
+to 6% opacity, but the two layers are not yet one picture); there is no lighting
+warmth, no background crowd, and no tier variation. Those are M2/M3 in the
+decision record. **The slice is not the finished experience and must not be read
+as closing E27-014.**
 
 **Observed problem**
 The desktop feels like a web UI arranged around a table. The intent is a

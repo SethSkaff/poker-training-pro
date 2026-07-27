@@ -3032,6 +3032,43 @@ input[type="range"]::-webkit-slider-thumb {
   transition: transform 320ms ease;
 }
 
+/*
+  The 3D room sits behind every table element (E09-001 M1). It is decorative
+  and inert: the DOM table above keeps all hit-testing, focus, and assistive
+  semantics, so a pointer never lands on the canvas and a keyboard never reaches
+  it. `z-index: 0` puts it under the felt without leaving the stacking context,
+  and the canvas is sized by the renderer rather than by CSS pixels so the
+  device-pixel-ratio cap in `tableScene.ts` actually governs fragment cost.
+*/
+.table-scene-3d {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/*
+  With the 3D room drawing the furniture, the DOM's own felt, chairs, dealer,
+  and avatars would render the same table a second time on top of it. They fade
+  instead of being removed: `opacity` keeps them laid out, hit-testable, and in
+  the accessibility tree, so the DOM remains the interaction surface exactly as
+  the architecture decision requires. Anything carrying information -- names,
+  stacks, bets, position markers, cards, controls -- is untouched.
+*/
+.poker-table[data-spatial-scene="on"] .felt-ring,
+.poker-table[data-spatial-scene="on"] .dealer,
+.poker-table[data-spatial-scene="on"] .seat-avatar,
+.poker-table[data-spatial-scene="on"] .center-pot {
+  opacity: 0.06;
+}
+
+.poker-table[data-spatial-scene="on"] .felt-brand,
+.poker-table[data-spatial-scene="on"] .community-placeholder {
+  opacity: 0;
+}
+
 .poker-table {
   position: absolute;
   top: 24%;

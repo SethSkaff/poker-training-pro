@@ -23,6 +23,8 @@ import {
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -43,6 +45,14 @@ import {
 import { gameAudio, type SoundName } from "../lib/audio";
 import { describeCallAction } from "../lib/actionLabels";
 import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
+/*
+  Lazy so three.js stays out of the initial bundle entirely, which is what keeps
+  `initialJavaScriptGzipMiB: 0.3` intact -- see docs/desktop-3d-architecture.md.
+  The chunk is only fetched when a player has actually turned the scene on.
+*/
+const TableScene3D = lazy(() =>
+  import("./TableScene3D").then((module) => ({ default: module.TableScene3D })),
+);
 import {
   areHeroCardsMucked,
   canStartHeroGesture,
@@ -325,6 +335,32 @@ export function describeLiveSidePot(
   }
 
   return `This side pot contains chips outside the main-pot cap. Only ${contenders} can win it.`;
+}
+
+/**
+ * Map a public betting action onto the body movement the 3D scene plays.
+ *
+ * Public actions only -- the same rule the DOM gesture layer follows. A body's
+ * movement must never be derived from cards or policy output, or the animation
+ * becomes a hand-strength tell that the redaction tests cannot see.
+ */
+export function sceneActionForCommand(
+  action: BettingActionType,
+): "deal" | "check" | "bet" | "fold" | "all-in" {
+  switch (action) {
+    case "fold":
+      return "fold";
+    case "check":
+      return "check";
+    case "all-in":
+      return "all-in";
+    case "bet":
+    case "raise":
+    case "call":
+      return "bet";
+    default:
+      return "check";
+  }
 }
 
 export interface SeatPresentationUpdate {
@@ -2485,6 +2521,31 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
+
+  /*
+    The 3D scene's view of the table, derived from exactly the same scenario the
+    DOM layer renders. Nothing here is scene-only state: if the two ever
+    disagree, the DOM is right, because it is the layer the engine and the
+    accessibility audits both talk to.
+  */
+  const sceneSeats = tablePlayers.slice(0, 6).map((player, index) => {
+    const presentation = seatPresentationUpdate(
+      tournament?.presentationEvent,
+      player.id,
+    );
+    return {
+      id: player.id,
+      seat: index,
+      stack: player.stack,
+      bet: player.bet ?? 0,
+      folded: player.status === "folded",
+      acting: scenario.actingPlayerId === player.id,
+      isHero: player.seat === scenario.heroSeat,
+      ...(presentation.action
+        ? { action: sceneActionForCommand(presentation.action) }
+        : {}),
+    };
+  });
   const tableSeatCoordinates = [
     [50, 86], [12, 73], [18, 30], [50, 12], [82, 30], [88, 73],
   ] as const;
@@ -3056,6 +3117,27 @@ export function PokerTable({
           </div>
 
             <div className="poker-scene motion-vestibular">
+              {/*
+                The 3D room, drawn behind everything else (E09-001 M1). It is
+                lazily loaded so three.js never enters the initial bundle, and
+                it is decorative: the DOM table below stays mounted and remains
+                the interaction and accessibility surface, so nothing here can
+                take the game away from a player whose device cannot draw it.
+              */}
+              {settings.spatialScene && (
+                <Suspense fallback={null}>
+                  <TableScene3D
+                    seats={sceneSeats}
+                    pot={scenario.pot}
+                    boardCards={stagedBoard.length}
+                    cameraPan={cameraPan}
+                    reducedMotion={
+                      settings.reducedMotion || settings.cameraMotion === "off"
+                    }
+                    suspended={paused}
+                  />
+                </Suspense>
+              )}
               {chipTravel && (
                 <span
                   key={tournament?.presentationEvent?.id}
@@ -3091,6 +3173,15 @@ export function PokerTable({
                   : ""
               }`}
               data-table-hand-id={scenario.id}
+              /*
+                Marks that the 3D room is drawing the furniture, so the DOM's
+                own felt, chairs, and avatars can recede rather than being drawn
+                on top of the same table a second time. Only decoration fades:
+                names, stacks, bets, cards, and every control stay exactly where
+                they were, because this layer is still the one the player clicks
+                and the one assistive technology reads.
+              */
+              {...(settings.spatialScene ? { "data-spatial-scene": "on" } : {})}
               {...(tournament
                 ? { "data-table-state-version": tournament.sceneStateVersion }
                 : {})}

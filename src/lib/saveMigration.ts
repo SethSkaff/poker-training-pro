@@ -288,6 +288,10 @@ function normalizeSettings(value: unknown): GameSettings {
       source.interfaceScale === "extra-large"
         ? source.interfaceScale
         : defaultSettings.interfaceScale,
+    spatialScene:
+      typeof source.spatialScene === "boolean"
+        ? source.spatialScene
+        : defaultSettings.spatialScene,
     // Preserve remapped controls through the durable save path, validating the
     // untrusted persisted shape and dropping unknown ids/tokens.
     ...(normalizeControlBindingOverrides(source.controlBindings)

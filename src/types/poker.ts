@@ -223,5 +223,14 @@ export interface GameSettings {
   transitionMotion: MotionIntensity;
   /** Applies a readable desktop interface scale without changing game rules. */
   interfaceScale: "compact" | "standard" | "large" | "extra-large";
+  /**
+   * Draws the real-time 3D room behind the table (E09-001 M1 vertical slice).
+   *
+   * Off by default while the slice is incomplete. It is presentation only: the
+   * DOM table stays mounted and authoritative either way, so this changes what
+   * the player sees and never what the game does. Devices without WebGL2 ignore
+   * it and keep the CSS table.
+   */
+  spatialScene?: boolean;
   controlBindings?: ControlBindingOverrides;
 }

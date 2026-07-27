@@ -24,6 +24,10 @@ export const defaultSettings: GameSettings = {
   tableMotion: "full",
   transitionMotion: "full",
   interfaceScale: "standard",
+  // The 3D room is off until the vertical slice is complete (E09-001 M1). It is
+  // presentation only, so this default changes what is drawn and never what the
+  // game does.
+  spatialScene: false,
   // No control remaps by default; the action map supplies built-in bindings.
 };
 

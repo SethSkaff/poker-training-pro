@@ -48,6 +48,10 @@ const DEFAULT_SETTINGS = Object.freeze({
   tableMotion: "full",
   transitionMotion: "full",
   interfaceScale: "standard",
+  // Presentation-only 3D room (E09-001 M1). Mirrored from the renderer's
+  // `defaultSettings`; the two normalizers must agree or an imported save
+  // silently loses the field on its way through the main process.
+  spatialScene: false,
 });
 
 const DEFAULT_PROGRESS = Object.freeze({
@@ -514,6 +518,10 @@ function validateCurrentSettings(value) {
       )
         ? value.interfaceScale
         : DEFAULT_SETTINGS.interfaceScale,
+      spatialScene:
+        typeof value.spatialScene === "boolean"
+          ? value.spatialScene
+          : DEFAULT_SETTINGS.spatialScene,
     },
   };
 }

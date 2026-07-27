@@ -256,6 +256,20 @@ export function SettingsPanel({
             checked={settings.colorAssist}
             onChange={(colorAssist) => patchSettings({ colorAssist })}
           />
+          {/*
+            The 3D room (E09-001 M1). Presentation only: the table, its
+            controls, and everything assistive technology reads are unchanged
+            whether this is on or off, and a device without WebGL2 simply keeps
+            the existing view.
+          */}
+          <ToggleRow
+            label={formatMessage("settings.display.spatialScene.label")}
+            description={formatMessage(
+              "settings.display.spatialScene.description",
+            )}
+            checked={settings.spatialScene ?? false}
+            onChange={(spatialScene) => patchSettings({ spatialScene })}
+          />
           <p className="night-setting__hint" id="interface-scale-heading">
             {formatMessage("settings.display.interfaceScale.heading")}
           </p>
