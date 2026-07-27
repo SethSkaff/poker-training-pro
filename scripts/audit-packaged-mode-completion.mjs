@@ -92,7 +92,7 @@ const report = reportCdpOutcome(
     modes,
     results,
     scope:
-      "Packaged UI completion smoke for Normal, Rational, and Timed Table using only ordinary displayed controls. Each completed event also records heap/DOM/listener deltas and rejects retained history rows, blob URLs, or excessive heap growth. It is bounded event coverage, not a 60-minute hardware soak.",
+      "Packaged UI completion smoke for Normal, Rational, and Timed Table using only ordinary displayed controls. Each completed event also records heap/DOM/listener deltas and rejects retained history rows, blob URLs, or excessive heap growth. The Normal run additionally exercises the two post-event screens that exist only after a ceremony -- hand review (which must derive a real timeline, not its placeholder or error branch, and must carry its approximation notice) and career travel (recorded as skipped, with the reason, when the result unlocks no next event). It is bounded event coverage, not a 60-minute hardware soak.",
   },
   { failure, transportTimeout },
 );
@@ -147,6 +147,14 @@ async function completeMode(mode) {
     }
     const resourcesBefore = await readResourceSnapshot(cdp);
     const finished = await driveToCeremony(cdp, child, deadline);
+    // Hand review and career travel both hang off the completed-event ceremony
+    // and were previously asserted only in jsdom. This is the one place in the
+    // packaged suite where a real ceremony exists, so exercising them here
+    // costs seconds instead of another full event. Only Normal is used: the
+    // surfaces are mode-independent, and paying for it three times would not
+    // buy a third of a claim.
+    const postEvent =
+      mode === "normal" ? await auditPostEventSurfaces(cdp, deadline) : undefined;
     const resourcesAfter = await readResourceSnapshot(cdp);
     assertBoundedTournamentResources(resourcesBefore, resourcesAfter);
     const errors = cdp.takeFatalEvents();
@@ -169,6 +177,7 @@ async function completeMode(mode) {
       mode,
       desktopBridgePresent,
       ...finished,
+      ...(postEvent ? { postEvent } : {}),
       ...(frameworkDiagnostics.length > 0 ? { frameworkDiagnostics } : {}),
       resources: summarizeResourceGrowth(resourcesBefore, resourcesAfter),
     };
@@ -238,6 +247,108 @@ async function driveToCeremony(cdp, child, deadline) {
     await delay(55);
   }
   throw new Error(`timed out before ceremony after ${actions} hero action(s) and ${skips} presentation skip(s).`);
+}
+
+/**
+ * Exercise the two screens that only exist after an event finishes.
+ *
+ * **Hand review** must derive a real review from the completed replay, not sit
+ * on its "deriving" placeholder or its error branch, and must return to the
+ * ceremony. **Career travel** only appears when the result unlocks a next
+ * event, which a check/call-else-fold hero does not always achieve, so its
+ * absence is recorded as `skipped` with the reason rather than silently
+ * counted as a pass. A run where the hero busts early proves nothing about
+ * travel, and the report should say which run it was.
+ */
+async function auditPostEventSurfaces(cdp, deadline) {
+  const result = { review: undefined, travel: undefined };
+
+  const reviewOffered = await evaluate(cdp, buttonExpression("Review key hand", false));
+  if (!reviewOffered) {
+    result.review = { reached: false, reason: "the ceremony offered no review button" };
+  } else {
+    await clickText(cdp, "Review key hand", deadline);
+    await waitFor(cdp, ".review-shell", deadline, "hand review screen");
+    // The shell renders for the deriving placeholder and the error branch too,
+    // so the shell alone is not evidence the review was produced.
+    const derived = await pollValue(cdp, `(() => {
+      const panel = document.querySelector('.review-panel');
+      if (!panel) return null;
+      const alert = panel.querySelector('[role="alert"]');
+      if (alert) return { failed: (alert.textContent || '').trim().slice(0, 160) };
+      const title = panel.querySelector('#review-title');
+      if (!title) return null;
+      return {
+        accuracy: (panel.querySelector('.review-score strong')?.textContent || '').trim(),
+        decisions: (panel.querySelector('.review-score span')?.textContent || '').trim(),
+        timelineRows: panel.querySelectorAll('.review-timeline li').length,
+        segmentGroups: panel.querySelectorAll('.review-segment-group').length,
+        // The review must never present itself as solved play.
+        approximationNotice: (panel.querySelector('.review-approximation')?.textContent || '').trim().length > 0,
+      };
+    })()`, deadline);
+    if (!derived) {
+      throw new Error("hand review never left its deriving placeholder.");
+    }
+    if (derived.failed) {
+      throw new Error(`hand review reported an error: ${derived.failed}`);
+    }
+    if (derived.timelineRows === 0) {
+      throw new Error("hand review derived no decision timeline from the completed event.");
+    }
+    if (!derived.approximationNotice) {
+      throw new Error("hand review omitted its approximation notice.");
+    }
+    result.review = { reached: true, ...derived };
+    await clickSelector(cdp, ".review-shell .night-back", deadline);
+    await waitFor(cdp, ".ceremony-board", deadline, "ceremony after review");
+  }
+
+  const travelOffered = await evaluate(cdp, buttonExpression("Next event", false));
+  if (!travelOffered) {
+    result.travel = {
+      reached: false,
+      reason: "the completed event unlocked no next event, so no travel leg exists",
+    };
+    return result;
+  }
+  await clickText(cdp, "Next event", deadline);
+  await waitFor(cdp, ".career-travel", deadline, "career travel");
+  const travel = await evaluate(cdp, `(() => {
+    const travel = document.querySelector('.career-travel');
+    if (!travel) return null;
+    return {
+      fromTier: travel.getAttribute('data-from-tier'),
+      toTier: travel.getAttribute('data-to-tier'),
+      stops: travel.querySelectorAll('.career-travel__route [data-stop-state]').length,
+      status: (travel.querySelector('[role="status"]')?.textContent || '').trim().slice(0, 120),
+      skippable: travel.querySelector('.career-travel__skip') !== null,
+    };
+  })()`);
+  if (!travel || travel.stops === 0) {
+    throw new Error(`career travel rendered no route stops: ${JSON.stringify(travel)}`);
+  }
+  // The leg must be skippable and must actually deliver the player onward.
+  await clickSelector(cdp, ".career-travel__skip", deadline);
+  const arrived = await poll(
+    cdp,
+    "document.querySelector('.room-flight') !== null || document.querySelector('.poker-table') !== null",
+    deadline,
+  );
+  if (!arrived) {
+    throw new Error("skipping career travel did not deliver the next event.");
+  }
+  result.travel = { reached: true, ...travel, arrived: true };
+  return result;
+}
+
+async function pollValue(cdp, expression, deadline) {
+  while (Date.now() < deadline) {
+    const value = await evaluate(cdp, expression);
+    if (value) return value;
+    await delay(120);
+  }
+  return null;
 }
 
 async function clickSelector(cdp, selector, deadline) {

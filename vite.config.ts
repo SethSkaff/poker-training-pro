@@ -1,6 +1,24 @@
 import { cpus } from "node:os";
-import { defineConfig } from "vitest/config";
+import { defineConfig, type Plugin } from "vitest/config";
 import react from "@vitejs/plugin-react";
+
+/*
+  The cast crosses a real version boundary, and removing it will not typecheck.
+
+  This project builds on vite 8.1.5, but vitest 3.2.7 depends on vite 6 and npm
+  installs that second copy under `node_modules/vitest/node_modules/vite`.
+  `defineConfig` imported from `vitest/config` therefore types `plugins` against
+  vite 6's `Plugin`, while `@vitejs/plugin-react` returns vite 8's -- and the
+  two are structurally incompatible (vite 8 changed the `this` type of the
+  `hotUpdate` hook). The import has to come from `vitest/config` for the `test`
+  key below to be typed at all.
+
+  This was introduced in 13dc42a, which added the `test` key and switched the
+  import, and it broke `tsc --noEmit` -- and so the "TypeScript strict
+  verification" stage of release verification -- until it was found here.
+  The plugin itself is unchanged at runtime; only the declaration is bridged.
+*/
+const reactPlugin = react() as unknown as Plugin;
 
 /*
   Test workers are capped well below the core count on purpose.
@@ -26,7 +44,7 @@ import react from "@vitejs/plugin-react";
 const testWorkers = Math.max(2, Math.floor(cpus().length / 3));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [reactPlugin],
   base: "./",
   build: {
     outDir: "dist",

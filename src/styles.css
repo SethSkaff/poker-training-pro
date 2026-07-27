@@ -5188,7 +5188,15 @@ input[type="range"]::-webkit-slider-thumb {
   align-items: center;
   border-top: 1px solid #9d7a3a;
   border-bottom: 1px solid #9d7a3a;
-  padding: 10px 42px 12px;
+  /*
+    The horizontal padding clears the absolutely-positioned logo below, which
+    sits at `left: 12px` and is 42px wide, so it ends 54px into the box. At the
+    previous 42px the logo covered the first glyph of the title by 12px --
+    measured in the packaged build, where "Championship Series" rendered as
+    "hampionship Series". Kept symmetric so the flex centring still puts the
+    title in the middle of the box rather than nudging it off-centre.
+  */
+  padding: 10px 66px 12px;
   color: #ecd8aa;
   background: #07100f;
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.45);
@@ -6541,6 +6549,27 @@ input[type="range"]::-webkit-slider-thumb {
 .tour-lobby__header h1 {
   margin-bottom: 0;
   font-size: clamp(44px, 4.4vw, 68px);
+}
+
+/*
+  This class was applied in the markup and never styled, so its `<strong>` and
+  `<span>` ran together as two bare inline boxes with no whitespace between
+  them: the lobby read "0 of 5 events qualifiedNext up: Local Qualifier".
+  A flex row with a gap and the interpunct separator already used elsewhere in
+  the game ("Preflop . 6 players remain") makes the two facts read as two facts.
+*/
+.tour-lobby__progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 8px 0 0;
+}
+
+.tour-lobby__progress > span::before {
+  margin-right: 10px;
+  color: rgba(236, 216, 170, 0.45);
+  content: "·";
 }
 
 /* ---------------------------------------------------------------------------
@@ -8783,18 +8812,40 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Credits / licenses, About & support, and start-menu credits link. */
+/*
+  Stacked directly above the play-chip boundary notice, sharing its pill
+  styling so the two read as one bottom-right cluster.
+
+  Both used to be anchored bottom-right at nearly the same offsets -- the notice
+  at `right: 18px; bottom: 14px; z-index: 12`, this at `right: 1.4rem;
+  bottom: 1rem; z-index: 3` -- so the notice's opaque pill sat exactly on top of
+  this button and swallowed every click on it, at every viewport. Keyboard focus
+  still reached it, which is why it went unnoticed: the link looked reachable
+  and simply did nothing when clicked.
+
+  It is not moved to the opposite corner because the bottom-left of the menu art
+  is a brightly lit chip, where a plain text link is unreadable. The offset
+  below is the notice's own box (10px text + 12px padding + 2px border ~= 26px)
+  plus its 14px inset and an 8px gap. The packaged screen-layout audit
+  hit-tests both, so a future change that puts them back on top of each other
+  fails a gate instead of shipping.
+*/
 .home-reference__credits-link {
   position: absolute;
-  right: 1.4rem;
-  bottom: 1rem;
-  z-index: 3;
+  right: 18px;
+  bottom: 48px;
+  z-index: 12;
   min-width: 24px;
   min-height: 24px;
-  border: none;
-  background: transparent;
-  color: rgba(240, 240, 236, 0.72);
-  font-size: 0.82rem;
-  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(4, 5, 5, 0.74);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
