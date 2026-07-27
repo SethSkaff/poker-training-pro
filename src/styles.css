@@ -5085,6 +5085,17 @@ input[type="range"]::-webkit-slider-thumb {
 .night-title {
   position: relative;
   width: 100vw;
+  /*
+    `100vw` includes the vertical scrollbar's width, which is invisible here
+    only because `overflow: hidden` below clips the excess. Screens that opt
+    back into scrolling -- `.reference-shell` sets `overflow: auto` -- grow a
+    scrollbar, and then the shell is exactly one scrollbar wider than the space
+    it has: the packaged screen-layout audit measured the poker reference
+    scrolling sideways by 15px at every viewport. Capping against the parent's
+    width, which already excludes the scrollbar, fixes the scrolling case and
+    is a no-op everywhere else.
+  */
+  max-width: 100%;
   min-width: 1024px;
   min-height: 100vh;
   overflow: hidden;

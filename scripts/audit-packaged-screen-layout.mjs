@@ -91,6 +91,17 @@ try {
   await session.reachHome();
   await visit(session, "home-menu");
 
+  // Reachable only because the credits link is no longer covered by the
+  // play-chip notice; before that fix a mouse could not get to this screen.
+  await session.clickSelector(
+    ".home-reference__credits-link",
+    "credits & licenses link",
+  );
+  await session.waitFor(".credits-screen", "credits screen");
+  await visit(session, "credits");
+  await session.clickSelector(".credits-screen .night-back", "credits back");
+  await session.waitFor(".home-reference", "home menu");
+
   await session.clickSelector('button[aria-label="Settings"]', "settings button");
   await session.waitFor(".night-settings", "settings panel");
   await visit(session, "settings");
@@ -103,6 +114,25 @@ try {
   );
   await session.waitFor(".mode-stage", "mode selection");
   await visit(session, "mode-select");
+
+  /*
+    The standalone reference (E21-003) is a dense, text-heavy screen and the
+    likeliest place for a narrow viewport to break a table. Its entry point
+    shares a class with the tutorial link, so it is matched by its text.
+  */
+  const openedReference = await session.evaluate(`(() => {
+    const link = [...document.querySelectorAll('.mode-stage__tutorial-link')]
+      .find((candidate) => /poker reference/i.test(candidate.textContent || ''));
+    if (!(link instanceof HTMLElement)) return false;
+    link.click();
+    return true;
+  })()`);
+  if (openedReference) {
+    await session.waitFor(".reference-panel", "poker reference");
+    await visit(session, "poker-reference");
+    await session.clickSelector(".reference-shell .night-back", "reference back");
+    await session.waitFor(".mode-stage", "mode selection");
+  }
 
   await session.clickSelector(".mode-stage__choice--normal", "Normal mode");
   await session.waitForButton("Enter event", "career event lobby");
