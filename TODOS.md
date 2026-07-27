@@ -550,11 +550,45 @@ EV coverage therefore decides which legal actions the player may take, which is
 why only Fold and Raise appear in some spots. Removing the tempting alternative
 is precisely what makes the exercise worthless.
 
+**Measured 2026-07-27, and it changes the shape of this task.** Across the 12
+authored scenarios there are 44 legal-action slots and **9 have no authored EV**:
+
+| Scenario | Legal | Missing EV |
+|---|---|---|
+| `preflop-pot-odds-ak` | fold, call, raise, all-in | raise, all-in |
+| `preflop-button-shove-fold-equity` | fold, call, raise, all-in | call |
+| `preflop-implied-odds-pair` | fold, call, raise, all-in | all-in |
+| `flop-flush-draw-all-in` | fold, call, raise, all-in | raise, all-in |
+| `flop-defense-frequency` | fold, call, raise, all-in | all-in |
+| `river-bluff-catch-price` | fold, call, raise, all-in | all-in |
+| `river-icm-bubble-call` | fold, call, all-in | all-in |
+
+**So the UI fix alone would produce dead buttons.** `gradeTrainingAttempt` reads
+`actionEvs[action]`; offering an action it cannot score would either crash the
+grade or grade it silently as nothing, which is worse than hiding it. The button
+set and the EV coverage have to be fixed together, in that order.
+
+**BLOCKED on evaluation, not on UI.** The nine gaps cannot be filled by writing
+numbers in: this repository's own provenance policy
+(`docs/training-scenario-review-policy.md`) forbids a script or an agent
+promoting a mathematical claim to `verified`, and an invented EV is exactly such
+a claim. The two legitimate routes are (a) author the nine values and have them
+verified by the qualified poker-math review already listed in Part II, or
+(b) **compute** every legal action's EV with the project's own bounded
+simulation -- the same machinery that already produces the equity figure shown
+in E17-001 feedback -- so coverage is complete by construction rather than by
+hand. Route (b) is the same evaluation step E15-002's generator needs, so doing
+it once serves both.
+
 **Acceptance criteria**
 - [ ] Every action legal in the scenario is offered: fold, check, call, valid
-  raise sizes, all-in, and a custom raise where sensible.
+  raise sizes, all-in, and a custom raise where sensible. **Blocked until EV
+  coverage is complete; see above.**
 - [ ] Missing EV coverage is a **content defect that fails validation**, not a
-  reason to hide a button.
+  reason to hide a button. **Not yet enforced**: the rule would fail 7 of the 12
+  shipped scenarios today, so landing it before the gaps are filled would break
+  the training bank gate rather than improve it. The measurement above is the
+  evidence for that decision.
 - [ ] The grade explains where the chosen action sits (best / strong /
   acceptable / small mistake / large mistake).
 
