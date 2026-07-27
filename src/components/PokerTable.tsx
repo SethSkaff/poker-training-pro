@@ -3138,6 +3138,54 @@ export function PokerTable({
                   />
                 </Suspense>
               )}
+              {/*
+                Skip lives over the table, where the player is already looking
+                (E27-015). It used to be a small secondary button in the bottom
+                dock next to the 2x toggle, which is why a player who folded
+                reported being unable to find it -- and why the two were easy to
+                confuse. They promise different things: 2x changes how fast the
+                hand is presented, Skip goes to the outcome. So they are now
+                different sizes, in different places, and worded differently.
+
+                It renders whenever the hero has no decision to make, which is
+                the same frame their fold is accepted, rather than waiting for
+                the next presentation event to arrive.
+              */}
+              {!heroDecisionActive || action ? (
+                <button
+                  type="button"
+                  className="skip-hand"
+                  onPointerDown={() => {
+                    // CDP/gamepad-style input can release after the current
+                    // queue item completes. Start the deterministic skip on
+                    // press so the button cannot turn into a later event's
+                    // click target during that release.
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                    }
+                  }}
+                  onMouseDown={() => {
+                    // Electron's low-level CDP mouse path is guaranteed to
+                    // produce mousedown; keep the same early capture for
+                    // physical mouse input.
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                    }
+                  }}
+                  onClick={() => {
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                      return;
+                    }
+                    pendingTournamentAction.current?.finish();
+                    pendingPresentationEvent.current?.finish();
+                  }}
+                  aria-label={formatMessage("table.spectator.skipAriaLabel")}
+                >
+                  <FastForward size={19} aria-hidden="true" />
+                  <span>{formatMessage("table.spectator.skip")}</span>
+                </button>
+              ) : null}
               {chipTravel && (
                 <span
                   key={tournament?.presentationEvent?.id}
@@ -3521,37 +3569,6 @@ export function PokerTable({
                   {speed === 2
                     ? formatMessage("table.spectator.returnTo1x")
                     : formatMessage("table.spectator.speed2x")}
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={() => {
-                    // CDP/gamepad-style input can release after the current
-                    // queue item completes. Start the deterministic skip on
-                    // press so the button cannot turn into a later event's
-                    // click target during that release.
-                    if (presentationActive && tournament?.onSkipPresentation) {
-                      tournament.onSkipPresentation();
-                    }
-                  }}
-                  onMouseDown={() => {
-                    // Electron's low-level CDP mouse path is guaranteed to
-                    // produce mousedown; keep the same early capture for
-                    // physical mouse input as a belt-and-suspenders path.
-                    if (presentationActive && tournament?.onSkipPresentation) {
-                      tournament.onSkipPresentation();
-                    }
-                  }}
-                  onClick={() => {
-                    if (presentationActive && tournament?.onSkipPresentation) {
-                      tournament.onSkipPresentation();
-                      return;
-                    }
-                    pendingTournamentAction.current?.finish();
-                    pendingPresentationEvent.current?.finish();
-                  }}
-                  aria-label={formatMessage("table.spectator.skipAriaLabel")}
-                >
-                  {formatMessage("table.spectator.skipToResult")}
                 </button>
               </div>
             </div>

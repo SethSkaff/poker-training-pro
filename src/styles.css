@@ -4412,6 +4412,63 @@ input[type="range"]::-webkit-slider-thumb {
   border-color: var(--gold);
 }
 
+/*
+  Skip, over the table (E27-015).
+
+  It used to be a small secondary button in the bottom dock, sitting beside the
+  2x speed toggle -- which is both why a player who folded could not find it and
+  why the two read as the same kind of thing. They are not: 2x changes the rate
+  of the presentation, Skip ends it and goes to the outcome. So Skip is large,
+  amber, and placed in the upper-centre of the table where the eye already is,
+  and 2x stays small and quiet in the dock.
+
+  `z-index: 45` puts it above the table and the 3D canvas but below the pause
+  scrim, so a paused table cannot be skipped through the overlay.
+*/
+.skip-hand {
+  position: absolute;
+  z-index: 45;
+  top: 18px;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border: 1px solid rgba(255, 209, 63, 0.55);
+  border-radius: 999px;
+  padding: 0 26px 0 22px;
+  color: #1b1206;
+  background: linear-gradient(180deg, #ffd980, #f0b43a);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transform: translateX(-50%);
+  transition:
+    transform 140ms ease,
+    filter 140ms ease;
+}
+
+.skip-hand:hover,
+.skip-hand:focus-visible {
+  filter: brightness(1.07);
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.skip-hand:focus-visible {
+  outline: 3px solid #ffd13f;
+  outline-offset: 3px;
+}
+
+:root[data-motion-table="off"] .skip-hand,
+:root[data-motion-transition="off"] .skip-hand {
+  transition: none;
+}
+
 .spectator-dock {
   position: absolute;
   z-index: 40;

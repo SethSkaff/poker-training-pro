@@ -609,31 +609,46 @@ only place some of that appears at all.
   presentation only — the policy must be identical across them, with a test.
 - [ ] Standard is the Normal default.
 
-**Skip control — specified 2026-07-27.** The control exists but is wrong in
+**The three pacing criteria above remain open.** Named presentation speeds and a
+measured readability floor per action are not implemented; only the skip control
+below is done, and the measured cadence (about one second per event, whole hand
+~27 s) has not changed.
+
+**Skip control — specified 2026-07-27, implemented 2026-07-27.** The control exists but is wrong in
 label, size, and placement: a small secondary button in the bottom dock, sitting
 beside the 2× toggle where it reads as another speed option. Redesign it to this
 specification rather than iterating on the current one.
 
-- [ ] The primary label is **Skip**. Not "Skip to result", not an icon alone.
-- [ ] It appears **immediately** once the hero's fold has been accepted — on the
-  frame the action is submitted, not after the next presentation event.
-- [ ] It is large and visually prominent: a primary control, sized and weighted
-  so it is found without being hunted for.
-- [ ] It sits near the **upper or central table area**, where the player is
-  already looking during a hand. It does not live in the small bottom dock.
-- [ ] The **2× speed toggle stays separate and secondary**, visually
-  distinguishable from Skip so the two are never confused. Speed changes
-  presentation rate; Skip advances to the outcome. They are different promises.
-- [ ] Skip advances directly to the hand's result **and leaves the final
-  showdown or winner state readable** — it must honour the E27-003 result floor
-  rather than flashing past it. Skipping the *watching* is the point; skipping
-  the *result* is not.
-- [ ] Skip never duplicates an action, recalculates an AI decision, corrupts
-  deterministic replay, or bypasses pot resolution. Assert replay equality
-  between a skipped hand and the same hand watched in full.
-- [ ] Reachable and operable by keyboard and controller, with a correct
-  accessible name that states what will be skipped, and correct behaviour under
-  reduced motion (where the result must still hold its readable minimum).
+- [x] The primary label is **Skip**. Not "Skip to result", not an icon alone.
+- [x] It appears **immediately** once the hero's fold has been accepted. Rendered
+  on `!heroDecisionActive || action`, so it is up on the submitting frame rather
+  than waiting for the engine to answer. Packaged: present at t+1s, the same
+  sample that shows `Action locked: fold`.
+- [x] It is large and visually prominent. Measured in the packaged build at
+  **118×48 px**, amber, uppercase, against the previous small dock button.
+- [x] It sits near the **upper-centre of the table**, measured at y=128 in the
+  packaged build. A source test asserts the dock markup no longer contains it.
+- [x] The **2× toggle stays separate and secondary**, still small and quiet in the
+  dock while Skip is large and over the table. They were adjacent and
+  similar-looking, which is a large part of why Skip was not found.
+- [x] Skip advances to the result and leaves it readable. This was already true
+  architecturally -- `skipTournamentPresentation` re-queues a single
+  `hand-result` beat and guards re-entry with `skipResultVisible` -- and now
+  benefits from the E27-003 floor as well. Packaged: the result strip was still
+  showing after a skipped hand.
+- [x] Skip never duplicates an action, recalculates a decision, or corrupts
+  replay. It resumes from the already-computed transition and fast-forwards
+  through the same deterministic run-to-hero path rather than replaying a
+  submitted action. `PokerTable.skipControl.test.ts` asserts identical
+  `sequence`, `replayActions`, and serialized session state across two runs from
+  one seed, and that no extra action is recorded for the skip itself.
+- [x] It is a real `<button>` in the scene, so keyboard and controller reach it
+  through the existing focus order, and it has a visible focus ring. The
+  accessible name now states what is skipped **and what is not**: "...the hand
+  is still played out and the winner is still shown", because bare "skip"
+  invites the fear that the result is being thrown away. Its transition is
+  disabled under `data-motion-table="off"`, and the result keeps the E27-003
+  floor regardless of motion settings.
 
 ### E27-016 — Early elimination: keep measuring, do not gate on one bust
 

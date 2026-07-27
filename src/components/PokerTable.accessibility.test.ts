@@ -66,9 +66,16 @@ describe("poker table live announcements", () => {
     expect(source).toContain(
       'aria-label={formatMessage("table.spectator.skipAriaLabel")}',
     );
-    expect(formatMessage("table.spectator.skipAriaLabel")).toBe(
-      "Skip opponent presentation and continue the hand",
-    );
+    /*
+      Reworded for E27-015: the accessible name now says what is skipped *and*
+      what is not, because "skip" on its own invites the fear that the hand is
+      being abandoned or the result thrown away. Neither is true -- the engine
+      still plays the hand out and the winner is still shown.
+    */
+    const skipName = formatMessage("table.spectator.skipAriaLabel");
+    expect(skipName).toContain("go to the result");
+    expect(skipName).toContain("still played out");
+    expect(skipName).toContain("winner is still shown");
   });
 
   it("keeps Escape available while a pause-menu range or checkbox has focus", () => {

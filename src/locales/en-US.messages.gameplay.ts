@@ -530,9 +530,14 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.spectator.actionLocked": "Action locked: {action}",
   "table.spectator.returnTo1x": "Return to 1×",
   "table.spectator.speed2x": "2×",
+  // The primary label is the single word. The accessible name below carries
+  // the detail, so the control is short to read and precise to hear (E27-015).
+  "table.spectator.skip": "Skip",
   "table.spectator.skipToResult": "Skip to result",
+  // States what is skipped and, just as importantly, what is not: the hand is
+  // still played and resolved by the engine, and its result is still shown.
   "table.spectator.skipAriaLabel":
-    "Skip opponent presentation and continue the hand",
+    "Skip the rest of this hand's presentation and go to the result. The hand is still played out and the winner is still shown.",
 
   "table.raise.heading": "Build your raise",
   "table.raise.close": "Close raise controls",
