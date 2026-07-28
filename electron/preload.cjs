@@ -9,6 +9,7 @@ const ALLOWED_DOCUMENT_IDS = new Set([
 ]);
 const ALLOWED_FOLDER_TARGETS = new Set(["save", "log"]);
 const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
+const forceWebGl2Failure = process.argv.includes("--ptp-force-webgl2-failure");
 
 contextBridge.exposeInMainWorld("desktop", {
   getVersion: () => ipcRenderer.invoke("app:getVersion"),
@@ -27,6 +28,10 @@ contextBridge.exposeInMainWorld("desktop", {
   testLifecycleWindow: lifecycleSmokeEnabled
     ? (action) => ipcRenderer.invoke("test:lifecycleWindow", action)
     : undefined,
+  // This capability override exists only for the isolated packaged fallback
+  // audit. Normal launches do not expose it, so it cannot become a user
+  // setting or a renderer-controlled hardware policy.
+  forceWebGl2Failure: forceWebGl2Failure || undefined,
   setFullscreen: (fullscreen) =>
     ipcRenderer.invoke("window:setFullscreen", Boolean(fullscreen)),
   getSafeModeState: () =>

@@ -78,11 +78,18 @@ export function TableScene3D({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const sceneRuntime = runtime ?? { probe: probeWebGl2, create: createTableScene };
+    // The packaged fallback audit needs to exercise the same availability path
+    // as a real blocked context before three.js is constructed. This flag is
+    // injected only by Electron main for that isolated audit; production users
+    // always receive the actual canvas probe.
+    const probe = window.desktop?.forceWebGl2Failure
+      ? () => "blocked" as const
+      : sceneRuntime.probe;
     let terminal = false;
     const attempt = startSceneAttempt({
       canvas,
       state: stateRef.current,
-      probe: sceneRuntime.probe,
+      probe,
       startSuspended: suspended,
       create: (target, nextState, callbacks) => {
         const created = sceneRuntime.create(target, nextState, callbacks);

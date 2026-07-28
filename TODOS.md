@@ -1466,9 +1466,9 @@ clamped seated camera, object travel, and reduced-motion end-state parity.
 
 ### D3D-F01 — Explicit scene availability and DOM fallback
 
-**Status:** In progress — source behavior implemented, but M0 acceptance remains
-open pending the packaged forced-failure gate in D3D-F06 and DOM-host test
-infrastructure.
+**Status:** In progress — the availability and packaged forced-failure gates
+are now verified, while F05/F06 still own context restoration, zero-frame
+scene suspension, performance diagnostics, and a full legal-hand matrix.
 The previous prototype set `data-spatial-scene="on"` as soon as the preference
 was enabled, so a failed renderer left the readable 2.5D decoration at 6%
 opacity before any canvas frame existed.
@@ -1495,13 +1495,21 @@ initial-pause/runtime-change and rapid request-toggle counterexamples; its
 post-fix recheck found no material source regression and independently reran
 the 28 focused tests, typecheck, and production build.
 
-**Remaining evidence / risk.** This Node-only test environment has no jsdom or
-browser renderer, so it does not yet execute `TableScene3D` as a mounted DOM
-component or capture opacity/focus parity. No packaged test currently enables
-the scene and forces WebGL failure; D3D-F06 (after F02/F05) owns that release
-gate. A renderer that throws only after allocating internal GPU resources still
-depends on renderer-library cleanup behavior until F05 centralizes allocations.
-Do not mark D3D-F01 or M0 complete from the source tests alone.
+**Packaged evidence (2026-07-28).** `npm run package:win` completed, then
+`npm run release:audit-packaged-scene3d` enabled the normal Settings control in
+an isolated profile and used CDP to inspect the mounted DOM, WebGL2 state,
+console/fatal-event stream, and screenshots. Normal WebGL2 reached
+`data-spatial-scene="ready"`; the forced `--ptp-force-webgl2-failure` case
+kept the same one DOM table, all six seats, and all ten buttons mounted while
+leaving the fade marker absent. The injection is a main-process/preload
+test-only capability, so the renderer takes its production availability state
+machine rather than an audit-only replacement path.
+
+**Remaining evidence / risk.** This Node-only test environment still has no
+jsdom component host for React Strict-Mode effect coverage. F05/F06 remain
+open for context restoration, centralized resource ownership, measured scene
+budgets/first-frame telemetry, and forced-failure completion of a legal hand.
+Do not mark M0 complete from this slice alone.
 
 **Next task:** D3D-F02, the independent scene JS/assets budget audit. D3D-F03
 may proceed independently, but both must land before M1 object work; F05/F06
@@ -2867,12 +2875,12 @@ contrast, size, or legibility.
 
 ### E25-003 — Verify in the packaged build, not only in dev
 
-**3D coverage correction 2026-07-28.** The existing packaged suite verifies the
-DOM/2.5D application and one manual 3D prototype run, but no automated packaged
-audit enables `spatialScene`, waits for first-frame readiness, records renderer
-budgets, forces WebGL failure, or exercises context loss. D3D-F06 and the
-milestone closure tasks in `docs/desktop-3d-implementation-plan.md` are required
-before any M0-M5 3D claim can use E25-003 as evidence.
+**3D coverage correction 2026-07-28.** `npm run release:audit-packaged-scene3d`
+now enables `spatialScene`, asserts first-frame readiness in normal WebGL2,
+captures CDP screenshots, and forces WebGL failure while asserting the mounted
+DOM/2.5D table remains operable. D3D-F06 and the milestone closure tasks still
+own context loss, renderer budgets/telemetry, and full legal-hand coverage
+before any M0-M5 3D claim can use E25-003 as complete evidence.
 
 **Audit — packaged-vs-dev divergence mechanisms**: the `app.isPackaged` URL branch
 (`main.cjs:47,173-177`); devtools disabled when packaged (`:107`), which is why

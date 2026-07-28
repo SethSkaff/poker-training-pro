@@ -46,6 +46,11 @@ const { safeSendToRenderer } = require("./safe-send.cjs");
 
 const isDevelopment = !app.isPackaged;
 const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
+// Test-only renderer capability override used by the packaged scene fallback
+// audit. The renderer cannot infer this from a CDP override after it has
+// already started loading three.js, so main forwards an explicit, isolated
+// argument through preload instead.
+const forceWebGl2Failure = process.argv.includes("--ptp-force-webgl2-failure");
 const APP_PROTOCOL = "poker-training-pro";
 protocol.registerSchemesAsPrivileged([
   {
@@ -105,9 +110,10 @@ function createWindow() {
       webSecurity: true,
       webviewTag: false,
       devTools: isDevelopment,
-      additionalArguments: lifecycleSmokeEnabled
-        ? ["--ptp-lifecycle-smoke"]
-        : [],
+      additionalArguments: [
+        ...(lifecycleSmokeEnabled ? ["--ptp-lifecycle-smoke"] : []),
+        ...(forceWebGl2Failure ? ["--ptp-force-webgl2-failure"] : []),
+      ],
     },
   });
 

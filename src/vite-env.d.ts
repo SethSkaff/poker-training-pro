@@ -32,6 +32,8 @@ interface Window {
     testLifecycleWindow?: (
       action: "minimize" | "restore",
     ) => Promise<{ ok: boolean }>;
+    /** Present only in the packaged WebGL fallback audit. */
+    forceWebGl2Failure?: true;
     setFullscreen: (fullscreen: boolean) => Promise<boolean>;
     getSafeModeState: () => Promise<{
       readonly available: boolean;

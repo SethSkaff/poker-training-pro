@@ -21,6 +21,7 @@
     "release:audit-packaged-recovery": "node scripts/audit-packaged-save-recovery-smoke.mjs",
     "release:audit-packaged-presentation": "node scripts/audit-packaged-presentation-surfaces.mjs",
     "release:audit-packaged-lifecycle-load": "node scripts/audit-packaged-lifecycle-load.mjs",
+    "release:audit-packaged-scene3d": "node scripts/audit-packaged-scene3d-fallback.mjs",
     "release:audit-packaged-screen-layout": "node scripts/audit-packaged-screen-layout.mjs",
     "release:audit-packaged-lifecycle-security": "node scripts/audit-packaged-lifecycle-bridge-security.mjs",
     "release:audit-packaged-licenses": "node scripts/audit-packaged-license-sidecars.mjs",
