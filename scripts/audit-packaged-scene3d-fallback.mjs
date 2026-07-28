@@ -8,16 +8,20 @@ import {
 
 const appPath = resolve(projectRoot, "outputs/desktop/win-unpacked/Poker Training Pro.exe");
 const timeoutMs = 75_000;
-const normal = await runCase("webgl2", []);
-const fallback = await runCase("forced-webgl-failure", ["--ptp-force-webgl2-failure"]);
+const modes = ["normal", "rational"];
+const results = [];
+for (const mode of modes) {
+  results.push(await runCase(mode, "webgl2", []));
+  results.push(await runCase(mode, "forced-webgl-failure", ["--ptp-force-webgl2-failure"]));
+}
 
-if (!normal.canvas || normal.webgl2 !== true || normal.sceneReady !== true) {
-  throw new Error(`Normal WebGL2 scene did not become ready: ${JSON.stringify(normal)}`);
-}
-if (fallback.forceFlag !== true || fallback.sceneReady !== false) {
-  throw new Error(`Forced WebGL fallback did not preserve the DOM table: ${JSON.stringify(fallback)}`);
-}
-for (const result of [normal, fallback]) {
+for (const result of results) {
+  if (result.kind === "webgl2" && (!result.canvas || result.webgl2 !== true || result.sceneReady !== true)) {
+    throw new Error(`WebGL2 scene did not become ready: ${JSON.stringify(result)}`);
+  }
+  if (result.kind === "forced-webgl-failure" && (result.forceFlag !== true || result.sceneReady !== false)) {
+    throw new Error(`Forced WebGL fallback did not preserve the DOM table: ${JSON.stringify(result)}`);
+  }
   if (result.tableCount !== 1 || result.seatCount < 2 || result.buttonCount < 1 || result.tableTextLength < 1) {
     throw new Error(`Accessible table DOM was not mounted: ${JSON.stringify(result)}`);
   }
@@ -25,10 +29,10 @@ for (const result of [normal, fallback]) {
     throw new Error(`DOM seats diverged from the public scene projection: ${JSON.stringify(result)}`);
   }
 }
-console.log(JSON.stringify({ ok: true, normal, fallback, note: "CDP screenshots were captured in both cases; this report records their byte counts." }, null, 2));
+console.log(JSON.stringify({ ok: true, results, note: "CDP screenshots were captured for Normal and Rational, with WebGL2 and forced-fallback cases; this report records their byte counts." }, null, 2));
 
-async function runCase(name, extraArguments) {
-  const session = await PackagedSession.launch({ appPath, profilePrefix: `poker-training-pro-scene3d-${name}-`, timeoutMs, extraArguments });
+async function runCase(mode, kind, extraArguments) {
+  const session = await PackagedSession.launch({ appPath, profilePrefix: `poker-training-pro-scene3d-${mode}-${kind}-`, timeoutMs, extraArguments });
   try {
     // Console and runtime events are consumed through the same CDP client as
     // the DOM assertions, so a quiet fallback cannot hide a renderer error.
@@ -47,7 +51,7 @@ async function runCase(name, extraArguments) {
     await session.clickSelector('button[aria-label="Play"]', "play button");
     await session.clickIfPresent("#play-chip-ack-title ~ .startup-gate__actions button");
     await session.waitFor(".mode-stage", "mode selection");
-    await session.clickSelector(".mode-stage__choice--normal", "normal mode");
+    await session.clickSelector(`.mode-stage__choice--${mode}`, `${mode} mode`);
     await session.waitForButton("Enter event", "event lobby");
     await session.clickButton("Enter event");
     await session.waitFor(".room-flight", "room arrival");
@@ -107,7 +111,8 @@ async function runCase(name, extraArguments) {
       throw new Error(`Renderer emitted fatal CDP events: ${JSON.stringify(unexpectedFatalEvents)}`);
     }
     return {
-      name,
+      mode,
+      kind,
       ...observation,
       consoleFatalEvents: unexpectedFatalEvents.length,
       knownElectronSandboxDiagnostics: fatalEvents.length - unexpectedFatalEvents.length,

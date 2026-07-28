@@ -1579,8 +1579,10 @@ compares only non-`.is-out` seats. Focused snapshot/accessibility tests (15),
 **Remaining work / risk.** Public card/marker/tier values are carried through
 the renderer state but are not yet fully drawn by the prototype; M1 object work
 must consume them. The DOM identity/redaction and heads-up-to-six-hand portions
-of the parity matrix are now evidenced, but Normal-versus-Rational and an
-elimination/playable-hand packaged trajectory remain before marking F03 complete.
+of the parity matrix are now evidenced; Normal and Rational both passed the
+same packaged WebGL-ready/forced-fallback matrix. An
+elimination/playable-hand packaged trajectory remains before marking F03
+complete.
 
 **Next task:** Complete the F03 parity/redaction matrix, then D3D-F04.
 
