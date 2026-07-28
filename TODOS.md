@@ -676,16 +676,19 @@ the arrival fly-through composites real per-table depth. None of that satisfies
 the product direction, and no combination of CSS depth work will.
 
 **This is recorded so no future pass reads E09-002 as the 3D requirement being
-met.** E09-001, the architecture research spike, remains the gating task: it must
-choose a rendering approach and state the asset, performance, accessibility, and
-bundle consequences before any of the below is attempted.
+met.** E09-001's architecture decision has now landed, and a procedural 3D
+prototype exists, but M0/M1 acceptance remains open. Execute
+`docs/desktop-3d-implementation-plan.md` in dependency order; in particular,
+readiness/fallback, named scene budgets, the redacted snapshot adapter, event-id
+animation, lifecycle/context recovery, and a packaged scene gate precede further
+visual expansion.
 
 Explicitly **not** acceptable as the environment: background circles, a flat
 still with a zoom, parallax alone, floating portraits, gradients behind avatars,
 sprites in a void, small CSS translations described as a camera, or overlays that
 do not create a space.
 
-**Acceptance criteria (post-E09-001, not startable before it)**
+**Acceptance criteria (tracked as M1-M5 in the implementation plan)**
 - [ ] A seated first-person view inside an authored championship room with real
   perspective, multiple tables, warm casino lighting, and background activity.
 - [ ] Limited left/right looking, a recentre control, smooth motion, and a
@@ -1409,15 +1412,19 @@ analysis (Part II) green for the vestibular tier.
 
 ### E09-001 — Research spike: choose the desktop presentation architecture
 
-**Status:** REDECIDED 2026-07-27 — real 3D chosen; M1 vertical slice implemented
-and verified in the packaged build.
+**Status:** REDECIDED 2026-07-27 — real 3D chosen. Repository re-audit on
+2026-07-28 classifies M0 and M1 as **partial prototypes, not completed
+milestones**. The dependency-ordered execution and acceptance plan is
+`docs/desktop-3d-implementation-plan.md`.
 
 The earlier record (`docs/desktop-presentation-architecture.md`) chose staged
 2.5D and deferred real 3D behind a future decision. That deferral is **no longer
 in force**: the owner directed that this must not remain an indefinite research
 item. The new decision is `docs/desktop-3d-architecture.md`, which supersedes it
 and covers rendering technology, asset pipeline, bundle impact, performance
-budget, accessibility structure, and the staged migration path.
+budget, accessibility structure, and the staged migration path. The architecture
+decision is complete; its implementation milestones are tracked and defined in
+`docs/desktop-3d-implementation-plan.md`.
 
 **Chosen: three.js on WebGL2, imperative, drawn behind the DOM table.**
 three.js has **zero runtime dependencies** (verified against the registry) and
@@ -1449,7 +1456,7 @@ reasoning recorded. The packaged licence gate then refused the build until
 three.js had runtime notice evidence, which was regenerated through the
 documented acknowledgement flow.
 
-### M1 vertical slice — implemented and verified
+### M1 prototype — implemented, but the vertical-slice exit is still open
 
 Files: `src/scene3d/tableSceneModel.ts`, `src/scene3d/tableScene.ts`,
 `src/components/TableScene3D.tsx`, wired in `PokerTable.tsx` behind the new
@@ -1457,36 +1464,48 @@ Files: `src/scene3d/tableSceneModel.ts`, `src/scene3d/tableScene.ts`,
 default). Tests: 21 in `tableSceneModel.test.ts` covering seat placement, the
 clamped seated camera, object travel, and reduced-motion end-state parity.
 
-Verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
+Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
 rendered in perspective, the camera yawing on the existing look-left/right
 controls and returning on recentre, and **zero fatal renderer events**. The DOM
 layer was unchanged with the scene on: 6 seats, 6 live regions, the action dock,
 and the pot groups all still present, with the canvas `aria-hidden="true"` and
-`tabIndex="-1"`.
+`tabIndex="-1"`. This was useful prototype evidence, but no packaged audit turns
+the scene on or forces its failure, so it is not milestone acceptance.
 
-- [x] One playable table inside a spatial room, driven by the real engine.
-- [x] Seated camera with limited left/right look (±28°) and recentring, wired to
+- [ ] One playable table inside a spatial room, driven by the real engine. The
+  primitive room/table exist, but the exact real-hand M1 acceptance fixture and
+  packaged gate in D3D-M104 are missing.
+- [ ] Seated camera with limited left/right look (±28°) and recentring, wired to
   the controls that previously only translated CSS by 18px per step.
-- [x] Physical cards and chip stacks — per-seat stacks, per-seat bets, and pot
-  piles, positioned by the tested model rather than by the renderer.
-- [x] Seated low-poly bodies performing deal, fold, and betting actions, chosen
+  The pan/recentre prototype works, but `cameraView`, smooth attention, and the
+  fixed-camera packaged matrix remain open.
+- [ ] Physical cards and chip stacks — the prototype has generic blank cards,
+  per-seat stacks/bets, and one aggregate pot. M1 still requires public card
+  identities, dealer puck, blind markers, and an explicit current-turn object;
+  per-pot lanes remain M2.
+- [ ] Seated low-poly bodies performing deal, check/call, bet/raise, and fold,
+  chosen
   from **public actions only**, so movement can never become a hand-strength
-  tell.
-- [x] DOM accessibility layer, deterministic engine, offline operation, and a
-  reduced-motion alternative all preserved. Reduced motion renders once per
-  state change at each action's end state; the model's easing is clamped so
-  progress 1 is a legal input and both paths agree on where objects finish.
-- [x] Geometry is procedural, so the slice is original by construction with no
-  external mesh to license and nothing fetched at runtime.
+  tell. Deal/fold/generic bet scaffolding exists; check, call, and raise are not
+  distinct physical actions, and repeated identical action kinds may not restart.
+- [ ] DOM accessibility, deterministic engine, offline operation, reduced motion,
+  and forced WebGL-failure fallback all pass together. The canvas is decorative
+  and the engine remains authoritative, but requested-versus-ready state is not
+  modeled: a failed WebGL probe can leave the fallback decoration at 6% opacity.
+- [ ] Original/provenance acceptance. Procedural prototype geometry is original
+  by construction; the runtime-rights inventory and asset budget must be extended
+  before authored M2/M3 assets ship (D3D-A01/D3D-A02).
 
-**Known defects in the slice, recorded rather than glossed:** heads read too
+**Known defects in the prototype, recorded rather than glossed:** heads read too
 large and too saturated at the seats nearest the camera; the DOM label layer
 floats over the 3D table rather than being composed with it (decoration is faded
 to 6% opacity, but the two layers are not yet one picture); there is no lighting
 warmth, no background crowd, and no tier variation. Those are M2/M3 in the
-decision record. **The slice is not the finished experience and must not be read
-as closing E27-014.**
+decision record. The 2026-07-28 audit also found missing card identities,
+dealer/blind objects, distinct action grammar, side-pot rendering, context-loss
+recovery, and forced-failure acceptance. **The prototype is not the finished M1
+slice and must not be read as closing E27-014.**
 
 **Observed problem**
 The desktop feels like a web UI arranged around a table. The intent is a
@@ -1494,7 +1513,9 @@ championship room with depth, multiple tables, seated opponents with real
 bodies, lighting, objects, and camera motion.
 
 **Audit / constraints that make this a decision, not a task**
-- There is **no 3D anywhere** and no 3D dependency (`package.json:33-39`). Nothing existing is reusable as "3D minus a renderer" — the camera and room are CSS illusions with no 3D math beneath them.
+- Historical pre-decision finding: there was **no 3D anywhere** and no 3D
+  dependency. That is now superseded by the procedural prototype above; no
+  authored 3D asset pipeline exists yet.
 - Assets today: one static room PNG and one 3×2 portrait sprite sheet. Low-poly seated characters, a modeled room, and card/chip/table meshes would all need authoring or licensing.
 - **Bundle gate:** `config/performance-budgets.json` caps initial JS at **0.3 MiB gzipped** and `distTotalMiB` at 64. A 3D engine strains that before any app code. Either the engine is lazy-loaded strictly behind the room/table screens *and* the budget policy explicitly redefines "initial", or the budget is deliberately raised. Silently blowing the gate fails `scripts/audit-static-budgets.mjs`.
 - **CSP/offline:** `index.html:13-14` (`script-src 'self'`) permits a locally bundled engine but forbids CDN delivery, remote models/textures, and eval-based shader loading. Everything ships in the ASAR.
@@ -1575,6 +1596,11 @@ from `dimensionHash(playerId, "portrait") % 6` -- six sprite cells -- so about
 nine six-handed tables in ten seat two opponents with the same face.
 
 - [ ] **Reopened:** no repeated face at one table, and the face space is large enough that uniqueness is not seating-order dependent (E27-006).
+- [ ] The 3D character extension is D3D-M201/D3D-M202 in
+  `docs/desktop-3d-implementation-plan.md`: immutable id-derived appearance,
+  deterministic table-level visual distance, one seated rig, public-state-only
+  clips, replay determinism, and a procedural/2D fallback. Do not treat the
+  current CSS descriptor or six-cell sheet as a 3D asset/rig plan.
 
 
 **Observed problem**
@@ -2457,11 +2483,20 @@ from "selected in the list", because no such data exists (E19-001).
 
 ### E20-003 — Physical travel between events
 
+**Scope correction 2026-07-28.** The checked implementation below is the
+maintained **2.5D fallback/interim transition**. It does not close real 3D
+travel: D3D-M401/D3D-M402 in `docs/desktop-3d-implementation-plan.md` own a
+persistent room renderer, real camera routes, arrival/seat continuity, and
+mid-route fallback. M4 remains not implemented.
+
 **Acceptance criteria**
 - [x] Finish the event → pull the camera from the seat → rise above the room → move through the venue → display the horizontal progress path → animate the marker → travel toward the next area → descend into the next seat → begin the next event. `CareerTravel.tsx` runs the four phases (`seat` → `rise` → `route` → `approach`) as classes on one root element, then calls `startCareerEvent`, which hands to the arrival fly-through and the table. **The old behaviour is worth naming:** the ceremony's "next event" button returned to a lobby list and did not even start the next event, which is precisely what made the career read as a menu with tournaments behind it.
 - [x] Skippable, with a reduced-motion alternative. Skip and completion land in the same place — the next event begins either way — so skipping costs only the seconds. Reduced motion **still shows the route**: the marker's move is the step the player just earned being recorded, so with motion off the screen opens on the route at rest rather than being removed. It opens there directly from `useState` rather than from an effect, so there is no frame of the departing-seat camera move first.
 - [x] Staged implementation is acceptable: reuse one venue with changed tables, lighting, crowd, signage, and roster rather than modeling a separate room per event. One venue, re-dressed by `data-to-tier`; the destination room's five plates each carry a `--travel-depth` so they arrive at their own rate. No per-event art, no new dependency.
-- [x] Depends on E09-001's architecture decision. E09-001 landed (staged 2.5D), and this follows it.
+- [x] The interim path depends on the earlier staged-2.5D decision and remains
+  the no-WebGL fallback.
+- [ ] Real 3D arrival and between-event travel depend on M0-M3 exits and close
+  only through D3D-M401/D3D-M402.
 
 **Tests** — `CareerTravel.test.tsx`: the whole circuit renders with origin and destination distinctly marked; the marker's endpoints are pinned to the same `(i + 0.5)/N` slot centres the lobby route uses, so the two screens read as one object; the destination tier reaches the CSS; the journey is stated once for assistive technology rather than requiring the player to wait out the camera; every named phase exists; and the ceremony → travel → `startCareerEvent` wiring is asserted, including that the next event's scenes are prefetched *during* the journey.
 
@@ -2735,6 +2770,13 @@ contrast, size, or legibility.
   **Two findings the audit raised that turned out to be correct behaviour, and what changed as a result.** The pause overlay initially produced 30 "covered control" failures naming the table's own buttons — every one of them the modal scrim doing its job. The audit now scopes itself to the topmost modal when one is open, because when a modal is open the reachable surface *is* the modal. It then flagged that the modal leaves background controls neither `inert` nor `aria-hidden`; that check was replaced, because `aria-modal` is advice to assistive technology and does not stop Tab, while a JS trap contains Tab with no attribute to show for it — inferring the behaviour from markup was guessing. It now presses **real Tab and Shift+Tab keys through CDP** and asks where focus actually went. Measured: Tab from the last control wraps to "Resume table", Shift+Tab from the first wraps to "Leave scored tournament", both inside the dialog. The contract holds; it is now proven rather than assumed.
 
 ### E25-003 — Verify in the packaged build, not only in dev
+
+**3D coverage correction 2026-07-28.** The existing packaged suite verifies the
+DOM/2.5D application and one manual 3D prototype run, but no automated packaged
+audit enables `spatialScene`, waits for first-frame readiness, records renderer
+budgets, forces WebGL failure, or exercises context loss. D3D-F06 and the
+milestone closure tasks in `docs/desktop-3d-implementation-plan.md` are required
+before any M0-M5 3D claim can use E25-003 as evidence.
 
 **Audit — packaged-vs-dev divergence mechanisms**: the `app.isPackaged` URL branch
 (`main.cjs:47,173-177`); devtools disabled when packaged (`:107`), which is why
