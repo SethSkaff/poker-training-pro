@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "test": "vitest run",
+    "test:static-budgets": "node --test scripts/audit-static-budgets.test.mjs",
     "build": "tsc --noEmit && vite build",
     "package:win": "npm run build && electron-builder --win nsis portable --x64 --config.electronDist=node_modules/electron/dist && npm run release:audit-packaged-licenses",
     "release:verify": "node scripts/release/run-release-verification.mjs",

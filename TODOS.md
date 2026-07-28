@@ -1507,6 +1507,28 @@ Do not mark D3D-F01 or M0 complete from the source tests alone.
 may proceed independently, but both must land before M1 object work; F05/F06
 must subsequently close lifecycle and packaged-failure evidence.
 
+### D3D-F02 — Manifest-based scene budget gate
+
+**Status:** Complete 2026-07-28. The prior static audit enforced only the
+largest deferred chunk, so an unrelated lazy route could satisfy or fail the
+purported 3D budget and scene binary assets were not measured at all.
+
+**Implemented.** Vite now emits its production manifest. The static audit
+starts at `src/components/TableScene3D.tsx`, follows both static and dynamic
+manifest imports (charging shared chunks to the scene), totals scene-owned
+assets, and reports those values independently. The unchanged 0.3 MiB initial
+JS limit is retained; the explicit scene limits are 0.35 MiB gzip JS and 24 MiB
+assets. Current measured scene cost is 136,718 gzip bytes and 0 asset bytes.
+
+**Evidence.** `npm run test:static-budgets` uses isolated build fixtures to
+prove pass, JS overflow, asset overflow, dynamic-scene overflow, missing
+manifest, missing entry, and an unrelated lazy chunk. `npm run build` plus
+`node scripts/audit-static-budgets.mjs` passes. Independent review identified
+the missing dynamic traversal and two missing fixture cases; all were added and
+the focused evidence was rerun. Its post-fix recheck found no material issue.
+
+**Next task:** D3D-F03, the redacted deterministic scene snapshot adapter.
+
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
 rendered in perspective, the camera yawing on the existing look-left/right

@@ -49,6 +49,8 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // The static budget audit follows this graph, never a hashed filename.
+    manifest: true,
   },
   test: {
     maxWorkers: testWorkers,

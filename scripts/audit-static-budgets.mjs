@@ -13,10 +13,10 @@ const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const distDirectory = path.join(projectRoot, "dist");
+const distDirectory = process.env.POKER_AUDIT_DIST ?? path.join(projectRoot, "dist");
 const budgets = JSON.parse(
   readFileSync(
-    path.join(projectRoot, "config", "performance-budgets.json"),
+    process.env.POKER_AUDIT_BUDGETS ?? path.join(projectRoot, "config", "performance-budgets.json"),
     "utf8",
   ),
 );
@@ -82,6 +82,7 @@ const largestDeferred = [...deferredScripts]
   .sort((left, right) => right.gzipBytes - left.gzipBytes)[0];
 
 const failures = [];
+const scene = readSceneGraph();
 
 check(
   "dist total",
@@ -113,6 +114,18 @@ if (budgets.bundle.largestDeferredChunkGzipMiB && largestDeferred) {
     `largest deferred chunk gzip (${largestDeferred.file})`,
     largestDeferred.gzipBytes,
     budgets.bundle.largestDeferredChunkGzipMiB * mebibyte,
+  );
+}
+if (scene) {
+  check(
+    "scene JavaScript gzip",
+    scene.javascriptGzipBytes,
+    budgets.bundle.sceneJavaScriptGzipMiB * mebibyte,
+  );
+  check(
+    "scene assets",
+    scene.assetBytes,
+    budgets.bundle.sceneAssetsMiB * mebibyte,
   );
 }
 check(
@@ -147,6 +160,7 @@ const report = {
     deferredJavascriptGzipBytes: deferredJsGzipBytes,
     initialScripts: initialScripts.map((file) => file.relative),
     ...(largestDeferred ? { largestDeferredChunk: largestDeferred } : {}),
+    ...(scene ? { scene } : {}),
     cssGzipBytes,
     imageBytes: sum(images.map((file) => file.bytes)),
     fontBytes: sum(fonts.map((file) => file.bytes)),
@@ -178,6 +192,55 @@ function sum(values) {
 
 function round(value) {
   return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * Follow Vite's named import graph from the scene's source entry. Shared
+ * imports are charged to the scene as well: loading the scene must pay for
+ * them even if another lazy route also happens to use the same chunk.
+ */
+function readSceneGraph() {
+  const manifestPath = path.join(distDirectory, ".vite", "manifest.json");
+  if (!existsSync(manifestPath)) {
+    failures.push({ name: "scene manifest", actual: "missing", maximum: manifestPath });
+    return null;
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const entry = "src/components/TableScene3D.tsx";
+  if (!manifest[entry]) {
+    failures.push({ name: "scene entry", actual: "missing", maximum: entry });
+    return null;
+  }
+  const visited = new Set();
+  const visit = (key) => {
+    if (visited.has(key)) return;
+    const item = manifest[key];
+    if (!item) {
+      failures.push({ name: "scene manifest import", actual: key, maximum: "present" });
+      return;
+    }
+    visited.add(key);
+    for (const imported of [...(item.imports ?? []), ...(item.dynamicImports ?? [])]) {
+      visit(imported);
+    }
+  };
+  visit(entry);
+  const items = [...visited].map((key) => manifest[key]);
+  const scriptPaths = new Set(items.map((item) => item.file));
+  const assetPaths = new Set(items.flatMap((item) => item.assets ?? []));
+  const byRelative = new Map(files.map((file) => [file.relative, file]));
+  const sceneScripts = [...scriptPaths].map((file) => byRelative.get(file)).filter(Boolean);
+  const sceneAssets = [...assetPaths].map((file) => byRelative.get(file)).filter(Boolean);
+  for (const file of [...scriptPaths, ...assetPaths]) {
+    if (!byRelative.has(file)) failures.push({ name: "scene output", actual: file, maximum: "present" });
+  }
+  return {
+    entry,
+    entries: [...visited].sort(),
+    javascriptGzipBytes: sum(sceneScripts.map(gzipOf)),
+    assetBytes: sum(sceneAssets.map((file) => file.bytes)),
+    assets: [...assetPaths].sort(),
+  };
 }
 
 function fail(message) {
