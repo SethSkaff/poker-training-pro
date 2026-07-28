@@ -9,7 +9,9 @@ import {
   buildPokerTableAnnouncement,
   decisionClockAriaLabel,
   playerSeatAriaLabel,
+  sceneSeatDomAttributes,
 } from "./PokerTable";
+import { createTableSceneSnapshot } from "../scene3d/tableSceneSnapshot";
 
 describe("poker table live announcements", () => {
   it("keeps the elapsed decision clock semantic and the table-audio button actionable", () => {
@@ -218,5 +220,26 @@ describe("poker table live announcements", () => {
     });
     expect(noBetLabel).not.toContain(", bet ");
     expect(noBetLabel).toContain(formatMessage("table.seat.statusFragment.folded"));
+  });
+
+  it("publishes the adapter's canonical public seat projection on DOM seats", () => {
+    const snapshot = createTableSceneSnapshot({
+      players: [
+        { id: "villain", canonicalSeat: 8, stack: 900, bet: 25, status: "active" },
+        { id: "hero", canonicalSeat: 3, stack: 1000, bet: 0, status: "active" },
+      ],
+      heroId: "hero",
+      pot: 25,
+      boardCards: 0,
+      cameraPan: 0,
+      reducedMotion: false,
+    });
+
+    expect(sceneSeatDomAttributes(snapshot.seats[1])).toEqual({
+      "data-scene-canonical-seat": "8",
+      "data-scene-relative-seat": "5",
+      "data-scene-card-visibility": "hidden",
+    });
+    expect(sceneSeatDomAttributes(undefined)).toEqual({});
   });
 });

@@ -1,7 +1,10 @@
 /** Package-only CDP proof that the optional 3D room never replaces the accessible table. */
 import { resolve } from "node:path";
 import { projectRoot } from "./release/shared.mjs";
-import { PackagedSession } from "./lib/packaged-cdp-session.mjs";
+import {
+  isKnownElectronSandboxDiagnostic,
+  PackagedSession,
+} from "./lib/packaged-cdp-session.mjs";
 
 const appPath = resolve(projectRoot, "outputs/desktop/win-unpacked/Poker Training Pro.exe");
 const timeoutMs = 75_000;
@@ -17,6 +20,9 @@ if (fallback.forceFlag !== true || fallback.sceneReady !== false) {
 for (const result of [normal, fallback]) {
   if (result.tableCount !== 1 || result.seatCount < 2 || result.buttonCount < 1 || result.tableTextLength < 1) {
     throw new Error(`Accessible table DOM was not mounted: ${JSON.stringify(result)}`);
+  }
+  if (result.projectedSeatCount !== result.renderableSeatCount || result.invalidProjectedSeatCount !== 0 || result.duplicateProjectedSeatCount !== 0 || result.heroSeatVisibility !== "shown") {
+    throw new Error(`DOM seats diverged from the public scene projection: ${JSON.stringify(result)}`);
   }
 }
 console.log(JSON.stringify({ ok: true, normal, fallback, note: "CDP screenshots were captured in both cases; this report records their byte counts." }, null, 2));
@@ -51,11 +57,39 @@ async function runCase(name, extraArguments) {
     const observation = await session.evaluate(`(() => {
       const table = document.querySelector('.poker-table');
       const canvas = document.querySelector('.table-scene-3d');
+      const seats = [...document.querySelectorAll('.player-seat')];
+      // The DOM keeps eliminated seats readable while the public scene adapter
+      // intentionally omits them so their chair/body is hidden. Parity applies
+      // to seats that the scene is allowed to render, not retained history.
+      const renderableSeats = seats.filter((seat) => !seat.classList.contains('is-out'));
+      const projectedSeats = renderableSeats.filter((seat) =>
+        seat.hasAttribute('data-scene-canonical-seat') &&
+        seat.hasAttribute('data-scene-relative-seat') &&
+        seat.hasAttribute('data-scene-card-visibility'),
+      );
+      const invalidProjectedSeatCount = projectedSeats.filter((seat) => {
+        const canonical = Number(seat.getAttribute('data-scene-canonical-seat'));
+        const relative = Number(seat.getAttribute('data-scene-relative-seat'));
+        const visibility = seat.getAttribute('data-scene-card-visibility');
+        return !Number.isInteger(canonical) || !Number.isInteger(relative) || relative < 0 || relative > 9 || (visibility !== 'hidden' && visibility !== 'shown');
+      }).length;
+      const duplicateProjectedSeatCount = projectedSeats.length - new Set(
+        projectedSeats.map((seat) => [
+          seat.getAttribute('data-scene-canonical-seat'),
+          seat.getAttribute('data-scene-relative-seat'),
+        ].join(':')),
+      ).size;
+      const heroSeat = document.querySelector('.player-seat--hero');
       let webgl2 = false;
       try { webgl2 = canvas?.getContext('webgl2') !== null; } catch { /* blocked */ }
       return {
         tableCount: document.querySelectorAll('.poker-table').length,
-        seatCount: document.querySelectorAll('.player-seat').length,
+        seatCount: seats.length,
+        renderableSeatCount: renderableSeats.length,
+        projectedSeatCount: projectedSeats.length,
+        invalidProjectedSeatCount,
+        duplicateProjectedSeatCount,
+        heroSeatVisibility: heroSeat?.getAttribute('data-scene-card-visibility') ?? null,
         buttonCount: document.querySelectorAll('button').length,
         canvas: canvas instanceof HTMLCanvasElement,
         webgl2,
@@ -66,10 +100,19 @@ async function runCase(name, extraArguments) {
     })()`);
     const screenshot = await session.cdp.send("Page.captureScreenshot", { format: "png" });
     const fatalEvents = session.cdp.takeFatalEvents();
-    if (fatalEvents.length > 0) {
-      throw new Error(`Renderer emitted fatal CDP events: ${JSON.stringify(fatalEvents)}`);
+    const unexpectedFatalEvents = fatalEvents.filter(
+      (event) => !isKnownElectronSandboxDiagnostic(event),
+    );
+    if (unexpectedFatalEvents.length > 0) {
+      throw new Error(`Renderer emitted fatal CDP events: ${JSON.stringify(unexpectedFatalEvents)}`);
     }
-    return { name, ...observation, consoleFatalEvents: fatalEvents.length, screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75) };
+    return {
+      name,
+      ...observation,
+      consoleFatalEvents: unexpectedFatalEvents.length,
+      knownElectronSandboxDiagnostics: fatalEvents.length - unexpectedFatalEvents.length,
+      screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75),
+    };
   } finally {
     await session.dispose();
   }

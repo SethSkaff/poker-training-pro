@@ -73,7 +73,9 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
       cardVisibility: player.id === input.heroId || revealed.has(player.id) ? "shown" : "hidden",
       publicCardCodes: player.id === input.heroId
         ? input.heroCardCodes ?? []
-        : input.revealedCardCodesByPlayer?.[player.id] ?? [],
+        : revealed.has(player.id)
+          ? input.revealedCardCodesByPlayer?.[player.id] ?? []
+          : [],
       appearance: appearanceForId(player.id),
       ...(input.publicActions?.[player.id] ? { action: input.publicActions[player.id] } : {}),
     }));

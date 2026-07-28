@@ -1561,10 +1561,26 @@ vacated chair now covers that case. The focused matrix now covers heads-up
 through six-handed layouts and display-safe hero/showdown reveal codes; do not
 treat this source evidence as independent completion approval.
 
+**Follow-up evidence 2026-07-28.** An adversarial snapshot invariant now proves
+that changing any opponent card codes cannot change the snapshot unless that
+player is named by `revealedPlayerIds`; the former adapter accepted supplied
+codes despite hidden visibility. DOM seat groups now receive canonical seat,
+hero-relative seat, and public card-visibility attributes from that same
+snapshot, never from renderer state or private cards. The existing packaged CDP
+scene audit checks those mounted attributes, uniqueness, the shown hero, DOM
+controls/text, WebGL2 readiness, screenshots, and unexpected console events in
+both normal and `--ptp-force-webgl2-failure` cases. Both cases passed (six
+renderable/projected seats; normal `ready`, forced failure `not ready`). An
+independent review caught one audit false positive: eliminated DOM history is
+retained while the intentionally redacted scene omits its chair; the audit now
+compares only non-`.is-out` seats. Focused snapshot/accessibility tests (15),
+`npm run build`, `npm run package:win`, and the packaged scene audit pass.
+
 **Remaining work / risk.** Public card/marker/tier values are carried through
 the renderer state but are not yet fully drawn by the prototype; M1 object work
-must consume them. Add the required DOM label/position parity, mode matrix,
-heads-up-to-six-hand, and reveal property coverage before marking F03 complete.
+must consume them. The DOM identity/redaction and heads-up-to-six-hand portions
+of the parity matrix are now evidenced, but Normal-versus-Rational and an
+elimination/playable-hand packaged trajectory remain before marking F03 complete.
 
 **Next task:** Complete the F03 parity/redaction matrix, then D3D-F04.
 

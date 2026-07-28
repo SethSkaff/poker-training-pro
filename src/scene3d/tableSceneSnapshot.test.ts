@@ -51,4 +51,16 @@ describe("table scene snapshot", () => {
     expect(snapshot.publicBoardCardCodes).toEqual(["2c", "3d", "4h"]);
     expect(snapshot.seats.map((seat) => [seat.id, seat.publicCardCodes])).toEqual([["hero", ["As", "Kd"]], ["folded", []], ["villain", ["Qs", "Qd"]]]);
   });
+
+  it("is invariant to unapproved opponent card-code inputs", () => {
+    const publicInput = { ...input, heroCardCodes: ["As", "Kd"] };
+    const expected = createTableSceneSnapshot(publicInput);
+
+    for (const privateCards of [["Qs", "Qd"], ["2c", "3d"], ["Th", "9h"]]) {
+      expect(createTableSceneSnapshot({
+        ...publicInput,
+        revealedCardCodesByPlayer: { villain: privateCards },
+      })).toEqual(expected);
+    }
+  });
 });

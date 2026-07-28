@@ -31,7 +31,10 @@ import {
   useState,
 } from "react";
 import type { SceneAvailability } from "../scene3d/sceneAvailability";
-import { createTableSceneSnapshot } from "../scene3d/tableSceneSnapshot";
+import {
+  createTableSceneSnapshot,
+  type SceneSnapshotSeat,
+} from "../scene3d/tableSceneSnapshot";
 import {
   trainingScenarios,
   type RatedTrainingScenario,
@@ -672,6 +675,25 @@ interface PlayerSeatProps {
   positionLabel?: string;
   revealedCards?: readonly Card[];
   winningCardLabels?: ReadonlySet<string>;
+  /** Adapter-owned public projection used for DOM/scene parity diagnostics. */
+  sceneSeat?: SceneSnapshotSeat;
+}
+
+/**
+ * Expose the adapter's stable public identity on the accessible DOM seat.
+ * These attributes are deliberately diagnostic only: labels and controls stay
+ * owned by the DOM, while the canvas can be audited against the same public
+ * projection without reaching into renderer state.
+ */
+export function sceneSeatDomAttributes(
+  sceneSeat: SceneSnapshotSeat | undefined,
+): Readonly<Record<string, string>> {
+  if (!sceneSeat) return {};
+  return {
+    "data-scene-canonical-seat": String(sceneSeat.canonicalSeat),
+    "data-scene-relative-seat": String(sceneSeat.relativeSeat),
+    "data-scene-card-visibility": sceneSeat.cardVisibility,
+  };
 }
 
 const SEAT_STATUS_FRAGMENT_KEYS: Record<SeatPlayer["status"], string> = {
@@ -738,6 +760,7 @@ function PlayerSeat({
   positionLabel,
   revealedCards,
   winningCardLabels,
+  sceneSeat,
 }: PlayerSeatProps) {
   const appearance = describeOpponentAppearance(player.id);
   const isMucking = player.status === "folded" || recentAction === "fold";
@@ -776,6 +799,7 @@ function PlayerSeat({
         isOut ? "is-out" : ""
       } ${wonPot ? "is-winner" : ""} ${hasRevealedCards ? "is-revealed" : ""}`}
       role="group"
+      {...sceneSeatDomAttributes(sceneSeat)}
       aria-label={playerSeatAriaLabel({
         isHero,
         name: player.name,
@@ -2642,6 +2666,9 @@ export function PokerTable({
         : [],
     tier: tournament?.tier === "circuit" ? "regional" : tournament?.tier === "championship" ? "national" : tournament?.tier === "world" ? "championship" : "local",
   });
+  const sceneSeatByPlayerId = new Map(
+    sceneSnapshot.seats.map((seat) => [seat.id, seat]),
+  );
   const tableSeatCoordinates = [
     [50, 86], [12, 73], [18, 30], [50, 12], [82, 30], [88, 73],
   ] as const;
@@ -3574,6 +3601,7 @@ export function PokerTable({
                   positionLabel={positionLabelForSeat(player.seat)}
                   revealedCards={revealedCardsByPlayer.get(player.id)}
                   winningCardLabels={winningCardLabels}
+                  sceneSeat={sceneSeatByPlayerId.get(player.id)}
                 />
               );
             })}
