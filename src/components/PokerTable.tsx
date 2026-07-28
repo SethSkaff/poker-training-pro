@@ -1938,7 +1938,13 @@ export function PokerTable({
       delay,
       duration,
       setSceneEventProgress,
-      { request: requestAnimationFrame, cancel: cancelAnimationFrame },
+      // Browser frame functions require `window` as their receiver in Electron.
+      // Passing the bare native methods works in fake-frame tests but throws
+      // `Illegal invocation` in the live renderer before a table mounts.
+      {
+        request: (callback) => window.requestAnimationFrame(callback),
+        cancel: (handle) => window.cancelAnimationFrame(handle),
+      },
     );
   }, [paused, settings, speed, tournament?.allInReveal, tournament?.presentationEvent]);
 

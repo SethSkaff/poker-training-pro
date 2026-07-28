@@ -1688,6 +1688,69 @@ standard package/audit after it saves or is closed normally, and do not mark
 F04 complete until a fresh read-only review of this bridge and current packaged
 evidence succeeds.
 
+**Electron regression correction 2026-07-28.** Current-source CDP verification
+found that the F04 sampler passed bare `requestAnimationFrame`/
+`cancelAnimationFrame` methods to its frame host. Electron requires `window` as
+their receiver, so a live presentation queue threw `TypeError: Illegal
+invocation` before the table mounted. `PokerTable.tsx` now wraps both native
+methods; `PokerTable.skipControl.test.ts` guards the adapter shape. The focused
+F04/F05 test run, typecheck, development CDP table resume, and current-source
+package evidence below all pass with no fatal renderer event.
+
+### D3D-F05 — Harden lifecycle, context recovery, and resource ownership
+
+**Status:** In progress — the first lifecycle/resource increment is implemented
+and has fresh source, development, and alternate-packaged evidence. It does
+not yet satisfy the full minimize/restore performance or repeated real-context
+loss acceptance matrix.
+
+**Implemented.** `sceneLifecycle.ts` replaces the private renderer rAF loop
+with `createVisibilityAwareAnimationLoop`. Static and reduced-motion scene
+updates draw once; continuous frames occur only while a public transition has
+unfinished progress. `sceneResources.ts` gives every renderer instance its own
+tracked geometry/material ledger and disposes each unique allocation once.
+`sceneRecovery.ts` rebuilds a lost context from the latest immutable public
+snapshot, and `sceneResize.ts` owns immediate/container-resize observation.
+`TableScene3D.tsx` now listens for both WebGL context events, prevents the
+default only for an in-place recovery attempt, removes ready state immediately
+on loss so the DOM fallback is authoritative, and recreates the renderer on
+restore. No engine, replay, or private-card state is passed through these
+owners.
+
+**Regression coverage and evidence.** New lifecycle, resource-ledger,
+synthetic recovery, and resize suites plus the existing visibility and scene
+availability suites pass **34 tests**; the resource ledger includes a
+100-mount disposal soak. `tsc --noEmit` and `npm run build` pass. Computer Use
+opened the real development Electron window and confirmed its accessible
+first-run and main-menu surfaces. CDP then resumed a deterministic tournament:
+normal WebGL2 reached a ready table with six DOM seats and no fatal event; a
+synthetic `webglcontextlost` removed ready state while retaining one table,
+six seats, five live regions, and an `aria-hidden`, unfocusable canvas; the
+following restore returned to ready with the same DOM counts. A fresh
+`electron-builder` output under `outputs/desktop-f05` was launched through the
+existing `PackagedSession` CDP harness. Its Normal case reported WebGL2 ready,
+one table, six seats, six live regions, screenshot bytes 464,373, and no fatal
+event. Its forced-WebGL-failure case reported fallback, the same mounted DOM,
+screenshot bytes 572,547, and no fatal event.
+
+**Independent review.** A separate read-only reviewer found no material
+production, replay/privacy, or DOM-accessibility regression. It independently
+ran the lifecycle/resource/recovery/resize/availability/visibility suites and
+typecheck. The reviewer noted only the already-recorded limitation: the generic
+recovery session relies on the attempt contract to dispose on context loss, and
+the current `startSceneAttempt` contract does so.
+
+**Remaining evidence / risk.** The normal package output remains locked by the
+user's saved window, so this increment used the isolated alternate output and
+must not be mistaken for a standard-output replacement. Still required:
+actual minimize/restore frame measurements, a real browser context loss (not
+only a synthetic event), renderer-level allocation counters across repeated
+mounts/restores, and the packaged F06 diagnostics/release gate. Keep F05 open
+until those checks and an independent lifecycle review are complete.
+
+**Next task:** resolve independent-review findings for this F05 increment, then
+add the bounded packaged minimize/context-loss diagnostics required by D3D-F06.
+
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
 rendered in perspective, the camera yawing on the existing look-left/right

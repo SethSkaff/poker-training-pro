@@ -11,6 +11,8 @@ import {
   type SceneAvailability,
   type WebGlProbeResult,
 } from "../scene3d/sceneAvailability";
+import { createSceneRecoverySession } from "../scene3d/sceneRecovery";
+import { observeSceneResize } from "../scene3d/sceneResize";
 
 /**
  * Mounts the 3D table behind the DOM table (E09-001 M1).
@@ -71,6 +73,8 @@ export function TableScene3D({
   };
   const stateRef = useRef(state);
   stateRef.current = state;
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
   const reportRef = useRef(onAvailabilityChange);
   reportRef.current = onAvailabilityChange;
 
@@ -85,43 +89,67 @@ export function TableScene3D({
     const probe = window.desktop?.forceWebGl2Failure
       ? () => "blocked" as const
       : sceneRuntime.probe;
-    let terminal = false;
-    const attempt = startSceneAttempt({
-      canvas,
-      state: stateRef.current,
-      probe,
-      startSuspended: suspended,
-      create: (target, nextState, callbacks) => {
-        const created = sceneRuntime.create(target, nextState, callbacks);
-        // A reduced-motion draw can fail synchronously during construction.
-        // Do not publish that disposed handle to later update effects.
-        if (!terminal) sceneRef.current = created;
-        return created;
-      },
-      onAvailability: (availability) => {
-        terminal ||= availability.status === "failed" || availability.status === "lost" || availability.status === "disposed";
-        if (terminal) sceneRef.current = null;
-        reportRef.current?.(availability);
+    let recoverable = true;
+    const recovery = createSceneRecoverySession({
+      latestState: () => stateRef.current,
+      canRecover: () => recoverable,
+      create: (nextState) => {
+        let publishScene = true;
+        return startSceneAttempt({
+          canvas,
+          state: nextState,
+          probe,
+          startSuspended: suspendedRef.current,
+          create: (target, currentState, callbacks) => {
+            const created = sceneRuntime.create(target, currentState, callbacks);
+            if (publishScene) sceneRef.current = created;
+            return created;
+          },
+          onAvailability: (availability) => {
+            if (availability.status === "failed" || availability.status === "disposed") {
+              recoverable = false;
+              publishScene = false;
+            }
+            if (availability.status === "failed" || availability.status === "lost" || availability.status === "disposed") {
+              sceneRef.current = null;
+            }
+            reportRef.current?.(availability);
+          },
+        });
       },
     });
-    /* F05 owns recovery. Until then, context loss restores the full DOM table. */
-    const contextLost = () => attempt.contextLost();
-    canvas.addEventListener("webglcontextlost", contextLost);
-    const handle = sceneRef.current;
-
+    const contextLost = (event: Event) => {
+      // Preventing the browser default is valid only while this mounted host is
+      // actively rebuilding on webglcontextrestored. Otherwise the DOM fallback
+      // remains authoritative and receives a normal unrecoverable loss.
+      if (recovery.contextLost()) event.preventDefault();
+    };
     const resize = () => {
       const parent = canvas.parentElement;
       if (!parent) return;
-      handle?.resize(parent.clientWidth, parent.clientHeight);
+      sceneRef.current?.resize(parent.clientWidth, parent.clientHeight);
     };
-    resize();
+    const contextRestored = () => {
+      recovery.contextRestored();
+      resize();
+    };
+    canvas.addEventListener("webglcontextlost", contextLost);
+    canvas.addEventListener("webglcontextrestored", contextRestored);
     window.addEventListener("resize", resize);
+    const parent = canvas.parentElement;
+    const stopResizeObserver = parent
+      ? observeSceneResize(parent, resize, (callback) => (
+        typeof ResizeObserver === "undefined" ? null : new ResizeObserver(callback)
+      ))
+      : () => undefined;
 
     return () => {
       window.removeEventListener("resize", resize);
+      stopResizeObserver();
       canvas.removeEventListener("webglcontextlost", contextLost);
-      attempt.dispose();
-      if (sceneRef.current === handle) sceneRef.current = null;
+      canvas.removeEventListener("webglcontextrestored", contextRestored);
+      recovery.dispose();
+      sceneRef.current = null;
     };
   }, [runtime]);
 

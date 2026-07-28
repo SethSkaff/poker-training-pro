@@ -47,6 +47,8 @@ import {
 import type { SceneFrameCallbacks, WebGlProbeResult } from "./sceneAvailability";
 import type { SceneTransition } from "./sceneTransition";
 import { createSceneActionTimingState, reconcileSceneActionTiming } from "./sceneActionTiming";
+import { createSceneRenderLifecycle } from "./sceneLifecycle";
+import { createSceneResourceLedger, type SceneResourceLedger } from "./sceneResources";
 
 export interface SceneSeatState {
   readonly id: string;
@@ -111,11 +113,38 @@ const ROOM = 0x0b0f0e;
 /** One action's visible duration, in milliseconds. */
 const ACTION_MS = 620;
 
+interface TableSceneResources {
+  readonly ledger: SceneResourceLedger;
+  readonly cardGeometry: BoxGeometry;
+  readonly cardMaterial: MeshBasicMaterial;
+  readonly cardBackMaterial: MeshLambertMaterial;
+  readonly cardRedMaterial: MeshBasicMaterial;
+  readonly cardBlackMaterial: MeshBasicMaterial;
+  readonly chipGeometry: CylinderGeometry;
+  chipMaterial(color: number): MeshLambertMaterial;
+}
+
+function createTableSceneResources(): TableSceneResources {
+  const ledger = createSceneResourceLedger();
+  const track = <T extends { dispose(): void }>(resource: T): T => ledger.track(resource);
+  return {
+    ledger,
+    cardGeometry: track(new BoxGeometry(0.09, 0.005, 0.13)),
+    cardMaterial: track(new MeshBasicMaterial({ color: 0xf3ede0 })),
+    cardBackMaterial: track(new MeshLambertMaterial({ color: 0x8d2733 })),
+    cardRedMaterial: track(new MeshBasicMaterial({ color: 0xd14545 })),
+    cardBlackMaterial: track(new MeshBasicMaterial({ color: 0x30343a })),
+    chipGeometry: track(new CylinderGeometry(0.035, 0.035, 0.011, 12)),
+    chipMaterial: (color) => track(new MeshLambertMaterial({ color })),
+  };
+}
+
 export function createTableScene(
   canvas: HTMLCanvasElement,
   initial: TableSceneState,
   callbacks?: SceneFrameCallbacks,
 ): TableSceneHandle {
+  const resources = createTableSceneResources();
   const renderer = new WebGLRenderer({
     canvas,
     antialias: true,
@@ -129,8 +158,8 @@ export function createTableScene(
 
   const camera = new PerspectiveCamera(52, 16 / 9, 0.1, 60);
 
-  buildRoom(scene);
-  const table = buildTable();
+  buildRoom(scene, resources.ledger);
+  const table = buildTable(resources.ledger);
   scene.add(table);
 
   // Lighting: one warm key over the felt plus a low ambient. Lambert materials
@@ -151,7 +180,7 @@ export function createTableScene(
   for (const [index, seat] of initial.seats.entries()) {
     const pose = poses[index];
     if (!pose) continue;
-    const view = buildSeat(pose);
+    const view = buildSeat(pose, resources);
     scene.add(view.root);
     seatViews.set(seat.id, { pose, view });
   }
@@ -164,14 +193,12 @@ export function createTableScene(
   board.position.set(0, TABLE_HEIGHT + 0.004, -0.16);
   scene.add(board);
 
-  const buttonMarker = buildTableMarker(0xf3ede0);
-  const smallBlindMarker = buildTableMarker(0x78a9e8);
-  const bigBlindMarker = buildTableMarker(0xd8b45a);
+  const buttonMarker = buildTableMarker(0xf3ede0, resources.ledger);
+  const smallBlindMarker = buildTableMarker(0x78a9e8, resources.ledger);
+  const bigBlindMarker = buildTableMarker(0xd8b45a, resources.ledger);
   scene.add(buttonMarker, smallBlindMarker, bigBlindMarker);
 
   let state = initial;
-  let running = false;
-  let frame = 0;
   let disposed = false;
   let hasRendered = false;
   let suspended = callbacks?.startSuspended ?? false;
@@ -185,6 +212,7 @@ export function createTableScene(
     camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
   };
 
+  let lifecycle: ReturnType<typeof createSceneRenderLifecycle> | null = null;
   const drawFrame = (nowMs: number) => {
     try {
       for (const entry of seatViews.values()) entry.view.root.visible = false;
@@ -203,7 +231,7 @@ export function createTableScene(
             const used = new Set([...seatViews.values()].map((value) => value.pose));
             const pose = poses.find((candidate) => !used.has(candidate));
             if (pose) {
-              const view = buildSeat(pose);
+              const view = buildSeat(pose, resources);
               scene.add(view.root);
               entry = { pose, view };
               seatViews.set(seat.id, entry);
@@ -212,34 +240,44 @@ export function createTableScene(
         }
         if (!entry) continue;
         entry.view.root.visible = true;
-        applySeat(entry.view, entry.pose, seat, nowMs, actionTiming.startedAt, state.reducedMotion, state.transition);
+        applySeat(
+          entry.view,
+          entry.pose,
+          seat,
+          nowMs,
+          actionTiming.startedAt,
+          state.reducedMotion,
+          state.transition,
+          resources,
+        );
       }
       placeMarker(buttonMarker, poses, state.buttonRelativeSeat);
       placeMarker(smallBlindMarker, poses, state.smallBlindRelativeSeat);
       placeMarker(bigBlindMarker, poses, state.bigBlindRelativeSeat);
-      setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a);
-    setBoardCards(board, state.boardCards, state.publicBoardCardCodes);
+      setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a, resources);
+      setBoardCards(board, state.boardCards, state.publicBoardCardCodes, resources);
       renderer.render(scene, camera);
       if (!hasRendered) {
         hasRendered = true;
         callbacks?.onFirstFrame();
       }
     } catch {
-      running = false;
-      cancelAnimationFrame(frame);
+      lifecycle?.update({ suspended: true, reducedMotion: true, needsAnimation: false });
       callbacks?.onFrameFailure();
     }
   };
-
-  const loop = () => {
-    if (!running || disposed) return;
-    frame = requestAnimationFrame(loop);
-    drawFrame(performance.now());
-  };
+  lifecycle = createSceneRenderLifecycle(drawFrame);
+  const needsAnimation = (next: TableSceneState) => (
+    !next.reducedMotion
+    && next.transition?.action !== undefined
+    && (next.transition?.progress ?? 1) < 1
+  );
+  const stateSignature = (next: TableSceneState) => JSON.stringify(next);
 
   const handle: TableSceneHandle = {
     update(next) {
       const previous = state;
+      if (stateSignature(previous) === stateSignature(next)) return;
       state = next;
       reconcileSceneActionTiming(
         actionTiming,
@@ -256,17 +294,7 @@ export function createTableScene(
         player still sees where every card and chip ended up. This is also why
         the model's easing is clamped -- progress 1 is a legal input.
       */
-      if (next.reducedMotion) {
-        if (running) {
-          running = false;
-          cancelAnimationFrame(frame);
-        }
-        if (!suspended) drawFrame(performance.now());
-        return;
-      }
-      if (!suspended && !running && previous.reducedMotion !== false) {
-        handle.resume();
-      }
+      lifecycle?.update({ suspended, reducedMotion: next.reducedMotion, needsAnimation: needsAnimation(next) });
     },
     resize(width, height) {
       if (disposed || width <= 0 || height <= 0) return;
@@ -276,51 +304,41 @@ export function createTableScene(
       renderer.setSize(width, height, false);
       camera.aspect = width / Math.max(1, height);
       camera.updateProjectionMatrix();
-      if (!running && !suspended) drawFrame(performance.now());
+      if (!suspended) {
+        lifecycle?.update({
+          suspended,
+          reducedMotion: state.reducedMotion,
+          needsAnimation: needsAnimation(state),
+        });
+      }
     },
     suspend() {
       suspended = true;
-      if (!running) return;
-      running = false;
-      cancelAnimationFrame(frame);
+      lifecycle?.update({ suspended, reducedMotion: state.reducedMotion, needsAnimation: false });
     },
     resume() {
       if (disposed) return;
       suspended = false;
-      if (state.reducedMotion) {
-        drawFrame(performance.now());
-        return;
-      }
-      if (running) return;
-      running = true;
-      frame = requestAnimationFrame(loop);
+      lifecycle?.update({ suspended, reducedMotion: state.reducedMotion, needsAnimation: needsAnimation(state) });
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      running = false;
-      cancelAnimationFrame(frame);
-      scene.traverse((object) => {
-        const mesh = object as Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-        const material = mesh.material;
-        if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
-        else if (material) material.dispose();
-      });
+      lifecycle?.dispose();
+      resources.ledger.dispose();
       renderer.dispose();
     },
     stats: () => ({
       drawCalls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
-      running,
+      running: lifecycle?.isRunning() ?? false,
     }),
   };
 
   applyCamera();
   handle.resize(canvas.clientWidth || 1280, canvas.clientHeight || 720);
   if (!suspended) {
-    if (!initial.reducedMotion) handle.resume();
-    else drawFrame(performance.now());
+    handle.resume();
   }
   return handle;
 }
@@ -334,10 +352,10 @@ interface SeatView {
   readonly stackChips: Group;
 }
 
-function buildRoom(scene: Scene): void {
+function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   const floor = new Mesh(
-    new PlaneGeometry(26, 26),
-    new MeshLambertMaterial({ color: 0x141a17 }),
+    resources.track(new PlaneGeometry(26, 26)),
+    resources.track(new MeshLambertMaterial({ color: 0x141a17 })),
   );
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
@@ -352,14 +370,14 @@ function buildRoom(scene: Scene): void {
   ] as const) {
     const distant = new Group();
     const top = new Mesh(
-      new CylinderGeometry(1.1, 1.1, 0.09, 18),
-      new MeshLambertMaterial({ color: 0x10493a }),
+      resources.track(new CylinderGeometry(1.1, 1.1, 0.09, 18)),
+      resources.track(new MeshLambertMaterial({ color: 0x10493a })),
     );
     top.position.y = TABLE_HEIGHT;
     distant.add(top);
     const base = new Mesh(
-      new CylinderGeometry(0.26, 0.36, TABLE_HEIGHT, 10),
-      new MeshLambertMaterial({ color: RAIL }),
+      resources.track(new CylinderGeometry(0.26, 0.36, TABLE_HEIGHT, 10)),
+      resources.track(new MeshLambertMaterial({ color: RAIL })),
     );
     base.position.y = TABLE_HEIGHT / 2;
     distant.add(base);
@@ -368,36 +386,36 @@ function buildRoom(scene: Scene): void {
   }
 }
 
-function buildTable(): Group {
+function buildTable(resources: SceneResourceLedger): Group {
   const group = new Group();
   const felt = new Mesh(
-    new CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS, 0.1, 42),
-    new MeshLambertMaterial({ color: FELT }),
+    resources.track(new CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS, 0.1, 42)),
+    resources.track(new MeshLambertMaterial({ color: FELT })),
   );
   felt.position.y = TABLE_HEIGHT - 0.05;
   group.add(felt);
 
   const rail = new Mesh(
-    new TorusGeometry(TABLE_RADIUS, 0.075, 10, 44),
-    new MeshLambertMaterial({ color: RAIL }),
+    resources.track(new TorusGeometry(TABLE_RADIUS, 0.075, 10, 44)),
+    resources.track(new MeshLambertMaterial({ color: RAIL })),
   );
   rail.rotation.x = Math.PI / 2;
   rail.position.y = TABLE_HEIGHT;
   group.add(rail);
 
   const pedestal = new Mesh(
-    new CylinderGeometry(0.34, 0.52, TABLE_HEIGHT - 0.1, 14),
-    new MeshLambertMaterial({ color: 0x1a1210 }),
+    resources.track(new CylinderGeometry(0.34, 0.52, TABLE_HEIGHT - 0.1, 14)),
+    resources.track(new MeshLambertMaterial({ color: 0x1a1210 })),
   );
   pedestal.position.y = (TABLE_HEIGHT - 0.1) / 2;
   group.add(pedestal);
   return group;
 }
 
-function buildTableMarker(color: number): Mesh {
+function buildTableMarker(color: number, resources: SceneResourceLedger): Mesh {
   const marker = new Mesh(
-    new CylinderGeometry(0.045, 0.045, 0.012, 16),
-    new MeshLambertMaterial({ color }),
+    resources.track(new CylinderGeometry(0.045, 0.045, 0.012, 16)),
+    resources.track(new MeshLambertMaterial({ color })),
   );
   return marker;
 }
@@ -421,7 +439,7 @@ function placeMarker(
  * not require photorealism -- what it requires is that a body exists, occupies
  * a chair, and performs the physical actions of poker.
  */
-function buildSeat(pose: SeatPose): SeatView {
+function buildSeat(pose: SeatPose, resources: TableSceneResources): SeatView {
   const root = new Group();
   root.position.set(...pose.position);
   root.rotation.y = pose.facing;
@@ -433,35 +451,35 @@ function buildSeat(pose: SeatPose): SeatView {
   */
   const body = new Group();
   const chair = new Mesh(
-    new BoxGeometry(0.5, 0.08, 0.46),
-    new MeshLambertMaterial({ color: 0x2b1d17 }),
+    resources.ledger.track(new BoxGeometry(0.5, 0.08, 0.46)),
+    resources.ledger.track(new MeshLambertMaterial({ color: 0x2b1d17 })),
   );
   chair.position.y = 0.44;
   body.add(chair);
   const chairBack = new Mesh(
-    new BoxGeometry(0.5, 0.52, 0.08),
-    new MeshLambertMaterial({ color: 0x33241c }),
+    resources.ledger.track(new BoxGeometry(0.5, 0.52, 0.08)),
+    resources.ledger.track(new MeshLambertMaterial({ color: 0x33241c })),
   );
   chairBack.position.set(0, 0.72, -0.2);
   body.add(chairBack);
 
   const torso = new Mesh(
-    new CylinderGeometry(0.19, 0.23, 0.52, 10),
-    new MeshLambertMaterial({ color: 0x3d4b63 }),
+    resources.ledger.track(new CylinderGeometry(0.19, 0.23, 0.52, 10)),
+    resources.ledger.track(new MeshLambertMaterial({ color: 0x3d4b63 })),
   );
   torso.position.y = 0.78;
   body.add(torso);
 
   const head = new Mesh(
-    new IcosahedronGeometry(0.125, 1),
-    new MeshLambertMaterial({ color: 0xc79a76 }),
+    resources.ledger.track(new IcosahedronGeometry(0.125, 1)),
+    resources.ledger.track(new MeshLambertMaterial({ color: 0xc79a76 })),
   );
   head.position.y = 1.13;
   body.add(head);
 
   const arm = new Mesh(
-    new BoxGeometry(0.1, 0.1, 0.42),
-    new MeshLambertMaterial({ color: 0x3d4b63 }),
+    resources.ledger.track(new BoxGeometry(0.1, 0.1, 0.42)),
+    resources.ledger.track(new MeshLambertMaterial({ color: 0x3d4b63 })),
   );
   arm.position.set(0.16, 0.86, 0.22);
   body.add(arm);
@@ -477,13 +495,6 @@ function buildSeat(pose: SeatPose): SeatView {
   return { root, body, arm, cards, betChips, stackChips };
 }
 
-const CARD_GEOMETRY = new BoxGeometry(0.09, 0.005, 0.13);
-const CARD_MATERIAL = new MeshBasicMaterial({ color: 0xf3ede0 });
-const CARD_BACK_MATERIAL = new MeshLambertMaterial({ color: 0x8d2733 });
-const CARD_RED_MATERIAL = new MeshBasicMaterial({ color: 0xd14545 });
-const CARD_BLACK_MATERIAL = new MeshBasicMaterial({ color: 0x30343a });
-const CHIP_GEOMETRY = new CylinderGeometry(0.035, 0.035, 0.011, 12);
-
 function applySeat(
   view: SeatView,
   pose: SeatPose,
@@ -492,6 +503,7 @@ function applySeat(
   startedAt: Map<number, number>,
   reducedMotion: boolean,
   transition: TableSceneState["transition"],
+  resources: TableSceneResources,
 ): void {
   const started = startedAt.get(seat.seat) ?? nowMs;
   const localProgress = reducedMotion
@@ -511,7 +523,7 @@ function applySeat(
 
   // Two cards per seat, laid where the model says.
   while (view.cards.children.length < 2) {
-    const card = new Mesh(CARD_GEOMETRY, CARD_BACK_MATERIAL);
+    const card = new Mesh(resources.cardGeometry, resources.cardBackMaterial);
     view.cards.add(card);
   }
   const worldToLocal = (world: readonly [number, number, number]) => {
@@ -537,7 +549,7 @@ function applySeat(
     const local = worldToLocal(target);
     card.position.set(local[0] + (index === 0 ? -0.055 : 0.055), local[1], local[2]);
     const code = seat.publicCardCodes?.[index];
-    (card as Mesh).material = code ? materialForPublicCard(code) : CARD_BACK_MATERIAL;
+    (card as Mesh).material = code ? materialForPublicCard(code, resources) : resources.cardBackMaterial;
   });
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,
@@ -547,13 +559,13 @@ function applySeat(
   view.arm.position.z = 0.22 + (seat.action === "bet" || seat.action === "all-in" ? 0.16 * progress : 0);
 
   const betChips = chipCountForAmount(seat.bet);
-  setChipStack(view.betChips, betChips, 0xcf4a3c);
+  setChipStack(view.betChips, betChips, 0xcf4a3c, resources);
   if (betChips > 0) {
     const local = worldToLocal(betChipPosition(pose, seat.action === "bet" ? progress : 1));
     view.betChips.position.set(local[0], local[1], local[2]);
   }
 
-  setChipStack(view.stackChips, chipCountForAmount(seat.stack), 0x4a7fcf);
+  setChipStack(view.stackChips, chipCountForAmount(seat.stack), 0x4a7fcf, resources);
   const stackLocal = worldToLocal([
     pose.feltPosition[0] * 0.86,
     TABLE_HEIGHT,
@@ -563,9 +575,9 @@ function applySeat(
 }
 
 /** Grow or shrink a chip pile in place, reusing meshes rather than rebuilding. */
-function setChipStack(group: Group, count: number, color: number): void {
+function setChipStack(group: Group, count: number, color: number, resources: TableSceneResources): void {
   while (group.children.length < count) {
-    const chip = new Mesh(CHIP_GEOMETRY, new MeshLambertMaterial({ color }));
+    const chip = new Mesh(resources.chipGeometry, resources.chipMaterial(color));
     chip.position.y = group.children.length * 0.012;
     group.add(chip);
   }
@@ -574,9 +586,14 @@ function setChipStack(group: Group, count: number, color: number): void {
   }
 }
 
-function setBoardCards(group: Group, count: number, codes: readonly string[] = []): void {
+function setBoardCards(
+  group: Group,
+  count: number,
+  codes: readonly string[] = [],
+  resources: TableSceneResources,
+): void {
   while (group.children.length < count) {
-    const card = new Mesh(CARD_GEOMETRY, CARD_MATERIAL);
+    const card = new Mesh(resources.cardGeometry, resources.cardMaterial);
     card.position.x = (group.children.length - 2) * 0.105;
     group.add(card);
   }
@@ -584,11 +601,11 @@ function setBoardCards(group: Group, count: number, codes: readonly string[] = [
     group.remove(group.children[group.children.length - 1]);
   }
   group.children.forEach((card, index) => {
-    (card as Mesh).material = materialForPublicCard(codes[index] ?? "");
+    (card as Mesh).material = materialForPublicCard(codes[index] ?? "", resources);
   });
 }
 
-function materialForPublicCard(code: string): MeshBasicMaterial {
-  if (!code) return CARD_MATERIAL;
-  return code.endsWith("h") || code.endsWith("d") ? CARD_RED_MATERIAL : CARD_BLACK_MATERIAL;
+function materialForPublicCard(code: string, resources: TableSceneResources): MeshBasicMaterial {
+  if (!code) return resources.cardMaterial;
+  return code.endsWith("h") || code.endsWith("d") ? resources.cardRedMaterial : resources.cardBlackMaterial;
 }

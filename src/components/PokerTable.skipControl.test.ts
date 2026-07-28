@@ -51,6 +51,15 @@ function consumePresentationQueue(runner: ReturnType<typeof createCareerTourname
   ends the presentation and goes to the outcome.
 */
 describe("the skip control is findable and distinct from speed", () => {
+  it("binds native frame scheduling before sampling the presentation delay", () => {
+    expect(tableSource).toContain(
+      "request: (callback) => window.requestAnimationFrame(callback)",
+    );
+    expect(tableSource).toContain(
+      "cancel: (handle) => window.cancelAnimationFrame(handle)",
+    );
+  });
+
   it("is labelled with the single word Skip", () => {
     expect(messages).toContain('"table.spectator.skip": "Skip"');
     expect(tableSource).toContain('formatMessage("table.spectator.skip")');
