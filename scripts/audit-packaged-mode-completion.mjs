@@ -27,6 +27,7 @@ const appPath = resolve(
 );
 const requestedMode = argumentValue("--mode");
 const modes = requestedMode ? [requestedMode] : [...MODES];
+const sceneEnabled = process.argv.includes("--scene");
 const reportPath = resolve(projectRoot, "work", "packaged-mode-completion.json");
 // Rational events can legitimately require substantially more hero decisions
 // than a Normal/Timed run while the renderer performs bounded, deterministic
@@ -123,6 +124,7 @@ async function completeMode(mode) {
     await cdp.send("Performance.enable");
     await clickText(cdp, "Skip setup", deadline);
     await waitFor(cdp, ".home-reference", deadline, "home menu");
+    if (sceneEnabled) await enableSpatialScene(cdp, deadline);
     await clickSelector(cdp, 'button[aria-label="Play"]', deadline);
     await clickIfPresent(cdp, "#play-chip-ack-title ~ .startup-gate__actions button");
     await waitFor(cdp, ".mode-stage", deadline, "mode selection");
@@ -137,6 +139,9 @@ async function completeMode(mode) {
     await waitFor(cdp, ".room-flight", deadline, "championship arrival");
     await clickText(cdp, "Skip arrival", deadline);
     await waitFor(cdp, ".poker-table", deadline, "live table");
+    if (sceneEnabled && !await poll(cdp, "document.querySelector('.poker-table')?.dataset.spatialScene === 'ready'", deadline)) {
+      throw new Error("scene-enabled completion run never reached a ready WebGL table.");
+    }
 
     const desktopBridgePresent = await evaluate(
       cdp,
@@ -146,7 +151,10 @@ async function completeMode(mode) {
       throw new Error("packaged preload bridge was unavailable at the live table.");
     }
     const resourcesBefore = await readResourceSnapshot(cdp);
-    const finished = await driveToCeremony(cdp, child, deadline);
+    const finished = await driveToCeremony(cdp, child, deadline, { sceneEnabled });
+    if (sceneEnabled && !finished.eliminationWithProjection) {
+      throw new Error("scene-enabled completion run never observed an eliminated seat with a public scene projection.");
+    }
     // Hand review and career travel both hang off the completed-event ceremony
     // and were previously asserted only in jsdom. This is the one place in the
     // packaged suite where a real ceremony exists, so exercising them here
@@ -188,15 +196,36 @@ async function completeMode(mode) {
   }
 }
 
-async function driveToCeremony(cdp, child, deadline) {
+async function enableSpatialScene(cdp, deadline) {
+  await clickSelector(cdp, 'button[aria-label="Settings"]', deadline);
+  const enabled = await evaluate(cdp, `(() => {
+    const label = [...document.querySelectorAll('label')].find((candidate) =>
+      (candidate.textContent || '').includes('3D room (preview)'),
+    );
+    const input = label?.querySelector('input[type="checkbox"]');
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (!input.checked) input.click();
+    return input.checked;
+  })()`);
+  if (!enabled) throw new Error("could not enable the ordinary 3D room setting.");
+  await clickSelector(cdp, ".night-back", deadline);
+  await waitFor(cdp, ".home-reference", deadline, "home menu after scene setting");
+}
+
+async function driveToCeremony(cdp, child, deadline, { sceneEnabled: requireScene }) {
   let actions = 0;
   let skips = 0;
   let lastActionAt = 0;
+  let sceneReadyObserved = false;
+  let eliminationWithProjection = false;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`packaged app exited during play (code ${child.exitCode}).`);
     const state = await evaluate(cdp, `(() => {
       const ceremony = document.querySelector('.ceremony-board');
       const skip = document.querySelector('button[aria-label="Skip opponent presentation and continue the hand"]');
+      const table = document.querySelector('.poker-table');
+      const eliminatedProjectedSeats = [...document.querySelectorAll('.player-seat.is-out')]
+        .filter((seat) => seat.hasAttribute('data-scene-canonical-seat')).length;
       const choices = [...document.querySelectorAll('.action-dock .action-button')]
         .filter((button) => button instanceof HTMLButtonElement && !button.disabled);
       const preferred = choices.find((button) => button.classList.contains('action-button--call')) ||
@@ -214,11 +243,15 @@ async function driveToCeremony(cdp, child, deadline) {
           : undefined,
         skip: !finished && canSkip,
         action: preferred instanceof HTMLButtonElement ? preferred.className : undefined,
+        sceneReady: table?.dataset.spatialScene === 'ready',
+        eliminatedProjectedSeats,
       };
     })()`);
+    sceneReadyObserved ||= Boolean(state?.sceneReady);
+    eliminationWithProjection ||= state?.eliminatedProjectedSeats > 0;
     if (state?.ceremony) {
       if (!state.placement) throw new Error("ceremony lacked a placement label.");
-      return { actions, skips, placement: state.placement };
+      return { actions, skips, placement: state.placement, ...(requireScene ? { sceneReadyObserved, eliminationWithProjection } : {}) };
     }
     if (state?.skip) {
       // The click happens inside the state query above, not in a second

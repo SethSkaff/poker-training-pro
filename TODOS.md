@@ -1581,8 +1581,16 @@ the renderer state but are not yet fully drawn by the prototype; M1 object work
 must consume them. The DOM identity/redaction and heads-up-to-six-hand portions
 of the parity matrix are now evidenced; Normal and Rational both passed the
 same packaged WebGL-ready/forced-fallback matrix. An
-elimination/playable-hand packaged trajectory remains before marking F03
-complete.
+elimination/playable-hand packaged trajectory is now covered by the existing
+completion harness's opt-in `--scene` path: it enables the real Settings control
+in a fresh profile, waits for `data-spatial-scene="ready"`, drives only legal
+displayed controls to a real Normal ceremony, and requires a transient
+`.player-seat.is-out` with the adapter's public canonical-seat projection. The
+fresh run reached sixth place after seven decisions and recorded both scene
+readiness and projected elimination; the independent read-only review found no
+material issue. F03 remains in progress because its M1 object vocabulary is
+still incomplete, not because its adapter parity/redaction matrix lacks this
+trajectory.
 
 **Next task:** Complete the F03 parity/redaction matrix, then D3D-F04.
 
