@@ -475,6 +475,8 @@ function buildSeat(pose: SeatPose): SeatView {
 const CARD_GEOMETRY = new BoxGeometry(0.09, 0.005, 0.13);
 const CARD_MATERIAL = new MeshBasicMaterial({ color: 0xf3ede0 });
 const CARD_BACK_MATERIAL = new MeshLambertMaterial({ color: 0x8d2733 });
+const CARD_RED_MATERIAL = new MeshBasicMaterial({ color: 0xd14545 });
+const CARD_BLACK_MATERIAL = new MeshBasicMaterial({ color: 0x30343a });
 const CHIP_GEOMETRY = new CylinderGeometry(0.035, 0.035, 0.011, 12);
 
 function applySeat(
@@ -525,7 +527,7 @@ function applySeat(
     const local = worldToLocal(target);
     card.position.set(local[0] + (index === 0 ? -0.055 : 0.055), local[1], local[2]);
     const code = seat.publicCardCodes?.[index];
-    (card as Mesh).material = code ? CARD_MATERIAL : CARD_BACK_MATERIAL;
+    (card as Mesh).material = code ? materialForPublicCard(code) : CARD_BACK_MATERIAL;
   });
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,
@@ -572,6 +574,11 @@ function setBoardCards(group: Group, count: number, codes: readonly string[] = [
     group.remove(group.children[group.children.length - 1]);
   }
   group.children.forEach((card, index) => {
-    (card as Mesh).material = codes[index] ? CARD_MATERIAL : CARD_MATERIAL;
+    (card as Mesh).material = materialForPublicCard(codes[index] ?? "");
   });
+}
+
+function materialForPublicCard(code: string): MeshBasicMaterial {
+  if (!code) return CARD_MATERIAL;
+  return code.endsWith("h") || code.endsWith("d") ? CARD_RED_MATERIAL : CARD_BLACK_MATERIAL;
 }
