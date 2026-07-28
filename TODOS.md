@@ -1529,6 +1529,34 @@ the focused evidence was rerun. Its post-fix recheck found no material issue.
 
 **Next task:** D3D-F03, the redacted deterministic scene snapshot adapter.
 
+### D3D-F03 — Redacted scene snapshot adapter
+
+**Status:** In progress — source adapter and stable-ID renderer seam landed;
+full M1 rendering parity remains open. The prototype previously built a compact
+scene state inline in `PokerTable`, duplicating hero-relative ordering and
+allowing eliminated seats to change renderer slots.
+
+**Implemented 2026-07-28.** `tableSceneSnapshot.ts` is a pure, engine-free
+adapter accepting only public player/chip/action/marker/motion inputs. It
+preserves canonical and hero-relative identities, maps legal public reveals to
+display-safe card codes, and derives appearance only from immutable IDs. The
+renderer now keys its fixed chair views by player ID, so an elimination hides a
+chair instead of reassigning every remaining player. The complete snapshot is
+passed through `TableScene3D` rather than rebuilding a smaller host state.
+
+**Evidence.** 25 focused snapshot/model tests plus `npm run build` pass.
+Tests cover determinism, redaction, legal reveals, markers, tier, elimination,
+and a table move. Independent review found the original reindexing and dropped
+contract fields; these source issues were corrected. The recheck process did
+not return before this checkpoint, so do not treat this as independent approval.
+
+**Remaining work / risk.** Public card/marker/tier values are carried through
+the renderer state but are not yet fully drawn by the prototype; M1 object work
+must consume them. Add the required DOM label/position parity, mode matrix,
+heads-up-to-six-hand, and reveal property coverage before marking F03 complete.
+
+**Next task:** Complete the F03 parity/redaction matrix, then D3D-F04.
+
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
 rendered in perspective, the camera yawing on the existing look-left/right

@@ -31,6 +31,7 @@ import {
   useState,
 } from "react";
 import type { SceneAvailability } from "../scene3d/sceneAvailability";
+import { createTableSceneSnapshot } from "../scene3d/tableSceneSnapshot";
 import {
   trainingScenarios,
   type RatedTrainingScenario,
@@ -2608,23 +2609,38 @@ export function PokerTable({
     disagree, the DOM is right, because it is the layer the engine and the
     accessibility audits both talk to.
   */
-  const sceneSeats = tablePlayers.slice(0, 6).map((player, index) => {
+  const sceneActions = Object.fromEntries(tablePlayers.map((player) => {
     const presentation = seatPresentationUpdate(
       tournament?.presentationEvent,
       player.id,
     );
-    return {
-      id: player.id,
-      seat: index,
-      stack: player.stack,
-      bet: player.bet ?? 0,
-      folded: player.status === "folded",
-      acting: scenario.actingPlayerId === player.id,
-      isHero: player.seat === scenario.heroSeat,
-      ...(presentation.action
-        ? { action: sceneActionForCommand(presentation.action) }
-        : {}),
-    };
+    return [player.id, presentation.action ? sceneActionForCommand(presentation.action) : undefined];
+  }));
+  const sceneSnapshot = createTableSceneSnapshot({
+    players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status })),
+    heroId: scenario.players.find((player) => player.seat === scenario.heroSeat)?.id ?? "",
+    actingPlayerId: scenario.actingPlayerId,
+    publicActions: sceneActions,
+    pot: scenario.pot,
+    boardCards: stagedBoard.length,
+    publicBoardCardCodes: stagedBoard.map(cardLabel),
+    heroCardCodes: scenario.heroCards.map(cardLabel),
+    revealedCardCodesByPlayer: tournament?.presentationEvent?.kind === "showdown"
+      ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
+      : tournament?.presentationEvent?.kind === "all-in-reveal"
+        ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
+        : {},
+    cameraPan,
+    reducedMotion: settings.reducedMotion || settings.cameraMotion === "off",
+    buttonCanonicalSeat: scenario.buttonSeat,
+    smallBlindCanonicalSeat: scenario.smallBlindSeat,
+    bigBlindCanonicalSeat: scenario.bigBlindSeat,
+    revealedPlayerIds: tournament?.presentationEvent?.kind === "showdown"
+      ? tournament.presentationEvent.reveals.map((reveal) => reveal.playerId)
+      : tournament?.presentationEvent?.kind === "all-in-reveal"
+        ? tournament.presentationEvent.reveals.map((reveal) => reveal.playerId)
+        : [],
+    tier: tournament?.tier === "circuit" ? "regional" : tournament?.tier === "championship" ? "national" : tournament?.tier === "world" ? "championship" : "local",
   });
   const tableSeatCoordinates = [
     [50, 86], [12, 73], [18, 30], [50, 12], [82, 30], [88, 73],
@@ -3306,13 +3322,12 @@ export function PokerTable({
               {settings.spatialScene && (
                 <Suspense fallback={null}>
                   <TableScene3D
-                    seats={sceneSeats}
-                    pot={scenario.pot}
-                    boardCards={stagedBoard.length}
-                    cameraPan={cameraPan}
-                    reducedMotion={
-                      settings.reducedMotion || settings.cameraMotion === "off"
-                    }
+                    seats={sceneSnapshot.seats}
+                    pot={sceneSnapshot.pot}
+                    boardCards={sceneSnapshot.boardCards}
+                    cameraPan={sceneSnapshot.cameraPan}
+                    reducedMotion={sceneSnapshot.reducedMotion}
+                    snapshot={sceneSnapshot}
                     suspended={paused}
                     onAvailabilityChange={setSceneAvailability}
                   />

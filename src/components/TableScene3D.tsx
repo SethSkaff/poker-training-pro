@@ -37,6 +37,8 @@ export interface TableScene3DProps {
   readonly reducedMotion: boolean;
   /** True while the table is paused or the window is away. */
   readonly suspended: boolean;
+  /** The complete public snapshot; scalar props remain DOM-parity guards. */
+  readonly snapshot?: TableSceneState;
   /** Reports actual usable rendering, never just the player's preference. */
   readonly onAvailabilityChange?: (availability: SceneAvailability) => void;
   /** Production factories remain injectable to test lifecycle ownership. */
@@ -53,13 +55,14 @@ export function TableScene3D({
   cameraPan,
   reducedMotion,
   suspended,
+  snapshot,
   onAvailabilityChange,
   runtime,
 }: TableScene3DProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneRef = useRef<TableSceneHandle | null>(null);
 
-  const state: TableSceneState = {
+  const state: TableSceneState = snapshot ?? {
     seats,
     pot,
     boardCards,

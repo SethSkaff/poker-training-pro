@@ -66,6 +66,11 @@ export interface TableSceneState {
   readonly cameraPan: number;
   /** When true the scene renders a fixed camera and no idle motion. */
   readonly reducedMotion: boolean;
+  /** Public table objects projected by the redacted snapshot adapter. */
+  readonly buttonRelativeSeat?: number;
+  readonly smallBlindRelativeSeat?: number;
+  readonly bigBlindRelativeSeat?: number;
+  readonly tier?: "local" | "regional" | "national" | "championship";
 }
 
 export interface TableSceneHandle {
@@ -132,12 +137,16 @@ export function createTableScene(
   fill.position.set(-3.2, 2.1, -2.4);
   scene.add(fill);
 
-  const poses = seatPoses(Math.max(1, initial.seats.length));
-  const seatViews = new Map<number, SeatView>();
-  for (const pose of poses) {
+  // Keep the six physical chairs stable. A player leaving must hide their
+  // chair/body, never cause every surviving identity to slide one chair over.
+  const poses = seatPoses(6);
+  const seatViews = new Map<string, { pose: SeatPose; view: SeatView }>();
+  for (const [index, seat] of initial.seats.entries()) {
+    const pose = poses[index];
+    if (!pose) continue;
     const view = buildSeat(pose);
     scene.add(view.root);
-    seatViews.set(pose.seat, view);
+    seatViews.set(seat.id, { pose, view });
   }
 
   const potChips = new Group();
@@ -167,16 +176,12 @@ export function createTableScene(
 
   const drawFrame = (nowMs: number) => {
     try {
-      for (const pose of poses) {
-        const view = seatViews.get(pose.seat);
-        const seat = state.seats.find((entry) => entry.seat === pose.seat);
-        if (!view) continue;
-        if (!seat) {
-          view.root.visible = false;
-          continue;
-        }
-        view.root.visible = true;
-        applySeat(view, pose, seat, nowMs, actionStartedAt, state.reducedMotion);
+      for (const entry of seatViews.values()) entry.view.root.visible = false;
+      for (const seat of state.seats) {
+        const entry = seatViews.get(seat.id);
+        if (!entry) continue;
+        entry.view.root.visible = true;
+        applySeat(entry.view, entry.pose, seat, nowMs, actionStartedAt, state.reducedMotion);
       }
       setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a);
       setBoardCards(board, state.boardCards);
