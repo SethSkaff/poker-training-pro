@@ -1,10 +1,14 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { isSeatFoldedForPresentation } from "./PokerTable";
 import {
+  advanceTournamentRunnerOneStep,
   advanceTournamentRunnerToHero,
   createCareerTournamentRunner,
+  createTournamentRunnerReplay,
 } from "../modes/tournamentRunner";
 
 const componentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +24,24 @@ const messages = readFileSync(
   path.join(componentDir, "..", "locales", "en-US.messages.gameplay.ts"),
   "utf8",
 );
+
+function replayHash(runner: Parameters<typeof createTournamentRunnerReplay>[0]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(createTournamentRunnerReplay(runner)))
+    .digest("hex");
+}
+
+function consumePresentationQueue(runner: ReturnType<typeof createCareerTournamentRunner>) {
+  let current = runner;
+  for (let index = 0; index < 100; index += 1) {
+    const step = advanceTournamentRunnerOneStep(current, {
+      policy: { simulations: 60 },
+    });
+    current = step.runner;
+    if (step.awaitingHero || current.session.status === "complete") return current;
+  }
+  throw new Error("Presentation queue did not reach a terminal or hero state");
+}
 
 /*
   E27-015. The control existed but was wrong in label, size, and placement: a
@@ -100,9 +122,7 @@ describe("skipping cannot change what happened", () => {
     // Advancing to the hero is exactly what the skip path does to fast-forward.
     // Running it twice from the same seed must produce the same authoritative
     // state, or a skipped hand and a watched hand would diverge.
-    const watched = advanceTournamentRunnerToHero(build(), {
-      policy: { simulations: 60 },
-    });
+    const watched = consumePresentationQueue(build());
     const skipped = advanceTournamentRunnerToHero(build(), {
       policy: { simulations: 60 },
     });
@@ -112,6 +132,7 @@ describe("skipping cannot change what happened", () => {
     expect(JSON.stringify(skipped.session)).toBe(
       JSON.stringify(watched.session),
     );
+    expect(replayHash(skipped)).toBe(replayHash(watched));
   });
 
   it("never records an extra action for the skip itself", () => {
@@ -135,6 +156,14 @@ describe("skipping cannot change what happened", () => {
       "utf8",
     );
     expect(appSource).toContain("skipResultVisible");
+    expect(appSource).toContain("skipTerminalFoldedPlayerIds");
+    expect(tableSource).toContain("retainSceneTerminalFoldedPlayers");
     expect(appSource).toContain('kind: "hand-result"');
+  });
+
+  it("keeps the DOM seat folded during Skip's readable pre-fold result beat", () => {
+    expect(isSeatFoldedForPresentation("active", undefined, true)).toBe(true);
+    expect(isSeatFoldedForPresentation("active", undefined, false)).toBe(false);
+    expect(tableSource).toContain("terminalFolded={skipTerminalFoldedPlayerIds.has(player.id)}");
   });
 });

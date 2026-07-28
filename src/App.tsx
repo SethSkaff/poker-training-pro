@@ -176,6 +176,8 @@ interface PendingTournamentPresentation {
   index: number;
   /** A single result beat retained after an explicit fast-forward. */
   skipResultVisible?: boolean;
+  /** Public fold terminal state retained while the readable Skip result holds. */
+  skipTerminalFoldedPlayerIds?: readonly string[];
 }
 
 type AllInRevealPresentation = Extract<
@@ -1043,6 +1045,7 @@ export default function App() {
       policy: { simulations: 60 },
     });
     const skippedHandId = pending.events[pending.index]?.handId;
+    const skippedEvent = pending.events[pending.index];
     const result = fastForwarded.session.lastHand;
     if (result && result.handId === skippedHandId) {
       // Keep one public, card-safe result beat on screen. The engine has
@@ -1066,6 +1069,9 @@ export default function App() {
         ],
         index: 0,
         skipResultVisible: true,
+        skipTerminalFoldedPlayerIds: skippedEvent?.kind === "action" && skippedEvent.command.type === "fold"
+          ? [skippedEvent.playerId]
+          : undefined,
       };
       pendingPresentationRef.current = resultBeat;
       setPendingPresentation(resultBeat);
@@ -1762,6 +1768,7 @@ export default function App() {
           onAction: actInTournament,
           heroDecision: Boolean(legalActions),
           presentationEvent,
+          skipTerminalFoldedPlayerIds: pendingPresentation?.skipTerminalFoldedPlayerIds,
           allInReveal: activeAllInReveal,
           onPresentationEventComplete: completeTournamentPresentationEvent,
           onSkipPresentation: skipTournamentPresentation,

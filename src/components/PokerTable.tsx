@@ -31,7 +31,11 @@ import {
   useState,
 } from "react";
 import type { SceneAvailability } from "../scene3d/sceneAvailability";
-import { createSceneTransition } from "../scene3d/sceneTransition";
+import {
+  createSceneTransition,
+  retainSceneTerminalFoldedPlayers,
+} from "../scene3d/sceneTransition";
+import { sampleScenePresentationProgress } from "../scene3d/scenePresentationProgress";
 import {
   createTableSceneSnapshot,
   type SceneSnapshotSeat,
@@ -158,6 +162,8 @@ interface TournamentTableControls {
   heroDecision?: boolean;
   /** The one public event currently being presented, if the table is busy. */
   presentationEvent?: TournamentPresentationEvent;
+  /** Public folds retained while Skip holds its readable result beat. */
+  skipTerminalFoldedPlayerIds?: readonly string[];
   /**
    * A legal all-in reveal held by the presentation coordinator for this hand.
    * It is intentionally ephemeral: never part of a snapshot, save, or replay.
@@ -415,7 +421,10 @@ export function seatGestureForPublicState(input: {
   hasPublicReveal: boolean;
   /** True on the beat the seat is dealt in. */
   justDealt?: boolean;
+  /** Skip is retaining a public terminal fold across a result beat. */
+  terminalFolded?: boolean;
 }): SeatGesture | undefined {
+  if (input.terminalFolded) return undefined;
   if (input.wonPot) return "win";
   if (input.status === "out") return "out";
   if (input.status === "all-in" || input.recentAction === "all-in") return "all-in";
@@ -673,6 +682,8 @@ interface PlayerSeatProps {
   justDealt?: boolean;
   isActing: boolean;
   eliminated?: boolean;
+  /** Public fold retained while Skip holds a readable result beat. */
+  terminalFolded?: boolean;
   positionLabel?: string;
   revealedCards?: readonly Card[];
   winningCardLabels?: ReadonlySet<string>;
@@ -745,6 +756,15 @@ export function playerSeatAriaLabel({
   ].join("");
 }
 
+/** Public terminal-state projection shared by DOM and scene during Skip. */
+export function isSeatFoldedForPresentation(
+  status: SeatPlayer["status"],
+  recentAction: BettingActionType | undefined,
+  terminalFolded = false,
+): boolean {
+  return terminalFolded || status === "folded" || recentAction === "fold";
+}
+
 function PlayerSeat({
   bigBlind,
   dealer,
@@ -758,13 +778,18 @@ function PlayerSeat({
   justDealt = false,
   isActing,
   eliminated = false,
+  terminalFolded = false,
   positionLabel,
   revealedCards,
   winningCardLabels,
   sceneSeat,
 }: PlayerSeatProps) {
   const appearance = describeOpponentAppearance(player.id);
-  const isMucking = player.status === "folded" || recentAction === "fold";
+  const isMucking = isSeatFoldedForPresentation(
+    player.status,
+    recentAction,
+    terminalFolded,
+  );
   const isFolded = isMucking;
   const isAllIn = player.status === "all-in" || recentAction === "all-in";
   const isOut = player.status === "out" || eliminated;
@@ -790,6 +815,7 @@ function PlayerSeat({
     showingFaceDownCards: isShowingCards,
     hasPublicReveal: hasRevealedCards,
     justDealt,
+    terminalFolded,
   });
 
   return (
@@ -1908,13 +1934,12 @@ export function PokerTable({
     const duration = presentationEventDelayMs(event, speed, settings, {
       allInRunout: Boolean(tournament?.allInReveal),
     });
-    let frame = 0;
-    const sample = () => {
-      setSceneEventProgress(1 - delay.remaining / duration);
-      if (delay.isPending && !delay.isFrozen) frame = requestAnimationFrame(sample);
-    };
-    frame = requestAnimationFrame(sample);
-    return () => cancelAnimationFrame(frame);
+    return sampleScenePresentationProgress(
+      delay,
+      duration,
+      setSceneEventProgress,
+      { request: requestAnimationFrame, cancel: cancelAnimationFrame },
+    );
   }, [paused, settings, speed, tournament?.allInReveal, tournament?.presentationEvent]);
 
   useEffect(() => {
@@ -2509,6 +2534,9 @@ export function PokerTable({
   const heroPlayer = scenario.players.find(
     (player) => player.seat === scenario.heroSeat,
   );
+  const skipTerminalFoldedPlayerIds = new Set(
+    tournament?.skipTerminalFoldedPlayerIds,
+  );
   const heroStack = heroPlayer?.stack ?? scenario.minimumRaise;
   /*
     Whether the hero has folded is read from the authoritative seat status, not
@@ -2533,7 +2561,8 @@ export function PokerTable({
     action,
     seatStatus: heroPlayer?.status as HeroFoldState["seatStatus"],
   };
-  const heroFolded = areHeroCardsMucked(heroFoldState);
+  const heroFolded = areHeroCardsMucked(heroFoldState) ||
+    (heroPlayer !== undefined && skipTerminalFoldedPlayerIds.has(heroPlayer.id));
   const heroStreetCommitted = heroPlayer?.bet ?? 0;
   const heroTotalCommitted = heroPlayer?.totalCommitted ?? heroStreetCommitted;
   const positionLabelForSeat = (seat: number): string =>
@@ -2652,11 +2681,17 @@ export function PokerTable({
     disagree, the DOM is right, because it is the layer the engine and the
     accessibility audits both talk to.
   */
-  const sceneTransition = tournament?.presentationEvent
+  const baseSceneTransition = tournament?.presentationEvent
     ? createSceneTransition(
       tournament.presentationEvent,
       sceneEventProgress,
       settings.reducedMotion || settings.transitionMotion === "off",
+    )
+    : undefined;
+  const sceneTransition = baseSceneTransition
+    ? retainSceneTerminalFoldedPlayers(
+      baseSceneTransition,
+      tournament?.skipTerminalFoldedPlayerIds,
     )
     : undefined;
   const sceneActions = Object.fromEntries(tablePlayers.map((player) => {
@@ -3627,6 +3662,7 @@ export function PokerTable({
                   }
                   isActing={scenario.actingPlayerId === player.id}
                   eliminated={presentation.eliminated}
+                  terminalFolded={skipTerminalFoldedPlayerIds.has(player.id)}
                   positionLabel={positionLabelForSeat(player.seat)}
                   revealedCards={revealedCardsByPlayer.get(player.id)}
                   winningCardLabels={winningCardLabels}

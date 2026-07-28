@@ -69,7 +69,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
       seat,
       stack: player.stack,
       bet: player.bet,
-      folded: player.status === "folded",
+      folded: player.status === "folded" || input.transition?.foldedPlayerIds.includes(player.id) === true,
       acting: input.actingPlayerId === player.id,
       isHero: player.id === input.heroId,
       cardVisibility: player.id === input.heroId || revealed.has(player.id) ? "shown" : "hidden",

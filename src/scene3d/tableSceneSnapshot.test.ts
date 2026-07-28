@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { TournamentPresentationEvent } from "../modes/tournamentRunner";
+import { createSceneTransition } from "./sceneTransition";
 import { createTableSceneSnapshot } from "./tableSceneSnapshot";
 
 const input = { players: [
@@ -62,5 +64,41 @@ describe("table scene snapshot", () => {
         revealedCardCodesByPlayer: { villain: privateCards },
       })).toEqual(expected);
     }
+  });
+
+  it("hands skip and reduced motion the identical terminal public scene state", () => {
+    const fold: TournamentPresentationEvent = {
+      id: "h1:fold:2",
+      kind: "action",
+      handId: "h1",
+      playerId: "villain",
+      command: { type: "fold" },
+    };
+    const skipped = createSceneTransition(fold, 1, false);
+    const reduced = createSceneTransition(fold, 0, true);
+    expect(reduced).toEqual(skipped);
+    expect(createTableSceneSnapshot({ ...input, transition: reduced })).toEqual(
+      createTableSceneSnapshot({ ...input, transition: skipped }),
+    );
+  });
+
+  it("keeps a skipped fold terminal while its pre-fold result snapshot is readable", () => {
+    const result: TournamentPresentationEvent = {
+      id: "skip:h1:hand-result", kind: "hand-result", handId: "h1", awards: [],
+    };
+    const transition = createSceneTransition(result, 0, false);
+    const retained = { ...transition, foldedPlayerIds: ["villain"] };
+    const snapshot = createTableSceneSnapshot({
+      ...input,
+      publicActions: {},
+      transition: retained,
+    });
+    const villain = snapshot.seats.find((seat) => seat.id === "villain");
+    expect(villain).toMatchObject({ folded: true });
+    expect(villain).not.toHaveProperty("action");
+    expect(snapshot.transition).toMatchObject({
+      id: "skip:h1:hand-result",
+      foldedPlayerIds: ["villain"],
+    });
   });
 });

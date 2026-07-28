@@ -36,6 +36,22 @@ export function createSceneTransition(
   };
 }
 
+/**
+ * A Skip result beat can intentionally hold the pre-action DOM snapshot while
+ * the authoritative runner is fast-forwarded. Retain only the already-public
+ * fold terminal state so the decorative scene cannot restore those cards.
+ */
+export function retainSceneTerminalFoldedPlayers(
+  transition: SceneTransition,
+  playerIds: readonly string[] | undefined,
+): SceneTransition {
+  if (!playerIds || playerIds.length === 0) return transition;
+  const foldedPlayerIds = [...new Set([...transition.foldedPlayerIds, ...playerIds])];
+  return foldedPlayerIds.length === transition.foldedPlayerIds.length
+    ? transition
+    : { ...transition, foldedPlayerIds };
+}
+
 function playerIdsForEvent(event: TournamentPresentationEvent): readonly string[] {
   if (event.kind === "action") return [event.playerId];
   if (event.kind === "hole-cards-dealt") return event.playerIds;

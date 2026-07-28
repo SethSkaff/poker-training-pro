@@ -27,6 +27,12 @@ describe("public character gesture selection", () => {
     expect(seatGestureForPublicState({ ...active, recentAction: "all-in" })).toBe("all-in");
   });
 
+  it("does not restore an old gesture while Skip holds a public terminal fold", () => {
+    expect(
+      seatGestureForPublicState({ ...active, bet: 400, terminalFolded: true }),
+    ).toBeUndefined();
+  });
+
   it("does not depend on hidden cards or policy information", () => {
     const publicState = { ...active, bet: 400 };
     expect(seatGestureForPublicState(publicState)).toBe("bet");

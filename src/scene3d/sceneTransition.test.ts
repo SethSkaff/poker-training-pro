@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { TournamentPresentationEvent } from "../modes/tournamentRunner";
-import { createSceneTransition } from "./sceneTransition";
+import {
+  createSceneTransition,
+  retainSceneTerminalFoldedPlayers,
+} from "./sceneTransition";
 
 const call = (id: string): TournamentPresentationEvent => ({
   id, kind: "action", handId: "h1", playerId: "p1", command: { type: "call" },
@@ -85,5 +88,20 @@ describe("scene transition", () => {
   it("provides only the folding player's terminal public state", () => {
     const fold: TournamentPresentationEvent = { id: "h1:fold", kind: "action", handId: "h1", playerId: "hero", command: { type: "fold" } };
     expect(createSceneTransition(fold, 0.5, false).foldedPlayerIds).toEqual(["hero"]);
+  });
+
+  it("retains only a public skipped fold while a result beat is readable", () => {
+    const result: TournamentPresentationEvent = {
+      id: "skip:h1:result", kind: "hand-result", handId: "h1", awards: [],
+    };
+    const retained = retainSceneTerminalFoldedPlayers(
+      createSceneTransition(result, 0, false),
+      ["hero"],
+    );
+    expect(retained).toMatchObject({
+      id: "skip:h1:result",
+      action: undefined,
+      foldedPlayerIds: ["hero"],
+    });
   });
 });

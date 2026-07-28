@@ -1634,6 +1634,60 @@ completion: the replay-hash matrix and direct UI/renderer transition lifecycle
 coverage for every speed/skip path remain to be added. Do not mark F04 complete
 from this source slice.
 
+**Follow-up increment 2026-07-28.** The prior replay assertion compared two
+identical fast-forward calls, so it could not prove watched queue consumption
+and Skip produced the same replay. `PokerTable.skipControl.test.ts` now drains
+the real one-step public queue and compares its SHA-256 runner-replay digest to
+the `advanceTournamentRunnerToHero` path used by `skipTournamentPresentation`.
+`scenePresentationProgress.ts` is the production rAF bridge: it can only sample
+`FreezableDelay.remaining`; it has no completion callback or runner input.
+Its fake-frame regression freezes at an exact sampled remainder, stops queuing
+frames, resumes at that remainder, and settles once. Snapshot coverage also
+compares the actual terminal public transition handed to the renderer for Skip
+versus reduced motion. The eight focused suites pass **53 tests**, along with
+`tsc --noEmit` and `npm run build`.
+
+**Skip-result correction.** Read-only review found that Skip replaces an active
+fold with a `hand-result` beat while deliberately retaining the pre-fold DOM
+snapshot until that result is readable. Without a presentation-only carry,
+the scene could restore the folded player's cards during that beat.
+`PendingTournamentPresentation.skipTerminalFoldedPlayerIds` now carries only
+the already-public folding ID into that result beat; `PokerTable` merges it
+into the result transition, and `tableSceneSnapshot` projects it as folded.
+The regression begins from the pre-fold public snapshot and proves the result
+beat has no stale action and keeps the seat terminally folded. No private card,
+engine mutation, or replay field is added.
+
+**DOM parity correction.** The same carry initially reached only the scene
+snapshot. `PlayerSeat` now accepts the public terminal flag through the shared
+`isSeatFoldedForPresentation` projection, and hero-card mucking reads that
+same ID set. The focused accessibility/Skip regression confirms an otherwise
+active DOM seat is folded only for the retained public ID, so it cannot display
+or announce `holding cards` while the canvas says folded.
+
+**Stale-gesture correction.** A terminal DOM seat still fed its pre-fold active
+status and wager to the public gesture selector, which could draw a stale bet
+hand during the readable result. `seatGestureForPublicState` now receives the
+same public `terminalFolded` flag and returns no gesture only for that retained
+Skip state; the ordinary fold event remains animated. The regression covers an
+active, wagered seat and proves no old action hand is restored.
+
+**Current packaged limitation.** The normal `npm run package:win` was attempted
+against this source but Electron Builder could not replace
+`outputs\\desktop\\win-unpacked\\Poker Training Pro.exe`: `EPERM: operation not
+permitted, unlink ...Poker Training Pro.exe`. The file is held by the real
+packaged Computer Use test window, whose own close dialog says scored progress
+has not finished saving and offers only **Leave without saving**. That data-loss
+choice was not taken. An otherwise identical Electron Builder invocation with
+`--config.directories.output=outputs/desktop-f04` completed and produced a
+fresh executable, but the existing normal `--scene` completion harness launched
+that isolated executable and made no CDP/report progress for 171 seconds; its
+temporary-profile process tree was terminated. This is not passing packaged
+evidence for the follow-up increment. Preserve the user window, retry the
+standard package/audit after it saves or is closed normally, and do not mark
+F04 complete until a fresh read-only review of this bridge and current packaged
+evidence succeeds.
+
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
 rendered in perspective, the camera yawing on the existing look-left/right
