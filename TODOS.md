@@ -1547,8 +1547,11 @@ passed through `TableScene3D` rather than rebuilding a smaller host state.
 **Evidence.** 25 focused snapshot/model tests plus `npm run build` pass.
 Tests cover determinism, redaction, legal reveals, markers, tier, elimination,
 and a table move. Independent review found the original reindexing and dropped
-contract fields; these source issues were corrected. The recheck process did
-not return before this checkpoint, so do not treat this as independent approval.
+contract fields; these source issues were corrected. The post-fix review then
+found roster replacement dropped newly seated identities; renderer reuse of a
+vacated chair now covers that case. The focused matrix now covers heads-up
+through six-handed layouts and display-safe hero/showdown reveal codes; do not
+treat this source evidence as independent completion approval.
 
 **Remaining work / risk.** Public card/marker/tier values are carried through
 the renderer state but are not yet fully drawn by the prototype; M1 object work

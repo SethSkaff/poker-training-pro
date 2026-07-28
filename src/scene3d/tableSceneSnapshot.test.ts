@@ -35,4 +35,20 @@ describe("table scene snapshot", () => {
     ] });
     expect(moved.seats.map((seat) => [seat.id, seat.canonicalSeat, seat.relativeSeat])).toEqual([["hero", 1, 0], ["villain", 4, 3]]);
   });
+
+  it("keeps valid hero-relative projections from heads-up through six-handed", () => {
+    for (let count = 2; count <= 6; count += 1) {
+      const players = Array.from({ length: count }, (_, seat) => ({ id: seat === 0 ? "hero" : `p${seat}`, canonicalSeat: seat, stack: 1000, bet: 0, status: "active" as const }));
+      const snapshot = createTableSceneSnapshot({ ...input, players, heroId: "hero" });
+      expect(snapshot.seats).toHaveLength(count);
+      expect(new Set(snapshot.seats.map((seat) => seat.id)).size).toBe(count);
+      expect(snapshot.seats[0]).toMatchObject({ id: "hero", relativeSeat: 0 });
+    }
+  });
+
+  it("contains card identities only for the hero and engine-authorized reveal", () => {
+    const snapshot = createTableSceneSnapshot({ ...input, heroCardCodes: ["As", "Kd"], publicBoardCardCodes: ["2c", "3d", "4h"], revealedPlayerIds: ["villain"], revealedCardCodesByPlayer: { villain: ["Qs", "Qd"] } });
+    expect(snapshot.publicBoardCardCodes).toEqual(["2c", "3d", "4h"]);
+    expect(snapshot.seats.map((seat) => [seat.id, seat.publicCardCodes])).toEqual([["hero", ["As", "Kd"]], ["folded", []], ["villain", ["Qs", "Qd"]]]);
+  });
 });

@@ -177,8 +177,28 @@ export function createTableScene(
   const drawFrame = (nowMs: number) => {
     try {
       for (const entry of seatViews.values()) entry.view.root.visible = false;
+      const activeIds = new Set(state.seats.map((seat) => seat.id));
       for (const seat of state.seats) {
-        const entry = seatViews.get(seat.id);
+        let entry = seatViews.get(seat.id);
+        if (!entry) {
+          // A table move may replace a departed identity. Reuse that vacant
+          // physical chair rather than dropping the newly seated player.
+          const retired = [...seatViews.entries()].find(([id]) => !activeIds.has(id));
+          if (retired) {
+            seatViews.delete(retired[0]);
+            entry = retired[1];
+            seatViews.set(seat.id, entry);
+          } else {
+            const used = new Set([...seatViews.values()].map((value) => value.pose));
+            const pose = poses.find((candidate) => !used.has(candidate));
+            if (pose) {
+              const view = buildSeat(pose);
+              scene.add(view.root);
+              entry = { pose, view };
+              seatViews.set(seat.id, entry);
+            }
+          }
+        }
         if (!entry) continue;
         entry.view.root.visible = true;
         applySeat(entry.view, entry.pose, seat, nowMs, actionStartedAt, state.reducedMotion);
