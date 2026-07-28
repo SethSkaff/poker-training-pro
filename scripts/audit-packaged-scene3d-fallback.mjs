@@ -62,10 +62,13 @@ async function runCase(mode, kind, extraArguments) {
       const table = document.querySelector('.poker-table');
       const canvas = document.querySelector('.table-scene-3d');
       const seats = [...document.querySelectorAll('.player-seat')];
-      // The DOM keeps eliminated seats readable while the public scene adapter
-      // intentionally omits them so their chair/body is hidden. Parity applies
-      // to seats that the scene is allowed to render, not retained history.
-      const renderableSeats = seats.filter((seat) => !seat.classList.contains('is-out'));
+      // The DOM keeps eliminated-seat history readable while the public scene
+      // adapter intentionally omits its chair/body. A transient elimination
+      // presentation can still have a valid live projection, so exclude only
+      // retained out-history that has no adapter attributes at all.
+      const renderableSeats = seats.filter((seat) =>
+        !seat.classList.contains('is-out') || seat.hasAttribute('data-scene-canonical-seat'),
+      );
       const projectedSeats = renderableSeats.filter((seat) =>
         seat.hasAttribute('data-scene-canonical-seat') &&
         seat.hasAttribute('data-scene-relative-seat') &&
