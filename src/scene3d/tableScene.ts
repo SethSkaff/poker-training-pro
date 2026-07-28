@@ -54,6 +54,8 @@ export interface SceneSeatState {
   readonly folded: boolean;
   readonly acting: boolean;
   readonly isHero: boolean;
+  /** Public display codes only; absent means render card backs. */
+  readonly publicCardCodes?: readonly string[];
   /** Public action this seat is currently performing, if any. */
   readonly action?: SeatActionKind;
 }
@@ -71,6 +73,7 @@ export interface TableSceneState {
   readonly smallBlindRelativeSeat?: number;
   readonly bigBlindRelativeSeat?: number;
   readonly tier?: "local" | "regional" | "national" | "championship";
+  readonly publicBoardCardCodes?: readonly string[];
 }
 
 export interface TableSceneHandle {
@@ -212,7 +215,7 @@ export function createTableScene(
       placeMarker(smallBlindMarker, poses, state.smallBlindRelativeSeat);
       placeMarker(bigBlindMarker, poses, state.bigBlindRelativeSeat);
       setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a);
-      setBoardCards(board, state.boardCards);
+    setBoardCards(board, state.boardCards, state.publicBoardCardCodes);
       renderer.render(scene, camera);
       if (!hasRendered) {
         hasRendered = true;
@@ -521,6 +524,8 @@ function applySeat(
         : pose.feltPosition;
     const local = worldToLocal(target);
     card.position.set(local[0] + (index === 0 ? -0.055 : 0.055), local[1], local[2]);
+    const code = seat.publicCardCodes?.[index];
+    (card as Mesh).material = code ? CARD_MATERIAL : CARD_BACK_MATERIAL;
   });
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,
@@ -557,7 +562,7 @@ function setChipStack(group: Group, count: number, color: number): void {
   }
 }
 
-function setBoardCards(group: Group, count: number): void {
+function setBoardCards(group: Group, count: number, codes: readonly string[] = []): void {
   while (group.children.length < count) {
     const card = new Mesh(CARD_GEOMETRY, CARD_MATERIAL);
     card.position.x = (group.children.length - 2) * 0.105;
@@ -566,4 +571,7 @@ function setBoardCards(group: Group, count: number): void {
   while (group.children.length > count) {
     group.remove(group.children[group.children.length - 1]);
   }
+  group.children.forEach((card, index) => {
+    (card as Mesh).material = codes[index] ? CARD_MATERIAL : CARD_MATERIAL;
+  });
 }
