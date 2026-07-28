@@ -157,6 +157,11 @@ export function createTableScene(
   board.position.set(0, TABLE_HEIGHT + 0.004, -0.16);
   scene.add(board);
 
+  const buttonMarker = buildTableMarker(0xf3ede0);
+  const smallBlindMarker = buildTableMarker(0x78a9e8);
+  const bigBlindMarker = buildTableMarker(0xd8b45a);
+  scene.add(buttonMarker, smallBlindMarker, bigBlindMarker);
+
   let state = initial;
   let running = false;
   let frame = 0;
@@ -203,6 +208,9 @@ export function createTableScene(
         entry.view.root.visible = true;
         applySeat(entry.view, entry.pose, seat, nowMs, actionStartedAt, state.reducedMotion);
       }
+      placeMarker(buttonMarker, poses, state.buttonRelativeSeat);
+      placeMarker(smallBlindMarker, poses, state.smallBlindRelativeSeat);
+      placeMarker(bigBlindMarker, poses, state.bigBlindRelativeSeat);
       setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a);
       setBoardCards(board, state.boardCards);
       renderer.render(scene, camera);
@@ -376,6 +384,26 @@ function buildTable(): Group {
   pedestal.position.y = (TABLE_HEIGHT - 0.1) / 2;
   group.add(pedestal);
   return group;
+}
+
+function buildTableMarker(color: number): Mesh {
+  const marker = new Mesh(
+    new CylinderGeometry(0.045, 0.045, 0.012, 16),
+    new MeshLambertMaterial({ color }),
+  );
+  return marker;
+}
+
+function placeMarker(
+  marker: Mesh,
+  poses: readonly SeatPose[],
+  relativeSeat: number | undefined,
+): void {
+  const pose = relativeSeat === undefined ? undefined : poses[relativeSeat];
+  marker.visible = Boolean(pose);
+  if (!pose) return;
+  marker.position.set(...pose.feltPosition);
+  marker.position.y = TABLE_HEIGHT + 0.014;
 }
 
 /**
