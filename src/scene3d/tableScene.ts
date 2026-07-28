@@ -45,6 +45,7 @@ import {
   type SeatPose,
 } from "./tableSceneModel";
 import type { SceneFrameCallbacks, WebGlProbeResult } from "./sceneAvailability";
+import type { SceneTransition } from "./sceneTransition";
 
 export interface SceneSeatState {
   readonly id: string;
@@ -74,6 +75,8 @@ export interface TableSceneState {
   readonly bigBlindRelativeSeat?: number;
   readonly tier?: "local" | "regional" | "national" | "championship";
   readonly publicBoardCardCodes?: readonly string[];
+  /** Current public queue item, sampled from the authoritative delay clock. */
+  readonly transition?: SceneTransition;
 }
 
 export interface TableSceneHandle {
@@ -175,6 +178,7 @@ export function createTableScene(
   // resetting the other's animation.
   const actionStartedAt = new Map<number, number>();
   const lastAction = new Map<number, SeatActionKind | undefined>();
+  let lastTransitionId: string | undefined;
 
   const applyCamera = () => {
     const pose = cameraPose(state.cameraPan);
@@ -209,7 +213,7 @@ export function createTableScene(
         }
         if (!entry) continue;
         entry.view.root.visible = true;
-        applySeat(entry.view, entry.pose, seat, nowMs, actionStartedAt, state.reducedMotion);
+        applySeat(entry.view, entry.pose, seat, nowMs, actionStartedAt, state.reducedMotion, state.transition);
       }
       placeMarker(buttonMarker, poses, state.buttonRelativeSeat);
       placeMarker(smallBlindMarker, poses, state.smallBlindRelativeSeat);
@@ -238,7 +242,25 @@ export function createTableScene(
     update(next) {
       const previous = state;
       state = next;
+      if (next.transition?.id !== lastTransitionId) {
+        lastTransitionId = next.transition?.id;
+        if (next.transition?.action) {
+          for (const seat of next.seats) {
+            if (next.transition.playerIds.includes(seat.id)) {
+              actionStartedAt.set(seat.seat, performance.now());
+            }
+          }
+        }
+      }
       for (const seat of next.seats) {
+        const previousSeat = previous.seats.find((candidate) => candidate.id === seat.id);
+        const committedFold = seat.folded && !seat.action && previousSeat?.action === "fold";
+        if (committedFold) {
+          // Commit the new terminal label without resetting the timestamp:
+          // the fold event has already spent its presentation clock.
+          lastAction.set(seat.seat, undefined);
+          continue;
+        }
         if (lastAction.get(seat.seat) !== seat.action) {
           lastAction.set(seat.seat, seat.action);
           actionStartedAt.set(seat.seat, performance.now());
@@ -486,11 +508,15 @@ function applySeat(
   nowMs: number,
   startedAt: Map<number, number>,
   reducedMotion: boolean,
+  transition: TableSceneState["transition"],
 ): void {
   const started = startedAt.get(seat.seat) ?? nowMs;
-  const progress = reducedMotion
+  const localProgress = reducedMotion
     ? 1
     : Math.min(1, (nowMs - started) / ACTION_MS);
+  const progress = transition?.action === seat.action && transition?.playerIds.includes(seat.id)
+    ? transition?.progress ?? localProgress
+    : localProgress;
 
   /*
     The hero has no body, because the camera is the hero.
@@ -517,9 +543,10 @@ function applySeat(
     return [dx * cos - dz * sin, wy, dx * sin + dz * cos] as const;
   };
 
-  view.cards.visible = !seat.folded || progress < 1;
+  const folded = seat.folded || transition?.foldedPlayerIds.includes(seat.id) === true;
+  view.cards.visible = !folded || progress < 1;
   view.cards.children.forEach((card, index) => {
-    const target = seat.folded
+    const target = folded
       ? muckedCardPosition(pose, progress)
       : seat.action === "deal"
         ? dealtCardPosition(pose, progress)
@@ -532,7 +559,7 @@ function applySeat(
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,
   // and it is a body doing something rather than a rectangle oscillating.
-  const lean = seat.acting ? 0.06 : seat.folded ? -0.04 : 0;
+  const lean = seat.acting ? 0.06 : folded ? -0.04 : 0;
   view.body.position.z = lean;
   view.arm.position.z = 0.22 + (seat.action === "bet" || seat.action === "all-in" ? 0.16 * progress : 0);
 

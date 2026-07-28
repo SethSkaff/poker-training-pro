@@ -1,5 +1,6 @@
 import type { SceneSeatState, TableSceneState } from "./tableScene";
 import type { SeatActionKind } from "./tableSceneModel";
+import type { SceneTransition } from "./sceneTransition";
 
 /** Public-only presenter input. This module intentionally imports no engine or card types. */
 export interface PublicScenePlayer {
@@ -27,6 +28,7 @@ export interface TableSceneSnapshotInput {
   readonly bigBlindCanonicalSeat?: number;
   readonly revealedPlayerIds?: readonly string[];
   readonly tier?: "local" | "regional" | "national" | "championship";
+  readonly transition?: SceneTransition;
 }
 
 export interface SceneSnapshotSeat extends SceneSeatState {
@@ -80,7 +82,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
       ...(input.publicActions?.[player.id] ? { action: input.publicActions[player.id] } : {}),
     }));
   const relative = (canonicalSeat: number | undefined) => canonicalSeat === undefined ? undefined : (canonicalSeat - hero.canonicalSeat + 10) % 10;
-  return { seats, pot: input.pot, boardCards: input.boardCards, publicBoardCardCodes: input.publicBoardCardCodes ?? [], cameraPan: input.cameraPan, reducedMotion: input.reducedMotion, buttonRelativeSeat: relative(input.buttonCanonicalSeat), smallBlindRelativeSeat: relative(input.smallBlindCanonicalSeat), bigBlindRelativeSeat: relative(input.bigBlindCanonicalSeat), tier: input.tier ?? "local" };
+  return { seats, pot: input.pot, boardCards: input.boardCards, publicBoardCardCodes: input.publicBoardCardCodes ?? [], cameraPan: input.cameraPan, reducedMotion: input.reducedMotion, buttonRelativeSeat: relative(input.buttonCanonicalSeat), smallBlindRelativeSeat: relative(input.smallBlindCanonicalSeat), bigBlindRelativeSeat: relative(input.bigBlindCanonicalSeat), tier: input.tier ?? "local", transition: input.transition };
 }
 
 function appearanceForId(id: string): number {

@@ -31,6 +31,7 @@ import {
   useState,
 } from "react";
 import type { SceneAvailability } from "../scene3d/sceneAvailability";
+import { createSceneTransition } from "../scene3d/sceneTransition";
 import {
   createTableSceneSnapshot,
   type SceneSnapshotSeat,
@@ -137,7 +138,7 @@ import {
   createTableActionGate,
   planTableSceneUpdate,
 } from "../lib/tableSceneLifecycle";
-import { createPresentationEventDelay } from "../lib/tournamentPresentationClock";
+import { createPresentationEventDelay, presentationEventDelayMs } from "../lib/tournamentPresentationClock";
 import type {
   Card,
   GameMode,
@@ -1535,6 +1536,7 @@ export function PokerTable({
   );
   const [allInEquity, setAllInEquity] =
     useState<PublicAllInEquityEstimate>();
+  const [sceneEventProgress, setSceneEventProgress] = useState(1);
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
   const actionGateRef = useRef(createTableActionGate());
@@ -1884,6 +1886,7 @@ export function PokerTable({
     );
     pendingPresentationEvent.current = delay;
     group.add(delay);
+    setSceneEventProgress(settings.reducedMotion || settings.transitionMotion === "off" ? 1 : 0);
     return () => {
       delay.cancel();
       group.remove(delay);
@@ -1897,6 +1900,22 @@ export function PokerTable({
     tournament?.onPresentationEventComplete,
     tournament?.presentationEvent,
   ]);
+
+  useEffect(() => {
+    const event = tournament?.presentationEvent;
+    const delay = pendingPresentationEvent.current;
+    if (!event || !delay || paused) return;
+    const duration = presentationEventDelayMs(event, speed, settings, {
+      allInRunout: Boolean(tournament?.allInReveal),
+    });
+    let frame = 0;
+    const sample = () => {
+      setSceneEventProgress(1 - delay.remaining / duration);
+      if (delay.isPending && !delay.isFrozen) frame = requestAnimationFrame(sample);
+    };
+    frame = requestAnimationFrame(sample);
+    return () => cancelAnimationFrame(frame);
+  }, [paused, settings, speed, tournament?.allInReveal, tournament?.presentationEvent]);
 
   useEffect(() => {
     const group = freezeGroupRef.current;
@@ -2633,12 +2652,21 @@ export function PokerTable({
     disagree, the DOM is right, because it is the layer the engine and the
     accessibility audits both talk to.
   */
+  const sceneTransition = tournament?.presentationEvent
+    ? createSceneTransition(
+      tournament.presentationEvent,
+      sceneEventProgress,
+      settings.reducedMotion || settings.transitionMotion === "off",
+    )
+    : undefined;
   const sceneActions = Object.fromEntries(tablePlayers.map((player) => {
     const presentation = seatPresentationUpdate(
       tournament?.presentationEvent,
       player.id,
     );
-    return [player.id, presentation.action ? sceneActionForCommand(presentation.action) : undefined];
+    return [player.id, sceneTransition?.action && sceneTransition.playerIds.includes(player.id)
+      ? sceneTransition.action
+      : presentation.action ? sceneActionForCommand(presentation.action) : undefined];
   }));
   const sceneSnapshot = createTableSceneSnapshot({
     players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status })),
@@ -2655,7 +2683,7 @@ export function PokerTable({
         ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
         : {},
     cameraPan,
-    reducedMotion: settings.reducedMotion || settings.cameraMotion === "off",
+    reducedMotion: settings.reducedMotion || settings.cameraMotion === "off" || settings.transitionMotion === "off",
     buttonCanonicalSeat: scenario.buttonSeat,
     smallBlindCanonicalSeat: scenario.smallBlindSeat,
     bigBlindCanonicalSeat: scenario.bigBlindSeat,
@@ -2665,6 +2693,7 @@ export function PokerTable({
         ? tournament.presentationEvent.reveals.map((reveal) => reveal.playerId)
         : [],
     tier: tournament?.tier === "circuit" ? "regional" : tournament?.tier === "championship" ? "national" : tournament?.tier === "world" ? "championship" : "local",
+    transition: sceneTransition,
   });
   const sceneSeatByPlayerId = new Map(
     sceneSnapshot.seats.map((seat) => [seat.id, seat]),

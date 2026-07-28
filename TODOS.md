@@ -1596,6 +1596,30 @@ trajectory.
 
 **Next task:** D3D-F04, bind scene animation to the existing presentation clock.
 
+### D3D-F04 — Bind animation to the existing presentation clock
+
+**Status:** In progress. The initial renderer used private `performance.now()`
+per-seat action timers, so repeated public actions had no event identity and
+could drift from the paused presentation queue. `sceneTransition.ts` now
+projects public event ids, recipients, action vocabulary, progress, and the
+transient public fold terminal state. `PokerTable` samples only the existing
+`FreezableDelay.remaining` clock; the sampler stops while that delay is frozen,
+and never completes or advances the runner. The renderer consumes event ids and
+the recipient set, preserves completed fold timing when the authoritative
+snapshot commits, and treats transition-motion off as terminal/on-demand scene
+motion.
+
+**Evidence so far.** Focused transition/snapshot/presentation-clock tests pass,
+as do `tsc --noEmit`, `npm run build`, and diff hygiene. Independent review
+found and drove fixes for deal/blind recipients, wrong-seat action binding,
+queued fold state, paused sampling, off-motion behavior, and fold replay after
+commit.
+
+**Remaining work / risk.** Add integration coverage for skip, pause/resume,
+repeated action ids, and all event kinds; then run packaged scene evidence and
+repeat independent verification. Do not mark F04 complete from this source
+slice.
+
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
 rendered in perspective, the camera yawing on the existing look-left/right
