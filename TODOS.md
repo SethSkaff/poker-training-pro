@@ -1539,8 +1539,10 @@ the focused evidence was rerun. Its post-fix recheck found no material issue.
 
 ### D3D-F03 — Redacted scene snapshot adapter
 
-**Status:** In progress — source adapter and stable-ID renderer seam landed;
-full M1 rendering parity remains open. The prototype previously built a compact
+**Status:** Complete 2026-07-28 — source adapter and stable-ID renderer seam
+are now evidenced across the public/redaction, DOM, mode, fallback, and real
+elimination matrix. Full M1 object rendering remains open in its later tasks.
+The prototype previously built a compact
 scene state inline in `PokerTable`, duplicating hero-relative ordering and
 allowing eliminated seats to change renderer slots.
 
@@ -1592,7 +1594,7 @@ material issue. F03 remains in progress because its M1 object vocabulary is
 still incomplete, not because its adapter parity/redaction matrix lacks this
 trajectory.
 
-**Next task:** Complete the F03 parity/redaction matrix, then D3D-F04.
+**Next task:** D3D-F04, bind scene animation to the existing presentation clock.
 
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
