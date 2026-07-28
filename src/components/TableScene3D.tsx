@@ -1,11 +1,16 @@
 import { useEffect, useRef } from "react";
 import {
   createTableScene,
-  supportsWebGl2,
+  probeWebGl2,
   type SceneSeatState,
   type TableSceneHandle,
   type TableSceneState,
 } from "../scene3d/tableScene";
+import {
+  startSceneAttempt,
+  type SceneAvailability,
+  type WebGlProbeResult,
+} from "../scene3d/sceneAvailability";
 
 /**
  * Mounts the 3D table behind the DOM table (E09-001 M1).
@@ -32,6 +37,13 @@ export interface TableScene3DProps {
   readonly reducedMotion: boolean;
   /** True while the table is paused or the window is away. */
   readonly suspended: boolean;
+  /** Reports actual usable rendering, never just the player's preference. */
+  readonly onAvailabilityChange?: (availability: SceneAvailability) => void;
+  /** Production factories remain injectable to test lifecycle ownership. */
+  readonly runtime?: {
+    readonly probe: (canvas: HTMLCanvasElement) => WebGlProbeResult;
+    readonly create: typeof createTableScene;
+  };
 }
 
 export function TableScene3D({
@@ -41,6 +53,8 @@ export function TableScene3D({
   cameraPan,
   reducedMotion,
   suspended,
+  onAvailabilityChange,
+  runtime,
 }: TableScene3DProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneRef = useRef<TableSceneHandle | null>(null);
@@ -54,23 +68,36 @@ export function TableScene3D({
   };
   const stateRef = useRef(state);
   stateRef.current = state;
+  const reportRef = useRef(onAvailabilityChange);
+  reportRef.current = onAvailabilityChange;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // A device without WebGL2, or one where context creation is refused, keeps
-    // the CSS table and loses nothing it had before.
-    if (!supportsWebGl2()) return;
-
-    let handle: TableSceneHandle | null = null;
-    try {
-      handle = createTableScene(canvas, stateRef.current);
-    } catch {
-      // A driver that accepts the probe and then fails to build the scene must
-      // not take the table down with it.
-      return;
-    }
-    sceneRef.current = handle;
+    const sceneRuntime = runtime ?? { probe: probeWebGl2, create: createTableScene };
+    let terminal = false;
+    const attempt = startSceneAttempt({
+      canvas,
+      state: stateRef.current,
+      probe: sceneRuntime.probe,
+      startSuspended: suspended,
+      create: (target, nextState, callbacks) => {
+        const created = sceneRuntime.create(target, nextState, callbacks);
+        // A reduced-motion draw can fail synchronously during construction.
+        // Do not publish that disposed handle to later update effects.
+        if (!terminal) sceneRef.current = created;
+        return created;
+      },
+      onAvailability: (availability) => {
+        terminal ||= availability.status === "failed" || availability.status === "lost" || availability.status === "disposed";
+        if (terminal) sceneRef.current = null;
+        reportRef.current?.(availability);
+      },
+    });
+    /* F05 owns recovery. Until then, context loss restores the full DOM table. */
+    const contextLost = () => attempt.contextLost();
+    canvas.addEventListener("webglcontextlost", contextLost);
+    const handle = sceneRef.current;
 
     const resize = () => {
       const parent = canvas.parentElement;
@@ -82,10 +109,11 @@ export function TableScene3D({
 
     return () => {
       window.removeEventListener("resize", resize);
-      sceneRef.current = null;
-      handle?.dispose();
+      canvas.removeEventListener("webglcontextlost", contextLost);
+      attempt.dispose();
+      if (sceneRef.current === handle) sceneRef.current = null;
     };
-  }, []);
+  }, [runtime]);
 
   useEffect(() => {
     sceneRef.current?.update(state);

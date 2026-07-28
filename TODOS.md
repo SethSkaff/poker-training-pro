@@ -1464,6 +1464,49 @@ Files: `src/scene3d/tableSceneModel.ts`, `src/scene3d/tableScene.ts`,
 default). Tests: 21 in `tableSceneModel.test.ts` covering seat placement, the
 clamped seated camera, object travel, and reduced-motion end-state parity.
 
+### D3D-F01 — Explicit scene availability and DOM fallback
+
+**Status:** In progress — source behavior implemented, but M0 acceptance remains
+open pending the packaged forced-failure gate in D3D-F06 and DOM-host test
+infrastructure.
+The previous prototype set `data-spatial-scene="on"` as soon as the preference
+was enabled, so a failed renderer left the readable 2.5D decoration at 6%
+opacity before any canvas frame existed.
+
+**Implemented 2026-07-28.** `src/scene3d/sceneAvailability.ts` now owns an
+exhaustive probing/loading/ready/failed/lost/disposed attempt state machine.
+`TableScene3D` probes its actual target canvas, publishes ready only from the
+first successful render, treats probe/constructor/frame failures and context
+loss as terminal fallback states, and disposes an owned renderer once. The
+table now applies decorative fading only for
+`data-spatial-scene="ready"`; a new request suppresses a stale ready value for
+its first render. Paused creation does not draw or schedule a frame, including
+when the runtime factory changes while paused.
+
+**Evidence.** Baseline: `spatialScene:true` immediately produced
+`data-spatial-scene="on"` with no readiness state or tests. Current source:
+`npx vitest run src/scene3d/sceneAvailability.test.ts
+src/scene3d/tableSceneModel.test.ts --reporter=verbose` (28 passing),
+`npm test`, `npx tsc --noEmit`, and `npm run build` pass. The focused tests
+cover first-frame gating, null/throwing probes, constructor and first-frame
+failure, loss, stale callbacks, one-time disposal, and initially paused
+creation. Independent read-only review found and the source fixes address the
+initial-pause/runtime-change and rapid request-toggle counterexamples; its
+post-fix recheck found no material source regression and independently reran
+the 28 focused tests, typecheck, and production build.
+
+**Remaining evidence / risk.** This Node-only test environment has no jsdom or
+browser renderer, so it does not yet execute `TableScene3D` as a mounted DOM
+component or capture opacity/focus parity. No packaged test currently enables
+the scene and forces WebGL failure; D3D-F06 (after F02/F05) owns that release
+gate. A renderer that throws only after allocating internal GPU resources still
+depends on renderer-library cleanup behavior until F05 centralizes allocations.
+Do not mark D3D-F01 or M0 complete from the source tests alone.
+
+**Next task:** D3D-F02, the independent scene JS/assets budget audit. D3D-F03
+may proceed independently, but both must land before M1 object work; F05/F06
+must subsequently close lifecycle and packaged-failure evidence.
+
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
 rendered in perspective, the camera yawing on the existing look-left/right

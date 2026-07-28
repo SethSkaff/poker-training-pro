@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { SceneAvailability } from "../scene3d/sceneAvailability";
 import {
   trainingScenarios,
   type RatedTrainingScenario,
@@ -1476,6 +1477,12 @@ export function PokerTable({
   const [cameraPan, setCameraPan] = useState(
     initialTrainingPresentation?.cameraPan ?? 0,
   );
+  const [sceneAvailability, setSceneAvailability] =
+    useState<SceneAvailability>({ status: "idle" });
+  /* A prior renderer must not make a replacement request fade DOM for a frame. */
+  const sceneRequestRef = useRef(settings.spatialScene);
+  const sceneRequestChanged = sceneRequestRef.current !== settings.spatialScene;
+  sceneRequestRef.current = settings.spatialScene;
   const [elapsedMs, setElapsedMs] = useState(
     initialTrainingPresentation?.elapsedMs ?? 0,
   );
@@ -3307,6 +3314,7 @@ export function PokerTable({
                       settings.reducedMotion || settings.cameraMotion === "off"
                     }
                     suspended={paused}
+                    onAvailabilityChange={setSceneAvailability}
                   />
                 </Suspense>
               )}
@@ -3401,7 +3409,9 @@ export function PokerTable({
                 they were, because this layer is still the one the player clicks
                 and the one assistive technology reads.
               */
-              {...(settings.spatialScene ? { "data-spatial-scene": "on" } : {})}
+              {...(settings.spatialScene && !sceneRequestChanged && sceneAvailability.status === "ready"
+                ? { "data-spatial-scene": "ready" }
+                : {})}
               {...(tournament
                 ? { "data-table-state-version": tournament.sceneStateVersion }
                 : {})}

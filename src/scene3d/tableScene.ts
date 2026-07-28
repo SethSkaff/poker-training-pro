@@ -44,6 +44,7 @@ import {
   type SeatActionKind,
   type SeatPose,
 } from "./tableSceneModel";
+import type { SceneFrameCallbacks, WebGlProbeResult } from "./sceneAvailability";
 
 export interface SceneSeatState {
   readonly id: string;
@@ -82,14 +83,12 @@ export interface TableSceneHandle {
   };
 }
 
-/** Detect a usable WebGL2 context without throwing on a blocked device. */
-export function supportsWebGl2(canvas?: HTMLCanvasElement): boolean {
+/** Probe the actual target canvas without allowing a driver error to escape. */
+export function probeWebGl2(canvas: HTMLCanvasElement): WebGlProbeResult {
   try {
-    const probe = canvas ?? document.createElement("canvas");
-    const context = probe.getContext("webgl2");
-    return context !== null;
+    return canvas.getContext("webgl2") === null ? "unsupported" : "available";
   } catch {
-    return false;
+    return "blocked";
   }
 }
 
@@ -103,6 +102,7 @@ const ACTION_MS = 620;
 export function createTableScene(
   canvas: HTMLCanvasElement,
   initial: TableSceneState,
+  callbacks?: SceneFrameCallbacks,
 ): TableSceneHandle {
   const renderer = new WebGLRenderer({
     canvas,
@@ -152,6 +152,8 @@ export function createTableScene(
   let running = false;
   let frame = 0;
   let disposed = false;
+  let hasRendered = false;
+  let suspended = callbacks?.startSuspended ?? false;
   // Action timing is per seat, so two seats can act in sequence without one
   // resetting the other's animation.
   const actionStartedAt = new Map<number, number>();
@@ -164,20 +166,30 @@ export function createTableScene(
   };
 
   const drawFrame = (nowMs: number) => {
-    for (const pose of poses) {
-      const view = seatViews.get(pose.seat);
-      const seat = state.seats.find((entry) => entry.seat === pose.seat);
-      if (!view) continue;
-      if (!seat) {
-        view.root.visible = false;
-        continue;
+    try {
+      for (const pose of poses) {
+        const view = seatViews.get(pose.seat);
+        const seat = state.seats.find((entry) => entry.seat === pose.seat);
+        if (!view) continue;
+        if (!seat) {
+          view.root.visible = false;
+          continue;
+        }
+        view.root.visible = true;
+        applySeat(view, pose, seat, nowMs, actionStartedAt, state.reducedMotion);
       }
-      view.root.visible = true;
-      applySeat(view, pose, seat, nowMs, actionStartedAt, state.reducedMotion);
+      setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a);
+      setBoardCards(board, state.boardCards);
+      renderer.render(scene, camera);
+      if (!hasRendered) {
+        hasRendered = true;
+        callbacks?.onFirstFrame();
+      }
+    } catch {
+      running = false;
+      cancelAnimationFrame(frame);
+      callbacks?.onFrameFailure();
     }
-    setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a);
-    setBoardCards(board, state.boardCards);
-    renderer.render(scene, camera);
   };
 
   const loop = () => {
@@ -208,10 +220,10 @@ export function createTableScene(
           running = false;
           cancelAnimationFrame(frame);
         }
-        drawFrame(performance.now());
+        if (!suspended) drawFrame(performance.now());
         return;
       }
-      if (!running && previous.reducedMotion !== false) {
+      if (!suspended && !running && previous.reducedMotion !== false) {
         handle.resume();
       }
     },
@@ -223,19 +235,27 @@ export function createTableScene(
       renderer.setSize(width, height, false);
       camera.aspect = width / Math.max(1, height);
       camera.updateProjectionMatrix();
-      if (!running) drawFrame(performance.now());
+      if (!running && !suspended) drawFrame(performance.now());
     },
     suspend() {
+      suspended = true;
       if (!running) return;
       running = false;
       cancelAnimationFrame(frame);
     },
     resume() {
-      if (running || disposed || state.reducedMotion) return;
+      if (disposed) return;
+      suspended = false;
+      if (state.reducedMotion) {
+        drawFrame(performance.now());
+        return;
+      }
+      if (running) return;
       running = true;
       frame = requestAnimationFrame(loop);
     },
     dispose() {
+      if (disposed) return;
       disposed = true;
       running = false;
       cancelAnimationFrame(frame);
@@ -257,8 +277,10 @@ export function createTableScene(
 
   applyCamera();
   handle.resize(canvas.clientWidth || 1280, canvas.clientHeight || 720);
-  if (!initial.reducedMotion) handle.resume();
-  else drawFrame(performance.now());
+  if (!suspended) {
+    if (!initial.reducedMotion) handle.resume();
+    else drawFrame(performance.now());
+  }
   return handle;
 }
 

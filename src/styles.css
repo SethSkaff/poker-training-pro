@@ -3053,15 +3053,15 @@ input[type="range"]::-webkit-slider-thumb {
   the architecture decision requires. Anything carrying information -- names,
   stacks, bets, position markers, cards, controls -- is untouched.
 */
-.poker-table[data-spatial-scene="on"] .felt-ring,
-.poker-table[data-spatial-scene="on"] .dealer,
-.poker-table[data-spatial-scene="on"] .seat-avatar,
-.poker-table[data-spatial-scene="on"] .center-pot {
+.poker-table[data-spatial-scene="ready"] .felt-ring,
+.poker-table[data-spatial-scene="ready"] .dealer,
+.poker-table[data-spatial-scene="ready"] .seat-avatar,
+.poker-table[data-spatial-scene="ready"] .center-pot {
   opacity: 0.06;
 }
 
-.poker-table[data-spatial-scene="on"] .felt-brand,
-.poker-table[data-spatial-scene="on"] .community-placeholder {
+.poker-table[data-spatial-scene="ready"] .felt-brand,
+.poker-table[data-spatial-scene="ready"] .community-placeholder {
   opacity: 0;
 }
 
