@@ -27,6 +27,54 @@ describe("scene transition", () => {
     expect(createSceneTransition(result, 0, false).action).toBeUndefined();
   });
 
+  it("maps every public action command without exposing a private action detail", () => {
+    const cases = [
+      ["check", "check"],
+      ["call", "bet"],
+      ["bet", "bet"],
+      ["raise", "bet"],
+      ["all-in", "all-in"],
+      ["fold", "fold"],
+    ] as const;
+    for (const [commandType, action] of cases) {
+      const event: TournamentPresentationEvent = {
+        id: `h1:${commandType}`,
+        kind: "action",
+        handId: "h1",
+        playerId: "hero",
+        command: { type: commandType },
+      };
+      expect(createSceneTransition(event, 0, false)).toMatchObject({
+        id: `h1:${commandType}`,
+        action,
+        playerIds: ["hero"],
+      });
+    }
+  });
+
+  it("keeps every non-seat presentation event inert in the scene", () => {
+    const passiveEvents: readonly TournamentPresentationEvent[] = [
+      { id: "button", kind: "button-moved", handId: "h1", buttonSeat: 0 },
+      { id: "board", kind: "board-card-dealt", handId: "h1", street: "flop", cardIndex: 0, card: { rank: "A", suit: "spades" } },
+      { id: "collect", kind: "bets-collected", handId: "h1", amount: 10 },
+      { id: "showdown", kind: "showdown", handId: "h1", playerIds: [], reveals: [], awards: [] },
+      { id: "reveal", kind: "all-in-reveal", handId: "h1", playerIds: [], reveals: [] },
+      { id: "result", kind: "hand-result", handId: "h1", awards: [] },
+      { id: "side-pot", kind: "side-pot-formed", handId: "h1", potId: "p1", amount: 10, eligiblePlayerIds: [] },
+      { id: "award", kind: "pot-awarded", handId: "h1", playerId: "hero", amount: 10 },
+      { id: "eliminated", kind: "eliminated", handId: "h1", playerId: "hero" },
+    ];
+    for (const event of passiveEvents) {
+      expect(createSceneTransition(event, 0.4, false)).toMatchObject({
+        id: event.id,
+        action: undefined,
+        playerIds: [],
+        foldedPlayerIds: [],
+        progress: 0.4,
+      });
+    }
+  });
+
   it("names every public deal and blind recipient", () => {
     const deal: TournamentPresentationEvent = { id: "h1:deal", kind: "hole-cards-dealt", handId: "h1", playerIds: ["hero", "villain"] };
     const blinds: TournamentPresentationEvent = { id: "h1:blinds", kind: "blinds-posted", handId: "h1", posts: [{ playerId: "hero", type: "small-blind", amount: 5 }, { playerId: "villain", type: "big-blind", amount: 10 }] };

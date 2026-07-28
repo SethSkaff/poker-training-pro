@@ -46,6 +46,7 @@ import {
 } from "./tableSceneModel";
 import type { SceneFrameCallbacks, WebGlProbeResult } from "./sceneAvailability";
 import type { SceneTransition } from "./sceneTransition";
+import { createSceneActionTimingState, reconcileSceneActionTiming } from "./sceneActionTiming";
 
 export interface SceneSeatState {
   readonly id: string;
@@ -176,9 +177,7 @@ export function createTableScene(
   let suspended = callbacks?.startSuspended ?? false;
   // Action timing is per seat, so two seats can act in sequence without one
   // resetting the other's animation.
-  const actionStartedAt = new Map<number, number>();
-  const lastAction = new Map<number, SeatActionKind | undefined>();
-  let lastTransitionId: string | undefined;
+  const actionTiming = createSceneActionTimingState();
 
   const applyCamera = () => {
     const pose = cameraPose(state.cameraPan);
@@ -213,7 +212,7 @@ export function createTableScene(
         }
         if (!entry) continue;
         entry.view.root.visible = true;
-        applySeat(entry.view, entry.pose, seat, nowMs, actionStartedAt, state.reducedMotion, state.transition);
+        applySeat(entry.view, entry.pose, seat, nowMs, actionTiming.startedAt, state.reducedMotion, state.transition);
       }
       placeMarker(buttonMarker, poses, state.buttonRelativeSeat);
       placeMarker(smallBlindMarker, poses, state.smallBlindRelativeSeat);
@@ -242,30 +241,14 @@ export function createTableScene(
     update(next) {
       const previous = state;
       state = next;
-      if (next.transition?.id !== lastTransitionId) {
-        lastTransitionId = next.transition?.id;
-        if (next.transition?.action) {
-          for (const seat of next.seats) {
-            if (next.transition.playerIds.includes(seat.id)) {
-              actionStartedAt.set(seat.seat, performance.now());
-            }
-          }
-        }
-      }
-      for (const seat of next.seats) {
-        const previousSeat = previous.seats.find((candidate) => candidate.id === seat.id);
-        const committedFold = seat.folded && !seat.action && previousSeat?.action === "fold";
-        if (committedFold) {
-          // Commit the new terminal label without resetting the timestamp:
-          // the fold event has already spent its presentation clock.
-          lastAction.set(seat.seat, undefined);
-          continue;
-        }
-        if (lastAction.get(seat.seat) !== seat.action) {
-          lastAction.set(seat.seat, seat.action);
-          actionStartedAt.set(seat.seat, performance.now());
-        }
-      }
+      reconcileSceneActionTiming(
+        actionTiming,
+        previous.seats,
+        next.seats,
+        next.transition,
+        performance.now(),
+        ACTION_MS,
+      );
       applyCamera();
       /*
         With motion reduced the scene is not animated: it is drawn once per

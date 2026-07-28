@@ -1609,16 +1609,30 @@ the recipient set, preserves completed fold timing when the authoritative
 snapshot commits, and treats transition-motion off as terminal/on-demand scene
 motion.
 
-**Evidence so far.** Focused transition/snapshot/presentation-clock tests pass,
-as do `tsc --noEmit`, `npm run build`, and diff hygiene. Independent review
-found and drove fixes for deal/blind recipients, wrong-seat action binding,
-queued fold state, paused sampling, off-motion behavior, and fold replay after
-commit.
+**Evidence so far.** `sceneTransition.test.ts`,
+`sceneActionTiming.test.ts`, `tableSceneSnapshot.test.ts`, and
+`tournamentPresentationClock.test.ts` now cover repeated action IDs, all public
+action commands, inert non-seat queue events, public recipients, reduced/off
+motion terminal progress, and an early skipped fold committing terminally
+without replay. The focused 23-test run, `tsc --noEmit`, `npm run build`, and
+`npm run package:win` pass. The fresh packaged CDP scene audit passed Normal and
+Rational in real WebGL2 and forced-WebGL-failure modes: one accessible table,
+six valid projected seats, and zero application console-fatal events in every
+case. The real packaged window was also opened through Computer Use: its 3D
+table remained visible while the six-seat accessible DOM advanced through a
+call and opponent queue events; the pause dialog mounted and resumed with the
+same public table state.
 
-**Remaining work / risk.** Add integration coverage for skip, pause/resume,
-repeated action ids, and all event kinds; then run packaged scene evidence and
-repeat independent verification. Do not mark F04 complete from this source
-slice.
+Fresh read-only review found no material issue: event IDs are consumed once,
+repeated IDs restart, recipients remain public, and a committed skipped fold is
+durably terminal across later renderer updates. It also confirmed the paused
+sampler only resamples the existing pending delay and never advances the
+runner.
+
+**Remaining work / risk.** This is a verified partial F04 increment, not F04
+completion: the replay-hash matrix and direct UI/renderer transition lifecycle
+coverage for every speed/skip path remain to be added. Do not mark F04 complete
+from this source slice.
 
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
