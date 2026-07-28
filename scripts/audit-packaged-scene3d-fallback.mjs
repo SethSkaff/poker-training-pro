@@ -24,6 +24,9 @@ console.log(JSON.stringify({ ok: true, normal, fallback, note: "CDP screenshots 
 async function runCase(name, extraArguments) {
   const session = await PackagedSession.launch({ appPath, profilePrefix: `poker-training-pro-scene3d-${name}-`, timeoutMs, extraArguments });
   try {
+    // Console and runtime events are consumed through the same CDP client as
+    // the DOM assertions, so a quiet fallback cannot hide a renderer error.
+    await session.cdp.send("Log.enable");
     await session.reachHome();
     await session.clickSelector('button[aria-label="Settings"]', "settings button");
     const enabled = await session.evaluate(`(() => {
@@ -62,7 +65,11 @@ async function runCase(name, extraArguments) {
       };
     })()`);
     const screenshot = await session.cdp.send("Page.captureScreenshot", { format: "png" });
-    return { name, ...observation, screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75) };
+    const fatalEvents = session.cdp.takeFatalEvents();
+    if (fatalEvents.length > 0) {
+      throw new Error(`Renderer emitted fatal CDP events: ${JSON.stringify(fatalEvents)}`);
+    }
+    return { name, ...observation, consoleFatalEvents: fatalEvents.length, screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75) };
   } finally {
     await session.dispose();
   }
