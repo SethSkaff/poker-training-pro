@@ -1699,10 +1699,10 @@ package evidence below all pass with no fatal renderer event.
 
 ### D3D-F05 — Harden lifecycle, context recovery, and resource ownership
 
-**Status:** In progress — the first lifecycle/resource increment is implemented
-and has fresh source, development, and alternate-packaged evidence. It does
-not yet satisfy the full minimize/restore performance or repeated real-context
-loss acceptance matrix.
+**Status:** Complete 2026-07-28. Lifecycle/resource ownership, real browser
+context recovery, and the packaged evidence gate now meet F05's acceptance
+criteria. This does not promote M0: adaptive quality/blocklist and low-spec
+support evidence remain separate M3/M5 work.
 
 **Implemented.** `sceneLifecycle.ts` replaces the private renderer rAF loop
 with `createVisibilityAwareAnimationLoop`. Static and reduced-motion scene
@@ -1740,27 +1740,37 @@ typecheck. The reviewer noted only the already-recorded limitation: the generic
 recovery session relies on the attempt contract to dispose on context loss, and
 the current `startSceneAttempt` contract does so.
 
-**Remaining evidence / risk.** The normal package output remains locked by the
-user's saved window, so this increment used the isolated alternate output and
-must not be mistaken for a standard-output replacement. Still required:
-actual minimize/restore frame measurements, a real browser context loss (not
-only a synthetic event), renderer-level allocation counters across repeated
-mounts/restores, and the packaged F06 diagnostics/release gate. Keep F05 open
-until those checks and an independent lifecycle review are complete.
+**Completion evidence 2026-07-28.** The packaged audit no longer dispatches a
+synthetic event. It obtains Chromium's `WEBGL_lose_context` extension from the
+mounted WebGL2 canvas, triggers three browser-generated losses, retains that
+same extension only in the isolated CDP page for restoration, and rejects an
+unavailable extension. The gated, read-only diagnostics prove every loss was
+trusted and `preventDefault()` succeeded, while the audit requires the DOM
+fallback to retain one table, six seats, live regions, full opacity, and the
+decorative unfocusable canvas. Each restore must return to `ready`, increment
+the count exactly once, and match the initial renderer-local allocation count.
+This is genuine browser context-loss evidence, not a claim to reproduce a
+physical driver crash.
 
-**F05 recovery increment 2026-07-28.** The packaged scene audit now performs
-three consecutive synthetic `webglcontextlost/restored` cycles before it
-finishes the real UI hand. Each cycle must prevent default, expose the fully
-mounted DOM fallback, return to `ready`, increment `contextLosses` by exactly
-one, and recreate exactly the baseline renderer-local resource count. The
-fresh F06f unpacked Windows run held 219 resources through all three restores
-(loss counts 1/2/3), kept six seats and the decorative canvas mounted, then
-completed a legal hand. The new negative audit test fails on resource growth;
-this meaningfully advances the repeated allocation matrix but does not claim a
-real driver-triggered context loss.
+Fresh source checks passed: `node --test scripts/audit-packaged-3d-scene.test.mjs`
+(11 cases, including synthetic-provenance and missing-default-prevention
+negatives), the six focused lifecycle/resource/recovery/resize/availability/
+visibility suites (20 tests), `tsc --noEmit`, and `npm run build`. A fresh
+Windows NSIS build at `outputs/desktop-f05-real-loss2` ran through the existing
+CDP harness. Normal WebGL2 used AMD Radeon RX 6700 XT/D3D11, measured 123 draw
+calls, 6,198 triangles, zero textures, 227 resources, and 4.9ms p95; native
+minimize held its frame count at 11. All three trusted/default-prevented losses
+showed the complete DOM fallback and restored to exactly 227 resources, then a
+real legal hand completed (3 hero actions/8 presentation skips). The forced
+WebGL failure remained a classified `blocked` full-opacity fallback and
+completed a legal hand (3 actions/8 skips), with no fatal events. Computer Use
+also inspected the real Electron table window with the 3D room visibly mounted
+behind its accessible DOM controls. A separate read-only reviewer initially
+found the missing `preventDefault()` assertion; the follow-up review approved
+the added gated datum and negative coverage with no remaining material finding.
 
-**Next task:** resolve independent-review findings for this F05 increment, then
-add the bounded packaged minimize/context-loss diagnostics required by D3D-F06.
+**Next task:** D3D-M101 — complete the physical table-state vocabulary; preserve
+the F05/F06 package audit as the lifecycle prerequisite.
 
 ### D3D-F06 â€” Packaged scene diagnostics and first release gate
 

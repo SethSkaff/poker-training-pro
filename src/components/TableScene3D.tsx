@@ -80,6 +80,10 @@ export function TableScene3D({
   reportRef.current = onAvailabilityChange;
   const availabilityRef = useRef<SceneAvailability>({ status: "idle" });
   const contextLossCountRef = useRef(0);
+  // Audit provenance only: a browser-generated loss must not be confused with
+  // a synthetic Event dispatched by a test harness.
+  const lastContextLossTrustedRef = useRef<boolean | null>(null);
+  const lastContextLossDefaultPreventedRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     if (!window.desktop?.sceneDiagnosticsEnabled) return;
@@ -92,6 +96,8 @@ export function TableScene3D({
         ...(availabilityRef.current.reason ? { reason: availabilityRef.current.reason } : {}),
         suspended: suspendedRef.current,
         contextLosses: contextLossCountRef.current,
+        lastContextLossTrusted: lastContextLossTrustedRef.current,
+        lastContextLossDefaultPrevented: lastContextLossDefaultPreventedRef.current,
         qualityTier: "unconfigured" as const,
         ...(stats ?? {
           drawCalls: 0,
@@ -157,7 +163,9 @@ export function TableScene3D({
       // remains authoritative and receives a normal unrecoverable loss.
       if (recovery.contextLost()) {
         contextLossCountRef.current += 1;
+        lastContextLossTrustedRef.current = event.isTrusted;
         event.preventDefault();
+        lastContextLossDefaultPreventedRef.current = event.defaultPrevented;
       }
     };
     const resize = () => {

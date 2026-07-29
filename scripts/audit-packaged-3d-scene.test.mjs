@@ -9,6 +9,8 @@ function normalResult(overrides = {}) {
       frameCount: 3,
       renderer: "ANGLE test renderer",
       contextLosses: 0,
+      lastContextLossTrusted: null,
+      lastContextLossDefaultPrevented: null,
       drawCalls: 7,
       triangles: 240,
       textures: 0,
@@ -37,8 +39,9 @@ function normalResult(overrides = {}) {
     lifecycle: { minimized: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } } },
     recovery: {
       attempts: [1, 2, 3].map((contextLosses) => ({
-        loss: { defaultPrevented: true },
-        fallback: { ...ready, scene: "fallback", diagnostics: { ...ready.diagnostics, availability: "lost" } },
+        loss: { supported: true, mechanism: "WEBGL_lose_context" },
+        restore: { supported: true },
+        fallback: { ...ready, scene: "fallback", diagnostics: { ...ready.diagnostics, availability: "lost", lastContextLossTrusted: true, lastContextLossDefaultPrevented: true } },
         restored: { ...ready, diagnostics: { ...ready.diagnostics, contextLosses } },
       })),
     },
@@ -99,5 +102,17 @@ test("scene package audit rejects resource growth across repeated context recove
 test("scene package audit rejects an unmounted fallback DOM during recovery", () => {
   const result = normalResult();
   result.recovery.attempts[1].fallback.seatCount = 0;
+  assert.throws(() => assertCase(result), /Context loss did not restore DOM fallback/);
+});
+
+test("scene package audit rejects a synthetic context-loss event", () => {
+  const result = normalResult();
+  result.recovery.attempts[0].fallback.diagnostics.lastContextLossTrusted = false;
+  assert.throws(() => assertCase(result), /Context loss did not restore DOM fallback/);
+});
+
+test("scene package audit rejects a loss whose browser default was not prevented", () => {
+  const result = normalResult();
+  result.recovery.attempts[0].fallback.diagnostics.lastContextLossDefaultPrevented = false;
   assert.throws(() => assertCase(result), /Context loss did not restore DOM fallback/);
 });

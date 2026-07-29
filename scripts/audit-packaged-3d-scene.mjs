@@ -245,16 +245,31 @@ async function repeatContextRecovery(session, baselineResources, baselineContext
     const loss = await session.evaluate(`(() => {
       const canvas = document.querySelector('.table-scene-3d');
       if (!(canvas instanceof HTMLCanvasElement)) return null;
-      const event = new Event('webglcontextlost', { cancelable: true });
-      canvas.dispatchEvent(event);
-      return { defaultPrevented: event.defaultPrevented };
+      const context = canvas.getContext('webgl2');
+      const extension = context?.getExtension('WEBGL_lose_context');
+      if (!extension) return { supported: false };
+      // A genuinely lost context is no longer reacquirable from the canvas.
+      // Retain this browser-provided extension object solely in the isolated
+      // CDP page so its paired restore call reaches the same context.
+      window.__ptpAuditWebglLoseContext = extension;
+      extension.loseContext();
+      return { supported: true, mechanism: 'WEBGL_lose_context' };
     })()`);
-    if (loss?.defaultPrevented !== true) throw new Error("Scene did not attempt in-place context recovery.");
+    if (loss?.supported !== true) {
+      throw new Error("Packaged WebGL2 did not expose WEBGL_lose_context for a real context-loss audit.");
+    }
     if (!await session.poll("window.__ptpSceneDiagnostics?.snapshot?.().availability === 'lost'")) {
       throw new Error("Scene diagnostics did not classify context loss.");
     }
     const fallback = await observe(session);
-    await session.evaluate("document.querySelector('.table-scene-3d')?.dispatchEvent(new Event('webglcontextrestored'))");
+    const restore = await session.evaluate(`(() => {
+      const extension = window.__ptpAuditWebglLoseContext;
+      if (!extension) return { supported: false };
+      extension.restoreContext();
+      delete window.__ptpAuditWebglLoseContext;
+      return { supported: true };
+    })()`);
+    if (restore?.supported !== true) throw new Error("Lost WebGL2 context could not be restored by WEBGL_lose_context.");
     if (!await session.poll("window.__ptpSceneDiagnostics?.snapshot?.().availability === 'ready'")) {
       throw new Error("Scene diagnostics did not return to ready after context restore.");
     }
@@ -263,7 +278,7 @@ async function repeatContextRecovery(session, baselineResources, baselineContext
       || restored.diagnostics.contextLosses !== baselineContextLosses + attempt + 1) {
       throw new Error(`Context recovery allocation drift at attempt ${attempt + 1}: ${JSON.stringify(restored.diagnostics)}`);
     }
-    attempts.push({ loss, fallback, restored });
+    attempts.push({ loss, restore, fallback, restored });
   }
   return { attempts };
 }
@@ -305,7 +320,10 @@ export function assertCase(result) {
     }
     for (const [index, recovery] of recoveryAttempts.entries()) {
       const fallback = recovery?.fallback;
-      if (recovery?.loss?.defaultPrevented !== true || fallback?.scene !== "fallback"
+      if (recovery?.loss?.supported !== true || recovery?.loss?.mechanism !== "WEBGL_lose_context"
+        || recovery?.restore?.supported !== true || fallback?.diagnostics?.lastContextLossTrusted !== true
+        || fallback?.diagnostics?.lastContextLossDefaultPrevented !== true
+        || fallback?.scene !== "fallback"
         || fallback?.diagnostics?.availability !== "lost" || fallback.tableOpacity !== 1
         || fallback.tableCount !== 1 || fallback.seatCount < 2 || fallback.liveRegionCount < 1) {
         throw new Error(`Context loss did not restore DOM fallback: ${JSON.stringify(recovery)}`);
