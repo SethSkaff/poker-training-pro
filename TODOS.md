@@ -1935,6 +1935,24 @@ restore the opaque 2.5D table. Focused composition/input plus audit self-tests
 pass (27 checks). Next: final independent review, one production build, then
 the planned consolidated visual/package matrix.
 
+**D3D-M103 fresh-package attempt 2026-07-28 — incomplete evidence.** `npm run
+build` passed after the composition correction. Two explicit Windows package
+attempts (`npx electron-builder --win nsis portable --x64
+--config.electronDist=node_modules/electron/dist
+--config.directories.output=outputs/desktop-m103-composition` and the same
+command with `desktop-m103-composition-r2`) returned after logging Electron
+copy/module search without producing a usable unpacked executable: the first
+left `Poker Training Pro.exe` at 0 bytes and the second left no executable.
+Consequently the current-source normal CDP command `node
+scripts/audit-packaged-3d-scene.mjs --app
+'outputs/desktop-m103-composition/win-unpacked/Poker Training Pro.exe' --kind
+webgl2` failed at process launch with `spawn ... Poker Training Pro.exe ENOENT`.
+This is a packaging-output anomaly, not evidence of a WebGL or fallback defect;
+do not count the existing older package as current-source verification. Next:
+obtain a verified nonzero unpacked executable, run normal WebGL2 audit (which
+now asserts scene-ready composition) and then resume the resolution matrix;
+continue preserving the separately documented forced-failure fixture blocker.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array
