@@ -2051,6 +2051,15 @@ once Windows releases that executable. This is a packaging-file-lock
 observation, not a fallback or renderer failure, and does not change M103's
 open visual/forced-failure criteria.
 
+**D3D-M103 side-seat framing attempt 2026-07-28 — reverted.** A coherent
+camera-only test moved every Close/Standard/Wide dolly back by 0.40 world units
+while retaining FOV hierarchy and pan limits. Focused model/composition tests
+(30) and production build passed; r10's real 1366×768 native capture still
+showed the side primitive chairs/heads intersecting the canvas edges. The
+change was reverted rather than committing an unproven camera retreat. This is
+one failed approach only. Next diagnose seat placement/character bounds against
+the table camera before trying another material framing strategy.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array
