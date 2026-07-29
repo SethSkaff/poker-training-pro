@@ -67,7 +67,10 @@ export function seatPoses(count: number): readonly SeatPose[] {
     // +Z is toward the camera, so the hero at angle 0 is nearest.
     const x = Math.sin(angle) * TABLE_RADIUS;
     const z = Math.cos(angle) * TABLE_RADIUS;
-    const seatDistance = TABLE_RADIUS + 0.42;
+    // Keep physical chairs just beyond the rail. The prior 0.42m clearance
+    // pushed the lateral low-poly bodies beyond the seated camera envelope at
+    // compact desktop widths; cards/chips retain their independent felt pose.
+    const seatDistance = TABLE_RADIUS + 0.20;
     poses.push({
       seat,
       angle,

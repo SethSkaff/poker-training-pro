@@ -2070,6 +2070,15 @@ styles are unchanged. Composition and audit harness tests pass, as does the
 production build. Next: fresh native r11 package/matrix visual review, then
 independent review; do not claim closure yet.
 
+**D3D-M103 physical seat-envelope correction 2026-07-28 — package pending.**
+With DOM residue removed, the remaining lateral framing is genuinely from the
+WebGL low-poly chair roots. The seat ring is now 0.20 world units outside the
+rail instead of 0.42; public card/chip felt positions and all stable player-ID
+reconciliation remain untouched. Model/composition checks pass (29) and the
+production build passes. Next: package r12 and inspect the same native matrix;
+this is the second materially different framing strategy, not evidence of M103
+closure.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array
