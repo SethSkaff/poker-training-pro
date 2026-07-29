@@ -3513,6 +3513,7 @@ export function PokerTable({
                   : ""
               }`}
               data-table-hand-id={scenario.id}
+              data-table-street={scenario.street}
               /*
                 Marks that the 3D room is drawing the furniture, so the DOM's
                 own felt, chairs, and avatars can recede rather than being drawn
