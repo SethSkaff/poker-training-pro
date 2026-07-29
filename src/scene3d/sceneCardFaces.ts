@@ -37,10 +37,15 @@ export function parsePublicCardFace(code: string): PublicCardFace | null {
 
 /** Bounded local procedural atlas dimensions; 52 faces are about 2.5 MiB. */
 export const PROCEDURAL_CARD_FACE_SIZE = Object.freeze({ width: 96, height: 136 });
+export const PROCEDURAL_TABLE_MARKER_SIZE = Object.freeze({ width: 64, height: 64 });
 
 /** No mip chain: card faces stay screen-facing and use one exact base level. */
 export const PROCEDURAL_CARD_FACE_USE_MIPMAPS = false;
 
 export function proceduralCardFaceBytes(): number {
   return PROCEDURAL_CARD_FACE_SIZE.width * PROCEDURAL_CARD_FACE_SIZE.height * 4;
+}
+
+export function proceduralTableMarkerBytes(): number {
+  return PROCEDURAL_TABLE_MARKER_SIZE.width * PROCEDURAL_TABLE_MARKER_SIZE.height * 4;
 }

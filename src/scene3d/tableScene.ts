@@ -56,7 +56,9 @@ import {
   parsePublicCardFace,
   PROCEDURAL_CARD_FACE_SIZE,
   PROCEDURAL_CARD_FACE_USE_MIPMAPS,
+  PROCEDURAL_TABLE_MARKER_SIZE,
   proceduralCardFaceBytes,
+  proceduralTableMarkerBytes,
 } from "./sceneCardFaces";
 
 export interface SceneSeatState {
@@ -139,6 +141,7 @@ interface TableSceneResources {
   readonly chipGeometry: CylinderGeometry;
   chipMaterial(color: number): MeshLambertMaterial;
   cardFaceMaterial(code: string): MeshBasicMaterial;
+  markerMaterial(label: "D" | "SB" | "BB", color: number): MeshBasicMaterial;
   cardTextureEstimateMiB(): number;
 }
 
@@ -146,6 +149,7 @@ function createTableSceneResources(): TableSceneResources {
   const ledger = createSceneResourceLedger();
   const track = <T extends { dispose(): void }>(resource: T): T => ledger.track(resource);
   const faceMaterials = new Map<string, MeshBasicMaterial>();
+  const markerMaterials = new Map<string, MeshBasicMaterial>();
   const cardFaceMaterial = (code: string): MeshBasicMaterial => {
     const face = parsePublicCardFace(code);
     if (!face) return cardMaterial;
@@ -179,6 +183,30 @@ function createTableSceneResources(): TableSceneResources {
     return material;
   };
   const cardMaterial = track(new MeshBasicMaterial({ color: 0xf3ede0 }));
+  const markerMaterial = (label: "D" | "SB" | "BB", color: number): MeshBasicMaterial => {
+    const cached = markerMaterials.get(label);
+    if (cached) return cached;
+    const canvas = document.createElement("canvas");
+    canvas.width = PROCEDURAL_TABLE_MARKER_SIZE.width;
+    canvas.height = PROCEDURAL_TABLE_MARKER_SIZE.height;
+    const context = canvas.getContext("2d");
+    if (!context) return track(new MeshBasicMaterial({ color }));
+    context.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = "#f8f1df";
+    context.lineWidth = 3;
+    context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+    context.fillStyle = "#12201c";
+    context.textAlign = "center";
+    context.font = label === "D" ? "700 34px Inter, sans-serif" : "700 20px Inter, sans-serif";
+    context.fillText(label, canvas.width / 2, label === "D" ? 44 : 39);
+    const texture = track(new CanvasTexture(canvas));
+    texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
+    texture.minFilter = LinearFilter;
+    const material = track(new MeshBasicMaterial({ map: texture }));
+    markerMaterials.set(label, material);
+    return material;
+  };
   return {
     ledger,
     cardGeometry: track(new BoxGeometry(0.09, 0.005, 0.13)),
@@ -187,7 +215,11 @@ function createTableSceneResources(): TableSceneResources {
     chipGeometry: track(new CylinderGeometry(0.035, 0.035, 0.011, 12)),
     chipMaterial: (color) => track(new MeshLambertMaterial({ color })),
     cardFaceMaterial,
-    cardTextureEstimateMiB: () => faceMaterials.size * proceduralCardFaceBytes() / 1024 / 1024,
+    markerMaterial,
+    cardTextureEstimateMiB: () => (
+      (faceMaterials.size * proceduralCardFaceBytes() + markerMaterials.size * proceduralTableMarkerBytes())
+      / 1024 / 1024
+    ),
   };
 }
 
@@ -247,9 +279,9 @@ export function createTableScene(
   board.position.set(0, TABLE_HEIGHT + 0.004, -0.16);
   scene.add(board);
 
-  const buttonMarker = buildTableMarker(0xf3ede0, resources.ledger);
-  const smallBlindMarker = buildTableMarker(0x78a9e8, resources.ledger);
-  const bigBlindMarker = buildTableMarker(0xd8b45a, resources.ledger);
+  const buttonMarker = buildTableMarker("D", 0xf3ede0, resources);
+  const smallBlindMarker = buildTableMarker("SB", 0x78a9e8, resources);
+  const bigBlindMarker = buildTableMarker("BB", 0xd8b45a, resources);
   scene.add(buttonMarker, smallBlindMarker, bigBlindMarker);
 
   let state = initial;
@@ -490,10 +522,14 @@ function buildTable(resources: SceneResourceLedger): Group {
   return group;
 }
 
-function buildTableMarker(color: number, resources: SceneResourceLedger): Mesh {
+function buildTableMarker(
+  label: "D" | "SB" | "BB",
+  color: number,
+  resources: TableSceneResources,
+): Mesh {
   const marker = new Mesh(
-    resources.track(new CylinderGeometry(0.045, 0.045, 0.012, 16)),
-    resources.track(new MeshLambertMaterial({ color })),
+    resources.ledger.track(new CylinderGeometry(0.045, 0.045, 0.012, 16)),
+    resources.markerMaterial(label, color),
   );
   return marker;
 }
