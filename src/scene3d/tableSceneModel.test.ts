@@ -12,6 +12,8 @@ import {
   seatPoses,
   TABLE_HEIGHT,
   TABLE_RADIUS,
+  turnIndicatorPosition,
+  turnIndicatorPositionForPlayer,
 } from "./tableSceneModel";
 
 const distance = (
@@ -181,6 +183,39 @@ describe("objects travel between real places", () => {
       expect(dealtCardPosition(seat, 1)).toEqual(dealtCardPosition(seat, 1));
       expect(muckedCardPosition(seat, 1)).toEqual(muckedCardPosition(seat, 1));
     }
+  });
+});
+
+describe("the current-turn indicator", () => {
+  it("is a stable floor object outside the felt, clear of cards and faces", () => {
+    for (const pose of seatPoses(6)) {
+      const indicator = turnIndicatorPosition(pose);
+      const indicatorRadius = Math.hypot(indicator[0], indicator[2]);
+      const cardDistance = distance(indicator, pose.feltPosition);
+
+      // The halo sits around the occupied chair at floor level. It cannot
+      // cover the seat's cards on the felt or the character's head above it.
+      expect(indicatorRadius).toBeGreaterThan(TABLE_RADIUS);
+      expect(indicator[1]).toBeLessThan(TABLE_HEIGHT);
+      expect(cardDistance).toBeGreaterThan(0.6);
+      expect(indicator).toEqual(turnIndicatorPosition(pose));
+    }
+  });
+
+  it("follows a surviving actor's stable chair after an earlier seat leaves", () => {
+    const poses = seatPoses(6);
+    const byPlayer = new Map([
+      ["hero", poses[0]],
+      ["departing", poses[1]],
+      ["surviving-actor", poses[2]],
+    ]);
+
+    // Scene snapshots compact their public `seat` numbers after an out player,
+    // but the renderer deliberately retains each survivor's physical chair.
+    byPlayer.delete("departing");
+    expect(turnIndicatorPositionForPlayer("surviving-actor", (id) => byPlayer.get(id)))
+      .toEqual(turnIndicatorPosition(poses[2]));
+    expect(turnIndicatorPositionForPlayer("missing", (id) => byPlayer.get(id))).toBeUndefined();
   });
 });
 

@@ -1813,6 +1813,34 @@ face-up public cards plus the labeled main/side physical chip lanes; the forced
 river capture keeps the complete readable DOM board. Focused runner and audit
 tests pass; M101 remains in progress, not a milestone exit.
 
+**Current-turn object increment 2026-07-28.** The former acting-body lean is
+now supplemented by one durable, non-oscillating gold floor halo around the
+active player's physical chair. It is deliberately below the felt and outside
+the rail, leaving both cards and the seated character's face unobscured in a
+still frame. Its position resolves through the renderer's persistent
+player-ID-to-chair mapping rather than the compacted snapshot index: review
+found that an earlier elimination could otherwise light a vacant chair, and the
+follow-up regression preserves a surviving actor's original pose after the
+earlier seat leaves. The fresh independent re-review approved that correction.
+
+**Current evidence.** `npx vitest run src/scene3d/tableSceneModel.test.ts
+src/scene3d/tableSceneSnapshot.test.ts src/scene3d/sceneCardFaces.test.ts
+src/scene3d/sceneResources.test.ts` passes 38 tests;
+`node --test scripts/audit-packaged-3d-scene.test.mjs` passes 17 tests; and
+`npm run build` passes. A fresh
+`electron-builder --win dir --x64 --config.electronDist=node_modules/electron/dist
+--config.directories.output=outputs/desktop-m101-turn-indicator-stable-seat`
+was audited with both normal WebGL2 and `--kind forced-webgl-failure` runs.
+Normal AMD/D3D11 recorded the visible halo, 124 draw calls, 6,486 triangles,
+five local textures (0.1465 MiB), 226 resources, and 2.7ms p95; minimize held
+the frame count at 72 and all three real trusted/default-prevented context
+recoveries returned to 226 resources. The forced `failed/blocked` case retained
+the fully mounted 2.5D DOM fallback through 0/3/4/5 beats with no unrevealed
+opponent face cards or fatal events. M101 remains in progress: the next
+unblocked work is stronger rendered-object/DOM parity and occlusion coverage
+for stacks, bets, pots, and markers, not a claim that the full M1 vocabulary is
+complete.
+
 ### D3D-F06 â€” Packaged scene diagnostics and first release gate
 
 **Status:** Complete 2026-07-28. Subsequent independent-review

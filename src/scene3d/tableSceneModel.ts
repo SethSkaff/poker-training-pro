@@ -15,6 +15,8 @@
 export const TABLE_RADIUS = 1.35;
 /** Height of the felt surface above the floor. */
 export const TABLE_HEIGHT = 0.78;
+/** The active-turn halo sits around a chair on the floor, below every card. */
+export const TURN_INDICATOR_HEIGHT = 0.018;
 /** Where a seated player's eyes sit above the floor. */
 export const EYE_HEIGHT = 1.24;
 
@@ -76,6 +78,27 @@ export function seatPoses(count: number): readonly SeatPose[] {
     });
   }
   return poses;
+}
+
+/**
+ * Stable world position for the active-turn halo.
+ *
+ * It deliberately surrounds the occupied chair rather than the felt position:
+ * cards stay unobstructed on the table, and the indicator remains below a
+ * character's face. The renderer only changes visibility and seat assignment;
+ * it never animates this object.
+ */
+export function turnIndicatorPosition(pose: SeatPose): readonly [number, number, number] {
+  return [pose.position[0], TURN_INDICATOR_HEIGHT, pose.position[2]];
+}
+
+/** Resolve the active-turn halo by stable player identity, never an array slot. */
+export function turnIndicatorPositionForPlayer(
+  playerId: string | undefined,
+  poseForPlayer: (playerId: string) => SeatPose | undefined,
+): readonly [number, number, number] | undefined {
+  const pose = playerId === undefined ? undefined : poseForPlayer(playerId);
+  return pose ? turnIndicatorPosition(pose) : undefined;
 }
 
 /**

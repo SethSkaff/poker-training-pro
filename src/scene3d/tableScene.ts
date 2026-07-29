@@ -43,6 +43,7 @@ import {
   seatPoses,
   TABLE_HEIGHT,
   TABLE_RADIUS,
+  turnIndicatorPositionForPlayer,
   type SeatActionKind,
   type SeatPose,
 } from "./tableSceneModel";
@@ -282,7 +283,8 @@ export function createTableScene(
   const buttonMarker = buildTableMarker("D", 0xf3ede0, resources);
   const smallBlindMarker = buildTableMarker("SB", 0x78a9e8, resources);
   const bigBlindMarker = buildTableMarker("BB", 0xd8b45a, resources);
-  scene.add(buttonMarker, smallBlindMarker, bigBlindMarker);
+  const turnIndicator = buildTurnIndicator(resources);
+  scene.add(buttonMarker, smallBlindMarker, bigBlindMarker, turnIndicator);
 
   let state = initial;
   let disposed = false;
@@ -340,6 +342,7 @@ export function createTableScene(
       placeMarker(buttonMarker, poses, state.buttonRelativeSeat);
       placeMarker(smallBlindMarker, poses, state.smallBlindRelativeSeat);
       placeMarker(bigBlindMarker, poses, state.bigBlindRelativeSeat);
+      placeTurnIndicator(turnIndicator, state.seats, seatViews);
       setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a, resources);
       setBoardCards(board, state.boardCards, state.publicBoardCardCodes, resources);
       const renderStartedAt = performance.now();
@@ -544,6 +547,37 @@ function placeMarker(
   if (!pose) return;
   marker.position.set(...pose.feltPosition);
   marker.position.y = TABLE_HEIGHT + 0.014;
+}
+
+/**
+ * One durable halo identifies the actor. It lives at floor level around the
+ * occupied chair, so it is readable in a still scene without obscuring cards
+ * or the character's face; this is intentionally not an animated pulse.
+ */
+function buildTurnIndicator(resources: TableSceneResources): Mesh {
+  const indicator = new Mesh(
+    resources.ledger.track(new TorusGeometry(0.28, 0.018, 6, 24)),
+    resources.ledger.track(new MeshBasicMaterial({ color: 0xffcb66 })),
+  );
+  indicator.name = "active-turn-indicator";
+  indicator.rotation.x = Math.PI / 2;
+  indicator.visible = false;
+  return indicator;
+}
+
+function placeTurnIndicator(
+  indicator: Mesh,
+  seats: readonly SceneSeatState[],
+  seatViews: ReadonlyMap<string, { pose: SeatPose; view: SeatView }>,
+): void {
+  const acting = seats.find((seat) => seat.acting && !seat.folded);
+  const position = turnIndicatorPositionForPlayer(
+    acting?.id,
+    (playerId) => seatViews.get(playerId)?.pose,
+  );
+  indicator.visible = Boolean(position);
+  if (!position) return;
+  indicator.position.set(...position);
 }
 
 /**
