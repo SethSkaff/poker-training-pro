@@ -3068,7 +3068,10 @@ input[type="range"]::-webkit-slider-thumb {
 .poker-scene[data-spatial-scene="ready"] .seat-figure,
 .poker-scene[data-spatial-scene="ready"] .seat-chip-stack,
 .poker-scene[data-spatial-scene="ready"] .center-pot {
-  opacity: 0.06;
+  /* These are retained for the accessibility/fallback DOM but must contribute
+     no residual 2.5D paint: at 6% their oversized heads/chairs still read as
+     clipped duplicate people against the dark WebGL room. */
+  opacity: 0;
 }
 
 /* `.felt-ring` is also the DOM anchor for community cards and pot/readout

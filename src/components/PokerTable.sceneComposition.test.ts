@@ -25,6 +25,7 @@ describe("scene-ready table composition", () => {
     for (const duplicate of [".seat-figure", ".seat-chip-stack", ".center-pot"]) {
       expect(decorationFade).toContain(duplicate);
     }
+    expect(decorationFade).toContain("opacity: 0");
     for (const requiredHud of [".seat-label", ".seat-bet", ".opponent-cards", ".dealer-button", ".seat-position-marker"]) {
       expect(decorationFade).not.toContain(requiredHud);
     }
