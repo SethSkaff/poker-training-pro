@@ -2079,6 +2079,20 @@ production build passes. Next: package r12 and inspect the same native matrix;
 this is the second materially different framing strategy, not evidence of M103
 closure.
 
+**D3D-M103 lateral primitive framing 2026-07-28 — blocked after three
+strategies.** Native r11/r12/r13 captures all preserved the same visible
+lateral low-poly chair/head-edge problem. Three materially different source
+changes were tested: (1) retreat every seated camera dolly by 0.40 world units,
+(2) move physical chair roots from 0.42 to 0.20 outside the rail while leaving
+cards/chips fixed, and (3) widen Close/Standard/Wide FOV to 62/68/74 degrees.
+Focused model/composition tests and production builds passed each time; r10,
+r12, and r13 packaged WebGL2 matrices ran with real native windows. None made
+the frame production-coherent (the FOV result was visibly worse). Camera/seat
+experiments are reverted. Retain the committed residual-DOM-figure correction,
+but do not churn this primitive framing again without a later M2 character/room
+composition design; M103 remains open for its documented forced-failure and
+visual-contract evidence. Continue with the next unblocked M1 closure work.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

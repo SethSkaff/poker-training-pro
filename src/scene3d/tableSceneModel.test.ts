@@ -41,7 +41,6 @@ describe("seats are placed around a real table", () => {
     for (const pose of poses) {
       const radius = Math.hypot(pose.position[0], pose.position[2]);
       expect(radius).toBeGreaterThan(TABLE_RADIUS);
-      expect(radius).toBeCloseTo(TABLE_RADIUS + 0.20, 6);
     }
     // Neighbouring seats are equidistant.
     const gaps = poses.map((pose, index) =>
