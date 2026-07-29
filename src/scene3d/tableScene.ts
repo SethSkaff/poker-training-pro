@@ -119,6 +119,18 @@ export interface TableSceneHandle {
     frameP50Ms: number | null;
     frameP95Ms: number | null;
     renderer: string | null;
+    /** Actual renderer-owned public objects; exposed only by the audit bridge. */
+    objects: {
+      boardCardCodes: readonly (string | null)[];
+      potChipCount: number;
+      seats: readonly {
+        id: string;
+        stackChipCount: number;
+        betChipCount: number;
+      }[];
+      markers: { button: string | null; smallBlind: string | null; bigBlind: string | null };
+      actingPlayerId: string | null;
+    };
   };
 }
 
@@ -435,6 +447,24 @@ export function createTableScene(
       running: lifecycle?.isRunning() ?? false,
       ...frameTelemetry.snapshot(),
       renderer: readRendererName(renderer),
+      objects: {
+        boardCardCodes: board.children.map((card) => publicObjectCode(card)),
+        potChipCount: potChips.children.length,
+        seats: state.seats.map((seat) => {
+          const view = seatViews.get(seat.id)?.view;
+          return {
+            id: seat.id,
+            stackChipCount: view?.stackChips.children.length ?? 0,
+            betChipCount: view?.betChips.children.length ?? 0,
+          };
+        }),
+        markers: {
+          button: publicObjectPlayerId(buttonMarker),
+          smallBlind: publicObjectPlayerId(smallBlindMarker),
+          bigBlind: publicObjectPlayerId(bigBlindMarker),
+        },
+        actingPlayerId: publicObjectPlayerId(turnIndicator),
+      },
     }),
   };
 
@@ -548,6 +578,7 @@ function placeMarker(
 ): void {
   const pose = playerId === undefined ? undefined : seatViews.get(playerId)?.pose;
   marker.visible = Boolean(pose);
+  marker.userData.publicPlayerId = pose ? playerId : null;
   if (!pose) return;
   marker.position.set(...pose.feltPosition);
   marker.position.y = TABLE_HEIGHT + 0.014;
@@ -580,6 +611,7 @@ function placeTurnIndicator(
     (playerId) => seatViews.get(playerId)?.pose,
   );
   indicator.visible = Boolean(position);
+  indicator.userData.publicPlayerId = position ? acting?.id ?? null : null;
   if (!position) return;
   indicator.position.set(...position);
 }
@@ -754,5 +786,14 @@ function setBoardCards(
   }
   group.children.forEach((card, index) => {
     (card as Mesh).material = resources.cardFaceMaterial(codes[index] ?? "");
+    (card as Mesh).userData.publicCode = codes[index] ?? null;
   });
+}
+
+function publicObjectCode(object: Object3D): string | null {
+  return typeof object.userData.publicCode === "string" ? object.userData.publicCode : null;
+}
+
+function publicObjectPlayerId(object: Object3D): string | null {
+  return typeof object.userData.publicPlayerId === "string" ? object.userData.publicPlayerId : null;
 }

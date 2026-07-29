@@ -240,12 +240,35 @@ async function completeCurrentHand(session, initialHandId, publicBeats = []) {
 
 async function capturePublicBeat(session, beats) {
   const observation = await session.evaluate(`(() => {
+    const table = document.querySelector('.poker-table');
     const boardCards = document.querySelectorAll('.community-cards .playing-card').length;
     const street = ({ 0: 'preflop', 3: 'flop', 4: 'turn', 5: 'river' })[boardCards];
     if (!street) return null;
+    const codeFor = (card) => {
+      const rank = card.querySelector('b')?.textContent?.trim() ?? '';
+      const suit = card.querySelector('i')?.textContent?.trim() ?? '';
+      return rank && suit ? rank + suit : null;
+    };
+    const playerIdFor = (element) => element?.closest('.player-seat')?.getAttribute('data-scene-player-id') ?? null;
+    const markerPlayerId = (label) => playerIdFor([...document.querySelectorAll('.seat-position-marker')]
+      .find((marker) => marker.textContent?.trim() === label));
     return {
       street,
       boardCards,
+      boardCardCodes: [...document.querySelectorAll('.community-cards .playing-card')].map(codeFor),
+      scenePot: Number(table?.getAttribute('data-scene-pot')),
+      seats: [...document.querySelectorAll('.player-seat[data-scene-player-id]:not(.is-out)')].map((seat) => ({
+        id: seat.getAttribute('data-scene-player-id'),
+        stack: Number(seat.getAttribute('data-scene-stack')),
+        bet: Number(seat.getAttribute('data-scene-bet')),
+      })),
+      markerPlayerIds: {
+        button: playerIdFor(document.querySelector('.dealer-button')),
+        smallBlind: markerPlayerId('SB'),
+        bigBlind: markerPlayerId('BB'),
+      },
+      actingPlayerId: document.querySelector('.player-seat[data-scene-acting="true"]')?.getAttribute('data-scene-player-id') ?? null,
+      sceneObjects: window.__ptpSceneDiagnostics?.snapshot?.().objects ?? null,
       unrevealedOpponentFaceCount: document.querySelectorAll(
         '.player-seat:not(.player-seat--hero):not(.is-revealed) .playing-card:not(.playing-card--back)',
       ).length,
@@ -405,6 +428,9 @@ export function assertCase(result) {
     throw new Error(`Packaged public street captures were incomplete or exposed an unrevealed opponent card: ${JSON.stringify(publicBeatSummary)}. Interaction: ${JSON.stringify(result.interaction)}`);
   }
   if (result.kind === "webgl2") {
+    for (const beat of result.publicBeats) assertPublicObjectParity(beat);
+  }
+  if (result.kind === "webgl2") {
     if (before.scene !== "ready" || before.diagnostics.availability !== "ready" || !before.canvasVisible) {
       throw new Error(`WebGL scene did not become ready: ${JSON.stringify(before)}`);
     }
@@ -441,6 +467,39 @@ export function assertCase(result) {
     || before.diagnostics.availability !== "failed" || typeof before.diagnostics.reason !== "string") {
     throw new Error(`Forced WebGL failure did not stay on DOM fallback: ${JSON.stringify(before)}`);
   }
+}
+
+function assertPublicObjectParity(beat) {
+  const objects = beat?.sceneObjects;
+  if (!objects || !Array.isArray(objects.boardCardCodes) || !Array.isArray(objects.seats)
+    || !objects.markers || !Number.isFinite(beat.scenePot)) {
+    throw new Error(`Renderer object diagnostics were unavailable: ${JSON.stringify(beat)}`);
+  }
+  if (JSON.stringify(objects.boardCardCodes) !== JSON.stringify(beat.boardCardCodes)
+    || objects.potChipCount !== chipCountForAmount(beat.scenePot)) {
+    throw new Error(`Physical board or pot did not match mounted DOM: ${JSON.stringify(beat)}`);
+  }
+  const expectedSeats = new Map(beat.seats.map((seat) => [seat.id, seat]));
+  if (objects.seats.some((seat) => {
+    const expected = expectedSeats.get(seat.id);
+    return !expected || Object.hasOwn(seat, "cardCodes")
+      || seat.stackChipCount !== chipCountForAmount(expected.stack)
+      || seat.betChipCount !== chipCountForAmount(expected.bet);
+  }) || objects.seats.length !== expectedSeats.size) {
+    if (objects.seats.some((seat) => Object.hasOwn(seat, "cardCodes"))) {
+      throw new Error(`Renderer object diagnostics leaked seat card identities: ${JSON.stringify(beat)}`);
+    }
+    throw new Error(`Physical seat chips did not match mounted DOM: ${JSON.stringify(beat)}`);
+  }
+  if (JSON.stringify(objects.markers) !== JSON.stringify(beat.markerPlayerIds)
+    || objects.actingPlayerId !== beat.actingPlayerId) {
+    throw new Error(`Physical markers or acting object did not match mounted DOM: ${JSON.stringify(beat)}`);
+  }
+}
+
+function chipCountForAmount(amount) {
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return Math.max(1, Math.min(18, Math.round(Math.log10(amount + 1) * 4)));
 }
 
 function assertDiagnosticSchema(diagnostics, requiresFrames) {

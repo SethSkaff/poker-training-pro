@@ -38,13 +38,29 @@ function normalResult(overrides = {}) {
     interaction: { cameraMoved: true, heroAction: true, presentationSkips: 1, completedHand: { completed: true } },
     publicBeats: [
       ["preflop", 0], ["flop", 3], ["turn", 4], ["river", 5],
-    ].map(([street, boardCards]) => ({
+    ].map(([street, boardCards]) => {
+      const boardCardCodes = ["2♣", "7♦", "T♥", "J♠", "Q♣"].slice(0, boardCards);
+      const seats = [{ id: "hero", stack: 0, bet: 0 }];
+      return {
       street,
       boardCards,
+      boardCardCodes,
+      scenePot: 0,
+      seats,
+      markerPlayerIds: { button: null, smallBlind: null, bigBlind: null },
+      actingPlayerId: null,
+      sceneObjects: {
+        boardCardCodes: [...boardCardCodes],
+        potChipCount: 0,
+        seats: [{ id: "hero", stackChipCount: 0, betChipCount: 0 }],
+        markers: { button: null, smallBlind: null, bigBlind: null },
+        actingPlayerId: null,
+      },
       unrevealedOpponentFaceCount: 0,
       screenshotBytes: 100,
       screenshotPngBase64: "fixture",
-    })),
+      };
+    }),
     lifecycle: {
       minimizedStart: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } },
       minimized: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } },
@@ -158,6 +174,24 @@ test("scene package audit rejects an unrevealed opponent card face at a public b
   const result = normalResult();
   result.publicBeats[0].unrevealedOpponentFaceCount = 1;
   assert.throws(() => assertCase(result), /unrevealed opponent card/);
+});
+
+test("scene package audit rejects physical cards that diverge from the mounted DOM", () => {
+  const result = normalResult();
+  result.publicBeats[2].sceneObjects.boardCardCodes[3] = "A♠";
+  assert.throws(() => assertCase(result), /Physical board or pot did not match/);
+});
+
+test("scene package audit rejects a physical marker assigned to a different DOM seat", () => {
+  const result = normalResult();
+  result.publicBeats[0].sceneObjects.markers.button = "villain";
+  assert.throws(() => assertCase(result), /Physical markers or acting object did not match/);
+});
+
+test("scene package audit rejects renderer diagnostics that expose seat card identities", () => {
+  const result = normalResult();
+  result.publicBeats[0].sceneObjects.seats[0].cardCodes = ["A♠", "K♦"];
+  assert.throws(() => assertCase(result), /Renderer object diagnostics leaked seat card identities/);
 });
 
 test("scene package audit requires the forced fallback to capture every public street", () => {

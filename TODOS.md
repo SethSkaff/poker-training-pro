@@ -1841,6 +1841,26 @@ unblocked work is stronger rendered-object/DOM parity and occlusion coverage
 for stacks, bets, pots, and markers, not a claim that the full M1 vocabulary is
 complete.
 
+**Rendered-object parity increment 2026-07-28.** The packaged CDP audit now
+reads actual renderer-owned public object state at every stable preflop/flop/
+turn/river beat and compares it to the mounted DOM: public board rank/suit
+codes, compressed pot and per-seat stack/bet piles, D/SB/BB owners, and the
+active-turn object. The DOM exposes public diagnostic IDs/amounts only while the
+existing scene audit is enabled; normal production windows still have no bridge.
+Independent review caught that the first version accidentally serialized the
+hero's card meshes. Seat card codes were removed completely, board-only codes
+remain, and a negative harness case rejects any future seat-card field.
+
+**Evidence.** `node --test scripts/audit-packaged-3d-scene.test.mjs` passes 20
+cases; focused scene suites pass 41 tests; `npm run build` passes. The fresh
+`outputs/desktop-m101-object-parity-private/win-unpacked/Poker Training Pro.exe`
+passed normal AMD/D3D11 audit (124 calls, 6,486 triangles, five local textures,
+226 resources, 2.1ms p95; three stable real context recoveries) and forced
+`failed/blocked` WebGL fallback through the full 0/3/4/5-card hand with no
+unrevealed opponent faces or fatal events. Independent re-review approved the
+privacy correction. M101 remains open for visual occlusion/contrast evidence;
+the next implementation batch should advance the M102 physical action grammar.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

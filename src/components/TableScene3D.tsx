@@ -111,6 +111,13 @@ export function TableScene3D({
           frameP50Ms: null,
           frameP95Ms: null,
           renderer: null,
+          objects: {
+            boardCardCodes: [],
+            potChipCount: 0,
+            seats: [],
+            markers: { button: null, smallBlind: null, bigBlind: null },
+            actingPlayerId: null,
+          },
         }),
       };
     });

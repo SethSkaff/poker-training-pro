@@ -702,9 +702,13 @@ export function sceneSeatDomAttributes(
 ): Readonly<Record<string, string>> {
   if (!sceneSeat) return {};
   return {
+    "data-scene-player-id": sceneSeat.id,
     "data-scene-canonical-seat": String(sceneSeat.canonicalSeat),
     "data-scene-relative-seat": String(sceneSeat.relativeSeat),
     "data-scene-card-visibility": sceneSeat.cardVisibility,
+    "data-scene-stack": String(sceneSeat.stack),
+    "data-scene-bet": String(sceneSeat.bet),
+    "data-scene-acting": String(sceneSeat.acting),
   };
 }
 
@@ -3514,6 +3518,7 @@ export function PokerTable({
               }`}
               data-table-hand-id={scenario.id}
               data-table-street={scenario.street}
+              data-scene-pot={String(sceneSnapshot.pot)}
               /*
                 Marks that the 3D room is drawing the furniture, so the DOM's
                 own felt, chairs, and avatars can recede rather than being drawn
