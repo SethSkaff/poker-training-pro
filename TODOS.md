@@ -1861,6 +1861,40 @@ unrevealed opponent faces or fatal events. Independent re-review approved the
 privacy correction. M101 remains open for visual occlusion/contrast evidence;
 the next implementation batch should advance the M102 physical action grammar.
 
+**D3D-M102 action-grammar increment 2026-07-28 — in progress.** The WebGL
+adapter no longer collapses public calls and raises into a generic bet. New
+`sceneGestures.ts` supplies renderer-neutral public-only profiles for deal,
+check, call, bet, raise, fold/muck, all-in, collection, idle/acting, and win;
+the scene now gives calls, bets, raises, and all-ins distinct chip/body/arm
+paths while preserving one shared settled pot destination. The public runner
+now carries `{ playerId, amount }` public street-commitment records on a
+`bets-collected` event, allowing temporary physical collection piles after the
+next street correctly clears its DOM bets. The amount is public wager state,
+not card, equity, or policy data; folded collectors retain their card muck
+while their already-public chips still travel. Focused action/transition/
+snapshot/runner coverage passed (75 tests), `npm run build` passed, and the
+20-case source audit suite passed. Independent follow-up review first caught
+the missing cleared-street amounts and then the folded-collector precedence;
+both regressions are covered and the final review approved the fix with no
+remaining material privacy, replay, or fallback finding. A fresh unpacked
+production executable at
+`outputs/desktop-m102-action-grammar/win-unpacked/Poker Training Pro.exe`
+passed the normal WebGL2 packaged CDP audit: AMD RX 6700 XT/D3D11, 124 calls,
+6,486 triangles, five local textures (0.1465 MiB), 226 resources, 1.9ms p95,
+native minimize pause, three trusted context recoveries, public DOM/object
+parity through 0/3/4/5 cards, and no fatal console events. The audit now waits
+for a renderer/DOM public-board convergence predicate before screenshotting,
+fixing a real river-frame race. **Do not mark M102 complete:** the current
+forced-WebGL-failure run fails to retain all 0/3/4/5 capture beats in the
+all-in fixture (it advances from preflop through only 1/2/3 sampled DOM cards
+before completion); three harness approaches (convergence predicate,
+frame-cadence sampling, visible fallback window) did not resolve it. Preserve
+this exact evidence and diagnose the forced fixture/event-observation path
+before claiming fallback coverage for the increment. The subsequent
+`outputs/desktop-m102-collection-fix` normal package also passed at 2.3ms p95,
+but it predates the final folded-collector-only source correction; package the
+current source once the forced fixture blocker has a non-churning diagnosis.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

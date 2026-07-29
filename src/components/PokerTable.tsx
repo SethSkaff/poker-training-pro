@@ -365,7 +365,7 @@ export function describeLiveSidePot(
  */
 export function sceneActionForCommand(
   action: BettingActionType,
-): "deal" | "check" | "bet" | "fold" | "all-in" {
+): "check" | "call" | "bet" | "raise" | "fold" | "all-in" {
   switch (action) {
     case "fold":
       return "fold";
@@ -374,9 +374,11 @@ export function sceneActionForCommand(
     case "all-in":
       return "all-in";
     case "bet":
-    case "raise":
-    case "call":
       return "bet";
+    case "raise":
+      return "raise";
+    case "call":
+      return "call";
     default:
       return "check";
   }

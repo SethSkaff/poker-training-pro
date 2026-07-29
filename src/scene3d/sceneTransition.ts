@@ -7,6 +7,8 @@ export interface SceneTransition {
   readonly kind: TournamentPresentationEvent["kind"];
   /** Public seats affected by this transition. */
   readonly playerIds: readonly string[];
+  /** Public temporary piles kept while the next authoritative street has no bets. */
+  readonly collectedBets?: readonly { playerId: string; amount: number }[];
   readonly action?: SeatActionKind;
   /** Normalized queue-clock progress; reduced/off motion is always terminal. */
   readonly progress: number;
@@ -28,6 +30,7 @@ export function createSceneTransition(
     id: event.id,
     kind: event.kind,
     playerIds: playerIdsForEvent(event),
+    collectedBets: event.kind === "bets-collected" ? event.collections : undefined,
     foldedPlayerIds: event.kind === "action" && event.command.type === "fold"
       ? [event.playerId]
       : [],
@@ -56,20 +59,22 @@ function playerIdsForEvent(event: TournamentPresentationEvent): readonly string[
   if (event.kind === "action") return [event.playerId];
   if (event.kind === "hole-cards-dealt") return event.playerIds;
   if (event.kind === "blinds-posted") return event.posts.map((post) => post.playerId);
+  if (event.kind === "bets-collected") return event.collections.map((collection) => collection.playerId);
   return [];
 }
 
 function actionForEvent(event: TournamentPresentationEvent): SeatActionKind | undefined {
   if (event.kind === "hole-cards-dealt") return "deal";
   if (event.kind === "blinds-posted") return "bet";
+  if (event.kind === "bets-collected") return "collect";
   if (event.kind !== "action") return undefined;
   switch (event.command.type) {
     case "fold": return "fold";
     case "all-in": return "all-in";
     case "check": return "check";
-    case "call":
-    case "bet":
-    case "raise": return "bet";
+    case "call": return "call";
+    case "bet": return "bet";
+    case "raise": return "raise";
   }
 }
 

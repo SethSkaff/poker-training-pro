@@ -35,11 +35,14 @@ import {
   WebGLRenderer,
 } from "three";
 import {
+  allInChipPosition,
   betChipPosition,
   cameraPose,
+  callChipPosition,
   chipCountForAmount,
   dealtCardPosition,
   muckedCardPosition,
+  raiseChipPosition,
   seatPoses,
   TABLE_HEIGHT,
   TABLE_RADIUS,
@@ -47,6 +50,7 @@ import {
   type SeatActionKind,
   type SeatPose,
 } from "./tableSceneModel";
+import { sceneGestureFor } from "./sceneGestures";
 import type { SceneFrameCallbacks, WebGlProbeResult } from "./sceneAvailability";
 import type { SceneTransition } from "./sceneTransition";
 import { createSceneActionTimingState, reconcileSceneActionTiming } from "./sceneActionTiming";
@@ -723,11 +727,12 @@ function applySeat(
   };
 
   const folded = seat.folded || transition?.foldedPlayerIds.includes(seat.id) === true;
+  const gesture = sceneGestureFor(seat.action, progress, seat.acting, folded);
   view.cards.visible = !folded || progress < 1;
   view.cards.children.forEach((card, index) => {
     const target = folded
       ? muckedCardPosition(pose, progress)
-      : seat.action === "deal"
+      : gesture.cardMotion === "deal"
         ? dealtCardPosition(pose, progress)
         : pose.feltPosition;
     const local = worldToLocal(target);
@@ -738,14 +743,13 @@ function applySeat(
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,
   // and it is a body doing something rather than a rectangle oscillating.
-  const lean = seat.acting ? 0.06 : folded ? -0.04 : 0;
-  view.body.position.z = lean;
-  view.arm.position.z = 0.22 + (seat.action === "bet" || seat.action === "all-in" ? 0.16 * progress : 0);
+  view.body.position.z = gesture.bodyLean;
+  view.arm.position.z = 0.22 + gesture.armReach;
 
   const betChips = chipCountForAmount(seat.bet);
   setChipStack(view.betChips, betChips, 0xcf4a3c, resources);
   if (betChips > 0) {
-    const local = worldToLocal(betChipPosition(pose, seat.action === "bet" ? progress : 1));
+    const local = worldToLocal(chipPositionForGesture(pose, gesture.chipMotion, progress));
     view.betChips.position.set(local[0], local[1], local[2]);
   }
 
@@ -756,6 +760,21 @@ function applySeat(
     pose.feltPosition[2] * 0.86,
   ]);
   view.stackChips.position.set(stackLocal[0] + 0.16, stackLocal[1], stackLocal[2]);
+}
+
+function chipPositionForGesture(
+  pose: SeatPose,
+  motion: ReturnType<typeof sceneGestureFor>["chipMotion"],
+  progress: number,
+): readonly [number, number, number] {
+  switch (motion) {
+    case "call": return callChipPosition(pose, progress);
+    case "raise": return raiseChipPosition(pose, progress);
+    case "all-in": return allInChipPosition(pose, progress);
+    case "bet":
+    case "collect": return betChipPosition(pose, progress);
+    default: return betChipPosition(pose, 1);
+  }
 }
 
 /** Grow or shrink a chip pile in place, reusing meshes rather than rebuilding. */

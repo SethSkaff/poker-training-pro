@@ -133,9 +133,12 @@ export type SeatActionKind =
   | "idle"
   | "deal"
   | "check"
+  | "call"
   | "bet"
+  | "raise"
   | "fold"
   | "all-in"
+  | "collect"
   | "win";
 
 /**
@@ -166,6 +169,64 @@ export function betChipPosition(
   const potZ = 0.18;
   const lift = Math.sin(Math.PI * t) * 0.06;
   return [x + (potX - x) * t, y + lift, z + (potZ - z) * t];
+}
+
+/**
+ * A call is an economical direct placement: the required chips travel from a
+ * seat to the pot on a lower arc than an opening bet.  It still shares the
+ * same terminal position, so reduced motion and the next authoritative
+ * snapshot agree exactly.
+ */
+export function callChipPosition(
+  pose: SeatPose,
+  progress: number,
+): readonly [number, number, number] {
+  return chipPositionAlongPush(pose, progress, 0.035);
+}
+
+/**
+ * A raise first gathers chips nearer the player's betting line, then pushes
+ * the larger pile into the pot.  This deliberately has a different midpoint
+ * from both a call and an opening bet while preserving the same end state.
+ */
+export function raiseChipPosition(
+  pose: SeatPose,
+  progress: number,
+): readonly [number, number, number] {
+  const t = actionEase(progress);
+  const [x, y, z] = pose.feltPosition;
+  if (t === 1) return [0, y, 0.18];
+  const gather: readonly [number, number, number] = [x * 0.82, y, z * 0.82];
+  const pot: readonly [number, number, number] = [0, y, 0.18];
+  const segment = t < 0.34 ? t / 0.34 : (t - 0.34) / 0.66;
+  const from = t < 0.34 ? pose.feltPosition : gather;
+  const to = t < 0.34 ? gather : pot;
+  const lift = Math.sin(Math.PI * t) * 0.085;
+  return [
+    from[0] + (to[0] - from[0]) * segment,
+    y + lift,
+    from[2] + (to[2] - from[2]) * segment,
+  ];
+}
+
+/** An all-in uses the ordinary destination, but visibly clears a deeper pile. */
+export function allInChipPosition(
+  pose: SeatPose,
+  progress: number,
+): readonly [number, number, number] {
+  return chipPositionAlongPush(pose, progress, 0.11);
+}
+
+function chipPositionAlongPush(
+  pose: SeatPose,
+  progress: number,
+  maxLift: number,
+): readonly [number, number, number] {
+  const t = actionEase(progress);
+  const [x, y, z] = pose.feltPosition;
+  if (t === 1) return [0, y, 0.18];
+  const lift = Math.sin(Math.PI * t) * maxLift;
+  return [x * (1 - t), y + lift, z + (0.18 - z) * t];
 }
 
 /**

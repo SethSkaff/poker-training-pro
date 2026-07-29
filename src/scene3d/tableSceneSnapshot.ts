@@ -54,6 +54,11 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
   const hero = input.players.find((player) => player.id === input.heroId);
   if (!hero) throw new Error("scene snapshot requires the public hero seat");
   const revealed = new Set(input.revealedPlayerIds);
+  const collectedBetAmounts = new Map(
+    input.transition?.action === "collect"
+      ? input.transition.collectedBets?.map((collection) => [collection.playerId, collection.amount])
+      : [],
+  );
   const seats = input.players
     .filter((player) => player.status !== "out")
     .map((player) => ({
@@ -68,7 +73,10 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
       relativeSeat,
       seat,
       stack: player.stack,
-      bet: player.bet,
+      // The next betting street clears its authoritative `bet` values before
+      // this public presentation beat plays. Retain only the public swept
+      // amount long enough for the decorative chip pile to reach the pot.
+      bet: collectedBetAmounts.get(player.id) ?? player.bet,
       folded: player.status === "folded" || input.transition?.foldedPlayerIds.includes(player.id) === true,
       acting: input.actingPlayerId === player.id,
       isHero: player.id === input.heroId,
@@ -79,7 +87,11 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
           ? input.revealedCardCodesByPlayer?.[player.id] ?? []
           : [],
       appearance: appearanceForId(player.id),
-      ...(input.publicActions?.[player.id] ? { action: input.publicActions[player.id] } : {}),
+      ...(input.publicActions?.[player.id]
+        ? { action: input.publicActions[player.id] }
+        : collectedBetAmounts.has(player.id)
+          ? { action: "collect" as const }
+          : {}),
     }));
   const relative = (canonicalSeat: number | undefined) => canonicalSeat === undefined ? undefined : (canonicalSeat - hero.canonicalSeat + 10) % 10;
   const playerIdAt = (canonicalSeat: number | undefined) => canonicalSeat === undefined

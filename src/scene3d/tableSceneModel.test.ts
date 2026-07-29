@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   actionEase,
+  allInChipPosition,
   betChipPosition,
   cameraPose,
+  callChipPosition,
   chipCountForAmount,
   dealtCardPosition,
   EYE_HEIGHT,
   MAX_PAN,
   MAX_YAW_RADIANS,
   muckedCardPosition,
+  raiseChipPosition,
   seatPoses,
   TABLE_HEIGHT,
   TABLE_RADIUS,
@@ -156,6 +159,21 @@ describe("objects travel between real places", () => {
     // Lifts off the felt on the way and lands back on it.
     expect(betChipPosition(pose, 0.5)[1]).toBeGreaterThan(pose.feltPosition[1]);
     expect(end[1]).toBeCloseTo(pose.feltPosition[1], 6);
+  });
+
+  it("gives calls, bets, raises, and all-ins distinct public chip trajectories", () => {
+    const start = pose.feltPosition;
+    const end = betChipPosition(pose, 1);
+    for (const position of [callChipPosition(pose, 0), raiseChipPosition(pose, 0), allInChipPosition(pose, 0)]) {
+      expect(position[0]).toBeCloseTo(start[0], 6);
+      expect(position[2]).toBeCloseTo(start[2], 6);
+    }
+    for (const position of [callChipPosition(pose, 1), raiseChipPosition(pose, 1), allInChipPosition(pose, 1)]) {
+      expect(position).toEqual(end);
+    }
+    expect(distance(callChipPosition(pose, 0.5), betChipPosition(pose, 0.5))).toBeGreaterThan(0.01);
+    expect(distance(raiseChipPosition(pose, 0.5), betChipPosition(pose, 0.5))).toBeGreaterThan(0.04);
+    expect(allInChipPosition(pose, 0.5)[1]).toBeGreaterThan(betChipPosition(pose, 0.5)[1]);
   });
 
   it("deals a card from the dealer to the seat", () => {

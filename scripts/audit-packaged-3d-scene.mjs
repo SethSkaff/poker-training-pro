@@ -68,8 +68,10 @@ async function runCase(kind, extraArguments) {
     profilePrefix: `poker-training-pro-3d-audit-${kind}-`,
     timeoutMs,
     extraArguments: ["--ptp-lifecycle-smoke", ...extraArguments],
-    // Native minimize/restore requires an actual visible window handle.
-    windowsHide: kind !== "webgl2",
+    // Keep both paths foregrounded. Hidden Windows Electron windows throttle
+    // the presentation queue, which makes the forced-DOM audit skip readable
+    // public runout beats rather than exercising its real cadence.
+    windowsHide: false,
   });
   try {
     await session.cdp.send("Log.enable");
@@ -210,7 +212,6 @@ async function completeCurrentHand(session, initialHandId, publicBeats = []) {
     })()`);
     lastState = state;
     if (Number.isInteger(state?.boardCards)) observedBoardCardCounts.add(state.boardCards);
-    await capturePublicBeat(session, publicBeats);
     if (state?.complete) return {
       completed: true,
       actions,
@@ -218,11 +219,14 @@ async function completeCurrentHand(session, initialHandId, publicBeats = []) {
       observedBoardCardCounts: [...observedBoardCardCounts],
       ...(state.ceremony ? { ceremony: true } : {}),
     };
+    await capturePublicBeat(session, publicBeats);
     if (state?.action) {
       actions += 1;
       lastSubmittedStateVersion = state.stateVersion;
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, state?.action ? 120 : 45));
+    // Sample on the browser-frame cadence so a minimum-readable 120ms event
+    // cannot be skipped between CDP polls on a busy fallback renderer.
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, state?.action ? 120 : 16));
   }
   const domSummary = await session.evaluate(`(() => ({
     table: document.querySelector('.poker-table')?.dataset ?? null,
@@ -239,7 +243,7 @@ async function completeCurrentHand(session, initialHandId, publicBeats = []) {
 }
 
 async function capturePublicBeat(session, beats) {
-  const observation = await session.evaluate(`(() => {
+  const readObservation = `(() => {
     const table = document.querySelector('.poker-table');
     const boardCards = document.querySelectorAll('.community-cards .playing-card').length;
     const street = ({ 0: 'preflop', 3: 'flop', 4: 'turn', 5: 'river' })[boardCards];
@@ -273,8 +277,28 @@ async function capturePublicBeat(session, beats) {
         '.player-seat:not(.player-seat--hero):not(.is-revealed) .playing-card:not(.playing-card--back)',
       ).length,
     };
-  })()`);
+  })()`;
+  let observation = await session.evaluate(readObservation);
   if (!observation || beats.some((beat) => beat.street === observation.street)) return;
+  // React commits the accessible DOM before the next renderer frame.  Capture
+  // only after that frame has reconciled the publicly visible board; a fixed
+  // sleep here would make a slow GPU look like an object-parity failure.
+  if (observation.sceneObjects) {
+    const settled = await session.poll(`(() => {
+      const objects = window.__ptpSceneDiagnostics?.snapshot?.().objects;
+      const codes = [...document.querySelectorAll('.community-cards .playing-card')].map((card) => {
+        const rank = card.querySelector('b')?.textContent?.trim() ?? '';
+        const suit = card.querySelector('i')?.textContent?.trim() ?? '';
+        return rank && suit ? rank + suit : null;
+      });
+      return Array.isArray(objects?.boardCardCodes)
+        && JSON.stringify(objects.boardCardCodes) === JSON.stringify(codes);
+    })()`, { intervalMs: 16 });
+    if (!settled) {
+      throw new Error(`Renderer did not reconcile the public ${observation.street} board before the CDP deadline.`);
+    }
+    observation = await session.evaluate(readObservation);
+  }
   const screenshot = await session.cdp.send('Page.captureScreenshot', { format: 'png' });
   beats.push({ ...observation, screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75), screenshotPngBase64: screenshot.data ?? '' });
 }

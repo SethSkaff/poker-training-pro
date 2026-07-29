@@ -126,6 +126,7 @@ describe("public tournament action presentation", () => {
       kind: "bets-collected",
       handId,
       amount: 300,
+      collections: [{ playerId: "hero", amount: 300 }],
     })).toBe("chip");
     expect(publicPresentationSound({
       id: "flop",

@@ -132,6 +132,32 @@ describe("table scene snapshot", () => {
     );
   });
 
+  it("retains only public swept amounts while the next street has cleared DOM bets", () => {
+    const collect: TournamentPresentationEvent = {
+      id: "h1:collect", kind: "bets-collected", handId: "h1", amount: 90,
+      collections: [{ playerId: "villain", amount: 25 }, { playerId: "folded", amount: 40 }],
+    };
+    const snapshot = createTableSceneSnapshot({
+      ...input,
+      // This is the next authoritative street: the DOM quite correctly has no
+      // live bet. The scene temporarily draws only the already-public sweep.
+      players: input.players.map((player) => ({ ...player, bet: 0 })),
+      publicActions: {},
+      transition: createSceneTransition(collect, 0, false),
+    });
+    expect(snapshot.seats.find((seat) => seat.id === "villain")).toMatchObject({
+      bet: 25,
+      action: "collect",
+    });
+    expect(snapshot.seats.find((seat) => seat.id === "hero")?.bet).toBe(0);
+    expect(snapshot.seats.find((seat) => seat.id === "folded")).toMatchObject({
+      folded: true,
+      bet: 40,
+      action: "collect",
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("holeCards");
+  });
+
   it("keeps a skipped fold terminal while its pre-fold result snapshot is readable", () => {
     const result: TournamentPresentationEvent = {
       id: "skip:h1:hand-result", kind: "hand-result", handId: "h1", awards: [],

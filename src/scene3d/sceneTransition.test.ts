@@ -11,8 +11,8 @@ const call = (id: string): TournamentPresentationEvent => ({
 
 describe("scene transition", () => {
   it("preserves repeated public actions as separate event identities", () => {
-    expect(createSceneTransition(call("h1:call:1"), 0.25, false)).toMatchObject({ id: "h1:call:1", playerIds: ["p1"], action: "bet", progress: 0.25 });
-    expect(createSceneTransition(call("h1:call:2"), 0.25, false)).toMatchObject({ id: "h1:call:2", action: "bet", progress: 0.25 });
+    expect(createSceneTransition(call("h1:call:1"), 0.25, false)).toMatchObject({ id: "h1:call:1", playerIds: ["p1"], action: "call", progress: 0.25 });
+    expect(createSceneTransition(call("h1:call:2"), 0.25, false)).toMatchObject({ id: "h1:call:2", action: "call", progress: 0.25 });
   });
 
   it("uses the same terminal state for reduced motion, skip, and out-of-range clock samples", () => {
@@ -33,9 +33,9 @@ describe("scene transition", () => {
   it("maps every public action command without exposing a private action detail", () => {
     const cases = [
       ["check", "check"],
-      ["call", "bet"],
+      ["call", "call"],
       ["bet", "bet"],
-      ["raise", "bet"],
+      ["raise", "raise"],
       ["all-in", "all-in"],
       ["fold", "fold"],
     ] as const;
@@ -55,11 +55,10 @@ describe("scene transition", () => {
     }
   });
 
-  it("keeps every non-seat presentation event inert in the scene", () => {
+  it("keeps every non-seat presentation event except public collection inert in the scene", () => {
     const passiveEvents: readonly TournamentPresentationEvent[] = [
       { id: "button", kind: "button-moved", handId: "h1", buttonSeat: 0 },
       { id: "board", kind: "board-card-dealt", handId: "h1", street: "flop", cardIndex: 0, card: { rank: "A", suit: "spades" } },
-      { id: "collect", kind: "bets-collected", handId: "h1", amount: 10 },
       { id: "showdown", kind: "showdown", handId: "h1", playerIds: [], reveals: [], awards: [] },
       { id: "reveal", kind: "all-in-reveal", handId: "h1", playerIds: [], reveals: [] },
       { id: "result", kind: "hand-result", handId: "h1", awards: [] },
@@ -76,6 +75,19 @@ describe("scene transition", () => {
         progress: 0.4,
       });
     }
+  });
+
+  it("sweeps only named public wagers when bets are collected", () => {
+    const event: TournamentPresentationEvent = {
+      id: "collect", kind: "bets-collected", handId: "h1", amount: 10,
+      collections: [{ playerId: "hero", amount: 4 }, { playerId: "villain", amount: 6 }],
+    };
+    expect(createSceneTransition(event, 0.4, false)).toMatchObject({
+      action: "collect",
+      playerIds: ["hero", "villain"],
+      collectedBets: [{ playerId: "hero", amount: 4 }, { playerId: "villain", amount: 6 }],
+      progress: 0.4,
+    });
   });
 
   it("names every public deal and blind recipient", () => {

@@ -97,6 +97,8 @@ export type TournamentPresentationEvent =
       kind: "bets-collected";
       handId: string;
       amount: number;
+      /** Public street wagers swept into the pot before the next street clears them. */
+      collections: readonly { playerId: string; amount: number }[];
     }
   | {
       id: string;
@@ -479,6 +481,7 @@ function progressHandPresentationEvents(
         kind: "bets-collected" as const,
         handId: previousHand.handId,
         amount: previousHand.information.pot,
+        collections: collectedStreetBets(previousHand.betting.players),
       },
       ...Array.from({ length: newlyDealt }, (_, index) => ({
       id: presentationEventId(
@@ -509,6 +512,7 @@ function progressHandPresentationEvents(
     kind: "bets-collected",
     handId: result.handId,
     amount: previousHand.information.pot,
+    collections: collectedStreetBets(previousHand.betting.players),
   });
   if (!previousHand.betting.handComplete) {
     const playerIds = previousHand.betting.players
@@ -575,6 +579,14 @@ function progressHandPresentationEvents(
     });
   });
   return events;
+}
+
+function collectedStreetBets(
+  players: readonly { id: string; streetCommitted: number }[],
+): readonly { playerId: string; amount: number }[] {
+  return players
+    .filter((player) => player.streetCommitted > 0)
+    .map((player) => ({ playerId: player.id, amount: player.streetCommitted }));
 }
 
 function recordedActionRunner(
