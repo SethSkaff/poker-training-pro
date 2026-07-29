@@ -16,11 +16,13 @@
 import {
   AmbientLight,
   BoxGeometry,
+  CanvasTexture,
   CylinderGeometry,
   Color,
   Fog,
   Group,
   IcosahedronGeometry,
+  LinearFilter,
   Mesh,
   MeshLambertMaterial,
   MeshBasicMaterial,
@@ -50,6 +52,12 @@ import { createSceneActionTimingState, reconcileSceneActionTiming } from "./scen
 import { createSceneRenderLifecycle } from "./sceneLifecycle";
 import { createSceneResourceLedger, type SceneResourceLedger } from "./sceneResources";
 import { createSceneFrameTelemetry } from "./sceneDiagnostics";
+import {
+  parsePublicCardFace,
+  PROCEDURAL_CARD_FACE_SIZE,
+  PROCEDURAL_CARD_FACE_USE_MIPMAPS,
+  proceduralCardFaceBytes,
+} from "./sceneCardFaces";
 
 export interface SceneSeatState {
   readonly id: string;
@@ -128,24 +136,58 @@ interface TableSceneResources {
   readonly cardGeometry: BoxGeometry;
   readonly cardMaterial: MeshBasicMaterial;
   readonly cardBackMaterial: MeshLambertMaterial;
-  readonly cardRedMaterial: MeshBasicMaterial;
-  readonly cardBlackMaterial: MeshBasicMaterial;
   readonly chipGeometry: CylinderGeometry;
   chipMaterial(color: number): MeshLambertMaterial;
+  cardFaceMaterial(code: string): MeshBasicMaterial;
+  cardTextureEstimateMiB(): number;
 }
 
 function createTableSceneResources(): TableSceneResources {
   const ledger = createSceneResourceLedger();
   const track = <T extends { dispose(): void }>(resource: T): T => ledger.track(resource);
+  const faceMaterials = new Map<string, MeshBasicMaterial>();
+  const cardFaceMaterial = (code: string): MeshBasicMaterial => {
+    const face = parsePublicCardFace(code);
+    if (!face) return cardMaterial;
+    const key = `${face.rank}${face.glyph}`;
+    const cached = faceMaterials.get(key);
+    if (cached) return cached;
+    const canvas = document.createElement("canvas");
+    canvas.width = PROCEDURAL_CARD_FACE_SIZE.width;
+    canvas.height = PROCEDURAL_CARD_FACE_SIZE.height;
+    const context = canvas.getContext("2d");
+    if (!context) return cardMaterial;
+    context.fillStyle = "#f8f1df";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = "#c7af83";
+    context.lineWidth = 3;
+    context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+    context.fillStyle = face.red ? "#b83232" : "#1f2933";
+    context.font = "700 34px Georgia, serif";
+    context.textAlign = "left";
+    context.fillText(face.rank, 10, 39);
+    context.font = "30px Georgia, serif";
+    context.fillText(face.glyph, 12, 70);
+    context.textAlign = "center";
+    context.font = "52px Georgia, serif";
+    context.fillText(face.glyph, canvas.width / 2, 111);
+    const texture = track(new CanvasTexture(canvas));
+    texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
+    texture.minFilter = LinearFilter;
+    const material = track(new MeshBasicMaterial({ map: texture }));
+    faceMaterials.set(key, material);
+    return material;
+  };
+  const cardMaterial = track(new MeshBasicMaterial({ color: 0xf3ede0 }));
   return {
     ledger,
     cardGeometry: track(new BoxGeometry(0.09, 0.005, 0.13)),
-    cardMaterial: track(new MeshBasicMaterial({ color: 0xf3ede0 })),
+    cardMaterial,
     cardBackMaterial: track(new MeshLambertMaterial({ color: 0x8d2733 })),
-    cardRedMaterial: track(new MeshBasicMaterial({ color: 0xd14545 })),
-    cardBlackMaterial: track(new MeshBasicMaterial({ color: 0x30343a })),
     chipGeometry: track(new CylinderGeometry(0.035, 0.035, 0.011, 12)),
     chipMaterial: (color) => track(new MeshLambertMaterial({ color })),
+    cardFaceMaterial,
+    cardTextureEstimateMiB: () => faceMaterials.size * proceduralCardFaceBytes() / 1024 / 1024,
   };
 }
 
@@ -346,10 +388,10 @@ export function createTableScene(
       drawCalls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
       textures: renderer.info.memory.textures,
-      // Until authored textures enter the asset pipeline, zero is exact. A
-      // non-zero texture count intentionally becomes an over-budget sentinel:
-      // new texture types must add a real byte estimator before they ship.
-      textureEstimateMiB: renderer.info.memory.textures === 0 ? 0 : Infinity,
+      // Public card faces are local 96×136 RGBA canvases with mipmaps disabled.
+      // The cache is bounded by the 52 canonical rank/suit pairs, so this is an
+      // exact decoded-byte estimate instead of treating every texture as unknown.
+      textureEstimateMiB: resources.cardTextureEstimateMiB(),
       resources: resources.ledger.counts().resources,
       running: lifecycle?.isRunning() ?? false,
       ...frameTelemetry.snapshot(),
@@ -585,7 +627,7 @@ function applySeat(
     const local = worldToLocal(target);
     card.position.set(local[0] + (index === 0 ? -0.055 : 0.055), local[1], local[2]);
     const code = seat.publicCardCodes?.[index];
-    (card as Mesh).material = code ? materialForPublicCard(code, resources) : resources.cardBackMaterial;
+    (card as Mesh).material = code ? resources.cardFaceMaterial(code) : resources.cardBackMaterial;
   });
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,
@@ -637,11 +679,6 @@ function setBoardCards(
     group.remove(group.children[group.children.length - 1]);
   }
   group.children.forEach((card, index) => {
-    (card as Mesh).material = materialForPublicCard(codes[index] ?? "", resources);
+    (card as Mesh).material = resources.cardFaceMaterial(codes[index] ?? "");
   });
-}
-
-function materialForPublicCard(code: string, resources: TableSceneResources): MeshBasicMaterial {
-  if (!code) return resources.cardMaterial;
-  return code.endsWith("h") || code.endsWith("d") ? resources.cardRedMaterial : resources.cardBlackMaterial;
 }
