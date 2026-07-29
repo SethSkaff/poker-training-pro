@@ -36,6 +36,8 @@ interface Window {
     ) => Promise<{ ok: boolean }>;
     /** Present only in the isolated packaged lifecycle/scene audit. */
     sceneDiagnosticsEnabled?: true;
+    /** Fixed runner seed exposed only to the isolated packaged scene audit. */
+    sceneAuditSeed?: "d3d-m101-public-hand";
     /** Present only in the packaged WebGL fallback audit. */
     forceWebGl2Failure?: true;
     setFullscreen: (fullscreen: boolean) => Promise<boolean>;

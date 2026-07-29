@@ -898,7 +898,7 @@ export default function App() {
           rating: progress.tournamentElo,
         },
         mode: tourMode,
-        seed: `career:${eventId}:${Date.now()}`,
+        seed: `career:${eventId}:${window.desktop?.sceneAuditSeed ?? Date.now()}`,
         careerResults: tourResults[tourMode],
       });
       const opening = advanceTournamentRunnerOneStep(created, {

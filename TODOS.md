@@ -1780,6 +1780,11 @@ resource tests plus build pass. Remaining M101 work is rendered-object parity/oc
 dedicated packaged M1 fixture. Preserve the F05/F06
 package audit as the lifecycle prerequisite.
 
+**Capture infrastructure 2026-07-28.** The existing isolated
+`--ptp-lifecycle-smoke` bridge now exposes one fixed public runner seed solely
+for packaged scene capture. Normal preload security asserts that the seed is
+absent outside audit mode; normal/web launches still seed from `Date.now()`.
+
 ### D3D-F06 â€” Packaged scene diagnostics and first release gate
 
 **Status:** Complete 2026-07-28. Subsequent independent-review

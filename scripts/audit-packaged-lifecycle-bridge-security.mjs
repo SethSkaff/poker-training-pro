@@ -55,7 +55,7 @@ try {
   client = await CdpClient.connect(target.webSocketDebuggerUrl, deadline);
   const result = await client.send("Runtime.evaluate", {
     expression:
-      "typeof window.desktop === 'object' && window.desktop !== null && typeof window.desktop.testLifecycleWindow === 'undefined' && typeof window.desktop.sceneDiagnosticsEnabled === 'undefined' && typeof window.__ptpSceneDiagnostics === 'undefined'",
+      "typeof window.desktop === 'object' && window.desktop !== null && typeof window.desktop.testLifecycleWindow === 'undefined' && typeof window.desktop.sceneDiagnosticsEnabled === 'undefined' && typeof window.desktop.sceneAuditSeed === 'undefined' && typeof window.__ptpSceneDiagnostics === 'undefined'",
     returnByValue: true,
   });
   if (result.result?.value !== true) {
@@ -76,7 +76,7 @@ const report = reportCdpOutcome(
     schemaVersion: 1,
     executable: basename(appPath),
     scope:
-      "Normal packaged preload has no lifecycle or scene-diagnostics audit bridge; the native minimize control and renderer metrics are test-launch-only.",
+      "Normal packaged preload has no lifecycle, diagnostics, or deterministic-seed audit bridge; the native minimize control, renderer metrics, and fixed capture seed are test-launch-only.",
   },
   { failure, transportTimeout },
 );

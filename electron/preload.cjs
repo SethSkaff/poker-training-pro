@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld("desktop", {
   // packaged smoke/audit process. They expose no game state and must not become
   // an ordinary production-window debugging surface.
   sceneDiagnosticsEnabled: lifecycleSmokeEnabled || undefined,
+  // A fixed public runner seed makes packaged scene captures reproducible. It
+  // exists only alongside the lifecycle-smoke bridge and never reaches a
+  // normal player window or persisted save.
+  sceneAuditSeed: lifecycleSmokeEnabled ? "d3d-m101-public-hand" : undefined,
   // This capability override exists only for the isolated packaged fallback
   // audit. Normal launches do not expose it, so it cannot become a user
   // setting or a renderer-controlled hardware policy.
