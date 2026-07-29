@@ -49,6 +49,7 @@ import type { SceneTransition } from "./sceneTransition";
 import { createSceneActionTimingState, reconcileSceneActionTiming } from "./sceneActionTiming";
 import { createSceneRenderLifecycle } from "./sceneLifecycle";
 import { createSceneResourceLedger, type SceneResourceLedger } from "./sceneResources";
+import { createSceneFrameTelemetry } from "./sceneDiagnostics";
 
 export interface SceneSeatState {
   readonly id: string;
@@ -93,7 +94,16 @@ export interface TableSceneHandle {
   readonly stats: () => {
     drawCalls: number;
     triangles: number;
+    textures: number;
+    /** Decoded texture memory estimate; procedural M1 has no Texture objects. */
+    textureEstimateMiB: number;
+    resources: number;
     running: boolean;
+    frameCount: number;
+    firstFrameMs: number | null;
+    frameP50Ms: number | null;
+    frameP95Ms: number | null;
+    renderer: string | null;
   };
 }
 
@@ -144,6 +154,8 @@ export function createTableScene(
   initial: TableSceneState,
   callbacks?: SceneFrameCallbacks,
 ): TableSceneHandle {
+  const mountedAt = performance.now();
+  const frameTelemetry = createSceneFrameTelemetry(mountedAt);
   const resources = createTableSceneResources();
   const renderer = new WebGLRenderer({
     canvas,
@@ -256,7 +268,9 @@ export function createTableScene(
       placeMarker(bigBlindMarker, poses, state.bigBlindRelativeSeat);
       setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a, resources);
       setBoardCards(board, state.boardCards, state.publicBoardCardCodes, resources);
+      const renderStartedAt = performance.now();
       renderer.render(scene, camera);
+      frameTelemetry.record(nowMs, performance.now() - renderStartedAt);
       if (!hasRendered) {
         hasRendered = true;
         callbacks?.onFirstFrame();
@@ -331,7 +345,15 @@ export function createTableScene(
     stats: () => ({
       drawCalls: renderer.info.render.calls,
       triangles: renderer.info.render.triangles,
+      textures: renderer.info.memory.textures,
+      // Until authored textures enter the asset pipeline, zero is exact. A
+      // non-zero texture count intentionally becomes an over-budget sentinel:
+      // new texture types must add a real byte estimator before they ship.
+      textureEstimateMiB: renderer.info.memory.textures === 0 ? 0 : Infinity,
+      resources: resources.ledger.counts().resources,
       running: lifecycle?.isRunning() ?? false,
+      ...frameTelemetry.snapshot(),
+      renderer: readRendererName(renderer),
     }),
   };
 
@@ -341,6 +363,20 @@ export function createTableScene(
     handle.resume();
   }
   return handle;
+}
+
+function readRendererName(renderer: WebGLRenderer): string | null {
+  try {
+    const context = renderer.getContext();
+    const debug = context.getExtension("WEBGL_debug_renderer_info");
+    if (debug) {
+      const unmasked = context.getParameter(debug.UNMASKED_RENDERER_WEBGL);
+      if (typeof unmasked === "string" && unmasked.length > 0) return unmasked;
+    }
+    return String(context.getParameter(context.RENDERER));
+  } catch {
+    return null;
+  }
 }
 
 interface SeatView {

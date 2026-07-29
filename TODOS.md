@@ -1751,6 +1751,78 @@ until those checks and an independent lifecycle review are complete.
 **Next task:** resolve independent-review findings for this F05 increment, then
 add the bounded packaged minimize/context-loss diagnostics required by D3D-F06.
 
+### D3D-F06 â€” Packaged scene diagnostics and first release gate
+
+**Status:** Complete 2026-07-28. Subsequent independent-review
+findings were resolved: the audit now rejects an invisible ready canvas,
+launches the normal case with a real native window for minimize/restore,
+requires a complete legal hand in both normal and forced-fallback modes,
+validates the full normal telemetry schema and context-loss increment, uses a
+named MiB texture estimate (0 for this procedural scene), and proves normal
+preloads expose neither lifecycle nor diagnostics audit surfaces. The real
+audit is invoked by `package:win`; release verification retains its fast
+negative self-test because it intentionally does not package an EXE.
+
+Fresh F06f source evidence: `npm run build`, a fresh Windows NSIS package,
+focused diagnostics/lifecycle/resource/release-stage tests (11), seven
+harness negative/positive tests, and typechecking all passed. Both fresh
+`win-unpacked` and NSIS-installed executables passed normal and forced cases.
+Normal WebGL2 used AMD/ANGLE Direct3D11, completed a hand through 3 hero
+actions/8 presentation skips, held 123–129 calls, 6,198–6,486 triangles, 0
+textures/0 MiB, 3.2–6.3ms steady p95, a visible decorative canvas plus one
+table/six seats/six live regions, zero frames while natively minimized, and
+ready recovery after classified loss. Forced `blocked` failure retained the
+fully opaque DOM fallback and completed a legal hand through normal controls
+(3 actions, 8–28 skips; one run reached ceremony), with no fatal event.
+The independent read-only re-review found no unresolved material F06 issue.
+
+**Implemented.** `sceneDiagnostics.ts` supplies an immutable, snapshot-only
+bridge and bounded (120 interval) frame telemetry. `TableScene3D.tsx` exposes
+only renderer/public-lifecycle facts, and only when Electron receives the
+isolated `--ptp-lifecycle-smoke` audit argument; normal production windows have
+no diagnostics bridge. The snapshot includes readiness/failure reason,
+suspension/loop state, context-loss count, quality tier placeholder, draw calls,
+triangles, texture/resource counts, first-frame time, p50/p95 intervals, and
+renderer identity where `WEBGL_debug_renderer_info` permits it. The host never
+publishes engine, card, decision, or player data.
+
+`scripts/audit-packaged-3d-scene.mjs` launches an isolated profile through the
+existing `PackagedSession` CDP harness, enables the preview through Settings,
+uses the ordinary camera and a legal action, records screenshot/report evidence
+under ignored `work/`, then asserts the mounted accessible table/canvas contract,
+scene budgets, no fatal console event, native minimize frame freeze, synthetic
+context-loss fallback/recovery, and forced WebGL failure. Its self-test rejects
+post-minimize frames, unclassified failure, and budget excess; the self-test is
+also included in the release-stage list.
+
+**Fresh evidence.** Focused diagnostics/lifecycle/resource/release-stage Vitest
+suites passed 11 tests; `node --test scripts/audit-packaged-3d-scene.test.mjs`
+passed 4 negative/positive assertions; `tsc --noEmit`, `npm run build`, and a
+fresh `electron-builder --win nsis --x64` pass completed. The F06b
+`win-unpacked` executable and a separately NSIS-installed executable both passed
+the new audit in normal and `--ptp-force-webgl2-failure` cases. Normal WebGL2 on
+the AMD RX 6700 XT reported `ANGLE ... Direct3D11`, 118–127 calls (<=150),
+6,174–6,462 triangles (<=250k), 0 textures, 6ms p95 (<=25), a 37.7–46.3ms first
+frame, one table/six seats/five live regions, `aria-hidden=true`/`tabIndex=-1`,
+zero frames over the 250ms native-minimize sample, and a single classified
+context loss followed by ready recovery. Forced failure reported `failed` with
+reason `blocked`, fully opaque DOM fallback, the same mounted DOM counts, a
+legal hero action through the normal controls, screenshots, and no fatal event.
+
+**Review / risk.** The legacy lifecycle-bridge-security audit was also invoked
+against the user-locked standard output and exited before renderer verification
+with `Invalid file descriptor to ICU data received` (exit `2147483651`); this
+does not invalidate the fresh alternate-package audits but remains distinct
+standard-output evidence to rerun after that executable is no longer locked.
+The generic F05 synthetic context event is not proof of a driver-triggered loss,
+and repeated allocation/mount metrics remain open.
+
+**Remaining cross-task evidence:** F05 still needs its repeated mount/context-loss
+allocation matrix and a real driver-triggered loss.
+
+**Next task:** close F05's repeated mount/context-loss allocation evidence,
+then rerun independent lifecycle review and the packaged gate.
+
 Manually verified in the **packaged build** on an AMD RX 6700 XT: a real WebGL2 context
 (`ANGLE (AMD, AMD Radeon RX 6700 XT ... Direct3D11)`), the room and table
 rendered in perspective, the camera yawing on the existing look-left/right

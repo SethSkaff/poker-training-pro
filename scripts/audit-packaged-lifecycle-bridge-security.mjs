@@ -1,7 +1,8 @@
 /**
  * The native minimize/restore IPC used by the package smoke must not appear in
  * a normal production renderer. This launches the exact unpacked executable
- * without the smoke flag and checks only the public preload surface.
+ * without the smoke flag and checks that neither audit capability reaches the
+ * public preload/window surface.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -54,11 +55,11 @@ try {
   client = await CdpClient.connect(target.webSocketDebuggerUrl, deadline);
   const result = await client.send("Runtime.evaluate", {
     expression:
-      "typeof window.desktop === 'object' && window.desktop !== null && typeof window.desktop.testLifecycleWindow === 'undefined'",
+      "typeof window.desktop === 'object' && window.desktop !== null && typeof window.desktop.testLifecycleWindow === 'undefined' && typeof window.desktop.sceneDiagnosticsEnabled === 'undefined' && typeof window.__ptpSceneDiagnostics === 'undefined'",
     returnByValue: true,
   });
   if (result.result?.value !== true) {
-    throw new Error("Normal packaged preload was unavailable or exposed the lifecycle smoke bridge.");
+    throw new Error("Normal packaged preload was unavailable or exposed an audit-only lifecycle/diagnostics bridge.");
   }
 } catch (error) {
   // A CDP command deadline proves neither a passing check nor a regression;
@@ -75,7 +76,7 @@ const report = reportCdpOutcome(
     schemaVersion: 1,
     executable: basename(appPath),
     scope:
-      "Normal packaged preload has no lifecycle smoke bridge; the native minimize control is test-launch-only.",
+      "Normal packaged preload has no lifecycle or scene-diagnostics audit bridge; the native minimize control and renderer metrics are test-launch-only.",
   },
   { failure, transportTimeout },
 );

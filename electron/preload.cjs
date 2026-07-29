@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld("desktop", {
   testLifecycleWindow: lifecycleSmokeEnabled
     ? (action) => ipcRenderer.invoke("test:lifecycleWindow", action)
     : undefined,
+  // Renderer diagnostics are intentionally available only to the isolated
+  // packaged smoke/audit process. They expose no game state and must not become
+  // an ordinary production-window debugging surface.
+  sceneDiagnosticsEnabled: lifecycleSmokeEnabled || undefined,
   // This capability override exists only for the isolated packaged fallback
   // audit. Normal launches do not expose it, so it cannot become a user
   // setting or a renderer-controlled hardware policy.

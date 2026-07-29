@@ -13,6 +13,7 @@ import {
 } from "../scene3d/sceneAvailability";
 import { createSceneRecoverySession } from "../scene3d/sceneRecovery";
 import { observeSceneResize } from "../scene3d/sceneResize";
+import { installSceneDiagnosticsBridge } from "../scene3d/sceneDiagnostics";
 
 /**
  * Mounts the 3D table behind the DOM table (E09-001 M1).
@@ -77,6 +78,37 @@ export function TableScene3D({
   suspendedRef.current = suspended;
   const reportRef = useRef(onAvailabilityChange);
   reportRef.current = onAvailabilityChange;
+  const availabilityRef = useRef<SceneAvailability>({ status: "idle" });
+  const contextLossCountRef = useRef(0);
+
+  useEffect(() => {
+    if (!window.desktop?.sceneDiagnosticsEnabled) return;
+    return installSceneDiagnosticsBridge(window, () => {
+      const stats = sceneRef.current?.stats();
+      return {
+        // This is intentionally renderer/public-lifecycle metadata only. It
+        // cannot expose cards, engine state, player decisions, or controls.
+        availability: availabilityRef.current.status,
+        ...(availabilityRef.current.reason ? { reason: availabilityRef.current.reason } : {}),
+        suspended: suspendedRef.current,
+        contextLosses: contextLossCountRef.current,
+        qualityTier: "unconfigured" as const,
+        ...(stats ?? {
+          drawCalls: 0,
+          triangles: 0,
+          textures: 0,
+          textureEstimateMiB: 0,
+          resources: 0,
+          running: false,
+          frameCount: 0,
+          firstFrameMs: null,
+          frameP50Ms: null,
+          frameP95Ms: null,
+          renderer: null,
+        }),
+      };
+    });
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -106,6 +138,7 @@ export function TableScene3D({
             return created;
           },
           onAvailability: (availability) => {
+            availabilityRef.current = availability;
             if (availability.status === "failed" || availability.status === "disposed") {
               recoverable = false;
               publishScene = false;
@@ -122,7 +155,10 @@ export function TableScene3D({
       // Preventing the browser default is valid only while this mounted host is
       // actively rebuilding on webglcontextrestored. Otherwise the DOM fallback
       // remains authoritative and receives a normal unrecoverable loss.
-      if (recovery.contextLost()) event.preventDefault();
+      if (recovery.contextLost()) {
+        contextLossCountRef.current += 1;
+        event.preventDefault();
+      }
     };
     const resize = () => {
       const parent = canvas.parentElement;

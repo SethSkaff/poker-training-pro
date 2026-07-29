@@ -199,6 +199,11 @@ export const stages = (node) => [
     args: [join("scripts", "audit-packaged-lifecycle-bridge-security.mjs")],
   },
   {
+    name: "Packaged 3D scene audit negative self-tests",
+    command: node,
+    args: ["--test", join("scripts", "audit-packaged-3d-scene.test.mjs")],
+  },
+  {
     name: "Deterministic release manifest generation",
     command: node,
     args: [join("scripts", "release", "generate-release-manifest.mjs")],
