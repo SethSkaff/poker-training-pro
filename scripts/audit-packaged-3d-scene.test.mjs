@@ -67,6 +67,12 @@ function normalResult(overrides = {}) {
       screenshotPngBase64: "fixture",
       };
     }),
+    compositionMatrix: ["1024x768", "1366x768", "1920x1080"].map((viewport) => ({
+      ...ready,
+      viewport,
+      screenshotBytes: 100,
+      screenshotPngBase64: "fixture",
+    })),
     lifecycle: {
       minimizedStart: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } },
       minimized: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } },
@@ -132,6 +138,12 @@ test("scene package audit rejects a ready canvas hidden under DOM furniture", ()
   const result = normalResult();
   result.before.composition.surfaceTransparent = false;
   assert.throws(() => assertCase(result), /scene composition did not reveal/);
+});
+
+test("scene package audit rejects an incomplete scene-ready composition matrix", () => {
+  const result = normalResult();
+  result.compositionMatrix.pop();
+  assert.throws(() => assertCase(result), /composition matrix was incomplete/);
 });
 
 test("scene package audit rejects a fatal renderer event", () => {

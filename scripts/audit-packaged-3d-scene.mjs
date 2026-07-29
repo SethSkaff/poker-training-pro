@@ -20,6 +20,11 @@ const sceneBudgets = Object.freeze({
   frameP95Ms: 25,
   textureEstimateMiB: 128,
 });
+const compositionViewports = Object.freeze([
+  { name: "1024x768", width: 1024, height: 768 },
+  { name: "1366x768", width: 1366, height: 768 },
+  { name: "1920x1080", width: 1920, height: 1080 },
+]);
 const appPath = resolve(
   projectRoot,
   argumentValue("--app") ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
@@ -50,6 +55,10 @@ export async function runAudit() {
         Buffer.from(beat.screenshotPngBase64, "base64"),
       );
       delete beat.screenshotPngBase64;
+    }
+    for (const capture of result.compositionMatrix ?? []) {
+      await writeFile(resolve(projectRoot, "work", `packaged-3d-scene-${result.kind}-${capture.viewport}.png`), Buffer.from(capture.screenshotPngBase64, "base64"));
+      delete capture.screenshotPngBase64;
     }
     delete result.screenshotPngBase64;
   }
@@ -82,7 +91,9 @@ async function runCase(kind, extraArguments) {
     const before = await observe(session);
     let lifecycle;
     let recovery;
+    let compositionMatrix;
     if (kind === "webgl2") {
+      compositionMatrix = await captureCompositionMatrix(session);
       lifecycle = await minimizeAndRestore(session);
       recovery = await repeatContextRecovery(session, before.diagnostics.resources, before.diagnostics.contextLosses);
     }
@@ -102,6 +113,7 @@ async function runCase(kind, extraArguments) {
       before,
       interaction,
       publicBeats,
+      ...(compositionMatrix ? { compositionMatrix } : {}),
       ...(lifecycle ? { lifecycle } : {}),
       ...(recovery ? { recovery } : {}),
       screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75),
@@ -385,6 +397,23 @@ async function observe(session) {
   return observation;
 }
 
+async function captureCompositionMatrix(session) {
+  const captures = [];
+  try {
+    for (const viewport of compositionViewports) {
+      await session.cdp.send("Emulation.setDeviceMetricsOverride", { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: false });
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 350));
+      const observation = await observe(session);
+      const screenshot = await session.cdp.send("Page.captureScreenshot", { format: "png" });
+      captures.push({ viewport: viewport.name, ...observation, screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75), screenshotPngBase64: screenshot.data ?? "" });
+    }
+  } finally {
+    await session.cdp.send("Emulation.clearDeviceMetricsOverride");
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 220));
+  }
+  return captures;
+}
+
 async function minimizeAndRestore(session) {
   // Observe immediately before the native transition for diagnostic context.
   // Electron's native minimize acknowledgement can itself span frames, so the
@@ -493,6 +522,14 @@ export function assertCase(result) {
     if (!before.composition?.surfaceTransparent || !before.composition?.duplicateFurnitureFaded
       || !before.composition?.readableHudMounted) {
       throw new Error(`WebGL scene composition did not reveal 3D furniture while retaining the DOM HUD: ${JSON.stringify(before.composition)}`);
+    }
+    if (!Array.isArray(result.compositionMatrix) || result.compositionMatrix.length !== compositionViewports.length
+      || result.compositionMatrix.some((capture, index) => capture?.viewport !== compositionViewports[index].name
+        || capture?.scene !== "ready" || !capture?.canvasVisible || !capture?.composition?.surfaceTransparent
+        || !capture?.composition?.duplicateFurnitureFaded || !capture?.composition?.readableHudMounted
+        || !Number.isFinite(capture?.screenshotBytes) || capture.screenshotBytes <= 0
+        || typeof capture?.screenshotPngBase64 !== "string" || capture.screenshotPngBase64.length === 0)) {
+      throw new Error(`Scene-ready composition matrix was incomplete: ${JSON.stringify(result.compositionMatrix)}`);
     }
     if (before.diagnostics.frameCount < 2 || !before.diagnostics.renderer) {
       throw new Error(`Renderer diagnostics were incomplete: ${JSON.stringify(before.diagnostics)}`);

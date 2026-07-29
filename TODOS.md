@@ -1978,6 +1978,20 @@ source passes. Next: independent review/commit this selector fix, then add the
 specific M103 1024×768/1366×768/1920×1080 screenshot matrix rather than
 claiming M103 complete.
 
+**D3D-M103 resolution matrix 2026-07-28 — partial evidence.** The existing
+packaged 3D CDP audit now captures and asserts scene-ready composition at
+1024×768, 1366×768, and 1920×1080; r3 passed all three with a visible canvas,
+transparent 2.5D surface, faded duplicate furniture, and mounted readable HUD.
+Screenshots are written as `work/packaged-3d-scene-webgl2-<viewport>.png`.
+Manual review of the 1024×768 preflop frame found a remaining presentation
+defect: the top opponent's face-down card corners are cropped at the scene
+boundary. A one-off 15% compact-seat offset did not satisfy a stricter card
+lane bounds probe and was deliberately reverted rather than committed. M103 is
+therefore still open; next diagnose the full compact seat/card coordinate
+system (not a one-seat percentage tweak), then rerun the matrix. Matrix harness
+self-tests pass; the prior r3 normal-package composition/lifecycle evidence
+remains valid for the committed shared-root composition fix.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array
