@@ -333,6 +333,11 @@ async function observe(session) {
     const canvas = document.querySelector('.table-scene-3d');
     const canvasStyle = canvas instanceof HTMLCanvasElement ? getComputedStyle(canvas) : null;
     const canvasBounds = canvas instanceof HTMLCanvasElement ? canvas.getBoundingClientRect() : null;
+    const tableStyle = table ? getComputedStyle(table) : null;
+    const opacityOf = (selector) => {
+      const element = table?.querySelector(selector);
+      return element ? Number(getComputedStyle(element).opacity) : null;
+    };
     return {
       diagnostics: window.__ptpSceneDiagnostics?.snapshot?.() ?? null,
       forceFlag: window.desktop?.forceWebGl2Failure === true,
@@ -346,7 +351,25 @@ async function observe(session) {
       canvasVisible: Boolean(canvasBounds && canvasBounds.width > 0 && canvasBounds.height > 0
         && canvasStyle?.display !== 'none' && canvasStyle?.visibility !== 'hidden'
         && Number(canvasStyle?.opacity) > 0),
-      tableOpacity: table ? Number(getComputedStyle(table).opacity) : null,
+      tableOpacity: table ? Number(tableStyle?.opacity) : null,
+      // Read computed styles rather than pixels: this catches the exact
+      // regression where a healthy canvas was mounted behind an opaque DOM
+      // felt, while keeping renderer output and accessibility separate.
+      composition: {
+        surfaceTransparent: tableStyle?.backgroundImage === 'none'
+          && tableStyle?.boxShadow === 'none'
+          && tableStyle?.borderTopColor === 'rgba(0, 0, 0, 0)',
+        surfaceRestored: tableStyle?.backgroundImage !== 'none'
+          && tableStyle?.boxShadow !== 'none'
+          && tableStyle?.borderTopColor !== 'rgba(0, 0, 0, 0)',
+        duplicateFurnitureFaded: ['.seat-figure', '.seat-chip-stack', '.center-pot']
+          .every((selector) => (opacityOf(selector) ?? 1) <= 0.06),
+        readableHudMounted: Boolean(
+          table?.querySelector('.seat-label')
+          && table?.querySelector('.seat-position-marker')
+          && document.querySelector('.camera-controls'),
+        ),
+      },
     };
   })()`);
   if (!observation) throw new Error("Could not observe packaged scene diagnostics.");
@@ -458,6 +481,10 @@ export function assertCase(result) {
     if (before.scene !== "ready" || before.diagnostics.availability !== "ready" || !before.canvasVisible) {
       throw new Error(`WebGL scene did not become ready: ${JSON.stringify(before)}`);
     }
+    if (!before.composition?.surfaceTransparent || !before.composition?.duplicateFurnitureFaded
+      || !before.composition?.readableHudMounted) {
+      throw new Error(`WebGL scene composition did not reveal 3D furniture while retaining the DOM HUD: ${JSON.stringify(before.composition)}`);
+    }
     if (before.diagnostics.frameCount < 2 || !before.diagnostics.renderer) {
       throw new Error(`Renderer diagnostics were incomplete: ${JSON.stringify(before.diagnostics)}`);
     }
@@ -478,6 +505,7 @@ export function assertCase(result) {
         || fallback?.diagnostics?.lastContextLossDefaultPrevented !== true
         || fallback?.scene !== "fallback"
         || fallback?.diagnostics?.availability !== "lost" || fallback.tableOpacity !== 1
+        || !fallback?.composition?.surfaceRestored
         || fallback.tableCount !== 1 || fallback.seatCount < 2 || fallback.liveRegionCount < 1) {
         throw new Error(`Context loss did not restore DOM fallback: ${JSON.stringify(recovery)}`);
       }
@@ -488,7 +516,8 @@ export function assertCase(result) {
       }
     }
   } else if (before.forceFlag !== true || before.scene !== "fallback" || before.tableOpacity !== 1
-    || before.diagnostics.availability !== "failed" || typeof before.diagnostics.reason !== "string") {
+    || !before.composition?.surfaceRestored || before.diagnostics.availability !== "failed"
+    || typeof before.diagnostics.reason !== "string") {
     throw new Error(`Forced WebGL failure did not stay on DOM fallback: ${JSON.stringify(before)}`);
   }
 }

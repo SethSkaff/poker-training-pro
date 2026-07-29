@@ -3046,18 +3046,36 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /*
-  With the 3D room drawing the furniture, the DOM's own felt, chairs, dealer,
-  and avatars would render the same table a second time on top of it. They fade
-  instead of being removed: `opacity` keeps them laid out, hit-testable, and in
-  the accessibility tree, so the DOM remains the interaction surface exactly as
-  the architecture decision requires. Anything carrying information -- names,
-  stacks, bets, position markers, cards, controls -- is untouched.
+  Scene-ready composition contract (D3D-M103): the WebGL layer owns the felt,
+  rail, physical chairs/bodies, and chip geometry. The DOM remains mounted as
+  the accessible, interactive HUD: cards, player/stack/bet labels, position
+  markers, action state, and controls never enter this decorative fade.
+
+  The table's opaque CSS surface was previously left in front of the canvas,
+  making an otherwise-ready 3D table read like a hidden prototype. Keep its
+  geometry for DOM anchoring, but make only its physical paint transparent.
+  There is intentionally no transition here: a lost/failed context must restore
+  the complete 2.5D picture in the same rendered frame.
 */
-.poker-table[data-spatial-scene="ready"] .felt-ring,
-.poker-table[data-spatial-scene="ready"] .dealer,
-.poker-table[data-spatial-scene="ready"] .seat-avatar,
+.poker-table[data-spatial-scene="ready"] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.poker-table[data-spatial-scene="ready"]::before,
+.poker-table[data-spatial-scene="ready"]::after,
+.poker-table[data-spatial-scene="ready"] .seat-figure,
+.poker-table[data-spatial-scene="ready"] .seat-chip-stack,
 .poker-table[data-spatial-scene="ready"] .center-pot {
   opacity: 0.06;
+}
+
+/* `.felt-ring` is also the DOM anchor for community cards and pot/readout
+   facts. Fade its border only: setting opacity on the container would dim every
+   one of those children and make the accessible HUD visually unreadable. */
+.poker-table[data-spatial-scene="ready"] .felt-ring {
+  border-color: transparent;
 }
 
 .poker-table[data-spatial-scene="ready"] .felt-brand,

@@ -1910,6 +1910,31 @@ model/snapshot/input/lifecycle/camera checks pass (45 tests) and a full build
 passes. Next: re-review this resolved lifecycle finding, then the
 layout/packaged resolution matrix before any claim that M103 is complete.
 
+**D3D-M103 scene-ready composition follow-up 2026-07-28 — in progress.** The
+scene-ready DOM layer contract now makes the opaque CSS felt/rail/shadow paint
+transparent only after a confirmed renderer-ready signal, then fades duplicate
+DOM furniture (full seat figure including chair/body, stack chips, and centre
+chip piles). It deliberately leaves the mounted readable/operable DOM cards,
+names, stack and committed-bet text, dealer/blind markers, action state, live
+regions, and controls intact. Because there is no CSS fade transition on this
+contract, a readiness loss immediately restores the full 2.5D table. The
+focused composition/input checks pass (6 tests); this is source-level evidence
+only. Next: independent review, then a single consolidated dev/packaged
+screenshot and forced-failure layout matrix across 1024×768, 1366×768, and
+1920×1080 before treating D3D-M103 as closed.
+
+**D3D-M103 composition review correction 2026-07-28 — in progress.** Review
+found that `.felt-ring` is also the layout parent for board cards and pot/readout
+facts; applying container opacity made those required DOM facts nearly
+invisible in scene-ready mode. The fix fades only the ring border, never that
+parent, with a regression that forbids ready-state felt-ring opacity. The
+existing packaged CDP harness now asserts the ready canvas is not merely
+mounted behind opaque DOM furniture, that duplicate 2.5D furniture fades, that
+the readable HUD remains mounted, and that both forced failure and context loss
+restore the opaque 2.5D table. Focused composition/input plus audit self-tests
+pass (27 checks). Next: final independent review, one production build, then
+the planned consolidated visual/package matrix.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

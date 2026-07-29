@@ -30,6 +30,12 @@ function normalResult(overrides = {}) {
     tabIndex: "-1",
     tableOpacity: 1,
     canvasVisible: true,
+    composition: {
+      surfaceTransparent: true,
+      surfaceRestored: false,
+      duplicateFurnitureFaded: true,
+      readableHudMounted: true,
+    },
   };
   return {
     kind: "webgl2",
@@ -69,7 +75,7 @@ function normalResult(overrides = {}) {
       attempts: [1, 2, 3].map((contextLosses) => ({
         loss: { supported: true, mechanism: "WEBGL_lose_context" },
         restore: { supported: true },
-        fallback: { ...ready, scene: "fallback", diagnostics: { ...ready.diagnostics, availability: "lost", lastContextLossTrusted: true, lastContextLossDefaultPrevented: true } },
+        fallback: { ...ready, scene: "fallback", composition: { ...ready.composition, surfaceTransparent: false, surfaceRestored: true }, diagnostics: { ...ready.diagnostics, availability: "lost", lastContextLossTrusted: true, lastContextLossDefaultPrevented: true } },
         restored: { ...ready, diagnostics: { ...ready.diagnostics, contextLosses } },
       })),
     },
@@ -120,6 +126,12 @@ test("scene package audit rejects an invisible ready canvas", () => {
   const result = normalResult();
   result.before.canvasVisible = false;
   assert.throws(() => assertCase(result), /did not become ready/);
+});
+
+test("scene package audit rejects a ready canvas hidden under DOM furniture", () => {
+  const result = normalResult();
+  result.before.composition.surfaceTransparent = false;
+  assert.throws(() => assertCase(result), /scene composition did not reveal/);
 });
 
 test("scene package audit rejects a fatal renderer event", () => {
