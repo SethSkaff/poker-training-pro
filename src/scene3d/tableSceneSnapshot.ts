@@ -82,7 +82,25 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
       ...(input.publicActions?.[player.id] ? { action: input.publicActions[player.id] } : {}),
     }));
   const relative = (canonicalSeat: number | undefined) => canonicalSeat === undefined ? undefined : (canonicalSeat - hero.canonicalSeat + 10) % 10;
-  return { seats, pot: input.pot, boardCards: input.boardCards, publicBoardCardCodes: input.publicBoardCardCodes ?? [], cameraPan: input.cameraPan, reducedMotion: input.reducedMotion, buttonRelativeSeat: relative(input.buttonCanonicalSeat), smallBlindRelativeSeat: relative(input.smallBlindCanonicalSeat), bigBlindRelativeSeat: relative(input.bigBlindCanonicalSeat), tier: input.tier ?? "local", transition: input.transition };
+  const playerIdAt = (canonicalSeat: number | undefined) => canonicalSeat === undefined
+    ? undefined
+    : seats.find((seat) => seat.canonicalSeat === canonicalSeat)?.id;
+  return {
+    seats,
+    pot: input.pot,
+    boardCards: input.boardCards,
+    publicBoardCardCodes: input.publicBoardCardCodes ?? [],
+    cameraPan: input.cameraPan,
+    reducedMotion: input.reducedMotion,
+    buttonRelativeSeat: relative(input.buttonCanonicalSeat),
+    smallBlindRelativeSeat: relative(input.smallBlindCanonicalSeat),
+    bigBlindRelativeSeat: relative(input.bigBlindCanonicalSeat),
+    buttonPlayerId: playerIdAt(input.buttonCanonicalSeat),
+    smallBlindPlayerId: playerIdAt(input.smallBlindCanonicalSeat),
+    bigBlindPlayerId: playerIdAt(input.bigBlindCanonicalSeat),
+    tier: input.tier ?? "local",
+    transition: input.transition,
+  };
 }
 
 function appearanceForId(id: string): number {

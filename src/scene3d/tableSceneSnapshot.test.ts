@@ -25,7 +25,15 @@ describe("table scene snapshot", () => {
 
   it("carries only legal public reveal and table-marker vocabulary", () => {
     const snapshot = createTableSceneSnapshot({ ...input, buttonCanonicalSeat: 8, smallBlindCanonicalSeat: 3, bigBlindCanonicalSeat: 5, revealedPlayerIds: ["villain"], tier: "regional" });
-    expect(snapshot).toMatchObject({ buttonRelativeSeat: 5, smallBlindRelativeSeat: 0, bigBlindRelativeSeat: 2, tier: "regional" });
+    expect(snapshot).toMatchObject({
+      buttonRelativeSeat: 5,
+      smallBlindRelativeSeat: 0,
+      bigBlindRelativeSeat: 2,
+      buttonPlayerId: "villain",
+      smallBlindPlayerId: "hero",
+      bigBlindPlayerId: "folded",
+      tier: "regional",
+    });
     expect(snapshot.seats.map((seat) => [seat.id, seat.cardVisibility])).toEqual([["hero", "shown"], ["folded", "hidden"], ["villain", "shown"]]);
     expect(snapshot.seats[0].appearance).toBe(createTableSceneSnapshot(input).seats[0].appearance);
   });

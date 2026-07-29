@@ -1841,6 +1841,25 @@ unblocked work is stronger rendered-object/DOM parity and occlusion coverage
 for stacks, bets, pots, and markers, not a claim that the full M1 vocabulary is
 complete.
 
+**Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
+defect was corrected but needs fresh packaged-audit completion after this
+handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array
+with a hero-relative seat value, while chairs deliberately persist by player ID
+across an elimination/table move; sparse canonical seats could therefore put a
+marker at a vacant or wrong chair. `tableSceneSnapshot` now supplies only
+public projected `buttonPlayerId`, `smallBlindPlayerId`, and `bigBlindPlayerId`,
+and `tableScene` resolves each marker through its persistent player-ID-to-chair
+map. The snapshot regression requires all three IDs; focused snapshot/model,
+card-face, and resource suites pass 38 tests, `npm run build` passes, and the
+independent review approved (including out/missing owner, sparse seats,
+recovery, fallback, and hidden-info checks). A fresh unpacked package was
+created at `outputs/desktop-m101-stable-markers/win-unpacked/Poker Training
+Pro.exe`; **next agent must launch it through the existing
+`scripts/audit-packaged-3d-scene.mjs` harness in normal WebGL2 and
+`--kind forced-webgl-failure`, then record measurements and only then treat this
+increment as fully packaged-verified.** No package audit was run after this
+specific marker fix because the user requested an immediate handoff.
+
 ### D3D-F06 â€” Packaged scene diagnostics and first release gate
 
 **Status:** Complete 2026-07-28. Subsequent independent-review

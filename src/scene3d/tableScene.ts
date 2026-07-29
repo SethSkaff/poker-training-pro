@@ -88,6 +88,10 @@ export interface TableSceneState {
   readonly buttonRelativeSeat?: number;
   readonly smallBlindRelativeSeat?: number;
   readonly bigBlindRelativeSeat?: number;
+  /** Stable player identities for physical marker reconciliation. */
+  readonly buttonPlayerId?: string;
+  readonly smallBlindPlayerId?: string;
+  readonly bigBlindPlayerId?: string;
   readonly tier?: "local" | "regional" | "national" | "championship";
   readonly publicBoardCardCodes?: readonly string[];
   /** Current public queue item, sampled from the authoritative delay clock. */
@@ -339,9 +343,9 @@ export function createTableScene(
           resources,
         );
       }
-      placeMarker(buttonMarker, poses, state.buttonRelativeSeat);
-      placeMarker(smallBlindMarker, poses, state.smallBlindRelativeSeat);
-      placeMarker(bigBlindMarker, poses, state.bigBlindRelativeSeat);
+      placeMarker(buttonMarker, state.buttonPlayerId, seatViews);
+      placeMarker(smallBlindMarker, state.smallBlindPlayerId, seatViews);
+      placeMarker(bigBlindMarker, state.bigBlindPlayerId, seatViews);
       placeTurnIndicator(turnIndicator, state.seats, seatViews);
       setChipStack(potChips, chipCountForAmount(state.pot), 0xd8b45a, resources);
       setBoardCards(board, state.boardCards, state.publicBoardCardCodes, resources);
@@ -539,10 +543,10 @@ function buildTableMarker(
 
 function placeMarker(
   marker: Mesh,
-  poses: readonly SeatPose[],
-  relativeSeat: number | undefined,
+  playerId: string | undefined,
+  seatViews: ReadonlyMap<string, { pose: SeatPose; view: SeatView }>,
 ): void {
-  const pose = relativeSeat === undefined ? undefined : poses[relativeSeat];
+  const pose = playerId === undefined ? undefined : seatViews.get(playerId)?.pose;
   marker.visible = Boolean(pose);
   if (!pose) return;
   marker.position.set(...pose.feltPosition);
