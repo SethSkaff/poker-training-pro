@@ -1,5 +1,5 @@
 import type { SceneSeatState, TableSceneState } from "./tableScene";
-import type { SeatActionKind } from "./tableSceneModel";
+import type { SceneCameraView, SeatActionKind } from "./tableSceneModel";
 import type { SceneTransition } from "./sceneTransition";
 
 /** Public-only presenter input. This module intentionally imports no engine or card types. */
@@ -22,6 +22,7 @@ export interface TableSceneSnapshotInput {
   readonly heroCardCodes?: readonly string[];
   readonly revealedCardCodesByPlayer?: Readonly<Record<string, readonly string[]>>;
   readonly cameraPan: number;
+  readonly cameraView?: SceneCameraView;
   readonly reducedMotion: boolean;
   readonly buttonCanonicalSeat?: number;
   readonly smallBlindCanonicalSeat?: number;
@@ -103,6 +104,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
     boardCards: input.boardCards,
     publicBoardCardCodes: input.publicBoardCardCodes ?? [],
     cameraPan: input.cameraPan,
+    cameraView: input.cameraView ?? "standard",
     reducedMotion: input.reducedMotion,
     buttonRelativeSeat: relative(input.buttonCanonicalSeat),
     smallBlindRelativeSeat: relative(input.smallBlindCanonicalSeat),

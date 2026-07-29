@@ -14,6 +14,7 @@ import {
 import { createSceneRecoverySession } from "../scene3d/sceneRecovery";
 import { observeSceneResize } from "../scene3d/sceneResize";
 import { installSceneDiagnosticsBridge } from "../scene3d/sceneDiagnostics";
+import type { SceneCameraView } from "../scene3d/tableSceneModel";
 
 /**
  * Mounts the 3D table behind the DOM table (E09-001 M1).
@@ -37,6 +38,7 @@ export interface TableScene3DProps {
   readonly pot: number;
   readonly boardCards: number;
   readonly cameraPan: number;
+  readonly cameraView?: SceneCameraView;
   readonly reducedMotion: boolean;
   /** True while the table is paused or the window is away. */
   readonly suspended: boolean;
@@ -56,6 +58,7 @@ export function TableScene3D({
   pot,
   boardCards,
   cameraPan,
+  cameraView,
   reducedMotion,
   suspended,
   snapshot,
@@ -70,6 +73,7 @@ export function TableScene3D({
     pot,
     boardCards,
     cameraPan,
+    cameraView,
     reducedMotion,
   };
   const stateRef = useRef(state);

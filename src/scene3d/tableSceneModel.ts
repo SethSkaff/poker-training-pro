@@ -33,6 +33,9 @@ export const MAX_YAW_RADIANS = (28 * Math.PI) / 180;
 export const MIN_PAN = -2;
 export const MAX_PAN = 2;
 
+/** The public Settings preference that must affect the real WebGL camera. */
+export type SceneCameraView = "close" | "standard" | "wide";
+
 export interface SeatPose {
   /** Seat index, 0 = hero. */
   readonly seat: number;
@@ -108,24 +111,39 @@ export function turnIndicatorPositionForPlayer(
  * That distinction is the whole point of a seated view -- the player is a
  * person in a chair, not a spectator on a rig.
  */
-export function cameraPose(pan: number): {
+export function cameraPose(pan: number, view: SceneCameraView = "standard"): {
   readonly position: readonly [number, number, number];
   readonly yaw: number;
   readonly target: readonly [number, number, number];
+  /** Perspective field of view, degrees. */
+  readonly fov: number;
 } {
   const clampedPan = Math.min(MAX_PAN, Math.max(MIN_PAN, pan));
   const yaw = (clampedPan / MAX_PAN) * MAX_YAW_RADIANS;
-  const position = [0, EYE_HEIGHT, TABLE_RADIUS + 0.72] as const;
+  const preset = cameraViewPreset(view);
+  const position = [0, EYE_HEIGHT, preset.distance] as const;
 
   // Look at a point on the felt, rotated by the yaw about the camera.
-  const lookDistance = TABLE_RADIUS + 0.72;
+  const lookDistance = preset.distance;
   const target = [
     position[0] - Math.sin(yaw) * lookDistance,
     TABLE_HEIGHT - 0.06,
     position[2] - Math.cos(yaw) * lookDistance,
   ] as const;
 
-  return { position, yaw, target };
+  return { position, yaw, target, fov: preset.fov };
+}
+
+/** Comfortable seated-camera presets; neither becomes a spectator orbit. */
+export function cameraViewPreset(view: SceneCameraView): {
+  readonly distance: number;
+  readonly fov: number;
+} {
+  switch (view) {
+    case "close": return { distance: TABLE_RADIUS + 0.47, fov: 52 };
+    case "wide": return { distance: TABLE_RADIUS + 0.97, fov: 64 };
+    default: return { distance: TABLE_RADIUS + 0.72, fov: 58 };
+  }
 }
 
 /** Actions the scene can show a body performing. */

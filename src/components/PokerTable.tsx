@@ -2730,6 +2730,7 @@ export function PokerTable({
         ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
         : {},
     cameraPan,
+    cameraView: settings.cameraView,
     reducedMotion: settings.reducedMotion || settings.cameraMotion === "off" || settings.transitionMotion === "off",
     buttonCanonicalSeat: scenario.buttonSeat,
     smallBlindCanonicalSeat: scenario.smallBlindSeat,

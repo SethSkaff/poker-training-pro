@@ -4,6 +4,7 @@ import {
   allInChipPosition,
   betChipPosition,
   cameraPose,
+  cameraViewPreset,
   callChipPosition,
   chipCountForAmount,
   dealtCardPosition,
@@ -129,6 +130,24 @@ describe("the camera is seated, and its look is limited", () => {
   it("recentres exactly, so the control returns to a known pose", () => {
     expect(cameraPose(0)).toEqual(cameraPose(0));
     expect(cameraPose(0).yaw).toBe(0);
+  });
+
+  it("maps close, standard, and wide settings to distinct comfortable WebGL views", () => {
+    const close = cameraPose(0, "close");
+    const standard = cameraPose(0, "standard");
+    const wide = cameraPose(0, "wide");
+    expect(close.position[2]).toBeLessThan(standard.position[2]);
+    expect(standard.position[2]).toBeLessThan(wide.position[2]);
+    expect(close.fov).toBeLessThan(standard.fov);
+    expect(standard.fov).toBeLessThan(wide.fov);
+    expect(cameraViewPreset("standard")).toEqual({ distance: TABLE_RADIUS + 0.72, fov: 58 });
+  });
+
+  it("keeps all composition presets inside the same seated pan limit", () => {
+    for (const view of ["close", "standard", "wide"] as const) {
+      expect(Math.abs(cameraPose(MAX_PAN, view).yaw)).toBeCloseTo(MAX_YAW_RADIANS, 6);
+      expect(cameraPose(0, view)).toEqual(cameraPose(0, view));
+    }
   });
 });
 

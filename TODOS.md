@@ -1895,6 +1895,17 @@ before claiming fallback coverage for the increment. The subsequent
 but it predates the final folded-collector-only source correction; package the
 current source once the forced fixture blocker has a non-churning diagnosis.
 
+**D3D-M103 camera/composition increment 2026-07-28 — in progress.** The
+existing Close / Standard / Wide preference is now carried through the public
+scene snapshot into real WebGL camera composition rather than affecting only
+the DOM CSS scale. Close, standard, and wide use deterministic seated dolly/FOV
+presets (52/58/64 degrees) while sharing the exact existing ±28-degree pan,
+same eye height, and recenter pose; fixed/reduced motion still receives an
+immediate pose with no renderer-owned camera timer. Pure model coverage proves
+distinct comfortable views and unchanged pan bounds. Next: run the full build,
+independent review, and the layout/packaged resolution matrix before any claim
+that M103 is complete.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

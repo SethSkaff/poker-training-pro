@@ -47,6 +47,7 @@ import {
   TABLE_HEIGHT,
   TABLE_RADIUS,
   turnIndicatorPositionForPlayer,
+  type SceneCameraView,
   type SeatActionKind,
   type SeatPose,
 } from "./tableSceneModel";
@@ -86,6 +87,8 @@ export interface TableSceneState {
   readonly boardCards: number;
   /** The table's discrete camera control, -2..2. */
   readonly cameraPan: number;
+  /** Real WebGL composition preference, mirrored from Settings. */
+  readonly cameraView?: SceneCameraView;
   /** When true the scene renders a fixed camera and no idle motion. */
   readonly reducedMotion: boolean;
   /** Public table objects projected by the redacted snapshot adapter. */
@@ -263,7 +266,7 @@ export function createTableScene(
   const scene = new Scene();
   scene.fog = new Fog(ROOM, 4, 16);
 
-  const camera = new PerspectiveCamera(52, 16 / 9, 0.1, 60);
+  const camera = new PerspectiveCamera(58, 16 / 9, 0.1, 60);
 
   buildRoom(scene, resources.ledger);
   const table = buildTable(resources.ledger);
@@ -315,7 +318,11 @@ export function createTableScene(
   const actionTiming = createSceneActionTimingState();
 
   const applyCamera = () => {
-    const pose = cameraPose(state.cameraPan);
+    const pose = cameraPose(state.cameraPan, state.cameraView);
+    if (camera.fov !== pose.fov) {
+      camera.fov = pose.fov;
+      camera.updateProjectionMatrix();
+    }
     camera.position.set(...pose.position);
     camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
   };
