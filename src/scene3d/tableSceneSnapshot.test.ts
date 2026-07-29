@@ -132,6 +132,17 @@ describe("table scene snapshot", () => {
     );
   });
 
+  it("keeps camera motion policy separate from table-action reduced motion", () => {
+    const snapshot = createTableSceneSnapshot({
+      ...input,
+      cameraMotion: "off",
+      // Turning only the camera off must not turn a public bet into a scene
+      // terminal state; table/transition motion owns that choice.
+      reducedMotion: false,
+    });
+    expect(snapshot).toMatchObject({ cameraMotion: "off", reducedMotion: false });
+  });
+
   it("retains only public swept amounts while the next street has cleared DOM bets", () => {
     const collect: TournamentPresentationEvent = {
       id: "h1:collect", kind: "bets-collected", handId: "h1", amount: 90,

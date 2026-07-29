@@ -2731,7 +2731,8 @@ export function PokerTable({
         : {},
     cameraPan,
     cameraView: settings.cameraView,
-    reducedMotion: settings.reducedMotion || settings.cameraMotion === "off" || settings.transitionMotion === "off",
+    cameraMotion: settings.cameraMotion,
+    reducedMotion: settings.reducedMotion || settings.transitionMotion === "off",
     buttonCanonicalSeat: scenario.buttonSeat,
     smallBlindCanonicalSeat: scenario.smallBlindSeat,
     bigBlindCanonicalSeat: scenario.bigBlindSeat,
@@ -3430,6 +3431,8 @@ export function PokerTable({
                     pot={sceneSnapshot.pot}
                     boardCards={sceneSnapshot.boardCards}
                     cameraPan={sceneSnapshot.cameraPan}
+                    cameraView={sceneSnapshot.cameraView}
+                    cameraMotion={sceneSnapshot.cameraMotion}
                     reducedMotion={sceneSnapshot.reducedMotion}
                     snapshot={sceneSnapshot}
                     suspended={paused}

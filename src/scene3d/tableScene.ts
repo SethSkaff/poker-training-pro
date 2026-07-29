@@ -47,6 +47,7 @@ import {
   TABLE_HEIGHT,
   TABLE_RADIUS,
   turnIndicatorPositionForPlayer,
+  type SceneCameraMotion,
   type SceneCameraView,
   type SeatActionKind,
   type SeatPose,
@@ -89,6 +90,8 @@ export interface TableSceneState {
   readonly cameraPan: number;
   /** Real WebGL composition preference, mirrored from Settings. */
   readonly cameraView?: SceneCameraView;
+  /** Camera-only motion policy; never changes table-action motion. */
+  readonly cameraMotion?: SceneCameraMotion;
   /** When true the scene renders a fixed camera and no idle motion. */
   readonly reducedMotion: boolean;
   /** Public table objects projected by the redacted snapshot adapter. */
@@ -317,8 +320,12 @@ export function createTableScene(
   // resetting the other's animation.
   const actionTiming = createSceneActionTimingState();
 
-  const applyCamera = () => {
-    const pose = cameraPose(state.cameraPan, state.cameraView);
+  let cameraCurrent = cameraPose(initial.cameraPan, initial.cameraView);
+  let cameraTarget = cameraCurrent;
+  let cameraLastFrameMs = mountedAt;
+  let cameraMoving = false;
+
+  const applyCamera = (pose = cameraCurrent) => {
     if (camera.fov !== pose.fov) {
       camera.fov = pose.fov;
       camera.updateProjectionMatrix();
@@ -327,9 +334,47 @@ export function createTableScene(
     camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
   };
 
+  const setCameraTarget = (next: TableSceneState, snap: boolean) => {
+    cameraTarget = cameraPose(next.cameraPan, next.cameraView);
+    if (snap) {
+      cameraCurrent = cameraTarget;
+      cameraMoving = false;
+      applyCamera();
+      return;
+    }
+    cameraLastFrameMs = performance.now();
+    cameraMoving = !sameCameraPose(cameraCurrent, cameraTarget);
+    if (!cameraMoving) applyCamera();
+  };
+
+  const advanceCamera = (nowMs: number) => {
+    const previousCameraFrameMs = cameraLastFrameMs;
+    cameraLastFrameMs = nowMs;
+    if (!cameraMoving) return;
+    // Renderer-local visual smoothing only. The authoritative pan value was
+    // already committed by the DOM input; this cannot alter game state.
+    const alpha = cameraInterpolationAlpha(previousCameraFrameMs, nowMs);
+    cameraCurrent = interpolateCameraPose(cameraCurrent, cameraTarget, alpha);
+    if (sameCameraPose(cameraCurrent, cameraTarget, 0.001)) {
+      cameraCurrent = cameraTarget;
+      cameraMoving = false;
+    }
+    applyCamera();
+    if (!cameraMoving) {
+      // The lifecycle cannot infer a renderer-local interpolation endpoint.
+      // Hand it the settled state so a completed pan stops requesting frames.
+      lifecycle?.update({
+        suspended,
+        reducedMotion: state.reducedMotion,
+        needsAnimation: needsAnimation(state),
+      });
+    }
+  };
+
   let lifecycle: ReturnType<typeof createSceneRenderLifecycle> | null = null;
   const drawFrame = (nowMs: number) => {
     try {
+      advanceCamera(nowMs);
       for (const entry of seatViews.values()) entry.view.root.visible = false;
       const activeIds = new Set(state.seats.map((seat) => seat.id));
       for (const seat of state.seats) {
@@ -386,9 +431,10 @@ export function createTableScene(
   };
   lifecycle = createSceneRenderLifecycle(drawFrame);
   const needsAnimation = (next: TableSceneState) => (
-    !next.reducedMotion
-    && next.transition?.action !== undefined
-    && (next.transition?.progress ?? 1) < 1
+    (!next.reducedMotion
+      && next.transition?.action !== undefined
+      && (next.transition?.progress ?? 1) < 1)
+    || cameraMoving
   );
   const stateSignature = (next: TableSceneState) => JSON.stringify(next);
 
@@ -405,7 +451,8 @@ export function createTableScene(
         performance.now(),
         ACTION_MS,
       );
-      applyCamera();
+      const snapCamera = next.reducedMotion || (next.cameraMotion ?? "full") !== "full";
+      setCameraTarget(next, snapCamera);
       /*
         With motion reduced the scene is not animated: it is drawn once per
         state change, at the end state of every action. Nothing moves, and the
@@ -432,11 +479,16 @@ export function createTableScene(
     },
     suspend() {
       suspended = true;
+      // Do not count a hidden/minimized interval as a camera-animation frame.
+      // The first resumed frame must continue from the visible pose instead of
+      // consuming elapsed wall time and snapping to the target.
+      cameraLastFrameMs = performance.now();
       lifecycle?.update({ suspended, reducedMotion: state.reducedMotion, needsAnimation: false });
     },
     resume() {
       if (disposed) return;
       suspended = false;
+      cameraLastFrameMs = performance.now();
       lifecycle?.update({ suspended, reducedMotion: state.reducedMotion, needsAnimation: needsAnimation(state) });
     },
     dispose() {
@@ -782,6 +834,49 @@ function chipPositionForGesture(
     case "collect": return betChipPosition(pose, progress);
     default: return betChipPosition(pose, 1);
   }
+}
+
+/** Exponential camera smoothing for one visible renderer frame. */
+export function cameraInterpolationAlpha(previousFrameMs: number, frameMs: number): number {
+  return 1 - Math.exp(-Math.max(0, frameMs - previousFrameMs) / 135);
+}
+
+function interpolateCameraPose(
+  from: ReturnType<typeof cameraPose>,
+  to: ReturnType<typeof cameraPose>,
+  alpha: number,
+): ReturnType<typeof cameraPose> {
+  const t = Math.min(1, Math.max(0, alpha));
+  const lerp = (left: number, right: number) => left + (right - left) * t;
+  return {
+    position: [
+      lerp(from.position[0], to.position[0]),
+      lerp(from.position[1], to.position[1]),
+      lerp(from.position[2], to.position[2]),
+    ],
+    target: [
+      lerp(from.target[0], to.target[0]),
+      lerp(from.target[1], to.target[1]),
+      lerp(from.target[2], to.target[2]),
+    ],
+    yaw: lerp(from.yaw, to.yaw),
+    fov: lerp(from.fov, to.fov),
+  };
+}
+
+function sameCameraPose(
+  left: ReturnType<typeof cameraPose>,
+  right: ReturnType<typeof cameraPose>,
+  tolerance = 0,
+): boolean {
+  const close = (first: number, second: number) => Math.abs(first - second) <= tolerance;
+  return close(left.position[0], right.position[0])
+    && close(left.position[1], right.position[1])
+    && close(left.position[2], right.position[2])
+    && close(left.target[0], right.target[0])
+    && close(left.target[1], right.target[1])
+    && close(left.target[2], right.target[2])
+    && close(left.fov, right.fov);
 }
 
 /** Grow or shrink a chip pile in place, reusing meshes rather than rebuilding. */

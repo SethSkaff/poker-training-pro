@@ -1900,11 +1900,15 @@ existing Close / Standard / Wide preference is now carried through the public
 scene snapshot into real WebGL camera composition rather than affecting only
 the DOM CSS scale. Close, standard, and wide use deterministic seated dolly/FOV
 presets (52/58/64 degrees) while sharing the exact existing ±28-degree pan,
-same eye height, and recenter pose; fixed/reduced motion still receives an
-immediate pose with no renderer-owned camera timer. Pure model coverage proves
-distinct comfortable views and unchanged pan bounds. Next: run the full build,
-independent review, and the layout/packaged resolution matrix before any claim
-that M103 is complete.
+same eye height, and recenter pose. Camera motion is now isolated from table
+motion: full camera motion interpolates only the renderer-local camera toward
+the already-committed DOM pan and relinquishes its frame loop at rest; reduced
+or off snaps the camera, while camera-off no longer disables public card/chip
+actions. Suspend/resume resets the renderer-local camera frame clock so a long
+hidden/minimized interval cannot be consumed as a one-frame pan; the focused
+model/snapshot/input/lifecycle/camera checks pass (45 tests) and a full build
+passes. Next: re-review this resolved lifecycle finding, then the
+layout/packaged resolution matrix before any claim that M103 is complete.
 
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this

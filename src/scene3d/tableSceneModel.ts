@@ -35,6 +35,8 @@ export const MAX_PAN = 2;
 
 /** The public Settings preference that must affect the real WebGL camera. */
 export type SceneCameraView = "close" | "standard" | "wide";
+/** Mirrors the public motion setting without importing application state. */
+export type SceneCameraMotion = "full" | "reduced" | "off";
 
 export interface SeatPose {
   /** Seat index, 0 = hero. */

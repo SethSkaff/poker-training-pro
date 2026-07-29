@@ -61,5 +61,7 @@ describe("seated camera controls", () => {
     // The pan step is what sensitivity actually changes.
     expect(table).toContain('settings.cameraSensitivity === "low"');
     expect(table).toContain('settings.cameraView === "close"');
+    expect(table).toContain("cameraMotion: settings.cameraMotion");
+    expect(table).not.toContain('settings.reducedMotion || settings.cameraMotion === "off"');
   });
 });
