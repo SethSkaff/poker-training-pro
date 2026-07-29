@@ -2093,6 +2093,36 @@ but do not churn this primitive framing again without a later M2 character/room
 composition design; M103 remains open for its documented forced-failure and
 visual-contract evidence. Continue with the next unblocked M1 closure work.
 
+**D3D-M103 composition reset design gate 2026-07-29 — awaiting approval.**
+The evidence, root-cause analysis, exactly three replacement directions,
+implementation contract, and packaged-review checklist are recorded in
+[`docs/desktop-3d-composition-decision.md`](docs/desktop-3d-composition-decision.md).
+The recommended production direction is **Direction A — Open-arc seated first
+person**. This is a design proposal, not completion evidence, and preserves all
+three failed-attempt records above.
+
+**Design gate and missing M103 acceptance criteria**
+
+- [ ] The design owner explicitly approves one complete direction before Tera
+  changes production composition code. Approval of isolated camera constants is
+  not approval of a direction.
+- [ ] The approved composition passes native packaged review at 1024x768,
+  1100x720, 1280x720, 1366x768, 1920x1080, and 2560x1080 at recenter and both
+  look limits, using the exact perceptual, poker-state, responsive,
+  accessibility, fallback, and evidence criteria in the decision document.
+- [ ] All five opponent heads/hands/seat plaques, hero cards/chips, board, bets,
+  dealer puck, blind markers, main/side pots, actor cue, Skip, amount to call,
+  and actions remain readable without unintended clipping or UI coverage.
+- [ ] A five-second silent native capture at 1366x768 and 1920x1080 is approved
+  by the design owner and one independent reviewer as a seated 3D game view,
+  not a web dashboard containing a 3D panel.
+- [ ] Full/reduced/off motion, keyboard/controller/pointer parity, context loss,
+  and forced WebGL failure retain identical public information and a complete
+  one-frame 2.5D restoration.
+- [ ] M103 remains open until the approval record and every packaged criterion
+  above are attached. Source tests, builds, bounds probes, or performance
+  measurements alone are insufficient.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

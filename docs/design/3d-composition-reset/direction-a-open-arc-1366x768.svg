@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1366" height="768" viewBox="0 0 1366 768" role="img" aria-labelledby="title desc">
+  <title id="title">Direction A — open-arc seated first-person composition at 1366 by 768</title>
+  <desc id="desc">A full-bleed casino view with a capsule poker table, five opponents on a forward horseshoe, hero cards and chips close to the camera, world-space pots and markers, a minimal top HUD, compact bottom actions, and a skip control clear of the players.</desc>
+  <defs>
+    <linearGradient id="room" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101d1a"/>
+      <stop offset=".42" stop-color="#09120f"/>
+      <stop offset="1" stop-color="#020604"/>
+    </linearGradient>
+    <linearGradient id="felt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#268266"/>
+      <stop offset="1" stop-color="#0e4435"/>
+    </linearGradient>
+    <linearGradient id="rail" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9b6538"/>
+      <stop offset=".45" stop-color="#4c2b1d"/>
+      <stop offset="1" stop-color="#17100d"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="#000" flood-opacity=".65"/>
+    </filter>
+    <style>
+      .ui { font-family: Inter, Segoe UI, sans-serif; fill: #eef8f3 }
+      .cond { font-family: "Arial Narrow", "Segoe UI", sans-serif; font-weight: 800; fill: #fff5d9 }
+      .micro { font-family: Inter, Segoe UI, sans-serif; font-size: 10px; fill: #9fb5ad; letter-spacing: .08em }
+      .label { font-family: Inter, Segoe UI, sans-serif; font-size: 12px; font-weight: 700; fill: #eff8f3 }
+      .amount { font-family: Inter, Segoe UI, sans-serif; font-size: 10px; font-weight: 700; fill: #7ff0d4 }
+      .annot { font-family: Inter, Segoe UI, sans-serif; font-size: 10px; font-weight: 700; fill: #f4cb74; letter-spacing: .07em }
+      .seatplate { fill: #06100d; fill-opacity: .92; stroke: #517469; stroke-width: 1 }
+      .marker { fill: #e7f1ed; stroke: #f2c96d; stroke-width: 2 }
+      .chip { fill: #2e83bd; stroke: #b7def4; stroke-width: 1 }
+      .chipGold { fill: #d49c34; stroke: #ffe0a0; stroke-width: 1 }
+    </style>
+  </defs>
+
+  <!-- Full target viewport -->
+  <rect width="1366" height="768" fill="url(#room)"/>
+  <rect x="1" y="1" width="1364" height="766" fill="none" stroke="#477066" stroke-opacity=".45" stroke-width="2"/>
+
+  <!-- Room and horizon -->
+  <path d="M0 178 H1366" stroke="#b7d8cc" stroke-opacity=".26" stroke-dasharray="9 10"/>
+  <text x="24" y="169" class="micro">HORIZON 23%</text>
+  <path d="M0 179 L1366 179 L1366 570 Q1030 500 683 500 Q336 500 0 570 Z" fill="#0a1512"/>
+  <g opacity=".34">
+    <ellipse cx="130" cy="217" rx="92" ry="25" fill="#17604b" stroke="#6d4b2c" stroke-width="8"/>
+    <circle cx="92" cy="188" r="14" fill="#755443"/><circle cx="174" cy="187" r="14" fill="#8b624a"/>
+    <ellipse cx="1220" cy="213" rx="88" ry="24" fill="#17604b" stroke="#6d4b2c" stroke-width="8"/>
+    <circle cx="1182" cy="184" r="14" fill="#76503f"/><circle cx="1261" cy="184" r="14" fill="#9a6b4f"/>
+    <ellipse cx="683" cy="205" rx="72" ry="20" fill="#17604b" stroke="#6d4b2c" stroke-width="7"/>
+  </g>
+  <g opacity=".22" fill="#ffe0a0">
+    <path d="M174 0 h55 l92 205 h-220 z"/><path d="M655 0 h55 l92 205 h-220 z"/><path d="M1130 0 h55 l92 205 h-220 z"/>
+  </g>
+
+  <!-- Minimal HUD; no persistent side panel -->
+  <g class="ui">
+    <rect x="18" y="14" width="1330" height="44" rx="12" fill="#03100c" fill-opacity=".86" stroke="#35574e"/>
+    <text x="38" y="31" class="micro">BLINDS 25/50 · ANTE 50</text>
+    <text x="38" y="48" class="label">Local Qualifier · Hand 1</text>
+    <text x="683" y="31" text-anchor="middle" class="micro">NORMAL TOURNAMENT</text>
+    <text x="683" y="49" text-anchor="middle" class="cond" font-size="16">6 PLAYERS REMAIN</text>
+    <text x="1128" y="32" class="micro">POT</text><text x="1128" y="49" class="label">1,250</text>
+    <rect x="1236" y="21" width="94" height="30" rx="8" fill="#f2bd55"/>
+    <text x="1283" y="40" text-anchor="middle" font-size="12" font-weight="900" fill="#201306">SKIP</text>
+  </g>
+
+  <!-- Five forward-arc opponents -->
+  <g id="opponents" filter="url(#shadow)">
+    <!-- near left -->
+    <g transform="translate(150 390)">
+      <ellipse cx="0" cy="64" rx="58" ry="17" fill="#241913"/><path d="M-42 12 Q0-20 42 12 L50 82 H-50 Z" fill="#314557"/>
+      <circle cy="-4" r="24" fill="#c78f69"/>
+      <rect class="seatplate" x="-72" y="74" width="144" height="38" rx="9"/>
+      <text class="label" x="0" y="90" text-anchor="middle">Zuri Eriksen</text><text class="amount" x="0" y="105" text-anchor="middle">15,000 · 300 bb</text>
+    </g>
+    <!-- far left, current actor -->
+    <g transform="translate(365 250)">
+      <ellipse cx="0" cy="70" rx="54" ry="15" fill="#241913"/><path d="M-37 18 Q0-12 37 18 L44 80 H-44 Z" fill="#5c3e52"/>
+      <circle cy="2" r="23" fill="#9c6e53"/>
+      <ellipse cy="83" rx="74" ry="24" fill="none" stroke="#f3c15c" stroke-width="6"/>
+      <rect class="seatplate" x="-72" y="76" width="144" height="40" rx="9" stroke="#f3c15c"/>
+      <text class="label" x="0" y="92" text-anchor="middle">Onyx Frost</text><text class="amount" x="0" y="107" text-anchor="middle">RAISE 300 · 14,700</text>
+      <text x="0" y="-40" class="annot" text-anchor="middle">CURRENT ACTOR</text>
+    </g>
+    <!-- top centre -->
+    <g transform="translate(683 209)">
+      <ellipse cx="0" cy="70" rx="54" ry="15" fill="#241913"/><path d="M-38 18 Q0-12 38 18 L46 80 H-46 Z" fill="#3e5669"/>
+      <circle cy="2" r="23" fill="#c9986f"/>
+      <rect class="seatplate" x="-72" y="76" width="144" height="38" rx="9"/>
+      <text class="label" x="0" y="92" text-anchor="middle">Tam Batista</text><text class="amount" x="0" y="107" text-anchor="middle">15,000 · 300 bb</text>
+    </g>
+    <!-- far right -->
+    <g transform="translate(1001 250)">
+      <ellipse cx="0" cy="70" rx="54" ry="15" fill="#241913"/><path d="M-37 18 Q0-12 37 18 L44 80 H-44 Z" fill="#405943"/>
+      <circle cy="2" r="23" fill="#b97d58"/>
+      <rect class="seatplate" x="-72" y="76" width="144" height="38" rx="9"/>
+      <text class="label" x="0" y="92" text-anchor="middle">Casey Ibarra</text><text class="amount" x="0" y="107" text-anchor="middle">15,000 · 300 bb</text>
+    </g>
+    <!-- near right -->
+    <g transform="translate(1216 390)">
+      <ellipse cx="0" cy="64" rx="58" ry="17" fill="#241913"/><path d="M-42 12 Q0-20 42 12 L50 82 H-50 Z" fill="#57413a"/>
+      <circle cy="-4" r="24" fill="#d0a078"/>
+      <rect class="seatplate" x="-72" y="74" width="144" height="38" rx="9"/>
+      <text class="label" x="0" y="90" text-anchor="middle">Indigo Moreno</text><text class="amount" x="0" y="105" text-anchor="middle">14,975 · 299.5 bb</text>
+    </g>
+  </g>
+
+  <!-- Capsule table and rail -->
+  <path d="M188 395 C188 307 302 277 466 267 L900 267 C1064 277 1178 307 1178 395
+           L1178 505 C1178 584 1054 624 879 632 L487 632 C312 624 188 584 188 505 Z"
+        fill="url(#rail)" filter="url(#shadow)"/>
+  <path d="M218 398 C218 332 323 307 474 296 L892 296 C1043 307 1148 332 1148 398
+           L1148 493 C1148 548 1037 580 873 588 L493 588 C329 580 218 548 218 493 Z"
+        fill="url(#felt)" stroke="#d29b55" stroke-opacity=".42" stroke-width="3"/>
+
+  <!-- Seat-local nameplates stay above the rail even while bodies sit behind it -->
+  <g>
+    <g transform="translate(78 464)"><rect class="seatplate" width="144" height="38" rx="9"/><text class="label" x="72" y="16" text-anchor="middle">Zuri Eriksen</text><text class="amount" x="72" y="31" text-anchor="middle">15,000 · 300 bb</text></g>
+    <g transform="translate(293 302)"><rect class="seatplate" width="144" height="40" rx="9" stroke="#f3c15c"/><text class="label" x="72" y="16" text-anchor="middle">Onyx Frost</text><text class="amount" x="72" y="31" text-anchor="middle">RAISE 300 · 14,700</text></g>
+    <g transform="translate(611 272)"><rect class="seatplate" width="144" height="38" rx="9"/><text class="label" x="72" y="16" text-anchor="middle">Tam Batista</text><text class="amount" x="72" y="31" text-anchor="middle">15,000 · 300 bb</text></g>
+    <g transform="translate(929 302)"><rect class="seatplate" width="144" height="38" rx="9"/><text class="label" x="72" y="16" text-anchor="middle">Casey Ibarra</text><text class="amount" x="72" y="31" text-anchor="middle">15,000 · 300 bb</text></g>
+    <g transform="translate(1144 464)"><rect class="seatplate" width="144" height="38" rx="9"/><text class="label" x="72" y="16" text-anchor="middle">Indigo Moreno</text><text class="amount" x="72" y="31" text-anchor="middle">14,975 · 299.5 bb</text></g>
+  </g>
+
+  <!-- Board, pots, button and blinds -->
+  <g class="ui">
+    <g transform="translate(562 381)">
+      <rect width="44" height="62" rx="5" fill="#fffaf0"/><text x="8" y="20" fill="#c63838" font-weight="900">2♦</text>
+      <rect x="50" width="44" height="62" rx="5" fill="#fffaf0"/><text x="58" y="20" fill="#1d2421" font-weight="900">3♠</text>
+      <rect x="100" width="44" height="62" rx="5" fill="#fffaf0"/><text x="108" y="20" fill="#1d2421" font-weight="900">2♣</text>
+      <rect x="150" width="44" height="62" rx="5" fill="#12382e" stroke="#5b8276" stroke-dasharray="4 4"/>
+      <rect x="200" width="44" height="62" rx="5" fill="#12382e" stroke="#5b8276" stroke-dasharray="4 4"/>
+    </g>
+    <g transform="translate(654 468)">
+      <ellipse class="chipGold" cx="0" cy="0" rx="17" ry="7"/><rect x="-17" y="-18" width="34" height="18" fill="#b97f24"/><ellipse class="chipGold" cx="0" cy="-18" rx="17" ry="7"/>
+      <text x="0" y="22" text-anchor="middle" class="micro">MAIN 1,125</text>
+    </g>
+    <g transform="translate(745 472)">
+      <rect x="-42" y="-24" width="84" height="48" rx="12" fill="none" stroke="#9edec9" stroke-dasharray="5 5"/>
+      <ellipse class="chip" cx="0" cy="-4" rx="13" ry="6"/><rect x="-13" y="-13" width="26" height="9" fill="#246d9d"/><ellipse class="chip" cx="0" cy="-13" rx="13" ry="6"/>
+      <text x="0" y="18" text-anchor="middle" class="micro">SIDE-POT REGION</text>
+    </g>
+    <circle class="marker" cx="1039" cy="369" r="17"/><text x="1039" y="374" text-anchor="middle" fill="#21160e" font-weight="900">D</text>
+    <rect x="1112" y="438" width="34" height="20" rx="10" fill="#8bc8ff"/><text x="1129" y="452" text-anchor="middle" fill="#11233a" font-size="10" font-weight="900">SB</text>
+    <rect x="213" y="438" width="34" height="20" rx="10" fill="#efc45d"/><text x="230" y="452" text-anchor="middle" fill="#30230c" font-size="10" font-weight="900">BB</text>
+  </g>
+
+  <!-- Hero foreground: world-space cards/chips and near rail -->
+  <path d="M310 601 Q683 690 1056 601 L1030 704 Q683 760 336 704 Z" fill="#0a0b09" stroke="#75462b" stroke-width="10"/>
+  <g transform="translate(573 569) rotate(-5)">
+    <rect width="76" height="106" rx="8" fill="#fdf8eb" stroke="#d4cbb7" stroke-width="3"/>
+    <text x="11" y="29" fill="#1d2421" font-size="23" font-weight="900">A♠</text>
+  </g>
+  <g transform="translate(657 568) rotate(5)">
+    <rect width="76" height="106" rx="8" fill="#fdf8eb" stroke="#d4cbb7" stroke-width="3"/>
+    <text x="11" y="29" fill="#c63838" font-size="23" font-weight="900">K♥</text>
+  </g>
+  <g transform="translate(822 604)">
+    <ellipse class="chip" cx="0" cy="0" rx="22" ry="8"/><rect x="-22" y="-46" width="44" height="46" fill="#276f9e"/>
+    <g stroke="#b7def4" opacity=".8"><path d="M-22-12h44M-22-24h44M-22-36h44"/></g><ellipse class="chip" cy="-46" rx="22" ry="8"/>
+    <text x="0" y="20" class="micro" text-anchor="middle">HERO 14,900</text>
+  </g>
+  <g transform="translate(892 555)">
+    <ellipse class="chipGold" rx="14" ry="6"/><rect x="-14" y="-15" width="28" height="15" fill="#b97f24"/><ellipse class="chipGold" cy="-15" rx="14" ry="6"/>
+    <text x="0" y="18" class="micro" text-anchor="middle">COMMITTED 50</text>
+  </g>
+  <text x="615" y="697" class="annot" text-anchor="middle">PHYSICAL CARD-PEEK ZONE</text>
+
+  <!-- Screen-space action safe band -->
+  <g class="ui">
+    <rect x="303" y="704" width="760" height="52" rx="14" fill="#020907" fill-opacity=".94" stroke="#45695f"/>
+    <rect x="316" y="713" width="205" height="34" rx="9" fill="#492220" stroke="#b8615d"/><text x="419" y="735" text-anchor="middle" font-weight="800">FOLD · F</text>
+    <rect x="530" y="713" width="246" height="34" rx="9" fill="#174e42" stroke="#55cdb4"/><text x="653" y="729" text-anchor="middle" font-weight="800">CALL 50 · C</text><text x="653" y="741" text-anchor="middle" class="micro">AMOUNT TO CALL</text>
+    <rect x="785" y="713" width="265" height="34" rx="9" fill="#59431f" stroke="#d4a852"/><text x="918" y="735" text-anchor="middle" font-weight="800">RAISE · R</text>
+  </g>
+
+  <!-- Composition callouts -->
+  <g class="annot">
+    <text x="24" y="742">A · OPEN-ARC SEATED FIRST PERSON · FULL-BLEED WORLD</text>
+    <path d="M115 585 L226 530" stroke="#f4cb74"/><text x="25" y="600">HERO RAIL PRESENCE</text>
+    <path d="M1215 90 L1275 58" stroke="#f4cb74"/><text x="1080" y="89">SKIP CLEARS SEAT LANES</text>
+  </g>
+</svg>
