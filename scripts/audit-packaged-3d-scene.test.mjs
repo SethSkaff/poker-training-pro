@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { test } from "node:test";
 import { assertCase } from "./audit-packaged-3d-scene.mjs";
+
+const electronMainSource = readFileSync(resolve("electron/main.cjs"), "utf8");
 
 function normalResult(overrides = {}) {
   const ready = {
@@ -70,6 +74,11 @@ function normalResult(overrides = {}) {
     compositionMatrix: ["1024x768", "1366x768", "1920x1080"].map((viewport) => ({
       ...ready,
       viewport,
+      nativeWindow: {
+        outerWidth: Number(viewport.split("x")[0]),
+        outerHeight: Number(viewport.split("x")[1]),
+        compactHeightMediaActive: Number(viewport.split("x")[1]) <= 800,
+      },
       screenshotBytes: 100,
       screenshotPngBase64: "fixture",
     })),
@@ -146,6 +155,20 @@ test("scene package audit rejects an incomplete scene-ready composition matrix",
   assert.throws(() => assertCase(result), /composition matrix was incomplete/);
 });
 
+test("scene package audit rejects a viewport-emulated composition capture", () => {
+  const result = normalResult();
+  result.compositionMatrix[0].nativeWindow.outerHeight = 920;
+  result.compositionMatrix[0].nativeWindow.compactHeightMediaActive = false;
+  assert.throws(() => assertCase(result), /composition matrix was incomplete/);
+});
+
+test("native audit sizing remains inaccessible to ordinary packaged launches", () => {
+  assert.match(
+    electronMainSource,
+    /const auditWindowSize = lifecycleSmokeEnabled \? parseAuditWindowSize\(process\.argv\) : null;/,
+  );
+});
+
 test("scene package audit rejects a fatal renderer event", () => {
   const result = normalResult();
   result.fatal = [{ kind: "console-error", description: "WebGL context failed" }];
@@ -162,6 +185,12 @@ test("scene package audit rejects resource growth across repeated context recove
   const result = normalResult();
   result.recovery.attempts[2].restored.diagnostics.resources += 1;
   assert.throws(() => assertCase(result), /stable scene resources/);
+});
+
+test("scene package audit establishes resource stability from the first rebuilt scene", () => {
+  const result = normalResult();
+  for (const attempt of result.recovery.attempts) attempt.restored.diagnostics.resources += 3;
+  assert.doesNotThrow(() => assertCase(result));
 });
 
 test("scene package audit rejects an unmounted fallback DOM during recovery", () => {

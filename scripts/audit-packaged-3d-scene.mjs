@@ -88,14 +88,22 @@ async function runCase(kind, extraArguments) {
     const publicBeats = [];
     await capturePublicBeat(session, publicBeats);
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 350));
-    const before = await observe(session);
+    let before;
     let lifecycle;
     let recovery;
     let compositionMatrix;
     if (kind === "webgl2") {
-      compositionMatrix = await captureCompositionMatrix(session);
+      compositionMatrix = await captureCompositionMatrix(extraArguments);
+      // The table's deterministic presentation clock keeps running while the
+      // three independent native matrix windows are captured. Take the
+      // resource baseline only after that work, immediately before lifecycle
+      // and context recovery, so an ordinary public chip/card transition is
+      // never misclassified as context-recovery allocation drift.
+      before = await observe(session);
       lifecycle = await minimizeAndRestore(session);
-      recovery = await repeatContextRecovery(session, before.diagnostics.resources, before.diagnostics.contextLosses);
+      recovery = await repeatContextRecovery(session, before.diagnostics.contextLosses);
+    } else {
+      before = await observe(session);
     }
     // Keep the fixture's one-event-at-a-time presentation queue intact. The
     // native lifecycle checks run against the stable pre-action table rather
@@ -374,6 +382,11 @@ async function observe(session) {
         && canvasStyle?.display !== 'none' && canvasStyle?.visibility !== 'hidden'
         && Number(canvasStyle?.opacity) > 0),
       tableOpacity: table ? Number(tableStyle?.opacity) : null,
+      nativeWindow: {
+        outerWidth: window.outerWidth,
+        outerHeight: window.outerHeight,
+        compactHeightMediaActive: window.matchMedia('(max-height: 800px)').matches,
+      },
       // Read computed styles rather than pixels: this catches the exact
       // regression where a healthy canvas was mounted behind an opaque DOM
       // felt, while keeping renderer output and accessibility separate.
@@ -397,19 +410,33 @@ async function observe(session) {
   return observation;
 }
 
-async function captureCompositionMatrix(session) {
+async function captureCompositionMatrix(extraArguments) {
   const captures = [];
-  try {
-    for (const viewport of compositionViewports) {
-      await session.cdp.send("Emulation.setDeviceMetricsOverride", { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: false });
+  for (const viewport of compositionViewports) {
+    // A separate native window per target prevents the visual-viewport-only
+    // CDP emulation trap: Electron's compact-height CSS is driven by actual
+    // window geometry, so this is the only matrix that proves the breakpoint.
+    const session = await PackagedSession.launch({
+      appPath,
+      profilePrefix: `poker-training-pro-3d-audit-webgl2-${viewport.name}-`,
+      timeoutMs,
+      extraArguments: [
+        "--ptp-lifecycle-smoke",
+        ...extraArguments,
+        `--ptp-audit-window-size=${viewport.width}x${viewport.height}`,
+      ],
+      windowsHide: false,
+    });
+    try {
+      await session.cdp.send("Log.enable");
+      await reachTableWithScene(session);
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 350));
       const observation = await observe(session);
       const screenshot = await session.cdp.send("Page.captureScreenshot", { format: "png" });
       captures.push({ viewport: viewport.name, ...observation, screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75), screenshotPngBase64: screenshot.data ?? "" });
+    } finally {
+      await session.dispose();
     }
-  } finally {
-    await session.cdp.send("Emulation.clearDeviceMetricsOverride");
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 220));
   }
   return captures;
 }
@@ -438,8 +465,9 @@ async function minimizeAndRestore(session) {
   };
 }
 
-async function repeatContextRecovery(session, baselineResources, baselineContextLosses) {
+async function repeatContextRecovery(session, baselineContextLosses) {
   const attempts = [];
+  let rebuiltResourceBaseline = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const loss = await session.evaluate(`(() => {
       const canvas = document.querySelector('.table-scene-3d');
@@ -473,10 +501,16 @@ async function repeatContextRecovery(session, baselineResources, baselineContext
       throw new Error("Scene diagnostics did not return to ready after context restore.");
     }
     const restored = await observe(session);
-    if (restored.diagnostics?.resources !== baselineResources
+    if (!Number.isFinite(restored.diagnostics?.resources)
+      || (rebuiltResourceBaseline !== null && restored.diagnostics.resources !== rebuiltResourceBaseline)
       || restored.diagnostics.contextLosses !== baselineContextLosses + attempt + 1) {
       throw new Error(`Context recovery allocation drift at attempt ${attempt + 1}: ${JSON.stringify(restored.diagnostics)}`);
     }
+    // A context rebuild deliberately projects the latest public state. The
+    // original scene can be one presentation frame behind it, so attempt one
+    // establishes the rebuilt-state allocation baseline; attempts two and
+    // three must then be byte-for-byte stable.
+    rebuiltResourceBaseline ??= restored.diagnostics.resources;
     attempts.push({ loss, restore, fallback, restored });
   }
   return { attempts };
@@ -527,6 +561,9 @@ export function assertCase(result) {
       || result.compositionMatrix.some((capture, index) => capture?.viewport !== compositionViewports[index].name
         || capture?.scene !== "ready" || !capture?.canvasVisible || !capture?.composition?.surfaceTransparent
         || !capture?.composition?.duplicateFurnitureFaded || !capture?.composition?.readableHudMounted
+        || capture?.nativeWindow?.outerWidth !== compositionViewports[index].width
+        || capture?.nativeWindow?.outerHeight !== compositionViewports[index].height
+        || capture?.nativeWindow?.compactHeightMediaActive !== (compositionViewports[index].height <= 800)
         || !Number.isFinite(capture?.screenshotBytes) || capture.screenshotBytes <= 0
         || typeof capture?.screenshotPngBase64 !== "string" || capture.screenshotPngBase64.length === 0)) {
       throw new Error(`Scene-ready composition matrix was incomplete: ${JSON.stringify(result.compositionMatrix)}`);
@@ -544,6 +581,7 @@ export function assertCase(result) {
     if (!Array.isArray(recoveryAttempts) || recoveryAttempts.length !== 3) {
       throw new Error(`Scene did not complete three bounded recovery attempts: ${JSON.stringify(result.recovery)}`);
     }
+    let rebuiltResourceBaseline = null;
     for (const [index, recovery] of recoveryAttempts.entries()) {
       const fallback = recovery?.fallback;
       if (recovery?.loss?.supported !== true || recovery?.loss?.mechanism !== "WEBGL_lose_context"
@@ -557,9 +595,12 @@ export function assertCase(result) {
       }
       if (recovery.restored?.scene !== "ready" || recovery.restored.diagnostics?.availability !== "ready"
         || recovery.restored.diagnostics.contextLosses !== before.diagnostics.contextLosses + index + 1
-        || recovery.restored.diagnostics.resources !== before.diagnostics.resources) {
+        || !Number.isFinite(recovery.restored.diagnostics.resources)
+        || (rebuiltResourceBaseline !== null
+          && recovery.restored.diagnostics.resources !== rebuiltResourceBaseline)) {
         throw new Error(`Context restore did not rebuild stable scene resources: ${JSON.stringify(recovery)}`);
       }
+      rebuiltResourceBaseline ??= recovery.restored.diagnostics.resources;
     }
   } else if (before.forceFlag !== true || before.scene !== "fallback" || before.tableOpacity !== 1
     || !before.composition?.surfaceRestored || before.diagnostics.availability !== "failed"

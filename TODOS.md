@@ -2010,6 +2010,47 @@ attempt because it preserves the shared card geometry correction. The focused
 composition regression passes. Next: fresh r6 package/matrix visual review and
 independent verification; M103 remains open.
 
+**D3D-M103 native-window resolution matrix 2026-07-28 — stronger packaged
+evidence, still open.** CDP `Emulation.setDeviceMetricsOverride` was not a
+valid compact-layout proof: it changed screenshot viewport dimensions while
+Electron retained its original native bounds, leaving the height media query
+inactive. The package-only, validated `--ptp-audit-window-size=WIDTHxHEIGHT`
+main-process flag now creates real audit windows without changing player
+defaults (normal launch remains 1440×920 with its 1100px minimum). The existing
+CDP harness launches a fresh isolated profile for each target and records both
+`window.outerWidth/outerHeight` and `(max-height: 800px)` state. Fresh r8
+package evidence passed `node scripts/audit-packaged-3d-scene.mjs --app
+'outputs/desktop-m103-native-window-r8/win-unpacked/Poker Training Pro.exe'
+--kind webgl2`: exact `1024×768` and `1366×768` windows reported compact=true,
+`1920×1080` reported compact=false; every capture had the ready canvas,
+transparent duplicate DOM surface, faded duplicate furniture, and mounted HUD.
+The same full hand reached public 0/3/4/5 board beats with no fatal console
+events (129 draw calls, 6,558 triangles, 3.5ms p95, 235 rebuilt-scene resources
+stable through three real context restores). The audit originally compared the
+discarded scene's resource count with the first rebuilt scene even though the
+presentation clock can advance public chip/card allocations before a loss; it
+now establishes the baseline at recovery one and rejects any growth in recoveries
+two/three (covered by a negative regression). Focused harness tests now pass
+24/24 and `npm run build` passed. Manual review of the new real-window PNGs
+confirms the earlier top-card-boundary defect is no longer reproduced, but still
+shows the known primitive-character/camera side-edge framing problem. Do not
+close M103 or call the prototype a finished 3D mode until that visual contract
+has an independent review and the existing direct forced-WebGL fixture blocker
+is separately resolved.
+
+**D3D-M103 native-window audit scope correction 2026-07-28.** Independent
+review found that the new `--ptp-audit-window-size` flag could affect an
+ordinary package launch. It is now accepted only when the already package-test
+only `--ptp-lifecycle-smoke` switch is present; a source regression rejects an
+ungated parser assignment. The focused harness is 25/25 and `npm run build`
+passes. Fresh r9 packaging completed, but two immediate attempts to launch its
+unpacked executable with the normal audit received Windows `spawn EBUSY` (the
+EXE was nonzero and unchanged after a 12-second settle check). r8 is therefore
+the fresh full matrix evidence; r9 still needs one successful packaged launch
+once Windows releases that executable. This is a packaging-file-lock
+observation, not a fallback or renderer failure, and does not change M103's
+open visual/forced-failure criteria.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

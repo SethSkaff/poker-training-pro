@@ -51,6 +51,10 @@ const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
 // already started loading three.js, so main forwards an explicit, isolated
 // argument through preload instead.
 const forceWebGl2Failure = process.argv.includes("--ptp-force-webgl2-failure");
+// Packaged scene audits must exercise CSS media queries against a real native
+// BrowserWindow. CDP device metrics change the visual viewport but not the
+// Electron window bounds that drive compact desktop layout.
+const auditWindowSize = lifecycleSmokeEnabled ? parseAuditWindowSize(process.argv) : null;
 const APP_PROTOCOL = "poker-training-pro";
 protocol.registerSchemesAsPrivileged([
   {
@@ -93,10 +97,14 @@ function broadcastLifecycle(payload) {
 
 function createWindow() {
   let healthySessionTimer;
+  const windowWidth = auditWindowSize?.width ?? 1440;
+  const windowHeight = auditWindowSize?.height ?? 920;
   const window = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 1100,
+    width: windowWidth,
+    height: windowHeight,
+    // 1024×768 is a supported compact desktop audit target. Retain the normal
+    // 1100px player minimum outside this explicit package-only test path.
+    minWidth: auditWindowSize ? 1024 : 1100,
     minHeight: 720,
     backgroundColor: "#07130f",
     title: "Poker Training Pro",
@@ -181,6 +189,18 @@ function createWindow() {
   } else {
     window.loadURL(`${APP_PROTOCOL}://app/index.html`);
   }
+}
+
+function parseAuditWindowSize(argv) {
+  const flag = argv.find((entry) => entry.startsWith("--ptp-audit-window-size="));
+  if (!flag) return null;
+  const match = /^--ptp-audit-window-size=(\d{4})x(\d{3,4})$/.exec(flag);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isInteger(width) || !Number.isInteger(height)
+    || width < 1024 || width > 3840 || height < 720 || height > 2160) return null;
+  return { width, height };
 }
 
 /**
