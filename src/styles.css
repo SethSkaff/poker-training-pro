@@ -5232,6 +5232,14 @@ input[type="range"]::-webkit-slider-thumb {
     top: 9%;
   }
 
+  /* Card hands are anchored above each seat at full height. In a 768px-tall
+     desktop scene that negative lane clips the top opponent's card corners at
+     the scene edge. Move the shared card lane down instead of distorting only
+     one seat's canonical position. */
+  .opponent-cards {
+    top: 4px;
+  }
+
   .hero-hole-cards {
     bottom: -18px;
   }

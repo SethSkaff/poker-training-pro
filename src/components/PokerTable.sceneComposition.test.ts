@@ -35,4 +35,8 @@ describe("scene-ready table composition", () => {
     expect(feltRingReadyRule).toContain("border-color: transparent");
     expect(feltRingReadyRule).not.toContain("opacity");
   });
+
+  it("keeps the compact-height opponent-card lane within the scene", () => {
+    expect(styles).toMatch(/@media \(max-height: 800px\)[\s\S]*?\.opponent-cards \{\s*top: 4px;/);
+  });
 });

@@ -1992,6 +1992,15 @@ system (not a one-seat percentage tweak), then rerun the matrix. Matrix harness
 self-tests pass; the prior r3 normal-package composition/lifecycle evidence
 remains valid for the committed shared-root composition fix.
 
+**D3D-M103 compact card-lane correction 2026-07-28 — source complete, package
+pending.** The diagnosed shared cause is the negative `top: -16px` opponent-card
+lane at compact desktop height, not canonical seat placement. Compact scenes now
+move that shared lane to `top: 4px`, keeping all real public hands in the scene
+without changing engine state, seat mapping, accessibility, or fallback. A
+focused source regression (3) and `npm run build` pass. Next: independent review
+and fresh package/matrix screenshots, including a bounds measurement for every
+visible opponent-card lane; do not claim the 1024×768 defect fixed until then.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array
