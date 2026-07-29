@@ -2060,6 +2060,16 @@ change was reverted rather than committing an unproven camera retreat. This is
 one failed approach only. Next diagnose seat placement/character bounds against
 the table camera before trying another material framing strategy.
 
+**D3D-M103 residual DOM figure correction 2026-07-28 — package pending.**
+The apparent clipped side heads/chairs in the r10 native capture were the
+scene-ready 2.5D `.seat-figure` duplicates at 6% opacity, not WebGL seat mesh
+bounds. Against the dark room, that residue remained visually dominant. The
+ready-only duplicate furniture opacity is now exactly zero while its DOM stays
+mounted for accessibility and instant fallback restoration; non-ready fallback
+styles are unchanged. Composition and audit harness tests pass, as does the
+production build. Next: fresh native r11 package/matrix visual review, then
+independent review; do not claim closure yet.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array
