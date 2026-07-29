@@ -36,8 +36,11 @@ function normalResult(overrides = {}) {
     interaction: { cameraMoved: true, heroAction: true, presentationSkips: 1, completedHand: { completed: true } },
     lifecycle: { minimized: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } } },
     recovery: {
-      fallback: { ...ready, scene: "fallback", diagnostics: { ...ready.diagnostics, availability: "lost" } },
-      restored: { ...ready, diagnostics: { ...ready.diagnostics, contextLosses: 1 } },
+      attempts: [1, 2, 3].map((contextLosses) => ({
+        loss: { defaultPrevented: true },
+        fallback: { ...ready, scene: "fallback", diagnostics: { ...ready.diagnostics, availability: "lost" } },
+        restored: { ...ready, diagnostics: { ...ready.diagnostics, contextLosses } },
+      })),
     },
     ...overrides,
   };
@@ -85,4 +88,16 @@ test("scene package audit rejects an incomplete normal telemetry snapshot", () =
   const result = normalResult();
   result.before.diagnostics.frameP50Ms = null;
   assert.throws(() => assertCase(result), /Incomplete scene diagnostics/);
+});
+
+test("scene package audit rejects resource growth across repeated context recovery", () => {
+  const result = normalResult();
+  result.recovery.attempts[2].restored.diagnostics.resources += 1;
+  assert.throws(() => assertCase(result), /stable scene resources/);
+});
+
+test("scene package audit rejects an unmounted fallback DOM during recovery", () => {
+  const result = normalResult();
+  result.recovery.attempts[1].fallback.seatCount = 0;
+  assert.throws(() => assertCase(result), /Context loss did not restore DOM fallback/);
 });

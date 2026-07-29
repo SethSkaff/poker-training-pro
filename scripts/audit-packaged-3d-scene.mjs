@@ -74,7 +74,7 @@ async function runCase(kind, extraArguments) {
     let recovery;
     if (kind === "webgl2") {
       lifecycle = await minimizeAndRestore(session);
-      recovery = await loseAndRestoreContext(session);
+      recovery = await repeatContextRecovery(session, before.diagnostics.resources, before.diagnostics.contextLosses);
     }
     const interaction = {
       ...initialInteraction,
@@ -134,10 +134,10 @@ async function completeCurrentHand(session, initialHandId) {
   if (typeof initialHandId !== "string" || initialHandId.length === 0) {
     throw new Error("Live table did not expose its public hand identifier.");
   }
-  // A skipped normal hand on the packaged UI is normally only a few seconds;
-  // cap it well below the session deadline so a stalled hand reports its own
-  // diagnostic instead of being mistaken for a CDP transport timeout.
-  const deadline = Date.now() + 20_000;
+  // Hands vary with legal all-ins and public queue length. Keep this below the
+  // shared CDP deadline, but allow a full legal sequence rather than treating
+  // a slow deterministic hand as a recovery failure.
+  const deadline = Date.now() + 45_000;
   let actions = 0;
   let presentationSkips = 0;
   let lastSubmittedStateVersion = null;
@@ -239,24 +239,33 @@ async function minimizeAndRestore(session) {
   return { minimized: minimizedObservation, restored: await observe(session) };
 }
 
-async function loseAndRestoreContext(session) {
-  const loss = await session.evaluate(`(() => {
-    const canvas = document.querySelector('.table-scene-3d');
-    if (!(canvas instanceof HTMLCanvasElement)) return null;
-    const event = new Event('webglcontextlost', { cancelable: true });
-    canvas.dispatchEvent(event);
-    return { defaultPrevented: event.defaultPrevented };
-  })()`);
-  if (loss?.defaultPrevented !== true) throw new Error("Scene did not attempt in-place context recovery.");
-  if (!await session.poll("window.__ptpSceneDiagnostics?.snapshot?.().availability === 'lost'")) {
-    throw new Error("Scene diagnostics did not classify context loss.");
+async function repeatContextRecovery(session, baselineResources, baselineContextLosses) {
+  const attempts = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const loss = await session.evaluate(`(() => {
+      const canvas = document.querySelector('.table-scene-3d');
+      if (!(canvas instanceof HTMLCanvasElement)) return null;
+      const event = new Event('webglcontextlost', { cancelable: true });
+      canvas.dispatchEvent(event);
+      return { defaultPrevented: event.defaultPrevented };
+    })()`);
+    if (loss?.defaultPrevented !== true) throw new Error("Scene did not attempt in-place context recovery.");
+    if (!await session.poll("window.__ptpSceneDiagnostics?.snapshot?.().availability === 'lost'")) {
+      throw new Error("Scene diagnostics did not classify context loss.");
+    }
+    const fallback = await observe(session);
+    await session.evaluate("document.querySelector('.table-scene-3d')?.dispatchEvent(new Event('webglcontextrestored'))");
+    if (!await session.poll("window.__ptpSceneDiagnostics?.snapshot?.().availability === 'ready'")) {
+      throw new Error("Scene diagnostics did not return to ready after context restore.");
+    }
+    const restored = await observe(session);
+    if (restored.diagnostics?.resources !== baselineResources
+      || restored.diagnostics.contextLosses !== baselineContextLosses + attempt + 1) {
+      throw new Error(`Context recovery allocation drift at attempt ${attempt + 1}: ${JSON.stringify(restored.diagnostics)}`);
+    }
+    attempts.push({ loss, fallback, restored });
   }
-  const fallback = await observe(session);
-  await session.evaluate("document.querySelector('.table-scene-3d')?.dispatchEvent(new Event('webglcontextrestored'))");
-  if (!await session.poll("window.__ptpSceneDiagnostics?.snapshot?.().availability === 'ready'")) {
-    throw new Error("Scene diagnostics did not return to ready after context restore.");
-  }
-  return { loss, fallback, restored: await observe(session) };
+  return { attempts };
 }
 
 export function assertCase(result) {
@@ -290,13 +299,22 @@ export function assertCase(result) {
     if (!minimized?.suspended || minimized.running || minimized.frameCount !== before.diagnostics.frameCount) {
       throw new Error(`Scene rendered while minimized: ${JSON.stringify(result.lifecycle)}`);
     }
-    const fallback = result.recovery?.fallback;
-    if (fallback?.scene !== "fallback" || fallback?.diagnostics?.availability !== "lost" || fallback.tableOpacity !== 1) {
-      throw new Error(`Context loss did not restore DOM fallback: ${JSON.stringify(result.recovery)}`);
+    const recoveryAttempts = result.recovery?.attempts;
+    if (!Array.isArray(recoveryAttempts) || recoveryAttempts.length !== 3) {
+      throw new Error(`Scene did not complete three bounded recovery attempts: ${JSON.stringify(result.recovery)}`);
     }
-    if (result.recovery?.restored?.scene !== "ready" || result.recovery.restored.diagnostics?.availability !== "ready"
-      || result.recovery.restored.diagnostics.contextLosses !== before.diagnostics.contextLosses + 1) {
-      throw new Error(`Context restore did not rebuild the scene: ${JSON.stringify(result.recovery)}`);
+    for (const [index, recovery] of recoveryAttempts.entries()) {
+      const fallback = recovery?.fallback;
+      if (recovery?.loss?.defaultPrevented !== true || fallback?.scene !== "fallback"
+        || fallback?.diagnostics?.availability !== "lost" || fallback.tableOpacity !== 1
+        || fallback.tableCount !== 1 || fallback.seatCount < 2 || fallback.liveRegionCount < 1) {
+        throw new Error(`Context loss did not restore DOM fallback: ${JSON.stringify(recovery)}`);
+      }
+      if (recovery.restored?.scene !== "ready" || recovery.restored.diagnostics?.availability !== "ready"
+        || recovery.restored.diagnostics.contextLosses !== before.diagnostics.contextLosses + index + 1
+        || recovery.restored.diagnostics.resources !== before.diagnostics.resources) {
+        throw new Error(`Context restore did not rebuild stable scene resources: ${JSON.stringify(recovery)}`);
+      }
     }
   } else if (before.forceFlag !== true || before.scene !== "fallback" || before.tableOpacity !== 1
     || before.diagnostics.availability !== "failed" || typeof before.diagnostics.reason !== "string") {

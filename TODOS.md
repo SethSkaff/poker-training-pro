@@ -1748,6 +1748,17 @@ only a synthetic event), renderer-level allocation counters across repeated
 mounts/restores, and the packaged F06 diagnostics/release gate. Keep F05 open
 until those checks and an independent lifecycle review are complete.
 
+**F05 recovery increment 2026-07-28.** The packaged scene audit now performs
+three consecutive synthetic `webglcontextlost/restored` cycles before it
+finishes the real UI hand. Each cycle must prevent default, expose the fully
+mounted DOM fallback, return to `ready`, increment `contextLosses` by exactly
+one, and recreate exactly the baseline renderer-local resource count. The
+fresh F06f unpacked Windows run held 219 resources through all three restores
+(loss counts 1/2/3), kept six seats and the decorative canvas mounted, then
+completed a legal hand. The new negative audit test fails on resource growth;
+this meaningfully advances the repeated allocation matrix but does not claim a
+real driver-triggered context loss.
+
 **Next task:** resolve independent-review findings for this F05 increment, then
 add the bounded packaged minimize/context-loss diagnostics required by D3D-F06.
 
