@@ -3057,24 +3057,24 @@ input[type="range"]::-webkit-slider-thumb {
   There is intentionally no transition here: a lost/failed context must restore
   the complete 2.5D picture in the same rendered frame.
 */
-.poker-table[data-spatial-scene="ready"] {
+.poker-scene[data-spatial-scene="ready"] .poker-table {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
 }
 
-.poker-table[data-spatial-scene="ready"]::before,
-.poker-table[data-spatial-scene="ready"]::after,
-.poker-table[data-spatial-scene="ready"] .seat-figure,
-.poker-table[data-spatial-scene="ready"] .seat-chip-stack,
-.poker-table[data-spatial-scene="ready"] .center-pot {
+.poker-scene[data-spatial-scene="ready"] .poker-table::before,
+.poker-scene[data-spatial-scene="ready"] .poker-table::after,
+.poker-scene[data-spatial-scene="ready"] .seat-figure,
+.poker-scene[data-spatial-scene="ready"] .seat-chip-stack,
+.poker-scene[data-spatial-scene="ready"] .center-pot {
   opacity: 0.06;
 }
 
 /* `.felt-ring` is also the DOM anchor for community cards and pot/readout
    facts. Fade its border only: setting opacity on the container would dim every
    one of those children and make the accessible HUD visually unreadable. */
-.poker-table[data-spatial-scene="ready"] .felt-ring {
+.poker-scene[data-spatial-scene="ready"] .felt-ring {
   border-color: transparent;
 }
 

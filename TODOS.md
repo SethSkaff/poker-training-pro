@@ -1953,6 +1953,31 @@ obtain a verified nonzero unpacked executable, run normal WebGL2 audit (which
 now asserts scene-ready composition) and then resume the resolution matrix;
 continue preserving the separately documented forced-failure fixture blocker.
 
+**D3D-M103 composition packaged evidence 2026-07-28 — normal WebGL2 pass.**
+The first explicit package output was still being copied after its console
+stream returned; a later polling check confirmed the nonzero r2 executable.
+That fresh normal audit exposed and corrected a real selector-scope defect:
+seat figures/chip stacks are siblings of `.poker-table`, so the initial
+ready-state selector could only fade the centre pile. Readiness now publishes
+on the shared `.poker-scene` root, allowing only duplicate furniture to fade
+while all DOM labels/cards/controls remain mounted. Fresh `npm run build`, r3
+package, focused composition/input checks (6), and audit self-tests (21) pass.
+The current package at
+`outputs/desktop-m103-composition-r3/win-unpacked/Poker Training Pro.exe`
+passes `node scripts/audit-packaged-3d-scene.mjs --app
+'outputs/desktop-m103-composition-r3/win-unpacked/Poker Training Pro.exe'
+--kind webgl2`: 126 draw calls, 6,510 triangles, five local textures (0.1465
+MiB), 226 resources, 2.9ms p95, public DOM/object parity through 0/3/4/5
+cards, native-minimize frame freeze, and three context recoveries whose fallback
+has restored opaque 2.5D furniture. The visual capture
+`work/packaged-3d-scene-webgl2.png` shows the 3D table/figures/chips with DOM
+labels, cards, and controls still readable. The direct forced-WebGL fixture is
+not rerun here because its three prior materially different failures remain a
+separate documented observation-path blocker; context-loss fallback for this
+source passes. Next: independent review/commit this selector fix, then add the
+specific M103 1024×768/1366×768/1920×1080 screenshot matrix rather than
+claiming M103 complete.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

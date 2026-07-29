@@ -3416,7 +3416,12 @@ export function PokerTable({
             </button>
           </div>
 
-            <div className="poker-scene motion-vestibular">
+            <div
+              className="poker-scene motion-vestibular"
+              {...(settings.spatialScene && !sceneRequestChanged && sceneAvailability.status === "ready"
+                ? { "data-spatial-scene": "ready" }
+                : {})}
+            >
               {/*
                 The 3D room, drawn behind everything else (E09-001 M1). It is
                 lazily loaded so three.js never enters the initial bundle, and

@@ -245,6 +245,7 @@ async function completeCurrentHand(session, initialHandId, publicBeats = []) {
 async function capturePublicBeat(session, beats) {
   const readObservation = `(() => {
     const table = document.querySelector('.poker-table');
+    const sceneRoot = table?.closest('.poker-scene');
     const boardCards = document.querySelectorAll('.community-cards .playing-card').length;
     const street = ({ 0: 'preflop', 3: 'flop', 4: 'turn', 5: 'river' })[boardCards];
     if (!street) return null;
@@ -330,13 +331,22 @@ async function reachTableWithScene(session) {
 async function observe(session) {
   const observation = await session.evaluate(`(() => {
     const table = document.querySelector('.poker-table');
+    const sceneRoot = table?.closest('.poker-scene');
     const canvas = document.querySelector('.table-scene-3d');
     const canvasStyle = canvas instanceof HTMLCanvasElement ? getComputedStyle(canvas) : null;
     const canvasBounds = canvas instanceof HTMLCanvasElement ? canvas.getBoundingClientRect() : null;
     const tableStyle = table ? getComputedStyle(table) : null;
     const opacityOf = (selector) => {
-      const element = table?.querySelector(selector);
+      const element = sceneRoot?.querySelector(selector);
       return element ? Number(getComputedStyle(element).opacity) : null;
+    };
+    const duplicateFurnitureOpacity = Object.fromEntries(
+      ['.seat-figure', '.seat-chip-stack', '.center-pot'].map((selector) => [selector, opacityOf(selector)]),
+    );
+    const readableHud = {
+      seatLabelCount: sceneRoot?.querySelectorAll('.seat-label').length ?? 0,
+      publicBoardMounted: Boolean(table?.querySelector('.community-cards')),
+      cameraControls: Boolean(document.querySelector('.camera-controls')),
     };
     return {
       diagnostics: window.__ptpSceneDiagnostics?.snapshot?.() ?? null,
@@ -362,13 +372,12 @@ async function observe(session) {
         surfaceRestored: tableStyle?.backgroundImage !== 'none'
           && tableStyle?.boxShadow !== 'none'
           && tableStyle?.borderTopColor !== 'rgba(0, 0, 0, 0)',
-        duplicateFurnitureFaded: ['.seat-figure', '.seat-chip-stack', '.center-pot']
-          .every((selector) => (opacityOf(selector) ?? 1) <= 0.06),
-        readableHudMounted: Boolean(
-          table?.querySelector('.seat-label')
-          && table?.querySelector('.seat-position-marker')
-          && document.querySelector('.camera-controls'),
-        ),
+        duplicateFurnitureOpacity,
+        duplicateFurnitureFaded: Object.values(duplicateFurnitureOpacity)
+          .every((opacity) => opacity !== null && opacity <= 0.06),
+        readableHud,
+        readableHudMounted: readableHud.seatLabelCount >= 2
+          && readableHud.publicBoardMounted && readableHud.cameraControls,
       },
     };
   })()`);
