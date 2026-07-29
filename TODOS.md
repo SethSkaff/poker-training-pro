@@ -2001,6 +2001,15 @@ focused source regression (3) and `npm run build` pass. Next: independent review
 and fresh package/matrix screenshots, including a bounds measurement for every
 visible opponent-card lane; do not claim the 1024×768 defect fixed until then.
 
+**D3D-M103 compact lane follow-up 2026-07-28 — source pending package.** The
+r5 packaged screenshot showed the shared lane move alone does not clear the
+top hand because the top seat’s centred figure/label container still crosses
+the scene edge. Compact height now combines the non-negative shared hand lane
+with a 15% top-seat clearance; this is distinct from the reverted one-seat-only
+attempt because it preserves the shared card geometry correction. The focused
+composition regression passes. Next: fresh r6 package/matrix visual review and
+independent verification; M103 remains open.
+
 **Handoff: stable marker identities 2026-07-28.** A source-level M101 parity
 defect was corrected but needs fresh packaged-audit completion after this
 handoff. Physical D/SB/BB markers previously indexed the fixed six-pose array

@@ -38,5 +38,6 @@ describe("scene-ready table composition", () => {
 
   it("keeps the compact-height opponent-card lane within the scene", () => {
     expect(styles).toMatch(/@media \(max-height: 800px\)[\s\S]*?\.opponent-cards \{\s*top: 4px;/);
+    expect(styles).toMatch(/@media \(max-height: 800px\)[\s\S]*?\.player-seat--top \{[\s\S]*?top: 15%/);
   });
 });

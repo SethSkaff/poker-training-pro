@@ -5229,7 +5229,9 @@ input[type="range"]::-webkit-slider-thumb {
   }
 
   .player-seat--top {
-    top: 9%;
+    /* Its centred container includes figure, label, and hand. At compact
+       height, retain clearance for the public hand above it as well. */
+    top: 15%;
   }
 
   /* Card hands are anchored above each seat at full height. In a 768px-tall
