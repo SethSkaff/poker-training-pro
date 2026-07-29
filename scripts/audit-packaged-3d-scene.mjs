@@ -44,6 +44,13 @@ export async function runAudit() {
       resolve(projectRoot, "work", `packaged-3d-scene-${result.kind}.png`),
       Buffer.from(result.screenshotPngBase64, "base64"),
     );
+    for (const beat of result.publicBeats ?? []) {
+      await writeFile(
+        resolve(projectRoot, "work", `packaged-3d-scene-${result.kind}-${beat.street}.png`),
+        Buffer.from(beat.screenshotPngBase64, "base64"),
+      );
+      delete beat.screenshotPngBase64;
+    }
     delete result.screenshotPngBase64;
   }
   await writeFile(reportPath, `${JSON.stringify({
@@ -67,6 +74,8 @@ async function runCase(kind, extraArguments) {
   try {
     await session.cdp.send("Log.enable");
     await reachTableWithScene(session);
+    const publicBeats = [];
+    await capturePublicBeat(session, publicBeats);
     const initialInteraction = await exerciseCameraAndOneLegalAction(session);
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 350));
     const before = await observe(session);
@@ -78,7 +87,7 @@ async function runCase(kind, extraArguments) {
     }
     const interaction = {
       ...initialInteraction,
-      completedHand: await completeCurrentHand(session, initialInteraction.handId),
+      completedHand: await completeCurrentHand(session, initialInteraction.handId, publicBeats),
     };
     const screenshot = await session.cdp.send("Page.captureScreenshot", { format: "png" });
     const fatalEvents = session.cdp.takeFatalEvents();
@@ -87,6 +96,7 @@ async function runCase(kind, extraArguments) {
       kind,
       before,
       interaction,
+      publicBeats,
       ...(lifecycle ? { lifecycle } : {}),
       ...(recovery ? { recovery } : {}),
       screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75),
@@ -130,7 +140,7 @@ async function exerciseCameraAndOneLegalAction(session) {
   throw new Error(`No legal hero action appeared after ${presentationSkips} presentation skips.`);
 }
 
-async function completeCurrentHand(session, initialHandId) {
+async function completeCurrentHand(session, initialHandId, publicBeats = []) {
   if (typeof initialHandId !== "string" || initialHandId.length === 0) {
     throw new Error("Live table did not expose its public hand identifier.");
   }
@@ -166,6 +176,7 @@ async function completeCurrentHand(session, initialHandId) {
       return { action: true, currentHandId, stateVersion };
     })()`);
     if (state?.complete) return { completed: true, actions, presentationSkips, ...(state.ceremony ? { ceremony: true } : {}) };
+    await capturePublicBeat(session, publicBeats);
     if (state?.action) {
       actions += 1;
       lastSubmittedStateVersion = state.stateVersion;
@@ -174,6 +185,18 @@ async function completeCurrentHand(session, initialHandId) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, state?.action ? 120 : 45));
   }
   throw new Error(`Timed out completing hand ${initialHandId} after ${actions} hero actions and ${presentationSkips} presentation skips.`);
+}
+
+async function capturePublicBeat(session, beats) {
+  const observation = await session.evaluate(`(() => {
+    const table = document.querySelector('.poker-table');
+    const street = table?.getAttribute('data-table-street');
+    if (!street || document.querySelector('.ceremony-board')) return null;
+    return { street, boardCards: document.querySelectorAll('.community-cards .card, .community-card').length };
+  })()`);
+  if (!observation || beats.some((beat) => beat.street === observation.street)) return;
+  const screenshot = await session.cdp.send('Page.captureScreenshot', { format: 'png' });
+  beats.push({ ...observation, screenshotBytes: Math.floor((screenshot.data?.length ?? 0) * 0.75), screenshotPngBase64: screenshot.data ?? '' });
 }
 
 async function reachTableWithScene(session) {
@@ -309,6 +332,14 @@ export function assertCase(result) {
     }
     if (before.diagnostics.frameCount < 2 || !before.diagnostics.renderer) {
       throw new Error(`Renderer diagnostics were incomplete: ${JSON.stringify(before.diagnostics)}`);
+    }
+    const expectedPublicBeats = [["preflop", 0], ["flop", 3], ["turn", 4], ["river", 5]];
+    if (!Array.isArray(result.publicBeats) || result.publicBeats.length !== expectedPublicBeats.length
+      || result.publicBeats.some((beat, index) => beat?.street !== expectedPublicBeats[index][0]
+        || beat?.boardCards !== expectedPublicBeats[index][1]
+        || !Number.isFinite(beat?.screenshotBytes) || beat.screenshotBytes <= 0
+        || typeof beat?.screenshotPngBase64 !== "string" || beat.screenshotPngBase64.length === 0)) {
+      throw new Error(`Packaged public street captures were incomplete: ${JSON.stringify(result.publicBeats)}`);
     }
     const minimized = result.lifecycle?.minimized?.diagnostics;
     if (!minimized?.suspended || minimized.running || minimized.frameCount !== before.diagnostics.frameCount) {

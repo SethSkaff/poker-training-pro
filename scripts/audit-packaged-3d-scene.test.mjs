@@ -36,6 +36,9 @@ function normalResult(overrides = {}) {
     before: ready,
     fatal: [],
     interaction: { cameraMoved: true, heroAction: true, presentationSkips: 1, completedHand: { completed: true } },
+    publicBeats: [
+      ["preflop", 0], ["flop", 3], ["turn", 4], ["river", 5],
+    ].map(([street, boardCards]) => ({ street, boardCards, screenshotBytes: 100, screenshotPngBase64: "fixture" })),
     lifecycle: { minimized: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } } },
     recovery: {
       attempts: [1, 2, 3].map((contextLosses) => ({
@@ -115,4 +118,16 @@ test("scene package audit rejects a loss whose browser default was not prevented
   const result = normalResult();
   result.recovery.attempts[0].fallback.diagnostics.lastContextLossDefaultPrevented = false;
   assert.throws(() => assertCase(result), /Context loss did not restore DOM fallback/);
+});
+
+test("scene package audit rejects incomplete public street captures", () => {
+  const result = normalResult();
+  result.publicBeats.pop();
+  assert.throws(() => assertCase(result), /public street captures were incomplete/);
+});
+
+test("scene package audit rejects a wrong public board count", () => {
+  const result = normalResult();
+  result.publicBeats[1].boardCards = 2;
+  assert.throws(() => assertCase(result), /public street captures were incomplete/);
 });
