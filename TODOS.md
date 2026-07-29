@@ -1776,14 +1776,42 @@ unrevealed opponents and starts exact texture-memory accounting. A fixed public
 hand regression now covers preflop/flop/turn/river/showdown card boundaries and
 dealer/blind projection; physical D/SB/BB markers are now labeled local textures
 with the same exact bounded memory accounting. Focused parser, snapshot, and
-resource tests plus build pass. Remaining M101 work is rendered-object parity/occlusion checks and the
-dedicated packaged M1 fixture. Preserve the F05/F06
+resource tests plus build pass. A dedicated packaged scene fixture now captures
+the real mounted DOM through stable preflop/flop/turn/river beats; remaining
+M101 work is rendered-object parity/occlusion checks. Preserve the F05/F06
 package audit as the lifecycle prerequisite.
 
 **Capture infrastructure 2026-07-28.** The existing isolated
 `--ptp-lifecycle-smoke` bridge now exposes one fixed public runner seed solely
 for packaged scene capture. Normal preload security asserts that the seed is
-absent outside audit mode; normal/web launches still seed from `Date.now()`.
+absent outside audit mode; normal/web launches still use their career-scoped
+`Date.now()` seed. The fixture is `runner-showdown-3`, which the runner
+regression proves emits `flop, flop, flop, turn, river` after the audit drives
+only ordinary raise-sheet/all-in controls. The packaged audit now waits through
+the one-event-at-a-time public queue, reads mounted `.playing-card` nodes, and
+writes screenshots only for stable 0/3/4/5-card beats. It records observed
+intermediate board counts and concise DOM state on failure instead of dumping
+base64 screenshots. It also measures native minimize by comparing two
+post-suspend snapshots, avoiding Electron transition-frame races while still
+rejecting frames that advance while suspended.
+
+**Fresh packaged evidence 2026-07-28.** `npm run build`,
+`electron-builder --win dir --x64 --config.electronDist=node_modules/electron/dist
+--config.directories.output=outputs/desktop-m101-street-captures`, and both
+`node scripts/audit-packaged-3d-scene.mjs --app
+'outputs/desktop-m101-street-captures/win-unpacked/Poker Training Pro.exe'
+--kind webgl2` and `--kind forced-webgl-failure` passed. Normal WebGL2 on AMD
+Radeon RX 6700 XT/D3D11 captured screenshots for preflop/flop/turn/river with
+0/3/4/5 DOM cards, no fatal console events, 123 draw calls, 6,198 triangles,
+five local textures (0.1465 MiB estimated), 224 resources, and 3.8ms p95. The
+post-suspend frame count held at 60, and all three trusted/default-prevented
+`WEBGL_lose_context` recoveries returned to 224 resources. Forced WebGL failure
+was a classified `failed/blocked` 2.5D fallback with one table, six seats, a
+decorative unfocusable canvas, the same 0/3/4/5 public beats with zero
+unrevealed-opponent face cards, and no fatal events. Visual inspection of the saved normal river capture confirms five
+face-up public cards plus the labeled main/side physical chip lanes; the forced
+river capture keeps the complete readable DOM board. Focused runner and audit
+tests pass; M101 remains in progress, not a milestone exit.
 
 ### D3D-F06 â€” Packaged scene diagnostics and first release gate
 

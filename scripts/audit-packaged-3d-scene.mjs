@@ -76,7 +76,6 @@ async function runCase(kind, extraArguments) {
     await reachTableWithScene(session);
     const publicBeats = [];
     await capturePublicBeat(session, publicBeats);
-    const initialInteraction = await exerciseCameraAndOneLegalAction(session);
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 350));
     const before = await observe(session);
     let lifecycle;
@@ -85,6 +84,10 @@ async function runCase(kind, extraArguments) {
       lifecycle = await minimizeAndRestore(session);
       recovery = await repeatContextRecovery(session, before.diagnostics.resources, before.diagnostics.contextLosses);
     }
+    // Keep the fixture's one-event-at-a-time presentation queue intact. The
+    // native lifecycle checks run against the stable pre-action table rather
+    // than pausing midway through the audit's first legal all-in action.
+    const initialInteraction = await exerciseCameraAndOneLegalAction(session);
     const interaction = {
       ...initialInteraction,
       completedHand: await completeCurrentHand(session, initialInteraction.handId, publicBeats),
@@ -115,25 +118,39 @@ async function exerciseCameraAndOneLegalAction(session) {
     throw new Error("Camera did not move through its ordinary table control.");
   }
   await session.clickSelector('button[aria-label="Recenter the table view"]', "camera recenter");
-  const handId = await session.evaluate("document.querySelector('.poker-table')?.getAttribute('data-table-hand-id') ?? null");
   const deadline = Date.now() + 20_000;
   let presentationSkips = 0;
   while (Date.now() < deadline) {
     const result = await session.evaluate(`(() => {
-      const skip = document.querySelector('button.skip-hand, button[aria-label="Skip opponent presentation and continue the hand"]');
-      if (skip instanceof HTMLButtonElement && !skip.disabled) {
-        skip.click();
-        return "presentation";
+      const composer = document.querySelector('.bet-composer');
+      if (composer instanceof HTMLElement) {
+        const allInPreset = [...composer.querySelectorAll('.bet-presets button')]
+          .find((button) => /all[- ]in/i.test(button.textContent || ''));
+        if (allInPreset instanceof HTMLButtonElement && !allInPreset.classList.contains('is-active')) {
+          allInPreset.click();
+          return "preparing-all-in";
+        }
+        const confirm = composer.querySelector('.primary-button');
+        if (confirm instanceof HTMLButtonElement && !confirm.disabled
+          && /all[- ]in/i.test(confirm.textContent || '')) {
+          confirm.click();
+          return "hero-action";
+        }
+        return null;
       }
       const choices = [...document.querySelectorAll('.action-dock .action-button')]
         .filter((button) => button instanceof HTMLButtonElement && !button.disabled);
-      const choice = choices.find((button) => button.classList.contains('action-button--call'))
+      const choice = choices.find((button) => button.classList.contains('action-button--raise'))
+        ?? choices.find((button) => button.classList.contains('action-button--call'))
         ?? choices.find((button) => button.classList.contains('action-button--fold'));
       if (!(choice instanceof HTMLButtonElement)) return null;
       choice.click();
-      return "hero-action";
+      return choice.classList.contains('action-button--raise') ? "preparing-all-in" : "hero-action";
     })()`);
-    if (result === "hero-action") return { cameraMoved: true, presentationSkips, heroAction: true, handId };
+    if (result === "hero-action") {
+      const handId = await session.evaluate("document.querySelector('.poker-table')?.getAttribute('data-table-hand-id') ?? null");
+      return { cameraMoved: true, presentationSkips, heroAction: true, handId };
+    }
     if (result === "presentation") presentationSkips += 1;
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 45));
   }
@@ -151,48 +168,88 @@ async function completeCurrentHand(session, initialHandId, publicBeats = []) {
   let actions = 0;
   let presentationSkips = 0;
   let lastSubmittedStateVersion = null;
+  let lastState = null;
+  const observedBoardCardCounts = new Set();
   while (Date.now() < deadline) {
     const state = await session.evaluate(`(() => {
       const table = document.querySelector('.poker-table');
       const currentHandId = table?.getAttribute('data-table-hand-id') ?? null;
       const stateVersion = table?.getAttribute('data-table-state-version') ?? null;
+      const boardCards = document.querySelectorAll('.community-cards .playing-card').length;
       if (currentHandId && currentHandId !== ${JSON.stringify(initialHandId)}) {
-        return { complete: true, currentHandId };
+        return { complete: true, currentHandId, boardCards };
       }
-      if (document.querySelector('.ceremony-board')) return { complete: true, currentHandId, ceremony: true };
-      const skip = document.querySelector('button.skip-hand, button[aria-label="Skip opponent presentation and continue the hand"]');
-      if (skip instanceof HTMLButtonElement && !skip.disabled) {
-        skip.click();
-        return { skip: true, currentHandId };
+      if (document.querySelector('.ceremony-board')) return { complete: true, currentHandId, ceremony: true, boardCards };
+      const composer = document.querySelector('.bet-composer');
+      if (composer instanceof HTMLElement) {
+        const allInPreset = [...composer.querySelectorAll('.bet-presets button')]
+          .find((button) => /all[- ]in/i.test(button.textContent || ''));
+        if (allInPreset instanceof HTMLButtonElement && !allInPreset.classList.contains('is-active')) {
+          allInPreset.click();
+          return { preparingAllIn: true, currentHandId, stateVersion, boardCards };
+        }
+        const confirm = composer.querySelector('.primary-button');
+        if (confirm instanceof HTMLButtonElement && !confirm.disabled
+          && /all[- ]in/i.test(confirm.textContent || '')
+          && stateVersion !== ${JSON.stringify(lastSubmittedStateVersion)}) {
+          confirm.click();
+          return { action: true, currentHandId, stateVersion, boardCards };
+        }
+        return { currentHandId, stateVersion, boardCards };
       }
       const choices = [...document.querySelectorAll('.action-dock .action-button')]
         .filter((button) => button instanceof HTMLButtonElement && !button.disabled);
-      const choice = choices.find((button) => button.classList.contains('action-button--call'))
+      const choice = choices.find((button) => button.classList.contains('action-button--raise'))
+        ?? choices.find((button) => button.classList.contains('action-button--call'))
         ?? choices.find((button) => button.classList.contains('action-button--fold'));
       if (!(choice instanceof HTMLButtonElement) || stateVersion === ${JSON.stringify(lastSubmittedStateVersion)}) {
-        return { currentHandId, stateVersion };
+        return { currentHandId, stateVersion, boardCards };
       }
       choice.click();
-      return { action: true, currentHandId, stateVersion };
+      return { action: true, currentHandId, stateVersion, boardCards };
     })()`);
-    if (state?.complete) return { completed: true, actions, presentationSkips, ...(state.ceremony ? { ceremony: true } : {}) };
+    lastState = state;
+    if (Number.isInteger(state?.boardCards)) observedBoardCardCounts.add(state.boardCards);
     await capturePublicBeat(session, publicBeats);
+    if (state?.complete) return {
+      completed: true,
+      actions,
+      presentationSkips,
+      observedBoardCardCounts: [...observedBoardCardCounts],
+      ...(state.ceremony ? { ceremony: true } : {}),
+    };
     if (state?.action) {
       actions += 1;
       lastSubmittedStateVersion = state.stateVersion;
     }
-    if (state?.skip) presentationSkips += 1;
     await new Promise((resolveDelay) => setTimeout(resolveDelay, state?.action ? 120 : 45));
   }
-  throw new Error(`Timed out completing hand ${initialHandId} after ${actions} hero actions and ${presentationSkips} presentation skips.`);
+  const domSummary = await session.evaluate(`(() => ({
+    table: document.querySelector('.poker-table')?.dataset ?? null,
+    pause: Boolean(document.querySelector('.pause-menu')),
+    presentation: document.querySelector('.spectator-dock')?.textContent?.trim() ?? null,
+    composer: document.querySelector('.bet-composer')?.textContent?.trim() ?? null,
+    actionButtons: [...document.querySelectorAll('.action-dock .action-button')].map((button) => ({
+      className: button.className,
+      disabled: button.disabled,
+      text: button.textContent?.trim(),
+    })),
+  }))()`);
+  throw new Error(`Timed out completing hand ${initialHandId} after ${actions} hero actions and ${presentationSkips} presentation skips. Observed board counts: ${JSON.stringify([...observedBoardCardCounts])}. Last state: ${JSON.stringify(lastState)}. DOM: ${JSON.stringify(domSummary)}`);
 }
 
 async function capturePublicBeat(session, beats) {
   const observation = await session.evaluate(`(() => {
-    const table = document.querySelector('.poker-table');
-    const street = table?.getAttribute('data-table-street');
-    if (!street || document.querySelector('.ceremony-board')) return null;
-    return { street, boardCards: document.querySelectorAll('.community-cards .card, .community-card').length };
+    const boardCards = document.querySelectorAll('.community-cards .playing-card').length;
+    const street = ({ 0: 'preflop', 3: 'flop', 4: 'turn', 5: 'river' })[boardCards];
+    if (!street) return null;
+    return {
+      street,
+      boardCards,
+      unrevealedOpponentFaceCount: document.querySelectorAll(
+        '.player-seat:not(.player-seat--hero):not(.is-revealed) .playing-card:not(.playing-card--back)',
+      ).length,
+    };
   })()`);
   if (!observation || beats.some((beat) => beat.street === observation.street)) return;
   const screenshot = await session.cdp.send('Page.captureScreenshot', { format: 'png' });
@@ -250,16 +307,27 @@ async function observe(session) {
 }
 
 async function minimizeAndRestore(session) {
+  // Observe immediately before the native transition for diagnostic context.
+  // Electron's native minimize acknowledgement can itself span frames, so the
+  // actual freeze assertion below compares two post-suspend observations.
+  const beforeMinimize = await observe(session);
   const minimized = await session.evaluate("window.desktop?.testLifecycleWindow?.('minimize')");
   if (minimized?.ok !== true) throw new Error("Lifecycle bridge could not minimize the packaged window.");
   await session.waitFor(".pause-menu", "pause menu after native minimize");
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+  const minimizedStart = await observe(session);
   await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
   const minimizedObservation = await observe(session);
   const restored = await session.evaluate("window.desktop?.testLifecycleWindow?.('restore')");
   if (restored?.ok !== true) throw new Error("Lifecycle bridge could not restore the packaged window.");
   await session.clickSelector(".pause-menu .primary-button", "explicit table resume");
   await session.waitFor(".poker-table", "table after explicit resume");
-  return { minimized: minimizedObservation, restored: await observe(session) };
+  return {
+    beforeMinimize,
+    minimizedStart,
+    minimized: minimizedObservation,
+    restored: await observe(session),
+  };
 }
 
 async function repeatContextRecovery(session, baselineResources, baselineContextLosses) {
@@ -326,6 +394,16 @@ export function assertCase(result) {
   if (!result.interaction?.cameraMoved || !result.interaction?.heroAction || !result.interaction?.completedHand?.completed) {
     throw new Error(`Scene audit did not complete a legal hand through camera and ordinary controls: ${JSON.stringify(result.interaction)}`);
   }
+  const expectedPublicBeats = [["preflop", 0], ["flop", 3], ["turn", 4], ["river", 5]];
+  if (!Array.isArray(result.publicBeats) || result.publicBeats.length !== expectedPublicBeats.length
+    || result.publicBeats.some((beat, index) => beat?.street !== expectedPublicBeats[index][0]
+      || beat?.boardCards !== expectedPublicBeats[index][1]
+      || beat?.unrevealedOpponentFaceCount !== 0
+      || !Number.isFinite(beat?.screenshotBytes) || beat.screenshotBytes <= 0
+      || typeof beat?.screenshotPngBase64 !== "string" || beat.screenshotPngBase64.length === 0)) {
+    const publicBeatSummary = result.publicBeats?.map(({ screenshotPngBase64, ...beat }) => beat);
+    throw new Error(`Packaged public street captures were incomplete or exposed an unrevealed opponent card: ${JSON.stringify(publicBeatSummary)}. Interaction: ${JSON.stringify(result.interaction)}`);
+  }
   if (result.kind === "webgl2") {
     if (before.scene !== "ready" || before.diagnostics.availability !== "ready" || !before.canvasVisible) {
       throw new Error(`WebGL scene did not become ready: ${JSON.stringify(before)}`);
@@ -333,16 +411,10 @@ export function assertCase(result) {
     if (before.diagnostics.frameCount < 2 || !before.diagnostics.renderer) {
       throw new Error(`Renderer diagnostics were incomplete: ${JSON.stringify(before.diagnostics)}`);
     }
-    const expectedPublicBeats = [["preflop", 0], ["flop", 3], ["turn", 4], ["river", 5]];
-    if (!Array.isArray(result.publicBeats) || result.publicBeats.length !== expectedPublicBeats.length
-      || result.publicBeats.some((beat, index) => beat?.street !== expectedPublicBeats[index][0]
-        || beat?.boardCards !== expectedPublicBeats[index][1]
-        || !Number.isFinite(beat?.screenshotBytes) || beat.screenshotBytes <= 0
-        || typeof beat?.screenshotPngBase64 !== "string" || beat.screenshotPngBase64.length === 0)) {
-      throw new Error(`Packaged public street captures were incomplete: ${JSON.stringify(result.publicBeats)}`);
-    }
     const minimized = result.lifecycle?.minimized?.diagnostics;
-    if (!minimized?.suspended || minimized.running || minimized.frameCount !== before.diagnostics.frameCount) {
+    const minimizedStart = result.lifecycle?.minimizedStart?.diagnostics;
+    if (!minimizedStart?.suspended || minimizedStart.running
+      || !minimized?.suspended || minimized.running || minimized.frameCount !== minimizedStart.frameCount) {
       throw new Error(`Scene rendered while minimized: ${JSON.stringify(result.lifecycle)}`);
     }
     const recoveryAttempts = result.recovery?.attempts;

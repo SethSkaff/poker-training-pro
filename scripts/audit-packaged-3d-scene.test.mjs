@@ -38,8 +38,17 @@ function normalResult(overrides = {}) {
     interaction: { cameraMoved: true, heroAction: true, presentationSkips: 1, completedHand: { completed: true } },
     publicBeats: [
       ["preflop", 0], ["flop", 3], ["turn", 4], ["river", 5],
-    ].map(([street, boardCards]) => ({ street, boardCards, screenshotBytes: 100, screenshotPngBase64: "fixture" })),
-    lifecycle: { minimized: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } } },
+    ].map(([street, boardCards]) => ({
+      street,
+      boardCards,
+      unrevealedOpponentFaceCount: 0,
+      screenshotBytes: 100,
+      screenshotPngBase64: "fixture",
+    })),
+    lifecycle: {
+      minimizedStart: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } },
+      minimized: { diagnostics: { ...ready.diagnostics, suspended: true, running: false } },
+    },
     recovery: {
       attempts: [1, 2, 3].map((contextLosses) => ({
         loss: { supported: true, mechanism: "WEBGL_lose_context" },
@@ -60,6 +69,19 @@ test("scene package audit rejects frames advancing while minimized", () => {
   const result = normalResult();
   result.lifecycle.minimized.diagnostics.frameCount = 4;
   assert.throws(() => assertCase(result), /rendered while minimized/);
+});
+
+test("scene package audit measures the freeze after native minimize has settled", () => {
+  const result = normalResult();
+  result.before.diagnostics.frameCount = 2;
+  result.lifecycle.beforeMinimize = {
+    diagnostics: { ...result.before.diagnostics, frameCount: 3 },
+  };
+  result.lifecycle.minimizedStart = {
+    diagnostics: { ...result.before.diagnostics, suspended: true, running: false, frameCount: 4 },
+  };
+  result.lifecycle.minimized.diagnostics.frameCount = 4;
+  assert.doesNotThrow(() => assertCase(result));
 });
 
 test("scene package audit rejects an unclassified forced fallback", () => {
@@ -130,4 +152,31 @@ test("scene package audit rejects a wrong public board count", () => {
   const result = normalResult();
   result.publicBeats[1].boardCards = 2;
   assert.throws(() => assertCase(result), /public street captures were incomplete/);
+});
+
+test("scene package audit rejects an unrevealed opponent card face at a public beat", () => {
+  const result = normalResult();
+  result.publicBeats[0].unrevealedOpponentFaceCount = 1;
+  assert.throws(() => assertCase(result), /unrevealed opponent card/);
+});
+
+test("scene package audit requires the forced fallback to capture every public street", () => {
+  const result = normalResult({
+    kind: "forced-webgl-failure",
+    before: {
+      ...normalResult().before,
+      forceFlag: true,
+      scene: "fallback",
+      diagnostics: { ...normalResult().before.diagnostics, availability: "failed", reason: "blocked" },
+    },
+  });
+  result.publicBeats.pop();
+  assert.throws(() => assertCase(result), /public street captures were incomplete/);
+});
+
+test("scene package audit rejects a minimize sample that has not suspended", () => {
+  const result = normalResult();
+  result.lifecycle.minimizedStart.diagnostics.suspended = false;
+  result.lifecycle.minimizedStart.diagnostics.running = true;
+  assert.throws(() => assertCase(result), /rendered while minimized/);
 });

@@ -258,6 +258,36 @@ describe("tournament runner", () => {
     // load, so it gets an explicit budget rather than the 5s default.
   }, 60_000);
 
+  it("runs the packaged scene fixture through every public board street", () => {
+    const publicBoardEvents: Array<{ street: "flop" | "turn" | "river" }> = [];
+    let runner = createCareerTournamentRunner({
+      eventId: "local-qualifier",
+      hero,
+      mode: "normal",
+      seed: "runner-showdown-3",
+    });
+    for (let step = 0; step < 160 && publicBoardEvents.length < 5; step += 1) {
+      const transition = advanceTournamentRunnerOneStep(runner, { policy: { simulations: 50 } });
+      publicBoardEvents.push(
+        ...transition.events.filter(
+          (event): event is Extract<typeof event, { kind: "board-card-dealt" }> =>
+            event.kind === "board-card-dealt",
+        ),
+      );
+      runner = transition.runner;
+      if (transition.awaitingHero) {
+        const legal = heroTournamentLegalActions(runner);
+        if (!legal) throw new Error("Expected legal hero action");
+        runner = applyHeroTournamentActionOneStep(runner, {
+          action: legal.allIn ? "all-in" : legal.call ? "call" : "check",
+        }).runner;
+      }
+    }
+    expect(publicBoardEvents.map((event) => event.street)).toEqual([
+      "flop", "flop", "flop", "turn", "river",
+    ]);
+  });
+
   it("never leaks a hole card through a non-reveal event, and never reveals a folded hand", () => {
     const label = (card: { rank: string; suit: string }) =>
       `${card.rank}${card.suit[0]}`;

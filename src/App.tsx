@@ -898,7 +898,10 @@ export default function App() {
           rating: progress.tournamentElo,
         },
         mode: tourMode,
-        seed: `career:${eventId}:${window.desktop?.sceneAuditSeed ?? Date.now()}`,
+        // The isolated packaged scene audit supplies a complete engine seed so
+        // its ordinary UI actions can deterministically expose every public
+        // board street. Normal sessions retain their career-scoped seed.
+        seed: window.desktop?.sceneAuditSeed ?? `career:${eventId}:${Date.now()}`,
         careerResults: tourResults[tourMode],
       });
       const opening = advanceTournamentRunnerOneStep(created, {
