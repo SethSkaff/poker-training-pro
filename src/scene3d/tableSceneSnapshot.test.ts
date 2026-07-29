@@ -54,6 +54,48 @@ describe("table scene snapshot", () => {
     expect(snapshot.seats.map((seat) => [seat.id, seat.publicCardCodes])).toEqual([["hero", ["As", "Kd"]], ["folded", []], ["villain", ["Qs", "Qd"]]]);
   });
 
+  it("reconciles a fixed public hand through every street without exposing a live opponent", () => {
+    const publicHand = {
+      ...input,
+      heroCardCodes: ["A♠", "K♦"],
+      buttonCanonicalSeat: 8,
+      smallBlindCanonicalSeat: 3,
+      bigBlindCanonicalSeat: 5,
+    };
+    const beats = [
+      { board: [], button: 8, smallBlind: 3, bigBlind: 5, markers: [5, 0, 2] },
+      { board: ["2♣", "7♦", "T♥"], button: 8, smallBlind: 3, bigBlind: 5, markers: [5, 0, 2] },
+      { board: ["2♣", "7♦", "T♥", "J♠"], button: 5, smallBlind: 8, bigBlind: 3, markers: [2, 5, 0] },
+      { board: ["2♣", "7♦", "T♥", "J♠", "Q♣"], button: 5, smallBlind: 8, bigBlind: 3, markers: [2, 5, 0] },
+    ] as const;
+
+    for (const beat of beats) {
+      const snapshot = createTableSceneSnapshot({
+        ...publicHand,
+        boardCards: beat.board.length,
+        publicBoardCardCodes: beat.board,
+        buttonCanonicalSeat: beat.button,
+        smallBlindCanonicalSeat: beat.smallBlind,
+        bigBlindCanonicalSeat: beat.bigBlind,
+      });
+      expect(snapshot.publicBoardCardCodes).toEqual(beat.board);
+      expect(snapshot.boardCards).toBe(beat.board.length);
+      expect([snapshot.buttonRelativeSeat, snapshot.smallBlindRelativeSeat, snapshot.bigBlindRelativeSeat])
+        .toEqual(beat.markers);
+      expect(snapshot.seats.find((seat) => seat.id === "hero")?.publicCardCodes).toEqual(["A♠", "K♦"]);
+      expect(snapshot.seats.find((seat) => seat.id === "villain")?.publicCardCodes).toEqual([]);
+    }
+
+    const showdown = createTableSceneSnapshot({
+      ...publicHand,
+      boardCards: 5,
+      publicBoardCardCodes: ["2♣", "7♦", "T♥", "J♠", "Q♣"],
+      revealedPlayerIds: ["villain"],
+      revealedCardCodesByPlayer: { villain: ["A♥", "A♦"] },
+    });
+    expect(showdown.seats.find((seat) => seat.id === "villain")?.publicCardCodes).toEqual(["A♥", "A♦"]);
+  });
+
   it("is invariant to unapproved opponent card-code inputs", () => {
     const publicInput = { ...input, heroCardCodes: ["As", "Kd"] };
     const expected = createTableSceneSnapshot(publicInput);

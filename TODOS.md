@@ -1772,10 +1772,11 @@ the added gated datum and negative coverage with no remaining material finding.
 **Next task:** D3D-M101 — **in progress.** Its first card-face increment adds
 strict parsing for only canonical public rank/suit labels and a bounded local
 procedural texture cache (52 faces, no remote assets). It preserves backs for
-unrevealed opponents and starts exact texture-memory accounting. Focused parser,
-snapshot, and resource tests plus build pass; the remaining M101 work is object
-parity across fixed preflop/flop/turn/river/showdown captures, dealer/blind/turn
-occlusion checks, and the dedicated packaged M1 fixture. Preserve the F05/F06
+unrevealed opponents and starts exact texture-memory accounting. A fixed public
+hand regression now covers preflop/flop/turn/river/showdown card boundaries and
+dealer/blind projection; focused parser, snapshot, and resource tests plus build
+pass. Remaining M101 work is rendered-object parity/occlusion checks and the
+dedicated packaged M1 fixture. Preserve the F05/F06
 package audit as the lifecycle prerequisite.
 
 ### D3D-F06 â€” Packaged scene diagnostics and first release gate
