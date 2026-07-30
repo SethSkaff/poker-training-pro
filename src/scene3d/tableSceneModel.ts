@@ -16,6 +16,8 @@
  * the ready-mode renderer comes from here; fallback CSS is intentionally not
  * part of this world contract.
  */
+import { MAX_SEATED_HEAD_HEIGHT } from "./characterModel";
+
 export const TABLE_COMPOSITION_ID = "open-arc-v2";
 /**
  * Capsule table dimensions, in metres.
@@ -58,7 +60,10 @@ export const CAMERA_SAFE_INSET_PX = 16;
 */
 const CRITICAL_NEAR_SEAT_X = 1.24 + 0.18;
 const CRITICAL_NEAR_SEAT_Z = -0.16;
-const CRITICAL_NEAR_SEAT_Y = 1.13;
+// Derived from the character library so the solver always reserves room for the
+// head that is actually rendered; a hard-coded 1.13 disagreed with the seated
+// proportions by about 0.14 m.
+const CRITICAL_NEAR_SEAT_Y = MAX_SEATED_HEAD_HEIGHT;
 /**
  * Visual breathing room beyond the geometric envelope.
  *

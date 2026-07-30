@@ -65,6 +65,8 @@ import {
   type SeatPose,
 } from "./tableSceneModel";
 import { sceneGestureFor } from "./sceneGestures";
+import { buildCharacter, buildChair } from "./sceneCharacters";
+import { describeOpponentCharacter } from "../lib/opponentAppearance";
 import type { SceneFrameCallbacks, WebGlProbeResult } from "./sceneAvailability";
 import type { SceneTransition } from "./sceneTransition";
 import { createSceneActionTimingState, reconcileSceneActionTiming } from "./sceneActionTiming";
@@ -185,6 +187,8 @@ const CARPET_PATTERN = 0x5e1b2a;
 const WALL = 0x2b1f33;
 const WALL_PANEL = 0x3a2a44;
 const ROOM = 0x140d18;
+const CHAIR_SEAT = 0x3a2431;
+const CHAIR_FRAME = 0x241823;
 
 /** One action's visible duration, in milliseconds. */
 const ACTION_MS = 620;
@@ -371,9 +375,17 @@ export function createTableScene(
   const key = new PointLight(0xffd9a0, 15, 5.6, 2);
   key.position.set(0, 2.05, -0.15);
   scene.add(key);
-  const rim = new PointLight(0x7fa8ff, 12, 9, 2);
+  const rim = new PointLight(0x7fa8ff, 10, 9, 2);
   rim.position.set(0, 2.3, -3.1);
   scene.add(rim);
+  /*
+    A soft front fill on the far seats. With only a key over the felt and a rim
+    from behind, the opponents' faces and clothing sat in shadow and every torso
+    read as the same dark shape regardless of its outfit colour.
+  */
+  const seatFill = new PointLight(0xffe1b8, 9, 3.4, 2);
+  seatFill.position.set(0, 1.55, 0.55);
+  scene.add(seatFill);
   const warmFill = new PointLight(0xffb066, 6, 8, 2);
   warmFill.position.set(2.6, 1.9, 1.4);
   scene.add(warmFill);
@@ -385,7 +397,7 @@ export function createTableScene(
   for (const [index, seat] of initial.seats.entries()) {
     const pose = poses[index];
     if (!pose) continue;
-    const view = buildSeat(pose, resources);
+    const view = buildSeat(pose, resources, seat.id);
     scene.add(view.root);
     seatViews.set(seat.id, { pose, view });
   }
@@ -485,7 +497,7 @@ export function createTableScene(
             const used = new Set([...seatViews.values()].map((value) => value.pose));
             const pose = poses.find((candidate) => !used.has(candidate));
             if (pose) {
-              const view = buildSeat(pose, resources);
+              const view = buildSeat(pose, resources, seat.id);
               scene.add(view.root);
               entry = { pose, view };
               seatViews.set(seat.id, entry);
@@ -979,17 +991,35 @@ function placeTurnIndicator(
   indicator.visible = Boolean(position);
   indicator.userData.publicPlayerId = position ? acting?.id ?? null : null;
   if (!position) return;
-  indicator.position.set(position[0], TABLE_HEIGHT + 0.025, position[2]);
+  /*
+    On the felt at the actor's own betting lane, not at their chair.
+
+    The chair position at table height put the ring *inside the body* -- a gold
+    band sliced across the acting player's torso. Dropping it to the floor instead
+    would hide it behind the table at the v2 seated gaze. The player's felt anchor
+    is the one place that is both unambiguously theirs and always visible, and it
+    is where a real dealer's attention is anyway.
+  */
+  const pose = acting?.id === undefined ? undefined : seatViews.get(acting.id)?.pose;
+  const lane = pose?.feltPosition ?? position;
+  indicator.position.set(lane[0], TABLE_HEIGHT + 0.004, lane[2]);
 }
 
 /**
- * A seated body: chair, torso, head, and one arm that reaches for the felt.
+ * A seated opponent: chair plus a character built from `characterModel`'s
+ * proportions and tinted from that identity's appearance.
  *
- * Low-poly on purpose. The brief accepts stylised bodies and explicitly does
- * not require photorealism -- what it requires is that a body exists, occupies
- * a chair, and performs the physical actions of poker.
+ * The body used to be four primitives in fixed colours, which is what made every
+ * seat the same grey block with the same egg head. It is now a real per-identity
+ * character -- gendered body family, face preset, hair style, hair colour sampled
+ * on a continuous gradient, outfit, and height -- while staying primitive-built
+ * so no asset pipeline or licensed mesh is involved.
  */
-function buildSeat(pose: SeatPose, resources: TableSceneResources): SeatView {
+function buildSeat(
+  pose: SeatPose,
+  resources: TableSceneResources,
+  playerId: string,
+): SeatView {
   const root = new Group();
   root.position.set(...pose.position);
   root.rotation.y = pose.facing;
@@ -1000,42 +1030,15 @@ function buildSeat(pose: SeatPose, resources: TableSceneResources): SeatView {
     and a chair rendered there sits inside the lens.
   */
   const body = new Group();
-  const chair = new Mesh(
-    resources.ledger.track(new BoxGeometry(0.5, 0.08, 0.46)),
-    resources.ledger.track(new MeshLambertMaterial({ color: 0x2b1d17 })),
+  body.add(buildChair(CHAIR_SEAT, CHAIR_FRAME, resources.ledger));
+  const character = buildCharacter(
+    describeOpponentCharacter(playerId),
+    resources.ledger,
   );
-  chair.position.y = 0.44;
-  body.add(chair);
-  const chairBack = new Mesh(
-    resources.ledger.track(new BoxGeometry(0.5, 0.52, 0.08)),
-    resources.ledger.track(new MeshLambertMaterial({ color: 0x33241c })),
-  );
-  chairBack.position.set(0, 0.72, -0.2);
-  body.add(chairBack);
-
-  const torso = new Mesh(
-    resources.ledger.track(new CylinderGeometry(0.19, 0.23, 0.52, 10)),
-    resources.ledger.track(new MeshLambertMaterial({ color: 0x3d4b63 })),
-  );
-  torso.position.y = 0.78;
-  body.add(torso);
-
-  const head = new Mesh(
-    resources.ledger.track(new IcosahedronGeometry(0.125, 1)),
-    resources.ledger.track(new MeshLambertMaterial({ color: 0xc79a76 })),
-  );
-  head.position.y = 1.13;
-  body.add(head);
-
-  const arm = new Mesh(
-    resources.ledger.track(new BoxGeometry(0.1, 0.1, 0.42)),
-    resources.ledger.track(new MeshLambertMaterial({ color: 0x3d4b63 })),
-  );
-  arm.position.set(0.16, 0.86, 0.22);
-  body.add(arm);
-  const otherArm = arm.clone();
-  otherArm.position.x = -0.16;
-  body.add(otherArm);
+  body.add(character.root);
+  // The gesture code leans the body and reaches an arm; both still work because
+  // the character exposes the same two handles the old primitives did.
+  const arm = character.arms;
   root.add(body);
 
   const cards = new Group();

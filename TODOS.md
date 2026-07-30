@@ -2397,8 +2397,78 @@ an in-page observer cannot miss a street its presentation queue actually
 rendered, which was the reason that path was previously under-evidenced
 (blocker 8).
 
+**D3D-M103 per-identity characters 2026-07-29 — wired and verified (r34).** The
+owner's character spec is implemented and rendering: 5 male and 3 female body
+families, 5 hair styles per presented gender, 6 face presets, 10 outfits, a ±4%
+height scale, and hair sampled on a continuous 8-stop gradient. The player id
+remains the only input to `describeOpponentCharacter`, so appearance still cannot
+correlate with behaviour.
+
+**The glTF path was investigated and rejected.** `tools/blender/build_characters.py`
+generates the library headlessly with the installed Blender 2.93 (24 meshes,
+13,734 triangles, 264 KB) and is retained as the preview/authoring tool, but the
+runtime builds the same proportions procedurally in `characterModel.ts` /
+`sceneCharacters.ts`. Shipping the binary would have put a `.glb` through an
+asset-rights ledger whose `runtimeAssetExtensions` does not list that extension —
+so it would have bypassed the gate silently — added a loader to an already 578 KB
+lazy chunk, and introduced a fetch under a `default-src 'self'` CSP. The Blender
+script only uses UV spheres and tapered cones, both native to three.js, so none of
+that cost bought anything.
+
+Each character merges ~20 primitives into three meshes (skin, hair, clothing —
+the three things tinted independently). Un-merged that was ~100 extra draw calls
+against a 150 budget; merged, the whole table holds at **76 draw calls and 14,578
+triangles**.
+
+Five defects were found here by *cropping frames at 1.5–3x*, every one of which
+passed the full automated gate:
+
+1. **The chair swallowed the body.** A 0.56 m half-cylinder shell scaled across
+   its depth became a barrel around the occupant; the torso, shoulders and arms
+   rendered the whole time, fully occluded by the character's own chair.
+2. **Faces read as loose balls.** Discrete cheek/chin spheres were shrunk twice
+   and still looked bolted on — any sphere big enough to see at ~90 px of head is
+   big enough to look separate. Variation now comes from shaping the skull (jaw
+   width, chin as a vertical taper) with only a flattened brow and small nose.
+   Ears were removed outright: at this scale they joined the nose in a cluster
+   around the jaw, because a 27° downward gaze projects head-centre features
+   toward the chin.
+3. **Outfits were invisible.** The palette reused the 2.5D CSS colours (all near
+   `#2b2b30`), correct behind a bright DOM card but indistinguishable on the dim
+   far side of a room — five torsos merged into one dark slab. Now mid-tone, with
+   a front fill light on the far seats.
+4. **The actor ring was inside the acting player's torso.** It was placed at the
+   chair position at table height, slicing a gold band across the body. It sits
+   flat on that player's own felt betting lane now; the floor would be hidden
+   behind the table at the v2 gaze. Note this passed `actingIndicator` tests and
+   the DOM/renderer actor-parity assertion — the ring was on the right *player*,
+   just in the wrong place on them.
+5. **Hair hung through faces.** Blender is Z-up with +Y running back through the
+   head; porting those offsets to the renderer's Y-up frame turned "behind the
+   head" into "in front of the face", so `female:ponytail` dropped a strand over
+   the nose. A new invariant test (no strand at +Z, no forward blob below the
+   hairline) immediately caught a *second* instance in `female:curly-shoulder`
+   that inspection had missed.
+
+`MAX_SEATED_HEAD_HEIGHT` is now derived from the body families and consumed by the
+camera depth solver, so the height the solver reserves frame room for and the
+height a head is actually drawn at cannot drift. They had disagreed by 0.14 m,
+which is why the near-seat framing kept needing hand-tuned margin.
+
+Evidence: `outputs\desktop-m103-characters-r34`, full-motion both-kind audit exit
+0 — 76/150 draw calls, 14,578/250,000 triangles, 1.01/128 MiB textures, p95
+0.5/25 ms, all six terminal opponent actions (`missingActions: []`),
+pointer/keyboard/controller parity agreed, preflop→river runout parity on both
+WebGL paths, six native viewports, `fatal: []`. 812 unit tests pass.
+
+Known limits, stated plainly: the characters are stylised low-poly, which is
+inherent to primitive composition. Forearms are simple tapered cylinders and read
+bluntly at the two near seats, which the close v2 camera shows at close range. A
+genuine fidelity step up means committing to an asset pipeline with ledger
+entries; the Blender script is the starting point for that.
+
 **D3D-M103 open-arc-v2 owner redirection 2026-07-29 — composition reworked;
-characters pending.** The design owner reviewed the r26 silent captures and
+characters pending (superseded by the entry above).** The design owner reviewed the r26 silent captures and
 reopened the camera/table contract. `docs/desktop-3d-composition-decision.md`
 now carries a superseding-direction table; the 70–86% apparent-width and 18–28%
 horizon criteria no longer apply as written because they described the rejected
