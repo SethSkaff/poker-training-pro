@@ -3197,6 +3197,54 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /*
+  Ready-mode seat tags are deliberately quiet. At v1 sizing they were opaque
+  black slabs with borders and drop shadows sitting on the felt, and they read as
+  UI stuck over the room rather than nameplates on a rail -- distracting enough
+  that they competed with the players themselves. Smaller, translucent, no
+  border, no shadow, tighter text. The DOM remains the accessible owner, so
+  nothing is lost by making the paint recede.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-label {
+  min-width: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 5px;
+  padding: 2px 7px;
+  background: rgba(6, 10, 14, 0.5);
+  box-shadow: none;
+  backdrop-filter: blur(2px);
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-label strong {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  opacity: 0.86;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-label > span {
+  font-size: 9px;
+  opacity: 0.78;
+}
+
+/* The blinds/position pill is secondary information; keep it very small. */
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-position-marker {
+  border: 0;
+  padding: 1px 4px;
+  font-size: 7px;
+  background: rgba(6, 10, 14, 0.45);
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+/* The acting/action plaque is the one that should still draw the eye. */
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-action-label {
+  padding: 2px 6px;
+  font-size: 8px;
+  box-shadow: none;
+}
+
+/*
   Seat text belongs in one short row sitting on the rail, not a stacked column.
   A column of marker + action + nameplate is tall enough to reach the face above
   it, which Direction A forbids ("faces never sit behind a ... action label").

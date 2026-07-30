@@ -16,10 +16,18 @@
  * the ready-mode renderer comes from here; fallback CSS is intentionally not
  * part of this world contract.
  */
-export const TABLE_COMPOSITION_ID = "open-arc-v1";
-/** Capsule table dimensions, in metres. */
-export const TABLE_WIDTH = 2.72;
-export const TABLE_DEPTH = 1.42;
+export const TABLE_COMPOSITION_ID = "open-arc-v2";
+/**
+ * Capsule table dimensions, in metres.
+ *
+ * Reduced from 2.72 x 1.42 with the v2 close pose. The owner asked for a much
+ * *apparently* larger table; sitting at opponent distance delivers that, but at
+ * that range the old ±1.28 near seats projected off-screen. Tightening the arc
+ * onto a slightly smaller capsule keeps all five opponents in the resting view
+ * while the felt still fills ~98% of a 16:9 frame.
+ */
+export const TABLE_WIDTH = 2.42;
+export const TABLE_DEPTH = 1.34;
 export const TABLE_RAIL_WIDTH = 0.12;
 /** Retained name for the older object-motion helpers. */
 export const TABLE_RADIUS = TABLE_WIDTH / 2;
@@ -27,12 +35,12 @@ export const TABLE_RADIUS = TABLE_WIDTH / 2;
 export const TABLE_HEIGHT = 0.76;
 /** The active-turn halo sits around a chair on the floor, below every card. */
 export const TURN_INDICATOR_HEIGHT = 0.018;
-/** Where a seated player's eyes sit above the floor. */
-export const EYE_HEIGHT = 1.26;
-/** Direction A's approved fixed vertical lens. Camera fitting changes depth only. */
-export const CAMERA_VERTICAL_FOV = 52;
-/** Keep the seated gaze at Direction A's specified -16 degrees as depth changes. */
-export const CAMERA_PITCH_DEGREES = 16;
+/** Where a seated player's eyes sit above the floor, leaning slightly in. */
+export const EYE_HEIGHT = 1.36;
+/** v2 lens. Wider than v1's 52 so the close pose still holds the forward arc. */
+export const CAMERA_VERTICAL_FOV = 56;
+/** A poker player looks down at the felt; v1's -16 degrees read as a spectator. */
+export const CAMERA_PITCH_DEGREES = 27;
 /**
  * Direction A reconciliation: closest normal seated depth and the compact
  * native-safe ceiling.  The final solver also reserves the approved apparent
@@ -40,12 +48,27 @@ export const CAMERA_PITCH_DEGREES = 16;
  * initial range is deliberately exceeded there rather than clipping a player,
  * shrinking the table, or distorting it with a wider lens.
  */
-export const CAMERA_DEPTH_MIN = 1.66;
-export const CAMERA_DEPTH_MAX = 3.75;
+export const CAMERA_DEPTH_MIN = 1.25;
+export const CAMERA_DEPTH_MAX = 2.30;
 export const CAMERA_SAFE_INSET_PX = 16;
-// Explicit forward-seat roots plus their stable chair/shoulder envelope.
-const CRITICAL_NEAR_SEAT_X = 1.57;
-const CRITICAL_NEAR_SEAT_Z = 0.30;
+/*
+  The critical envelope is now the outer near seat's shoulder at head height:
+  that is the first thing the close pose pushes out of frame, and it is what the
+  depth solver backs away from on narrow aspects. Measured against the v2 arc.
+*/
+const CRITICAL_NEAR_SEAT_X = 1.24 + 0.18;
+const CRITICAL_NEAR_SEAT_Z = -0.16;
+const CRITICAL_NEAR_SEAT_Y = 1.13;
+/**
+ * Visual breathing room beyond the geometric envelope.
+ *
+ * Reserving only the head's own half-width put its silhouette exactly on the
+ * frame edge, and the chair and shoulders behind it were then clipped -- the
+ * -27 degree gaze shortens view-space depth, so a near seat is optically much
+ * closer than its ground distance suggests. A head touching the edge reads as
+ * clipped even when it technically fits.
+ */
+const NEAR_SEAT_VISUAL_SAFE_FRACTION = 0.94;
 const OUTER_RAIL_HALF_WIDTH = TABLE_WIDTH / 2 + TABLE_RAIL_WIDTH;
 const OUTER_NEAR_RAIL_Z = TABLE_DEPTH / 2 + TABLE_RAIL_WIDTH;
 const DESKTOP_GAMEPLAY_SAFE_WIDTH_PX = 1920;
@@ -81,12 +104,17 @@ export interface SeatPose {
   readonly facing: number;
 }
 
+/*
+  v2 tightened forward arc. The near pair moved from z +0.28 to z -0.16, i.e.
+  genuinely in front of the hero rather than beside the lens, which is what keeps
+  them on screen at the close seated pose.
+*/
 const OPEN_ARC_OPPONENTS = [
-  [-1.28, 0.28], [-1.16, -0.55], [0, -0.84], [1.16, -0.55], [1.28, 0.28],
+  [-1.24, -0.16], [-0.98, -0.74], [0, -0.94], [0.98, -0.74], [1.24, -0.16],
 ] as const;
 
 const OPEN_ARC_FELT_ANCHORS = [
-  [-0.78, 0.18], [-0.67, -0.34], [0, -0.48], [0.67, -0.34], [0.78, 0.18],
+  [-0.77, -0.10], [-0.61, -0.46], [0, -0.58], [0.61, -0.46], [0.77, -0.10],
 ] as const;
 
 /** Direction A's public poker-object anchors. */
@@ -94,18 +122,16 @@ export const OPEN_ARC_ANCHORS = {
   // Hero objects sit immediately inside the near rail. They are deliberately
   // closer than the board so the player reads cards and chips as physical
   // foreground rather than a small duplicate on the felt.
-  // Direction A's approved anchors: cards at x ±0.09 / z 0.50 and the stack at
-  // (0.46, 0.48), both inside the near felt edge at z = TABLE_DEPTH/2 = 0.71.
-  // These had drifted out to z 0.93 and 0.84, past the *outer* rail at 0.83, so
-  // the hero's hand and stack hovered off the table edge instead of resting on
-  // the felt.
-  heroCards: [[-0.09, TABLE_HEIGHT, 0.50], [0.09, TABLE_HEIGHT, 0.50]] as const,
-  heroStack: [0.46, TABLE_HEIGHT, 0.48] as const,
-  heroCommitted: [0.42, TABLE_HEIGHT, 0.30] as const,
-  board: [0, TABLE_HEIGHT + 0.005, -0.18] as const,
-  mainPot: [0, TABLE_HEIGHT + 0.005, 0.10] as const,
-  sidePot: (index: number) => [index % 2 === 0 ? 0.34 + Math.floor(index / 2) * 0.22 : -0.34 - Math.floor(index / 2) * 0.22, TABLE_HEIGHT + 0.005, 0.10] as const,
-  cameraTarget: [0, 0.73, -0.18] as const,
+  // Rescaled onto the v2 capsule (near felt edge z = TABLE_DEPTH/2 = 0.67). The
+  // hero's hand lies flat on the felt where the -27 degree gaze reads it, rather
+  // than tilted up against the rail.
+  heroCards: [[-0.10, TABLE_HEIGHT, 0.46], [0.10, TABLE_HEIGHT, 0.46]] as const,
+  heroStack: [0.44, TABLE_HEIGHT, 0.42] as const,
+  heroCommitted: [0.38, TABLE_HEIGHT, 0.20] as const,
+  board: [0, TABLE_HEIGHT + 0.005, -0.20] as const,
+  mainPot: [0, TABLE_HEIGHT + 0.005, 0.06] as const,
+  sidePot: (index: number) => [index % 2 === 0 ? 0.32 + Math.floor(index / 2) * 0.20 : -0.32 - Math.floor(index / 2) * 0.20, TABLE_HEIGHT + 0.005, 0.06] as const,
+  cameraTarget: [0, 0.73, -0.20] as const,
 } as const;
 
 /**
@@ -280,37 +306,27 @@ export function cameraDepthForSafeFrame(
   const safeFraction = Math.max(0.5, 1 - (CAMERA_SAFE_INSET_PX * 2) / width);
   const halfHorizontalTangent = Math.tan((verticalFovDegrees * Math.PI) / 360)
     * Math.max(0.1, aspect);
-  const envelopeRequired = CRITICAL_NEAR_SEAT_Z
-    + CRITICAL_NEAR_SEAT_X / (halfHorizontalTangent * safeFraction);
   /*
-   * The former fitting rule only kept a point on the outer chair inside the
-   * frame. That still permitted the 2.96 m capsule rail to occupy nearly the
-   * whole native viewport. Preserve Direction A's actual gameplay width: on
-   * ultrawide windows the table is fitted against the centered 1920 px zone,
-   * leaving the remaining width for room wings rather than stretching play.
+   * v2 inverts the old rule. There is no longer a table-width target to fit --
+   * the owner wants the felt to dominate -- so the pose sits at CAMERA_DEPTH_MIN
+   * and the solver's only job is to retreat far enough that the outer near
+   * seat's shoulder stays inside the safe frame. On 16:9 and wider that costs
+   * almost nothing; on the legacy 4:3 target it backs off noticeably, which is
+   * the correct trade for not clipping a player.
+   *
+   * The pitch matters here: the gaze is 27 degrees down, so a head above the
+   * felt is nearer the view axis than its ground-plane distance suggests.
    */
-  const gameplayWidth = Math.min(width, DESKTOP_GAMEPLAY_SAFE_WIDTH_PX);
-  // Perspective makes the capsule's visible near rail materially narrower
-  // than its pure horizontal-frustum projection. Keep the native 1920 view
-  // in Direction A's 70–76% perceptual band by using the closest seated
-  // depth that reserves an 87% geometric rail envelope; this is still depth
-  // fitting only, never a table or lens adjustment.
-  const ultrawideProgress = Math.max(0, Math.min(
-    1,
-    (width - DESKTOP_GAMEPLAY_SAFE_WIDTH_PX) / (2560 - DESKTOP_GAMEPLAY_SAFE_WIDTH_PX),
-  ));
-  const targetTableFraction = width >= DESKTOP_GAMEPLAY_SAFE_WIDTH_PX
-    // Recede back to the centered 1920 px safe-zone fit on ultrawide rather
-    // than letting its extra horizontal frustum pull the seated camera closer.
-    ? 0.95 - ultrawideProgress * 0.16
-    : aspect <= 1.45 ? 0.84 : 0.80;
-  const visibleTableFraction = Math.max(
-    0.5,
-    targetTableFraction * ((gameplayWidth - CAMERA_SAFE_INSET_PX * 2) / width),
-  );
-  const tableRequired = OUTER_NEAR_RAIL_Z
-    + OUTER_RAIL_HALF_WIDTH / (halfHorizontalTangent * visibleTableFraction);
-  const required = Math.max(envelopeRequired, tableRequired);
+  const pitch = (CAMERA_PITCH_DEGREES * Math.PI) / 180;
+  const requiredViewDepth = CRITICAL_NEAR_SEAT_X
+    / (halfHorizontalTangent * safeFraction * NEAR_SEAT_VISUAL_SAFE_FRACTION);
+  // viewDepth = (camZ - seatZ)*cos(pitch) + (eye - seatY)*sin(pitch)
+  const heightTerm = (EYE_HEIGHT - CRITICAL_NEAR_SEAT_Y) * Math.sin(pitch);
+  const required = CRITICAL_NEAR_SEAT_Z
+    + (requiredViewDepth - heightTerm) / Math.max(0.2, Math.cos(pitch));
+  void OUTER_NEAR_RAIL_Z;
+  void OUTER_RAIL_HALF_WIDTH;
+  void DESKTOP_GAMEPLAY_SAFE_WIDTH_PX;
   return Math.min(CAMERA_DEPTH_MAX, Math.max(CAMERA_DEPTH_MIN, required));
 }
 

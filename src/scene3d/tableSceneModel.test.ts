@@ -38,11 +38,11 @@ const distance = (
   b: readonly [number, number, number],
 ) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-describe("open-arc-v1 seats are placed around a capsule table", () => {
+describe("open-arc-v2 seats are placed around a capsule table", () => {
   it("keeps the hero anchor nearest the camera without rendering a ring", () => {
     const poses = seatPoses(6);
     const hero = poses[0];
-    expect(TABLE_COMPOSITION_ID).toBe("open-arc-v1");
+    expect(TABLE_COMPOSITION_ID).toBe("open-arc-v2");
     for (const pose of poses.slice(1)) {
       expect(hero.position[2]).toBeGreaterThan(pose.position[2]);
     }
@@ -52,9 +52,9 @@ describe("open-arc-v1 seats are placed around a capsule table", () => {
     const poses = seatPoses(6);
     expect(poses).toHaveLength(6);
     expect(poses.slice(1).map((pose) => [pose.position[0], pose.position[2]])).toEqual([
-      [-1.28, 0.28], [-1.16, -0.55], [0, -0.84], [1.16, -0.55], [1.28, 0.28],
+      [-1.24, -0.16], [-0.98, -0.74], [0, -0.94], [0.98, -0.74], [1.24, -0.16],
     ]);
-    expect(TABLE_WIDTH / TABLE_DEPTH).toBeCloseTo(1.915, 2);
+    expect(TABLE_WIDTH / TABLE_DEPTH).toBeCloseTo(1.806, 2);
   });
 
   it("rests cards and chips on the felt surface, inside the rail", () => {
@@ -493,18 +493,18 @@ describe("the current-turn indicator", () => {
   });
 });
 
-describe("open-arc-v1 hero and pot anchors", () => {
+describe("open-arc-v2 hero and pot anchors", () => {
   it("keeps physical hero cards, stack, commitment, board, and main pot in their approved lanes", () => {
     expect(OPEN_ARC_ANCHORS.heroCards).toEqual([
-      [-0.09, TABLE_HEIGHT, 0.5],
-      [0.09, TABLE_HEIGHT, 0.5],
+      [-0.10, TABLE_HEIGHT, 0.46],
+      [0.10, TABLE_HEIGHT, 0.46],
     ]);
-    expect(OPEN_ARC_ANCHORS.heroStack).toEqual([0.46, TABLE_HEIGHT, 0.48]);
-    expect(OPEN_ARC_ANCHORS.heroCommitted).toEqual([0.42, TABLE_HEIGHT, 0.3]);
-    expect(OPEN_ARC_ANCHORS.board).toEqual([0, TABLE_HEIGHT + 0.005, -0.18]);
-    expect(OPEN_ARC_ANCHORS.mainPot).toEqual([0, TABLE_HEIGHT + 0.005, 0.1]);
-    expect(OPEN_ARC_ANCHORS.sidePot(0)[0]).toBeCloseTo(0.34);
-    expect(OPEN_ARC_ANCHORS.sidePot(1)[0]).toBeCloseTo(-0.34);
+    expect(OPEN_ARC_ANCHORS.heroStack).toEqual([0.44, TABLE_HEIGHT, 0.42]);
+    expect(OPEN_ARC_ANCHORS.heroCommitted).toEqual([0.38, TABLE_HEIGHT, 0.2]);
+    expect(OPEN_ARC_ANCHORS.board).toEqual([0, TABLE_HEIGHT + 0.005, -0.2]);
+    expect(OPEN_ARC_ANCHORS.mainPot).toEqual([0, TABLE_HEIGHT + 0.005, 0.06]);
+    expect(OPEN_ARC_ANCHORS.sidePot(0)[0]).toBeCloseTo(0.32);
+    expect(OPEN_ARC_ANCHORS.sidePot(1)[0]).toBeCloseTo(-0.32);
   });
 
   /*
@@ -530,31 +530,38 @@ describe("open-arc-v1 hero and pot anchors", () => {
     }
   });
 
-  it("uses compact fitting only inside the approved bounds", () => {
-    expect(cameraViewPreset("standard", 1024 / 768, 1024)).toMatchObject({ fov: 52 });
-    expect(cameraViewPreset("standard", 1024 / 768, 1024).distance).toBeGreaterThan(3.5);
-    expect(cameraViewPreset("standard", 1024 / 768, 1024).distance).toBeLessThanOrEqual(CAMERA_DEPTH_MAX);
-    expect(cameraViewPreset("standard", 2560 / 1080, 2560)).toMatchObject({ fov: 52 });
-    expect(cameraViewPreset("standard", 2560 / 1080, 2560).distance).toBeGreaterThan(3);
-    expect(cameraViewPreset("standard", 2560 / 1080, 2560).distance).toBeLessThanOrEqual(CAMERA_DEPTH_MAX);
+  /*
+   * v2 replaces v1's rule entirely. v1 solved depth to hold the table at 70-86%
+   * of the frame; the owner asked for the felt to dominate, so v2 sits at the
+   * closest seated pose and the solver's only remaining job is to retreat when a
+   * narrow aspect would push the outer near seat out of frame.
+   */
+  it("holds the closest seated pose on 16:9 and wider", () => {
+    for (const [aspect, width] of [[16 / 9, 1366], [16 / 9, 1920], [2560 / 1080, 2560]] as const) {
+      const depth = cameraDepthForSafeFrame(CAMERA_VERTICAL_FOV, aspect, width);
+      expect(depth).toBeGreaterThanOrEqual(CAMERA_DEPTH_MIN);
+      expect(depth).toBeLessThan(1.75);
+      expect(cameraViewPreset("standard", aspect, width))
+        .toMatchObject({ fov: CAMERA_VERTICAL_FOV });
+    }
   });
 
-  it("fits the capsule into the centered gameplay safe zone without widening the lens", () => {
-    const standard16by9 = cameraDepthForSafeFrame(52, 16 / 9, 1366);
-    const ultrawide = cameraDepthForSafeFrame(52, 2560 / 1080, 2560);
-    expect(standard16by9).toBeGreaterThan(2.8);
-    expect(standard16by9).toBeLessThanOrEqual(CAMERA_DEPTH_MAX);
-    // The world must not expand through 2560 px: its extra width is room wing,
-    // so it is allowed to sit no closer than the 16:9 play zone.
-    expect(ultrawide).toBeGreaterThanOrEqual(standard16by9);
-    expect(cameraPose(0, "standard", 16 / 9, 1366).position[2]).toBe(standard16by9);
-  });
-
-  it("allows compact native fitting to exceed the initial 2.25 m guide without widening the lens", () => {
-    const compact = cameraDepthForSafeFrame(52, 1024 / 768, 1024);
-    expect(compact).toBeGreaterThan(3.5);
+  it("retreats on a narrow aspect rather than clipping the outer near seat", () => {
+    const wide = cameraDepthForSafeFrame(CAMERA_VERTICAL_FOV, 16 / 9, 1920);
+    const compact = cameraDepthForSafeFrame(CAMERA_VERTICAL_FOV, 1024 / 768, 1024);
+    expect(compact).toBeGreaterThan(wide);
     expect(compact).toBeLessThanOrEqual(CAMERA_DEPTH_MAX);
     expect(cameraPose(0, "standard", 1024 / 768, 1024).fov).toBe(CAMERA_VERTICAL_FOV);
+    expect(cameraPose(0, "standard", 16 / 9, 1920).position[2]).toBe(wide);
+  });
+
+  it("sits at roughly the same distance from the table as an opponent does", () => {
+    // The owner's framing requirement: the hero is a player at the table, not a
+    // spectator behind it. Opponent chair roots are 0.94-1.25 m from centre.
+    const depth = cameraDepthForSafeFrame(CAMERA_VERTICAL_FOV, 16 / 9, 1920);
+    const opponentRange = seatPoses(6).slice(1)
+      .map((pose) => Math.hypot(pose.position[0], pose.position[2]));
+    expect(depth).toBeLessThan(Math.max(...opponentRange) + 0.45);
   });
 });
 

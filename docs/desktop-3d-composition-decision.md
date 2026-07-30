@@ -11,6 +11,42 @@ this document alone
 
 **Evidence baseline:** `main` at `fec5269`, 2026-07-29
 
+## Superseding direction, 2026-07-29 (design owner)
+
+The design owner reviewed the r26 native captures and **reopened the camera and
+table contract**. The following supersede the Direction A values and the
+reconciliation below them; the affected acceptance criteria are restated here.
+
+| Property | Was | Now |
+|---|---|---|
+| Camera depth | responsive 2.66–3.63 m, "camera distance only" | seated close pose, solved 1.25–2.30 m |
+| Eye height | 1.26 m | 1.36 m |
+| Vertical FOV | fixed 52° | 56° |
+| Pitch | −16° | −27° |
+| Table | 2.72 × 1.42 m | 2.42 × 1.34 m |
+| Opponent arc | ±1.28 at z +0.28 | tightened forward arc, ±1.24 at z −0.16 |
+| Table apparent width | 70–86% of gameplay zone | ~92–98% at 16:9; it is meant to dominate |
+
+Rationale, in the owner's terms: the hero sits the same distance from the table
+as the opponents do, and a poker player looks *down* at the felt. The previous
+pose read as a distant spectator view, and hole cards were not legibly on the
+table.
+
+Two measured consequences, both accepted:
+
+1. At the close pose the old ±1.28/z+0.28 near seats projected **off-screen** at
+   16:9 (head x = −6% and 106%). Rather than lose two opponents from the resting
+   view, the seat arc was tightened onto a slightly smaller capsule so all five
+   remain visible. This is why the table's *metric* size decreased while its
+   *apparent* size grew — the owner's request is about apparent size.
+2. At the legacy 4:3 1024×768 target the two near seats still leave the frame at
+   the closest pose, so the depth solver backs off there. 4:3 is below the
+   product's 1100×720 floor and is retained only for the existing matrix.
+
+The 70–86% apparent-width criterion and the 18–28% horizon band no longer apply
+as written; they described the rejected distant framing. Poker-state readability,
+no-clipping, accessibility, fallback, and evidence criteria all still apply.
+
 ## Decision summary
 
 Approve **Direction A — Open-arc seated first person** for production

@@ -44,6 +44,7 @@ import {
   betChipPosition,
   cameraPose,
   callChipPosition,
+  CAMERA_PITCH_DEGREES,
   CAMERA_VERTICAL_FOV,
   chipCountForAmount,
   dealtCardPosition,
@@ -168,9 +169,22 @@ export function probeWebGl2(canvas: HTMLCanvasElement): WebGlProbeResult {
   }
 }
 
-const FELT = 0x0f5b45;
-const RAIL = 0x2a1a12;
-const ROOM = 0x0b0f0e;
+/*
+  v2 palette. The v1 room was one green and one brown, which the owner rightly
+  called flat and un-casino-like. This keeps the felt as the only saturated
+  green, wraps it in warm timber and brass, and puts a deep red patterned carpet
+  and plum walls around it so the felt reads as the lit centre of a room rather
+  than one green shape against another brown one.
+*/
+const FELT = 0x0c5138;
+const FELT_EDGE = 0x08341f;
+const RAIL = 0x33200f;
+const BRASS = 0xb08748;
+const CARPET = 0x4a1420;
+const CARPET_PATTERN = 0x5e1b2a;
+const WALL = 0x2b1f33;
+const WALL_PANEL = 0x3a2a44;
+const ROOM = 0x140d18;
 
 /** One action's visible duration, in milliseconds. */
 const ACTION_MS = 620;
@@ -210,15 +224,32 @@ function createTableSceneResources(): TableSceneResources {
     context.strokeStyle = "#c7af83";
     context.lineWidth = 3;
     context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+    /*
+      A real playing card carries its index in two opposite corners and is
+      180-degree rotationally symmetric, which is precisely why orientation never
+      matters when it is lying on a table. Drawing it that way removes a whole
+      class of bug: the single top-left index used before rendered upside down
+      once the card lay flat, because the box's top face maps the canvas top to
+      the card's far edge.
+    */
     context.fillStyle = face.red ? "#b83232" : "#1f2933";
-    context.font = "700 34px Georgia, serif";
-    context.textAlign = "left";
-    context.fillText(face.rank, 10, 39);
-    context.font = "30px Georgia, serif";
-    context.fillText(face.glyph, 12, 70);
+    const drawIndex = () => {
+      context.textAlign = "center";
+      context.font = "700 30px Georgia, serif";
+      context.fillText(face.rank, 15, 32);
+      context.font = "24px Georgia, serif";
+      context.fillText(face.glyph, 15, 56);
+    };
+    drawIndex();
+    context.save();
+    context.translate(canvas.width, canvas.height);
+    context.rotate(Math.PI);
+    drawIndex();
+    context.restore();
+    // Centre pip, sized so the rank still reads at the steeper v2 gaze.
     context.textAlign = "center";
-    context.font = "52px Georgia, serif";
-    context.fillText(face.glyph, canvas.width / 2, 111);
+    context.font = "56px Georgia, serif";
+    context.fillText(face.glyph, canvas.width / 2, canvas.height / 2 + 20);
     const texture = track(new CanvasTexture(canvas));
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
     texture.minFilter = LinearFilter;
@@ -329,16 +360,23 @@ export function createTableScene(
   const table = buildTable(resources.ledger);
   scene.add(table);
 
-  // Lighting: one warm key over the felt plus a low ambient. Lambert materials
-  // keep this cheap -- no PBR, no shadow maps, which is what holds the frame
-  // budget on integrated graphics at this stage.
-  scene.add(new AmbientLight(0x30403a, 2.1));
-  const key = new PointLight(0xffd9a0, 42, 9, 2);
-  key.position.set(0, 2.35, 0);
+  /*
+    Lighting: a warm pendant key low over the felt, a cool rim from behind the
+    far seats to separate bodies from the wall, and a dim ambient. The key sits
+    closer and brighter than v1 so the felt is visibly the lit centre of a darker
+    room -- that pool-of-light contrast is most of what makes a card room read as
+    a card room. Still Lambert, still no shadow maps, so the frame budget holds.
+  */
+  scene.add(new AmbientLight(0x2a2233, 1.9));
+  const key = new PointLight(0xffd9a0, 15, 5.6, 2);
+  key.position.set(0, 2.05, -0.15);
   scene.add(key);
-  const fill = new PointLight(0x6fb8ff, 8, 14, 2);
-  fill.position.set(-3.2, 2.1, -2.4);
-  scene.add(fill);
+  const rim = new PointLight(0x7fa8ff, 12, 9, 2);
+  rim.position.set(0, 2.3, -3.1);
+  scene.add(rim);
+  const warmFill = new PointLight(0xffb066, 6, 8, 2);
+  warmFill.position.set(2.6, 1.9, 1.4);
+  scene.add(warmFill);
 
   // Keep the six physical chairs stable. A player leaving must hide their
   // chair/body, never cause every surviving identity to slide one chair over.
@@ -647,12 +685,12 @@ interface SeatView {
 }
 
 /**
- * Lean the physical hero cards against the near rail. Direction A's approved
- * peek range is 50-58 degrees toward the camera; the earlier 1.30 rad stood
- * them 74.5 degrees off the felt, which combined with the oversized scale below
- * to read as two billboards planted on the table.
+ * The hero's cards lie flat on the felt in v2. The -27 degree gaze reads them
+ * there, which is what the owner asked for ("the cards should be placed on the
+ * table"); the previous 58-degree lean stood them up against the rail like
+ * billboards and was also what made the single-corner index read upside down.
  */
-const HERO_CARD_FOREGROUND_TILT = 1.01;
+const HERO_CARD_FOREGROUND_TILT = 0;
 /** The card's own long axis, from `cardGeometry`. */
 const CARD_LENGTH_M = 0.13;
 /**
@@ -681,9 +719,15 @@ function heroCardForegroundScale(
   const distance = Math.max(0.2, cameraDepth - OPEN_ARC_ANCHORS.heroCards[0][2]);
   const frameHeight = 2 * distance * Math.tan((CAMERA_VERTICAL_FOV * Math.PI) / 360);
   const pixelsPerMetre = Math.max(1, viewportHeight) / frameHeight;
-  // A card tilted toward the camera keeps almost all of its projected length,
-  // so the flat-length estimate is the right basis for the floor.
-  const naturalPx = CARD_LENGTH_M * pixelsPerMetre;
+  /*
+    v2 cards lie flat, so their projected height is foreshortened by the gaze
+    angle rather than keeping their full length as the old leaning card did.
+    At the close pose this still lands well above the floor, so the scale clamps
+    to 1 and the card renders at true size; the solver only does real work on the
+    legacy 4:3 target where the camera has to back off.
+  */
+  const naturalPx = CARD_LENGTH_M * pixelsPerMetre
+    * Math.sin((CAMERA_PITCH_DEGREES * Math.PI) / 180);
   return Math.min(
     HERO_CARD_SCALE_MAX,
     Math.max(HERO_CARD_SCALE_MIN, HERO_CARD_TARGET_PX / Math.max(1, naturalPx)),
@@ -700,20 +744,30 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   */
   const floor = new Mesh(
     resources.track(new PlaneGeometry(26, 26)),
-    resources.track(new MeshLambertMaterial({ color: 0x2e2420 })),
+    resources.track(new MeshLambertMaterial({ color: CARPET })),
   );
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  // A quiet pool of light around the hero's own seat, so the near floor reads as
-  // carpet the player is sitting on instead of an empty band under the table.
-  const carpet = new Mesh(
-    resources.track(new CircleGeometry(2.5, 24)),
-    resources.track(new MeshLambertMaterial({ color: 0x3b2c26 })),
-  );
-  carpet.rotation.x = -Math.PI / 2;
-  carpet.position.set(0, 0.004, 1.1);
-  scene.add(carpet);
+  /*
+    A patterned carpet ring under the table. Card rooms have figured carpet, and
+    a single flat colour was a large part of why the floor read as dead space --
+    with nothing on it there is no cue for scale or depth. Concentric rings are
+    the cheapest pattern that reads as a woven floor at this angle.
+  */
+  for (const [radius, colour] of [
+    [3.4, CARPET_PATTERN],
+    [2.6, CARPET],
+    [1.9, CARPET_PATTERN],
+  ] as const) {
+    const ring = new Mesh(
+      resources.track(new CircleGeometry(radius, 40)),
+      resources.track(new MeshLambertMaterial({ color: colour })),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(0, 0.002 + (3.4 - radius) * 0.001, -0.2);
+    scene.add(ring);
+  }
 
   // A continuous emissive-looking rear wall creates Direction A's intentional
   // horizon instead of letting the fixed 52-degree lens resolve extra height
@@ -724,7 +778,7 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
     // architectural wall keeps both room wings present without moving the
     // table, seats, or camera laterally.
     resources.track(new PlaneGeometry(36, 7.4)),
-    resources.track(new MeshBasicMaterial({ color: 0x203b31 })),
+    resources.track(new MeshBasicMaterial({ color: WALL })),
   );
   horizon.position.set(0, 3.4, -6.5);
   scene.add(horizon);
@@ -735,7 +789,7 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   // wall/floor junction remains naturally lower in the room.
   const horizonBand = new Mesh(
     resources.track(new PlaneGeometry(36, 0.13)),
-    resources.track(new MeshBasicMaterial({ color: 0x6a9878 })),
+    resources.track(new MeshBasicMaterial({ color: BRASS })),
   );
   horizonBand.position.set(0, 1.1, -6.47);
   scene.add(horizonBand);
@@ -749,14 +803,14 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   for (const side of [-1, 1]) {
     const sideWall = new Mesh(
       resources.track(new PlaneGeometry(13, 7.4)),
-      resources.track(new MeshBasicMaterial({ color: 0x1c332b })),
+      resources.track(new MeshBasicMaterial({ color: WALL })),
     );
     sideWall.position.set(side * 9.5, 3.4, -1.6);
     sideWall.rotation.y = side * -Math.PI / 2;
     scene.add(sideWall);
     const sideCove = new Mesh(
       resources.track(new PlaneGeometry(13, 0.13)),
-      resources.track(new MeshBasicMaterial({ color: 0x5c8a69 })),
+      resources.track(new MeshBasicMaterial({ color: BRASS })),
     );
     sideCove.position.set(side * 9.47, 1.1, -1.6);
     sideCove.rotation.y = side * -Math.PI / 2;
@@ -768,7 +822,7 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   for (const x of [-11, -5.5, 0, 5.5, 11]) {
     const bay = new Mesh(
       resources.track(new PlaneGeometry(2.8, 3.1)),
-      resources.track(new MeshBasicMaterial({ color: 0x2a5142 })),
+      resources.track(new MeshBasicMaterial({ color: WALL_PANEL })),
     );
     bay.position.set(x, 2.25, -6.46);
     scene.add(bay);
@@ -793,7 +847,7 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
     const distant = new Group();
     const top = new Mesh(
       resources.track(new CylinderGeometry(0.88, 0.88, 0.09, 18)),
-      resources.track(new MeshLambertMaterial({ color: 0x10493a })),
+      resources.track(new MeshLambertMaterial({ color: FELT_EDGE })),
     );
     top.position.y = TABLE_HEIGHT;
     distant.add(top);
@@ -1142,15 +1196,19 @@ function sameCameraPose(
 }
 
 const MAX_RENDERED_CHIPS = 18;
+/** Chips per column before a new one starts beside it; see `setChipStack`. */
+const CHIPS_PER_COLUMN = 6;
+/** Slightly wider than the 0.035 chip radius so columns read as separate. */
+const CHIP_COLUMN_PITCH = 0.076;
 /*
   Pot plaque offsets from its lane origin; see `setPotLanes`. Solved against the
   projected far-rail band at all six native targets: this clears the centre
   seat's nameplate by 3.3% of viewport height centre-to-centre while staying
   behind the hero cards at z=0.50 and clear of an 18-chip pile.
 */
-const POT_PLAQUE_HEIGHT = 0.045;
-const POT_PLAQUE_FORWARD = 0.26;
-const POT_PLAQUE_SIZE = [0.34, 0.09] as const;
+const POT_PLAQUE_HEIGHT = 0.03;
+const POT_PLAQUE_FORWARD = 0.20;
+const POT_PLAQUE_SIZE = [0.22, 0.058] as const;
 
 /**
  * Repeated casino chips are one physical stack, not one draw call per chip.
@@ -1173,8 +1231,20 @@ function setChipStack(group: Group, count: number, color: number, resources: Tab
   if (material instanceof MeshLambertMaterial) material.color.setHex(color);
   const renderedCount = Math.min(MAX_RENDERED_CHIPS, Math.max(0, count));
   const matrix = new Matrix4();
+  /*
+    Real players break a deep holding into several short columns rather than one
+    tottering tower. An 18-chip single column stood 0.22 m tall and read as a
+    blue rod; this lays them out in columns of CHIPS_PER_COLUMN, growing sideways
+    and then back, which is both believable and much easier to judge at a glance.
+  */
   for (let index = 0; index < renderedCount; index += 1) {
-    matrix.makeTranslation(0, index * 0.012, 0);
+    const column = Math.floor(index / CHIPS_PER_COLUMN);
+    const height = index % CHIPS_PER_COLUMN;
+    matrix.makeTranslation(
+      (column % 3) * CHIP_COLUMN_PITCH,
+      height * 0.012,
+      Math.floor(column / 3) * CHIP_COLUMN_PITCH,
+    );
     stack.setMatrixAt(index, matrix);
   }
   stack.count = renderedCount;

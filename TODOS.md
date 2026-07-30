@@ -2397,6 +2397,59 @@ an in-page observer cannot miss a street its presentation queue actually
 rendered, which was the reason that path was previously under-evidenced
 (blocker 8).
 
+**D3D-M103 open-arc-v2 owner redirection 2026-07-29 — composition reworked;
+characters pending.** The design owner reviewed the r26 silent captures and
+reopened the camera/table contract. `docs/desktop-3d-composition-decision.md`
+now carries a superseding-direction table; the 70–86% apparent-width and 18–28%
+horizon criteria no longer apply as written because they described the rejected
+distant framing.
+
+Delivered and verified in native packaged frames (r28,
+`outputs\desktop-m103-open-arc-v2-r28`, audit exit 0, 76 draw calls, 8,010
+triangles, p95 2.1 ms, `fatal: []`, all six viewports):
+
+- **Seated at opponent distance.** Camera depth 2.66–3.63 m → solved ~1.55 m,
+  eye 1.26 → 1.36 m, pitch −16° → −27°, FOV 52° → 56°. The table now fills the
+  frame instead of reading as a spectator view.
+- **Tightened forward arc on a smaller capsule** (2.72×1.42 → 2.42×1.34, near
+  pair from ±1.28/z+0.28 to ±1.24/z−0.16). At the close pose the old arc put the
+  two near opponents' heads off-screen at 16:9 (x = −6% and 106%); the tightened
+  arc keeps all five visible. Metric size fell so *apparent* size could rise.
+- **Cards lie flat on the felt and read correctly.** The upside-down cards had a
+  single top-left index; the box's top face maps the canvas top to the card's far
+  edge, so once flat it inverted. Now drawn with a real card's two opposed
+  indices, which is 180°-rotationally symmetric and cannot read upside down.
+- **Chip stacks break into columns of six** rather than one 18-chip rod.
+- **Casino palette**: felt is the only saturated green, wrapped in timber and
+  brass, with plum panelled walls and a figured deep-red carpet; key light
+  pulled back to a pool over the felt instead of blowing it out.
+- **Seat tags recede**: translucent, borderless, 9 px, no shadow.
+
+Two overshoots caught by inspecting r27 before shipping it: the first close pose
+clipped the near opponents' heads at both frame edges (the −27° gaze shortens
+view-space depth, so reserving only the head's own half-width was not enough — a
+`NEAR_SEAT_VISUAL_SAFE_FRACTION` now adds real margin), and the fixed-metre pot
+plaque became a billboard once the camera closed in.
+
+**Not yet wired: the characters.** The owner's spec is 5 male and 3 female body
+types, 5 hair styles per gender, several faces and outfits, and hair colour
+sampled on a gradient so no two opponents match.
+
+- `src/lib/opponentAppearance.ts` gained `describeOpponentCharacter` plus
+  `hairColorAt`, a continuous 8-stop gradient (black→brown→chestnut→blond→
+  auburn→grey→silver) replacing the old six-colour list, gendered body and hair
+  sets, six face presets, ten outfits, and a ±4% per-identity height scale. The
+  player id remains the only input, so appearance still cannot correlate with
+  behaviour.
+- `tools/blender/build_characters.py` generates the library headlessly with the
+  installed Blender 2.93: 24 meshes (8 bodies, 6 heads, 10 hair styles),
+  13,734 triangles, 264 KB, no textures, seated upper body only. Output at
+  `src/assets/characters.glb`.
+- Remaining work is the renderer side: load the library, compose body+head+hair
+  per identity, tint from the appearance model, and re-verify the draw-call and
+  triangle budgets. Until then the scene still draws the grey block bodies and
+  egg heads, which is the owner's outstanding "models are very poor".
+
 **D3D-M103 r26 passing native evidence 2026-07-29.** Two further composition
 defects were found by *inspecting the r25 frames* after its automated gates all
 passed, which is the same lesson as before — the gates cannot see composition:
