@@ -40,7 +40,10 @@ import {
   createTableSceneSnapshot,
   type SceneSnapshotSeat,
 } from "../scene3d/tableSceneSnapshot";
-import { seatPlaqueViewportAnchor } from "../scene3d/tableSceneModel";
+import {
+  heroStationIndex,
+  seatPlaqueViewportAnchor,
+} from "../scene3d/tableSceneModel";
 import {
   trainingScenarios,
   type RatedTrainingScenario,
@@ -1593,6 +1596,12 @@ export function PokerTable({
   sceneRequestRef.current = settings.spatialScene;
   /* Exactly the condition that puts `data-spatial-scene="ready"` on the scene,
      so DOM plaques never project against a camera that is not on screen. */
+  /*
+    Which seat the hero occupies. Stable in the scenario's identity so a player
+    keeps their chair for a whole event instead of moving between hands, and so a
+    replay of the same table reproduces the same view.
+  */
+  const heroStationIndexForTable = heroStationIndex(scenario.id);
   const sceneReadyForPlaques = settings.spatialScene
     && !sceneRequestChanged
     && sceneAvailability.status === "ready";
@@ -2797,6 +2806,7 @@ export function PokerTable({
         ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
         : {},
     cameraPan: effectiveCameraPan,
+    heroStationIndex: heroStationIndexForTable,
     cameraView: settings.cameraView,
     cameraMotion: settings.cameraMotion,
     reducedMotion: settings.reducedMotion || settings.transitionMotion === "off",
@@ -3772,7 +3782,7 @@ export function PokerTable({
                           effectiveCameraPan,
                           sceneViewport.width,
                           sceneViewport.height,
-                          settings.cameraView,
+                          heroStationIndexForTable,
                         )
                       : undefined
                   }

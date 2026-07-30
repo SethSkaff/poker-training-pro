@@ -51,8 +51,9 @@ import {
   muckedCardPosition,
   raiseChipPosition,
   seatLocalPoint,
+  dealerStation,
   seatPoses,
-  OPEN_ARC_ANCHORS,
+  TABLE_ANCHORS,
   TABLE_HEIGHT,
   TABLE_DEPTH,
   TABLE_RAIL_WIDTH,
@@ -65,7 +66,7 @@ import {
   type SeatPose,
 } from "./tableSceneModel";
 import { sceneGestureFor } from "./sceneGestures";
-import { buildCharacter, buildChair } from "./sceneCharacters";
+import { buildCharacter, buildChair, buildDealer } from "./sceneCharacters";
 import { describeOpponentCharacter } from "../lib/opponentAppearance";
 import type { SceneFrameCallbacks, WebGlProbeResult } from "./sceneAvailability";
 import type { SceneTransition } from "./sceneTransition";
@@ -120,6 +121,8 @@ export interface TableSceneState {
   readonly bigBlindPlayerId?: string;
   readonly tier?: "local" | "regional" | "national" | "championship";
   readonly publicBoardCardCodes?: readonly string[];
+  /** Which player station the hero occupies; the camera sits there. */
+  readonly heroStationIndex?: number;
   /** Current public queue item, sampled from the authoritative delay clock. */
   readonly transition?: SceneTransition;
 }
@@ -178,17 +181,28 @@ export function probeWebGl2(canvas: HTMLCanvasElement): WebGlProbeResult {
   and plum walls around it so the felt reads as the lit centre of a room rather
   than one green shape against another brown one.
 */
-const FELT = 0x0c5138;
-const FELT_EDGE = 0x08341f;
-const RAIL = 0x33200f;
-const BRASS = 0xb08748;
-const CARPET = 0x4a1420;
-const CARPET_PATTERN = 0x5e1b2a;
-const WALL = 0x2b1f33;
-const WALL_PANEL = 0x3a2a44;
+/*
+  Charcoal, not green. A study of PokerStars VR found every venue uses charcoal,
+  crimson or navy felt and never casino green, and named that -- together with a
+  dark room and a pooled light over the table -- as the strongest single element of
+  its look. The rail moves to the sampled warm olive-tan leather with gold trim.
+*/
+const FELT = 0x23211e;
+const FELT_EDGE = 0x1b1a18;
+const RAIL = 0x7b6b59;
+const BRASS = 0xc9a227;
+const CARPET = 0x2a2340;
+const CARPET_PATTERN = 0x352c4f;
+const WALL = 0x141821;
+const WALL_PANEL = 0x1e2430;
 const ROOM = 0x140d18;
 const CHAIR_SEAT = 0x3a2431;
 const CHAIR_FRAME = 0x241823;
+/* Chip colours read off PokerStars VR chip faces: green 25s and navy 100s are
+   roughly 70% of visible chips and are the table's dominant saturated colour. */
+const CHIP_STACK = 0x2fa84f;
+const CHIP_BET = 0x1b2340;
+const CHIP_POT = 0x6b3fa0;
 
 /** One action's visible duration, in milliseconds. */
 const ACTION_MS = 620;
@@ -318,7 +332,7 @@ function createTableSceneResources(): TableSceneResources {
     cardGeometry: track(new BoxGeometry(0.09, 0.005, 0.13)),
     cardMaterial,
     cardBackMaterial: track(new MeshLambertMaterial({ color: 0x8d2733 })),
-    chipGeometry: track(new CylinderGeometry(0.035, 0.035, 0.011, 12)),
+    chipGeometry: track(new CylinderGeometry(0.024, 0.024, 0.0035, 12)),
     chipMaterial: (color) => track(new MeshLambertMaterial({ color })),
     cardFaceMaterial,
     markerMaterial,
@@ -392,7 +406,25 @@ export function createTableScene(
 
   // Keep the six physical chairs stable. A player leaving must hide their
   // chair/body, never cause every surviving identity to slide one chair over.
-  const poses = seatPoses(6);
+  /*
+    The dealer. One figure, house-dressed, at the far long side -- never dealt a
+    hand and never one of the six seats.
+  */
+  const dealerPose = dealerStation();
+  const dealer = buildDealer("#d8ab86", resources.ledger);
+  dealer.root.position.set(...dealerPose.position);
+  dealer.root.rotation.y = dealerPose.facing;
+  scene.add(dealer.root);
+  scene.add((() => {
+    const stool = buildChair(CHAIR_SEAT, CHAIR_FRAME, resources.ledger);
+    stool.position.set(...dealerPose.position);
+    stool.rotation.y = dealerPose.facing;
+    stool.scale.setScalar(0.94);
+    return stool;
+  })());
+
+  // Hero-relative seat order mapped onto the ring from wherever the hero sits.
+  const poses = seatPoses(6, initial.heroStationIndex ?? 0);
   const seatViews = new Map<string, { pose: SeatPose; view: SeatView }>();
   for (const [index, seat] of initial.seats.entries()) {
     const pose = poses[index];
@@ -425,8 +457,7 @@ export function createTableScene(
 
   let cameraViewportWidth = canvas.clientWidth || 1366;
   let cameraViewportHeight = canvas.clientHeight || 768;
-  let cameraCurrent = cameraPose(initial.cameraPan, initial.cameraView, camera.aspect, cameraViewportWidth);
-  let heroCardScale = heroCardForegroundScale(cameraViewportHeight, cameraCurrent.position[2]);
+  let cameraCurrent = cameraPose(initial.cameraPan, initial.heroStationIndex ?? 0, camera.aspect);
   let cameraTarget = cameraCurrent;
   let cameraLastFrameMs = mountedAt;
   let cameraMoving = false;
@@ -441,7 +472,7 @@ export function createTableScene(
   };
 
   const setCameraTarget = (next: TableSceneState, snap: boolean) => {
-    cameraTarget = cameraPose(next.cameraPan, next.cameraView, camera.aspect, cameraViewportWidth);
+    cameraTarget = cameraPose(next.cameraPan, next.heroStationIndex ?? 0, camera.aspect);
     if (snap) {
       cameraCurrent = cameraTarget;
       cameraMoving = false;
@@ -515,7 +546,6 @@ export function createTableScene(
           state.reducedMotion,
           state.transition,
           resources,
-          heroCardScale,
         );
       }
       placeMarker(buttonMarker, state.buttonPlayerId, seatViews);
@@ -580,15 +610,6 @@ export function createTableScene(
       renderer.setSize(width, height, false);
       cameraViewportWidth = width;
       cameraViewportHeight = height;
-      heroCardScale = heroCardForegroundScale(
-        cameraViewportHeight,
-        cameraPose(
-          state.cameraPan,
-          state.cameraView,
-          cameraViewportWidth / Math.max(1, cameraViewportHeight),
-          cameraViewportWidth,
-        ).position[2],
-      );
       camera.aspect = width / Math.max(1, height);
       camera.updateProjectionMatrix();
       // Direction A's compact fit is aspect-aware but bounded in the pure
@@ -696,55 +717,7 @@ interface SeatView {
   readonly stackChips: Group;
 }
 
-/**
- * The hero's cards lie flat on the felt in v2. The -27 degree gaze reads them
- * there, which is what the owner asked for ("the cards should be placed on the
- * table"); the previous 58-degree lean stood them up against the rail like
- * billboards and was also what made the single-corner index read upside down.
- */
-const HERO_CARD_FOREGROUND_TILT = 0;
-/** The card's own long axis, from `cardGeometry`. */
-const CARD_LENGTH_M = 0.13;
-/**
- * Direction A's compact hero-card floor is 82 CSS px tall. Target it directly
- * rather than through a fixed multiplier: the old constant produced 116 px at
- * 1024x768 but 150 px at 1920x1080, so the foreground got *less* believable as
- * the window got roomier and the camera came closer.
- */
-const HERO_CARD_TARGET_PX = 88;
-/** Never smaller than a real card, never a prop. */
-const HERO_CARD_SCALE_MIN = 1;
-const HERO_CARD_SCALE_MAX = 2.7;
 
-/**
- * Solve the hero-card scale that puts the physical card at a constant apparent
- * height, given where the safe-frame camera actually ended up.
- *
- * The responsive solver may legitimately retreat to 3.6 m at 1024x768, where a
- * physically sized card projects only 33 px. Scaling the real world-space card
- * (never a DOM mirror) is the sanctioned way to hold the foreground contract.
- */
-function heroCardForegroundScale(
-  viewportHeight: number,
-  cameraDepth: number,
-): number {
-  const distance = Math.max(0.2, cameraDepth - OPEN_ARC_ANCHORS.heroCards[0][2]);
-  const frameHeight = 2 * distance * Math.tan((CAMERA_VERTICAL_FOV * Math.PI) / 360);
-  const pixelsPerMetre = Math.max(1, viewportHeight) / frameHeight;
-  /*
-    v2 cards lie flat, so their projected height is foreshortened by the gaze
-    angle rather than keeping their full length as the old leaning card did.
-    At the close pose this still lands well above the floor, so the scale clamps
-    to 1 and the card renders at true size; the solver only does real work on the
-    legacy 4:3 target where the camera has to back off.
-  */
-  const naturalPx = CARD_LENGTH_M * pixelsPerMetre
-    * Math.sin((CAMERA_PITCH_DEGREES * Math.PI) / 180);
-  return Math.min(
-    HERO_CARD_SCALE_MAX,
-    Math.max(HERO_CARD_SCALE_MIN, HERO_CARD_TARGET_PX / Math.max(1, naturalPx)),
-  );
-}
 
 function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   /*
@@ -1060,7 +1033,6 @@ function applySeat(
   reducedMotion: boolean,
   transition: TableSceneState["transition"],
   resources: TableSceneResources,
-  heroCardScale: number,
 ): void {
   const started = startedAt.get(seat.seat) ?? nowMs;
   const localProgress = reducedMotion
@@ -1092,27 +1064,27 @@ function applySeat(
   const folded = seat.folded || transition?.foldedPlayerIds.includes(seat.id) === true;
   const gesture = sceneGestureFor(seat.action, progress, seat.acting, folded);
   view.cards.visible = !folded || progress < 1;
+  /*
+    The hero is an ordinary seat now.
+
+    Under the old open-arc model the hero sat where the dealer stands, so their
+    hole cards needed their own foreground anchor, an upward tilt and a solved
+    scale to stay legible -- which is precisely the "floating card UI" the owner
+    objected to. Seated properly at a station, their cards rest on the felt in
+    front of them exactly like everyone else's, and the -24 degree gaze reads them
+    without any special case. Only the body stays hidden, because the camera is
+    their eyes.
+  */
   view.cards.children.forEach((card, index) => {
-    const target = seat.isHero
-      ? OPEN_ARC_ANCHORS.heroCards[index]
-      : folded
+    const target = folded
       ? muckedCardPosition(pose, progress)
       : gesture.cardMotion === "deal"
         ? dealtCardPosition(pose, progress)
         : pose.feltPosition;
-    const local = worldToLocal(target);
-    card.position.set(
-      local[0] + (seat.isHero ? 0 : index === 0 ? -0.055 : 0.055),
-      local[1] + (seat.isHero ? 0.045 : 0),
-      local[2],
-    );
-    if (seat.isHero) {
-      card.rotation.x = HERO_CARD_FOREGROUND_TILT;
-      card.scale.setScalar(heroCardScale);
-    } else {
-      card.rotation.x = 0;
-      card.scale.setScalar(1);
-    }
+    const local = seatLocalPoint(pose, target);
+    card.position.set(local[0] + (index === 0 ? -0.055 : 0.055), local[1], local[2]);
+    card.rotation.x = 0;
+    card.scale.setScalar(1);
     const code = seat.publicCardCodes?.[index];
     (card as Mesh).material = code ? resources.cardFaceMaterial(code) : resources.cardBackMaterial;
   });
@@ -1123,21 +1095,19 @@ function applySeat(
   view.arm.position.z = 0.22 + gesture.armReach;
 
   const betChips = chipCountForAmount(seat.bet);
-  setChipStack(view.betChips, betChips, 0xcf4a3c, resources);
+  setChipStack(view.betChips, betChips, CHIP_BET, resources);
   if (betChips > 0) {
-    const target = seat.isHero
-      ? OPEN_ARC_ANCHORS.heroCommitted
-      : chipPositionForGesture(pose, gesture.chipMotion, progress);
-    const local = worldToLocal(target);
+    const local = seatLocalPoint(pose, chipPositionForGesture(pose, gesture.chipMotion, progress));
     view.betChips.position.set(local[0], local[1], local[2]);
   }
 
-  setChipStack(view.stackChips, chipCountForAmount(seat.stack), 0x4a7fcf, resources);
-  const stackTarget = seat.isHero
-    ? OPEN_ARC_ANCHORS.heroStack
-    : [pose.feltPosition[0] * 0.86, TABLE_HEIGHT, pose.feltPosition[2] * 0.86] as const;
-  const stackLocal = worldToLocal(stackTarget);
-  view.stackChips.position.set(stackLocal[0] + (seat.isHero ? 0 : 0.16), stackLocal[1], stackLocal[2]);
+  setChipStack(view.stackChips, chipCountForAmount(seat.stack), CHIP_STACK, resources);
+  const stackLocal = seatLocalPoint(pose, [
+    pose.feltPosition[0] * 0.86,
+    TABLE_HEIGHT,
+    pose.feltPosition[2] * 0.86,
+  ] as const);
+  view.stackChips.position.set(stackLocal[0] + 0.16, stackLocal[1], stackLocal[2]);
 }
 
 function chipPositionForGesture(
@@ -1200,9 +1170,9 @@ function sameCameraPose(
 
 const MAX_RENDERED_CHIPS = 18;
 /** Chips per column before a new one starts beside it; see `setChipStack`. */
-const CHIPS_PER_COLUMN = 6;
+const CHIPS_PER_COLUMN = 12;
 /** Slightly wider than the 0.035 chip radius so columns read as separate. */
-const CHIP_COLUMN_PITCH = 0.076;
+const CHIP_COLUMN_PITCH = 0.052;
 /*
   Pot plaque offsets from its lane origin; see `setPotLanes`. Solved against the
   projected far-rail band at all six native targets: this clears the centre
@@ -1245,7 +1215,7 @@ function setChipStack(group: Group, count: number, color: number, resources: Tab
     const height = index % CHIPS_PER_COLUMN;
     matrix.makeTranslation(
       (column % 3) * CHIP_COLUMN_PITCH,
-      height * 0.012,
+      height * 0.0037,
       Math.floor(column / 3) * CHIP_COLUMN_PITCH,
     );
     stack.setMatrixAt(index, matrix);
@@ -1293,7 +1263,7 @@ function setPotLanes(
   while (group.children.length > publicPots.length) group.remove(group.children[group.children.length - 1]);
   group.children.forEach((lane, index) => {
     const pot = publicPots[index];
-    const anchor = pot.kind === "main" ? OPEN_ARC_ANCHORS.mainPot : OPEN_ARC_ANCHORS.sidePot(index - 1);
+    const anchor = pot.kind === "main" ? TABLE_ANCHORS.mainPot : TABLE_ANCHORS.sidePot(index - 1);
     lane.position.set(...anchor);
     lane.userData.publicPotId = pot.id;
     lane.userData.publicPotAmount = pot.amount;

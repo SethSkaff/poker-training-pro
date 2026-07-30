@@ -906,18 +906,65 @@ async function captureOpponentActionStills(session, stills) {
       label: seat.querySelector('.seat-action-label')?.textContent?.trim() ?? null,
       stack: Number(seat.getAttribute('data-scene-stack')),
       bet: Number(seat.getAttribute('data-scene-bet')),
-      // The plaque must be readable in the still, not merely present.
+      /*
+        The action must be *readable* in the still, not merely present.
+
+        This used to read the seat nameplate's opacity. Ready-mode nameplates were
+        then removed on purpose -- the owner asked for no floating UI and
+        PokerStars VR carries none at its poker tables -- which broke this check
+        even though every action was captured correctly. Readability now comes
+        from the action plaque that survived, or, for an all-in, from the seat's
+        own terminal state class, which is what that still is evidencing anyway.
+      */
       plaqueVisible: (() => {
-        const label = seat.querySelector('.seat-label');
-        if (!(label instanceof HTMLElement)) return false;
-        const box = label.getBoundingClientRect();
-        return box.width > 0 && box.height > 0
-          && Number(getComputedStyle(label).opacity) > 0.5;
+        const label = seat.querySelector('.seat-action-label');
+        if (label instanceof HTMLElement) {
+          const box = label.getBoundingClientRect();
+          if (box.width > 0 && box.height > 0
+            && Number(getComputedStyle(label).opacity) > 0.5) return true;
+        }
+        return seat.classList.contains('is-all-in');
       })(),
     }));
   })()`);
   const match = (observed ?? []).find((seat) => pending.includes(seat.action));
   if (!match) return;
+  /*
+    Wait for the action plaque to finish fading in before capturing.
+
+    The plaque animates from transparent, and this samples the moment the action
+    first appears -- so a screenshot taken immediately caught it mid-fade and the
+    readability check failed on a still that was otherwise perfectly good. Polling
+    for the settled opacity keeps the assertion strict rather than lowering the
+    threshold to accommodate a frame that genuinely was not readable yet.
+  */
+  await session.poll(`(() => {
+    const seat = [...document.querySelectorAll('.player-seat')].find((entry) =>
+      entry.getAttribute('data-scene-player-id') === ${JSON.stringify(match.playerId)});
+    if (!seat) return false;
+    if (seat.classList.contains('is-all-in')) return true;
+    const label = seat.querySelector('.seat-action-label');
+    if (!(label instanceof HTMLElement)) return false;
+    const box = label.getBoundingClientRect();
+    return box.width > 0 && box.height > 0
+      && Number(getComputedStyle(label).opacity) > 0.5;
+  })()`, { intervalMs: 16 });
+  // Re-read so the recorded state is the one the screenshot actually shows.
+  const settled = await session.evaluate(`(() => {
+    const seat = [...document.querySelectorAll('.player-seat')].find((entry) =>
+      entry.getAttribute('data-scene-player-id') === ${JSON.stringify(match.playerId)});
+    if (!seat) return null;
+    const label = seat.querySelector('.seat-action-label');
+    const box = label instanceof HTMLElement ? label.getBoundingClientRect() : null;
+    return {
+      plaqueVisible: seat.classList.contains('is-all-in') || Boolean(box && box.width > 0
+        && box.height > 0 && Number(getComputedStyle(label).opacity) > 0.5),
+      label: label?.textContent?.trim() ?? null,
+    };
+  })()`);
+  if (settled?.plaqueVisible !== true) return;
+  match.plaqueVisible = true;
+  match.label = settled.label ?? match.label;
   /*
     `Page.captureScreenshot` waits for a compositor frame, and an occluded or
     unfocused Electron window may not produce one -- the same window-manager

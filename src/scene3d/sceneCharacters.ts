@@ -263,6 +263,108 @@ export function buildCharacter(
   return { root, body, arms };
 }
 
+/**
+ * The dealer, built to a deliberately different silhouette from the players.
+ *
+ * A card room's dealer reads as staff at a glance, and none of that comes from
+ * the face: it is the waistcoat over a white shirt, the visor, the squared-up
+ * posture, and the fact that they are the only figure whose hands sit over the
+ * middle of the felt rather than in front of a seat. This is a house look rather
+ * than a per-identity one, so unlike `buildCharacter` it takes no appearance --
+ * every dealer is the same dealer.
+ *
+ * Worth recording: PokerStars VR, which this scene is otherwise mimicking, has
+ * *no* dealer avatar at all -- an empty notch with a printed chip tray, and cards
+ * that animate themselves. A visible animated dealer is a deliberate divergence
+ * the owner asked for twice.
+ */
+export function buildDealer(
+  skinTone: string,
+  ledger: SceneResourceLedger,
+): CharacterView {
+  const root = new Group();
+  const body = new Group();
+  const arms = new Group();
+  const shoulder = 0.215;
+  const torsoHeight = 0.54;
+  // A dealer sits higher than the players: their chair is raised so they can
+  // reach the middle of the felt.
+  const base = 0.56;
+  const top = base + torsoHeight;
+  const headY = top + 0.06 + HEAD_RADIUS * 1.02;
+
+  const shirt: BufferGeometry[] = [];
+  const waistcoat: BufferGeometry[] = [];
+  const skin: BufferGeometry[] = [];
+
+  // White shirt torso, with the waistcoat as a slightly larger shell over its
+  // front so both read at once.
+  shirt.push(taper(shoulder, shoulder * 0.86, torsoHeight, [0, base + torsoHeight / 2, 0], [1, 1, 0.62]));
+  waistcoat.push(taper(shoulder * 1.02, shoulder * 0.9, torsoHeight * 0.82, [0, base + torsoHeight * 0.44, 0.012], [1, 1, 0.58]));
+  for (const side of [-1, 1]) {
+    shirt.push(sphere(shoulder * 0.3, [side * shoulder * 0.88, top - 0.03, 0], [1, 0.72, 0.66]));
+    // Both forearms reach in over the felt: the dealing pose.
+    // Shorter and less horizontal than the first pass, where 0.34 m at nearly
+    // 90 degrees read as two long tubes laid across the felt.
+    /*
+      The hand is placed at the *computed end* of the forearm rather than at a
+      separately guessed point. Hard-coding both meant every tweak to the arm left
+      the hands floating detached in mid-air beside it.
+    */
+    const forearmLength = 0.24;
+    const forearmTilt = Math.PI / 2.9;
+    const armX = side * shoulder * 0.66;
+    const armY = top - 0.17;
+    const armZ = 0.17;
+    const forearm = taper(0.04, 0.047, forearmLength, [0, 0, 0]);
+    forearm.rotateX(forearmTilt);
+    forearm.translate(armX, armY, armZ);
+    shirt.push(forearm);
+    // Local +Y maps to (0, cos, sin) after a rotation about X, so the far end of
+    // the cylinder is half its length along that direction.
+    const reach = forearmLength / 2;
+    skin.push(sphere(
+      0.043,
+      [armX, armY - Math.cos(forearmTilt) * reach, armZ + Math.sin(forearmTilt) * reach],
+      [1, 0.62, 1.15],
+    ));
+  }
+  skin.push(taper(0.05, 0.056, 0.06, [0, top + 0.03, 0]));
+  skin.push(sphere(HEAD_RADIUS, [0, headY, 0], [0.98, 1.14, 1.02]));
+  skin.push(sphere(HEAD_RADIUS * 0.09, [0, headY - HEAD_RADIUS * 0.06, HEAD_RADIUS * 0.72], [0.85, 1.1, 1.2]));
+
+  // The visor: a dark band and a translucent-looking brim, the clearest single
+  // "this one is the dealer" cue at a glance.
+  const visor: BufferGeometry[] = [];
+  const band = sphere(HEAD_RADIUS * 1.03, [0, headY + 0.004, 0], [1, 1.02, 1.02]);
+  clampBelow(band, HEAD_RADIUS * 0.42);
+  visor.push(band);
+  const brim = taper(HEAD_RADIUS * 0.95, HEAD_RADIUS * 0.95, 0.012, [0, headY + HEAD_RADIUS * 0.34, HEAD_RADIUS * 0.5], [1.15, 1, 0.7]);
+  brim.rotateX(-0.22);
+  visor.push(brim);
+
+  const shirtGeometry = merged(shirt, ledger);
+  const waistcoatGeometry = merged(waistcoat, ledger);
+  const skinGeometryMerged = merged(skin, ledger);
+  const visorGeometry = merged(visor, ledger);
+
+  if (shirtGeometry) {
+    body.add(new Mesh(shirtGeometry, ledger.track(new MeshLambertMaterial({ color: 0xe8e4dc }))));
+  }
+  if (waistcoatGeometry) {
+    body.add(new Mesh(waistcoatGeometry, ledger.track(new MeshLambertMaterial({ color: 0x1d1f26 }))));
+  }
+  if (skinGeometryMerged) {
+    body.add(new Mesh(skinGeometryMerged, ledger.track(new MeshLambertMaterial({ color: skinTone }))));
+  }
+  if (visorGeometry) {
+    body.add(new Mesh(visorGeometry, ledger.track(new MeshLambertMaterial({ color: 0x1f5e46 }))));
+  }
+
+  root.add(body, arms);
+  return { root, body, arms };
+}
+
 /** A simple upholstered chair, tinted from the room rather than the character. */
 export function buildChair(
   seatColour: number,

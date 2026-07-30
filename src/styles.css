@@ -3197,7 +3197,39 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /*
-  Ready-mode seat tags are deliberately quiet. At v1 sizing they were opaque
+  Ready-mode seat tags are gone entirely.
+
+  Two independent reasons landed on the same answer. The owner called them "really
+  bad and distracting" and then asked for no floating UI at all; and a study of
+  PokerStars VR found *zero* floating nameplates at its poker tables across every
+  screenshot from 2019 to 2026 -- stack and name information lives in a menu, while
+  the table itself carries only physical objects.
+
+  They stay mounted and keep their accessible text, so screen readers, the seat
+  live regions, and the 2.5D fallback are all unaffected: this removes paint, not
+  information. Opacity rather than `display` for exactly that reason, and
+  `animation: none` because a keyframed opacity would otherwise outrank it -- the
+  same trap that kept the DOM card mirrors visible.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-label,
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-position-marker {
+  opacity: 0;
+  animation: none;
+  transition: none;
+}
+
+/*
+  The acting player's action plaque is the one piece of seat text that survives,
+  because "who is acting and what did they do" is the single thing a player cannot
+  reconstruct from the felt. It reads as a small in-world label near their lane.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-action-label {
+  opacity: 0.92;
+}
+
+/*
+  Superseded sizing rules for the seat tags, kept only so the fallback and any
+  non-ready surface still get sane values.
   black slabs with borders and drop shadows sitting on the felt, and they read as
   UI stuck over the room rather than nameplates on a rail -- distracting enough
   that they competed with the players themselves. Smaller, translucent, no

@@ -23,6 +23,8 @@ export interface TableSceneSnapshotInput {
   readonly heroCardCodes?: readonly string[];
   readonly revealedCardCodesByPlayer?: Readonly<Record<string, readonly string[]>>;
   readonly cameraPan: number;
+  /** Which player station the hero occupies; the seated camera sits there. */
+  readonly heroStationIndex?: number;
   readonly cameraView?: SceneCameraView;
   readonly cameraMotion?: SceneCameraMotion;
   readonly reducedMotion: boolean;
@@ -107,6 +109,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
     boardCards: input.boardCards,
     publicBoardCardCodes: input.publicBoardCardCodes ?? [],
     cameraPan: input.cameraPan,
+    heroStationIndex: input.heroStationIndex,
     cameraView: input.cameraView ?? "standard",
     cameraMotion: input.cameraMotion ?? "full",
     reducedMotion: input.reducedMotion,
