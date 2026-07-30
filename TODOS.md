@@ -2101,11 +2101,411 @@ The recommended production direction is **Direction A — Open-arc seated first
 person**. This is a design proposal, not completion evidence, and preserves all
 three failed-attempt records above.
 
+**D3D-M103 Direction A implementation 2026-07-29 — in progress; native visual
+gate remains open.** The approved `open-arc-v1` contract is now the active
+source path: explicit five-opponent forward roots, capsule table primitives,
+seated 52° reference camera with ±32° pan, physical hero cards/stack/commitment,
+main/side-pot lanes, seat-local markers, full-bleed ready-mode layout, bounded
+HUD/action bands, and a six-native-size CDP matrix with recenter/left/right
+captures. `npm run build` passed and packaged r2 WebGL2 diagnostics passed all
+six native windows (1024×768, 1100×720, 1280×720, 1366×768, 1920×1080,
+2560×1080), three context recoveries, zero fatal events, 136 draw calls,
+6,540 triangles, and 1.9 ms p95; evidence is
+`work/packaged-3d-scene-audit.json` plus the `work/packaged-3d-scene-webgl2-*
+{recenter,left,right}.png` captures. This is deliberately **not** M103
+completion: direct review of r2's 1366×768 and 1920×1080 recenter PNGs found
+the near-left/right physical bodies and rail touching the frame, which fails
+Direction A's 16 px safe rectangle and 70–86% apparent-table-width criteria.
+Do not tune the rejected circular composition; next work must correct the
+open-arc camera/table/body envelope at the composition-contract level, rerun
+the full native matrix, then run reduced/off and forced-WebGL-failure evidence.
+
+**Direction A camera-distance reconciliation approved 2026-07-29.** The r2 captures
+also expose a direct numerical conflict inside the approved production-start
+values, not another implementation-only camera tweak: with a 2.72 m table
+width (2.96 m outside rail), camera `(0, 1.26, 1.66)`, near rail at roughly
+`z=0.83`, and 52° **vertical** FOV at 16:9, the near rail corners subtend about
+`atan(1.48 / 0.83) = 60°` each side while the horizontal half-frustum is about
+40°. The explicit ±1.28 m near-seat centres are likewise about 43° from
+recenter before adding their 0.5 m chairs. That makes the required 16 px
+recenter clearance and 70–86% apparent table width mathematically impossible
+without changing at least one approved contract field. The design owner has now
+authorized **camera distance only**: retain capsule dimensions/scale, horizontal
+center, 1.26 m eye height, fixed FOV, 16 px safe rectangle, all seat roots,
+physical hero foreground, and the 70–86% target where geometrically achievable.
+`1.66 m` is the preferred closest depth, not a required coordinate. The active
+`open-arc-v1` solver must choose the smallest centered depth in the initial
+1.66–2.25 m range that clears the critical near-seat/chair envelope; it may
+retreat at 16:9 and return toward 1.66 on wider aspect ratios. It must not
+shrink table/hero geometry or widen FOV to make a capture pass. M103 is
+unblocked; next: package the responsive-depth implementation, inspect every
+native recenter/left/right capture, then finish full/reduced/off evidence.
+
+**D3D-M103 responsive-camera and foreground progress 2026-07-29 â€” still
+open.** The active solver now holds the vertical lens at **52 degrees** in every
+view/preference mode; responsive fitting can alter only centered camera depth
+within 1.66â€“2.25 m. Packaged r4 ran the six-size native matrix in full,
+reduced, and off modes, plus forced WebGL failure: normal mode recorded 136
+draw calls, 6,540 triangles, 0.146 MiB estimated textures, 1.5 ms p95, no fatal
+console events, three trusted/default-prevented context recoveries, mounted DOM
+seat/live-region parity, and a legal completed hand. The reduced/off pass found
+and corrected a defect where the camera controls still panned despite fixed
+mode. Native r5 review also showed that physical hero cards were readable but
+still too far into the felt; the current r6 source moves their world anchors to
+the near rail, leans the physical cards into portrait view, and moves the hero
+stack forward. The same packaged harness now records hero-decision screenshots
+for unpeeked and peeked cards via the ordinary DOM control. This is **not M103
+completion**: r6 needs a fresh successful package matrix and the decision's
+opponent-action, side-pot, silent-capture, and reviewer evidence remains
+required. The first clean-r6 rerun attempt on 2026-07-29 did not produce
+evidence: `node scripts/audit-packaged-3d-scene.mjs --app
+'outputs/desktop-m103-open-arc-r6/win-unpacked/Poker Training Pro.exe' --kind
+forced-webgl-failure --motion reduced` exited with `The packaged renderer CDP
+target closed unexpectedly.` The process tree had exited and no product console
+event was captured, so this remains an audit/launch diagnosis to repeat rather
+than a fallback pass or a source-composition conclusion.
+
+**Resolution, 2026-07-29.** The target closure was followed by a concrete audit
+defect: `HTMLElement.click()` does not fire the hero-card pointer-up gesture,
+and a synthetic `keydown` did not reach the ready-scene table listener. The
+audit now dispatches the application's normal `ptp:gameaction` `game.peek`
+controller action. Fresh r6 packaged evidence passes both forced-WebGL fallback
+and normal WebGL reduced-motion matrix. The latter records 136 draw calls,
+6,540 triangles, p95 3.0 ms, six native target windows with three fixed-camera
+captures each, all six public board counts, no fatal events, and mounted
+unpeeked/peeked hero-decision evidence (`250,875` / `252,165` bytes at the
+primary capture). The r6 1366Ã—768 recenter capture now shows the cards and
+stack physically in the near foreground rather than mid-felt. Full and off
+motion were subsequently rerun on the same r6 package and pass: full motion
+records usable panning/recenter (`cameraMoved: true`) with p95 1.5 ms and no
+fatal events; motion-off records `fixedCamera: true`, a completed hand, two
+hero-decision captures, and six native composition windows. Reduced and off
+both keep the camera controls disabled and report the exact centered terminal
+pose. This closes the r6 motion-tier evidence gap, but not the required
+opponent-action/side-pot/silent-review evidence or design approvals.
+
+**D3D-M103 r2 forced-WebGL-failure evidence 2026-07-29 — packaged fallback
+passes.** Command: `node scripts/audit-packaged-3d-scene.mjs
+--app 'outputs/desktop-m103-open-arc-r2/win-unpacked/Poker Training Pro.exe'
+--kind forced-webgl-failure` now passes. The audit correction keeps complete
+street/object parity mandatory for WebGL, while correctly treating forced DOM
+fallback as a no-renderer path: it requires an initial public capture, a legal
+authoritative completed hand, no hidden-card leak, full opaque 2.5D restoration,
+mounted DOM seat/live-region parity, and no fatal events. r2 reports
+`availability: failed`, `reason: blocked`, zero renderer resources/frames,
+six seats, eight live regions, restored duplicate furniture opacity 1, legal
+hand completion, and no fatal console events. The earlier full-street failure
+was a renderer-frame-cadence assertion incorrectly applied to the no-renderer
+fallback, not a loss of authoritative DOM gameplay. The normal Direction A
+visual framing conflict remains the only M103 blocker.
+
+**D3D-M103 r14 packaged physical-pot evidence 2026-07-29 — passes, milestone
+still open.** A fresh NSIS/portable package was produced at
+`outputs/desktop-m103-open-arc-r14`. Command:
+`node scripts/audit-packaged-3d-scene.mjs --app
+'outputs/desktop-m103-open-arc-r14/win-unpacked/Poker Training Pro.exe' --kind
+webgl2 --motion reduced --seed scene-side-pot-0`. The normal full-runout matrix
+uses deterministic `runner-showdown-3`; a separate fresh packaged CDP session
+uses the allowlisted `scene-side-pot-0` runner seed so the actual unequal-cap
+hand-5 sequence can be inspected without skipping its public side-pot beat.
+The run passed four public streets, all six native target windows with
+recenter/left/right captures, a legal completed hand, three context recoveries,
+131 draw calls, 6,204 triangles, 2.2 ms p95, no fatal events, and a physical
+main + **two side-pot** lane capture. The DOM/scene lane amounts were exactly
+`15,450`, `100`, and `100`; the physical chip counts and all lane amounts are
+now asserted against the mounted accessible DOM. Evidence:
+`work/packaged-3d-scene-audit.json` and
+`work/packaged-3d-scene-webgl2-reduced-side-pots.png`. During this work the
+audit bridge defect was fixed: Electron now forwards only an allowlisted audit
+seed to preload; ordinary player windows still receive no diagnostic/seed
+capability. The audit also preserves hand 5's real presentation queue instead
+of using Skip to jump over the required side-pot state. Regression coverage:
+`node --test scripts/audit-packaged-3d-scene.test.mjs` (28 pass); `npm run
+build` passes. This is not M103 completion: current-source full/off and forced
+fallback evidence, terminal opponent-action captures, silent design review,
+and independent review are still required.
+
+**D3D-M103 r14 remaining motion/fallback refresh 2026-07-29 — passes.** The
+same r14 executable subsequently passed fresh package-only CDP commands:
+`--kind webgl2 --motion full --seed runner-showdown-3` (four public streets,
+six native windows, usable camera movement/recenter, completed hand, 1.2 ms
+p95, zero fatal events); `--kind webgl2 --motion off --seed runner-showdown-3`
+(four public streets, six native windows, disabled/centered fixed camera,
+completed hand, 1.1 ms p95, zero fatal events); and `--kind
+forced-webgl-failure --motion reduced --seed runner-showdown-3` (six mounted
+DOM seats, opaque 2.5D restoration, legal completed hand, no hidden opponent
+faces, and zero fatal events). The reduced-motion, full-motion, motion-off,
+side-pot, and forced-fallback records are separate fresh package runs; do not
+conflate them with the still-missing silent owner/reviewer decision and terminal
+opponent-action capture requirements.
+
+**D3D-M103 independent review 2026-07-29 — rejected; root causes to fix before
+re-review.** A read-only verifier inspected the current diff and r14 captures.
+It confirmed the allowlisted audit seed reaches the real tournament runner and
+that mounted DOM-to-scene public pot parity is connected, but found material
+composition failures: (1) 1024x768 clips the outer heads/chairs; 1366x768 and
+1920x1080 put the rail effectively on the native edges and leave an unlit upper
+void, failing safe-frame/table-width/horizon criteria; (2) the current
+fixed-52-degree solver's own critical x=1.54/z=.28 envelope needs about 2.72 m
+at 1024x768, beyond its 2.25 m cap, and does not prove vertical or ±32-degree
+pan bounds; (3) side-pot capture has physical piles but no readable world-space
+amount plaques because ready-mode hides DOM `.pot-groups` and the Three scene
+renders chips only; and (4) `work/packaged-3d-scene-audit.json` is overwritten
+by later audit modes, so r14 WebGL structured evidence is not retained. The
+review also found the Direction-A responsive FOV table still contradicts the
+approved fixed-52-degree reconciliation, and keyboard/controller parity,
+terminal opponent-action captures, and silent owner/reviewer judgments remain
+unproven. **M103 is rejected/open.** Next: repair the projection/framing
+contract, add physical pot plaques, preserve per-run reports, reconcile the
+document, then package and request a new independent review.
+
+**D3D-M103 r16 composition repair 2026-07-29 — automated package gates pass;
+visual sign-off remains open.** The repair deliberately changed the composition
+contract rather than FOV/table scale: the 52° lens remains fixed, the centered
+safe-depth ceiling is now 2.82 m (the 1024×768 full chair/arm envelope solves
+at about 2.79 m), and the seated gaze remains −16° as depth changes. The
+procedural room now has a continuous lit wall band and bays; every public pot
+lane has a physical in-world amount plaque; and the audit writes durable
+per-run JSON instead of leaving only its overwritten aggregate report. Fresh
+NSIS/portable package: `outputs/desktop-m103-open-arc-r16`. All commands below
+passed against its unpacked executable with no fatal console events:
+
+- `node scripts/audit-packaged-3d-scene.mjs --app 'outputs/desktop-m103-open-arc-r16/win-unpacked/Poker Training Pro.exe' --kind webgl2 --motion full --seed runner-showdown-3` — four public streets, six native recenter/left/right windows, camera movement/recenter, 139 draw calls, 1.4 ms p95.
+- the same command with `--motion reduced` and `--motion off` — four streets and the six-window matrix; reduced is fixed/centered (135 calls, 2.0 ms p95), off is fixed/centered (1.5 ms p95).
+- `--kind forced-webgl-failure --motion reduced --seed runner-showdown-3` — forced `availability: failed`, full opaque mounted 2.5D restoration, six seats/live regions, legal completed hand, and no renderer errors.
+- `--kind webgl2 --motion reduced --seed scene-side-pot-0` — primary
+  `runner-showdown-3` four-street matrix plus the real hand-5 main/two-side-pot
+  capture: DOM and physical lanes are `15,450`, `100`, and `100`; 135 calls,
+  1.9 ms p95. The captured scene visibly shows `POT 15.4K`, `SIDE 100`, and
+  `SIDE 100` plaques at their respective physical stacks.
+
+Durable evidence is `work/packaged-3d-scene-audit-webgl2-full-runner-showdown-3.json`,
+`work/packaged-3d-scene-audit-webgl2-reduced-runner-showdown-3.json`,
+`work/packaged-3d-scene-audit-webgl2-off-runner-showdown-3.json`,
+`work/packaged-3d-scene-audit-forced-webgl-failure-reduced-runner-showdown-3.json`,
+and `work/packaged-3d-scene-audit-webgl2-reduced-scene-side-pot-0.json`; the
+native side-pot image is `work/packaged-3d-scene-webgl2-reduced-side-pots.png`.
+Source regressions: `npm run build`; `npx vitest run
+src/scene3d/tableSceneModel.test.ts src/components/PokerTable.camera.test.ts`
+(36 pass); `node --test scripts/audit-packaged-3d-scene.test.mjs` (29 pass).
+This is not completion: re-review the 1024/1366/1920 silent captures against
+the perceptual horizon/table-width criteria, drive keyboard/controller parity,
+capture each terminal opponent action, and obtain the design-owner plus
+independent-reviewer decisions before checking M103 off.
+
+**D3D-M103 r16 independent re-review 2026-07-29 — still rejected/open.** The
+required read-only reviewer confirmed that r16 resolves the prior compact edge
+clipping, physical side-pot plaque, overwritten-evidence, and black-void P1
+findings. It also found two remaining composition failures in the fresh native
+captures: the recentered outer rail still occupies roughly 94–97% of usable
+width at 1024×768, 1366×768, and 1920×1080 instead of Direction A's 70–86%
+(70–76% at 1920) target, and the apparent table/wall horizon remains around a
+third to half of the frame rather than the specified 21–27%. The review did
+not authorize a close: keyboard/controller packaged parity, terminal opponent
+action states, and the two five-second silent reviewer approvals are likewise
+not yet evidenced. Do not substitute source/unit success for these remaining
+native visual gates.
+
+**D3D-M103 r22–r25 composition root-cause repair 2026-07-29 — five real defects
+fixed; native re-review pending.** The r22 reduced-motion matrix passed every
+automated gate (63–73 draw calls, six native windows, three real context
+recoveries, full public runout parity) while the frames were still visibly
+wrong, so the frames were diagnosed directly rather than re-tuned. Five distinct
+root causes were found, each of which the existing gates could not see:
+
+1. **Inverted seat world-to-local rotation.** `tableScene.ts` built its inverse
+   with `cos(-facing)/sin(-facing)`, which re-applies the *forward* rotation
+   instead of inverting it. For the near-right seat (facing ≈ −102°) the stack
+   landed at world `(1.75, 0.80)` instead of its felt anchor `(0.67, 0.15)` —
+   1.1 m off the table. This threw the cards, bet chips, and stack of all four
+   non-centre seats into mid-air beside the table, which is what the earlier
+   reviews saw as "floating chips" and "missing opponent cards". It escaped
+   every test because it was a closure inside the renderer, invisible to the
+   pure model. Extracted as `seatLocalPoint`/`seatWorldPoint` in
+   `tableSceneModel.ts` with three regression tests, all three verified to fail
+   with the old expression restored.
+2. **Ready-mode DOM seat anchors were arbitrary viewport percentages.**
+   `styles.css` pinned seats to 14%/57%, 18%/31%, 50%/21%, 82%/31%, 86%/57%,
+   which correspond to no actual chair: the two near-side plaques sat in unlit
+   room outside the rail, and markers/labels scattered across the frame. Replaced
+   with a projection of the physical rail — new pure `seatRailAnchor`,
+   `projectToViewport`, and `seatPlaqueViewportAnchor` drive `--seat-rail-x/y`,
+   so a plaque tracks its own chair through pan and every responsive depth.
+3. **Inverted camera look controls.** `cameraPose` computed
+   `target.x = base − sin(yaw)·d`. The seat looks down −Z so screen-right is +X,
+   which made "Look one seat left" (pan −2, yaw −32°) swing the camera *right*.
+   The pre-existing test asserted this inverted behaviour while its own name
+   described the correct one. Direction A specifies "yaw −32° left", so the sign
+   was corrected and the test replaced with one that checks the looked-at side's
+   seat actually moves inward.
+4. **Hero foreground had drifted outside the table.** Hero cards sat at z=0.93
+   and the hero stack at z=0.84, both past the *outer* rail at z=0.83, and the
+   cards were scaled 1.84× rising to 3.1× on compact windows — 116 px tall at
+   1024×768 but 150 px at 1920×1080, so the foreground got less believable as
+   the window got roomier. Restored Direction A's approved anchors (cards
+   x ±0.09 / z 0.50, stack (0.46, 0.48)), dropped the permanent tilt from 74.5°
+   to the approved 58°, and replaced the fixed multiplier with apparent-size
+   targeting (`HERO_CARD_TARGET_PX`, clamped 1.0–2.7×) so the card holds one
+   on-screen size instead of ballooning.
+5. **DOM duplicates that `opacity: 0` cannot hide.** `.opponent-cards` carries
+   `animation: opponent-card-deal … both`; a running animation's keyframed
+   opacity outranks a plain declaration, so the DOM card mirrors kept painting
+   over the physical scene. The audit's duplicate-furniture probe sampled only
+   `.seat-figure`, `.seat-chip-stack`, and `.center-pot` — the three selectors
+   that happen to have no animation — and therefore reported a clean
+   composition throughout. Ready mode now also neutralises the animation on
+   `.opponent-cards`, `.seat-bet`, `.opponent-card-hand`, and `.dealer-button`,
+   and the audit gained a `conditionalDuplicatesFaded` probe over exactly those
+   selectors so this class of regression is now gated.
+
+Also repaired in the same pass: the main pot plaque billboarded 0.16 m above the
+felt and so projected into the same screen band as the far rail, putting "POT
+200" directly over the centre opponent's nameplate at every target (the
+independent review's blocker 4, present at recenter and not only in the side-pot
+still). Solved numerically against all six targets — the plaque now sits low and
+toward the hero (0.045 / 0.26), clearing the centre plaque by 3.3% of viewport
+height while staying behind the hero cards and clear of an 18-chip pile. The
+ready-mode seat block also became a single row rather than a stacked column,
+because a marker/action/nameplate column is taller than the measured 38–68 px
+rail-to-chin gap and would sit over the face. Room work: floor raised from
+0x141a17 to a warm carpet with a light pool at the hero's seat so the near
+foreground stops resolving as an unlit void; the table pedestal became a tapered
+timber column and foot instead of a near-black box that read as a floating slab;
+background tables moved from (−4.4,−5.2)/(4.6,−5.8) out to
+(−7.6,−6.4)/(7.9,−6.8) because they projected directly behind the two near-side
+opponents and appeared to grow out of their shoulders.
+
+Evidence to date: `outputs/desktop-m103-open-arc-r23` confirmed items 1–2 and
+the room work in native frames (chips back on the felt, plaques on their chairs,
+pedestal and carpet reading as furniture and floor). r24's audit exposed a
+harness defect rather than an app defect — the new opponent-action session ran
+its loop to the CDP deadline and a final `Page.captureScreenshot` straddled it —
+now fixed with an 8 s screenshot guard, a 25 s loop reserve, and its own 300 s
+budget. **`outputs/desktop-m103-open-arc-r25` full-motion both-kind audit is the
+run that must be inspected before any close.**
+
+Harness additions in this pass, all fixture-tested (39 `node --test` cases):
+terminal opponent-action stills for fold/check/call/bet/raise/all-in keyed off a
+new stable `data-seat-action` attribute rather than localized plaque text
+(blocker 6); a pointer/keyboard(Q,E,X)/controller(D-pad 14,15,13) camera parity
+proof asserting all three reach pan −2/0/+2 and that focus never enters the
+decorative canvas, reading a new `data-table-camera-pan` attribute (blocker 7);
+and an in-page public-runout recorder plus
+`assertForcedFallbackRunoutParity`, so the forced-DOM path is compared street by
+street against normal WebGL instead of at its initial preflop capture only —
+an in-page observer cannot miss a street its presentation queue actually
+rendered, which was the reason that path was previously under-evidenced
+(blocker 8).
+
+**D3D-M103 r26 passing native evidence 2026-07-29.** Two further composition
+defects were found by *inspecting the r25 frames* after its automated gates all
+passed, which is the same lesson as before — the gates cannot see composition:
+
+- The ±32° wings were still near-black (independent-review blocker 3, previously
+  believed fixed by widening the rear wall). Root cause: the wall is unlit
+  `MeshBasicMaterial`, so lighting never touched it and `Fog(ROOM, 4, 16)` was
+  the only thing acting on it, crushing it to near-black by the ~10 m the wing
+  wall sits at. Fog now starts at 9 m and ends at 34 m, plus procedural side
+  walls with eye-level coves and two extra distant tables placed *inside* the
+  wings. Looking left now shows architecture, a cove line, and two other tables.
+- The position marker collided with the action label — "UTG" drawn over "FOLDED",
+  "BTN" over "CALLS" — because it kept its own `top/right` offsets and a higher
+  z-index inside the new plaque row. It now has an explicit ready-mode anchor
+  above the plaque's leading edge, inside the measured 38–68 px rail-to-chin gap.
+
+Also corrected: the pot/seat-plaque separation had only ever been verified at
+recenter. Extending it across the pan range immediately failed, and the failure
+was the *assertion*, not the geometry — the two near-side seats sit a metre
+closer to the lens so their plaques legitimately project below the pot. The real
+requirement is non-overlap in either axis, now asserted for all five seats at
+five pan positions across all six targets.
+
+Package: `outputs\desktop-m103-open-arc-r26\win-unpacked\Poker Training Pro.exe`
+
+```powershell
+npm run build            # tsc --noEmit && vite build, clean
+npx vitest run src/scene3d src/components    # 325 passed
+node --test scripts/audit-packaged-3d-scene.test.mjs   # 41 passed
+npx electron-builder --win --dir --x64 --config.electronDist=node_modules/electron/dist
+node scripts/audit-packaged-3d-scene.mjs --app 'outputs/desktop-m103-open-arc-r26/win-unpacked/Poker Training Pro.exe' --motion full --seed scene-side-pot-0
+```
+
+Full-motion result, both WebGL paths, exit 0, `fatal: []` on both:
+
+- Renderer budget: 74 draw calls, 7,914 triangles, 1.01 MiB textures, p95 0.5 ms,
+  178 resources — inside the ≤150 / ≤250k / ≤128 MiB / ≤25 ms gates.
+- Terminal opponent-action stills, `missingActions: []` —
+  `work\packaged-3d-scene-webgl2-full-opponent-{fold,check,call,bet,raise,all-in}.png`.
+  The all-in frame shows Indigo Moreno with an ALL-IN plaque, a 0 stack, and a
+  formed SIDE 50 lane.
+- Camera input parity: pointer, keyboard (Q/E/X), and controller (D-pad 14/15/13)
+  each reach pan −2 / 0 / +2, settled per individual step, with
+  `canvasFocused: false` on every route.
+- Forced-fallback runout parity: both paths recorded preflop/flop/turn/river and
+  `assertForcedFallbackRunoutParity` compared them street by street.
+- Six native windows captured with recenter/left/right plus the five-second
+  silent frames at 1366×768 and 1920×1080.
+- Deterministic side pots: main 15,450 with two side lanes of 100.
+
+Reduced and off motion were then run against the same package and both passed,
+each with its fixed recenter terminal pose and disabled camera controls:
+
+```powershell
+node scripts/audit-packaged-3d-scene.mjs --app 'outputs/desktop-m103-open-arc-r26/win-unpacked/Poker Training Pro.exe' --motion reduced --seed scene-side-pot-0
+node scripts/audit-packaged-3d-scene.mjs --app 'outputs/desktop-m103-open-arc-r26/win-unpacked/Poker Training Pro.exe' --motion off --seed scene-side-pot-0
+```
+
+Durable per-run reports, all six from the r26 executable:
+
+- `work\packaged-3d-scene-audit-webgl2-full-scene-side-pot-0.json`
+- `work\packaged-3d-scene-audit-forced-webgl-failure-full-scene-side-pot-0.json`
+- `work\packaged-3d-scene-audit-webgl2-reduced-scene-side-pot-0.json`
+- `work\packaged-3d-scene-audit-forced-webgl-failure-reduced-scene-side-pot-0.json`
+- `work\packaged-3d-scene-audit-webgl2-off-scene-side-pot-0.json`
+- `work\packaged-3d-scene-audit-forced-webgl-failure-off-scene-side-pot-0.json`
+
+Measured against the visual acceptance criteria at 1920×1080 recenter: outer rail
+about 71% of viewport width (target 70–86%), architectural cove horizon at about
+27% (target 18–28%), hero cards resting inside the near rail at a solved constant
+88 px apparent height at all six targets, all five opponent heads clear of every
+plaque, and the main pot plaque clearly below the centre nameplate.
+
+Known residual, not yet resolved: during a full-motion pan the DOM plaques jump
+to the target pose while the renderer interpolates over ~135 ms, so a plaque
+leads its chair for under half a second before they agree. Reduced and off
+motion — the accessibility-relevant modes — have no interpolation and are
+unaffected, and the settled pan captures are consistent. Fixing it properly
+means driving the plaque positions from the renderer's interpolated pose per
+frame rather than from the pure model; that is a deliberate follow-up, not a
+tuning tweak.
+
+**M103 remains open.** Every engineering and evidence criterion now passes
+against the fresh r26 package, but three criteria are explicitly *not* something
+this work can self-certify, and they are what still gate the close:
+
+1. The five-second silent captures at 1366×768 and 1920×1080 must be judged a
+   seated 3D game view by **the design owner**, and both approvals recorded. The
+   captures exist (`work\packaged-3d-scene-webgl2-full-{1366x768,1920x1080}-silent-5s.png`);
+   the judgement is not mine to make.
+2. **One independent read-only reviewer** must reach the same conclusion against
+   this same package. Every prior M103 rejection came from that review finding
+   composition faults the automated gates had passed, which is exactly what
+   happened again twice inside this increment — so this is not a formality.
+3. Do **not** start M104 until 1 and 2 are recorded here.
+
+The recurring lesson, now three increments deep, is worth stating plainly: the
+automated matrix has passed while the frame was visibly wrong at r17, r19, r22,
+and r25. Presence, opacity, bounds, parity, and budget checks cannot see
+composition. Every composition defect in this increment was found by opening the
+captures, and two of them (the near-black wings, the marker/label collision) were
+found only *after* a run whose every gate was green.
+
 **Design gate and missing M103 acceptance criteria**
 
-- [ ] The design owner explicitly approves one complete direction before Tera
-  changes production composition code. Approval of isolated camera constants is
-  not approval of a direction.
+- [x] The design owner explicitly approved Direction A â€” Open-arc seated first
+  person â€” on 2026-07-29. The later reconciliation authorizes camera distance
+  only; it does not reopen the rejected directions or allow a FOV/table-scale
+  substitution.
 - [ ] The approved composition passes native packaged review at 1024x768,
   1100x720, 1280x720, 1366x768, 1920x1080, and 2560x1080 at recenter and both
   look limits, using the exact perceptual, poker-state, responsive,

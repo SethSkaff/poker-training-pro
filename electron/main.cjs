@@ -51,6 +51,10 @@ const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
 // already started loading three.js, so main forwards an explicit, isolated
 // argument through preload instead.
 const forceWebGl2Failure = process.argv.includes("--ptp-force-webgl2-failure");
+// Electron does not automatically copy arbitrary main-process command-line
+// switches into renderer `process.argv`. Forward only the two fixed audit
+// fixtures, and only alongside the existing isolated lifecycle capability.
+const auditSceneSeed = lifecycleSmokeEnabled ? parseAuditSceneSeed(process.argv) : null;
 // Packaged scene audits must exercise CSS media queries against a real native
 // BrowserWindow. CDP device metrics change the visual viewport but not the
 // Electron window bounds that drive compact desktop layout.
@@ -121,6 +125,7 @@ function createWindow() {
       additionalArguments: [
         ...(lifecycleSmokeEnabled ? ["--ptp-lifecycle-smoke"] : []),
         ...(forceWebGl2Failure ? ["--ptp-force-webgl2-failure"] : []),
+        ...(auditSceneSeed ? [`--ptp-scene-audit-seed=${auditSceneSeed}`] : []),
       ],
     },
   });
@@ -201,6 +206,14 @@ function parseAuditWindowSize(argv) {
   if (!Number.isInteger(width) || !Number.isInteger(height)
     || width < 1024 || width > 3840 || height < 720 || height > 2160) return null;
   return { width, height };
+}
+
+function parseAuditSceneSeed(argv) {
+  const flag = argv.find((entry) => entry.startsWith("--ptp-scene-audit-seed="));
+  const value = flag?.slice("--ptp-scene-audit-seed=".length);
+  return value === "runner-showdown-3" || value === "scene-side-pot-0"
+    ? value
+    : null;
 }
 
 /**

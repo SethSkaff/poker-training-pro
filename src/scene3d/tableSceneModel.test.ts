@@ -4,18 +4,31 @@ import {
   allInChipPosition,
   betChipPosition,
   cameraPose,
+  cameraDepthForSafeFrame,
   cameraViewPreset,
   callChipPosition,
   chipCountForAmount,
   dealtCardPosition,
   EYE_HEIGHT,
+  CAMERA_DEPTH_MAX,
+  CAMERA_DEPTH_MIN,
+  CAMERA_PITCH_DEGREES,
+  CAMERA_VERTICAL_FOV,
   MAX_PAN,
   MAX_YAW_RADIANS,
+  OPEN_ARC_ANCHORS,
   muckedCardPosition,
   raiseChipPosition,
+  projectToViewport,
+  seatLocalPoint,
   seatPoses,
+  seatRailAnchor,
+  seatWorldPoint,
   TABLE_HEIGHT,
-  TABLE_RADIUS,
+  TABLE_RAIL_WIDTH,
+  TABLE_COMPOSITION_ID,
+  TABLE_DEPTH,
+  TABLE_WIDTH,
   turnIndicatorPosition,
   turnIndicatorPositionForPlayer,
 } from "./tableSceneModel";
@@ -25,44 +38,36 @@ const distance = (
   b: readonly [number, number, number],
 ) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-describe("seats are placed around a real table", () => {
-  it("puts the hero nearest the camera", () => {
+describe("open-arc-v1 seats are placed around a capsule table", () => {
+  it("keeps the hero anchor nearest the camera without rendering a ring", () => {
     const poses = seatPoses(6);
     const hero = poses[0];
-    // +Z is toward the camera, so the hero has the largest Z.
+    expect(TABLE_COMPOSITION_ID).toBe("open-arc-v1");
     for (const pose of poses.slice(1)) {
       expect(hero.position[2]).toBeGreaterThan(pose.position[2]);
     }
   });
 
-  it("spaces every seat evenly and outside the felt", () => {
+  it("uses the approved five explicit forward horseshoe roots", () => {
     const poses = seatPoses(6);
     expect(poses).toHaveLength(6);
-    for (const pose of poses) {
-      const radius = Math.hypot(pose.position[0], pose.position[2]);
-      expect(radius).toBeGreaterThan(TABLE_RADIUS);
-    }
-    // Neighbouring seats are equidistant.
-    const gaps = poses.map((pose, index) =>
-      distance(pose.position, poses[(index + 1) % poses.length].position),
-    );
-    for (const gap of gaps) {
-      expect(gap).toBeCloseTo(gaps[0], 5);
-    }
+    expect(poses.slice(1).map((pose) => [pose.position[0], pose.position[2]])).toEqual([
+      [-1.28, 0.28], [-1.16, -0.55], [0, -0.84], [1.16, -0.55], [1.28, 0.28],
+    ]);
+    expect(TABLE_WIDTH / TABLE_DEPTH).toBeCloseTo(1.915, 2);
   });
 
   it("rests cards and chips on the felt surface, inside the rail", () => {
     for (const pose of seatPoses(6)) {
       expect(pose.feltPosition[1]).toBe(TABLE_HEIGHT);
-      const radius = Math.hypot(pose.feltPosition[0], pose.feltPosition[2]);
-      expect(radius).toBeLessThan(TABLE_RADIUS);
+      expect(Math.abs(pose.feltPosition[0])).toBeLessThan(TABLE_WIDTH / 2);
+      expect(Math.abs(pose.feltPosition[2])).toBeLessThan(TABLE_DEPTH / 2);
     }
   });
 
   it("faces every body toward the middle of the table", () => {
     for (const pose of seatPoses(6)) {
-      // Facing is the seat angle turned around; a body at the far side looks
-      // back toward the camera.
+      if (pose.seat === 0) continue;
       const dx = Math.sin(pose.facing);
       const dz = Math.cos(pose.facing);
       // The direction it faces should reduce its distance to the centre.
@@ -83,6 +88,207 @@ describe("seats are placed around a real table", () => {
   });
 });
 
+describe("seat-local placement lands objects on the felt", () => {
+  /**
+   * Mirrors three.js `rotation.y = facing` exactly: local -> world is
+   * `wx = cos·lx + sin·lz`, `wz = -sin·lx + cos·lz`. If the renderer's inverse
+   * disagrees with this, seat objects leave the table.
+   */
+  const rotateAsThreeJs = (
+    pose: ReturnType<typeof seatPoses>[number],
+    local: readonly [number, number, number],
+  ): readonly [number, number, number] => {
+    const cos = Math.cos(pose.facing);
+    const sin = Math.sin(pose.facing);
+    return [
+      pose.position[0] + local[0] * cos + local[2] * sin,
+      local[1],
+      pose.position[2] - local[0] * sin + local[2] * cos,
+    ];
+  };
+
+  it("round-trips every seat's felt anchor through the group transform", () => {
+    for (const pose of seatPoses(6)) {
+      const local = seatLocalPoint(pose, pose.feltPosition);
+      expect(distance(rotateAsThreeJs(pose, local), pose.feltPosition)).toBeLessThan(1e-9);
+    }
+  });
+
+  it("agrees with the forward map it claims to invert", () => {
+    for (const pose of seatPoses(6)) {
+      const local = seatLocalPoint(pose, pose.feltPosition);
+      expect(distance(seatWorldPoint(pose, local), pose.feltPosition)).toBeLessThan(1e-9);
+      expect(distance(rotateAsThreeJs(pose, local), seatWorldPoint(pose, local)))
+        .toBeLessThan(1e-9);
+    }
+  });
+
+  /*
+   * The regression this guards: using cos(-facing)/sin(-facing) re-applies the
+   * forward rotation, which threw the near-side seats' cards, bet, and stack
+   * about a metre past the rail and off the table entirely.
+   */
+  it("keeps every seat's placed objects inside the outer rail", () => {
+    const outerHalfWidth = TABLE_WIDTH / 2 + 0.12;
+    const outerHalfDepth = TABLE_DEPTH / 2 + 0.12;
+    for (const pose of seatPoses(6)) {
+      if (pose.seat === 0) continue;
+      for (const anchor of [
+        pose.feltPosition,
+        [pose.feltPosition[0] * 0.86, TABLE_HEIGHT, pose.feltPosition[2] * 0.86] as const,
+      ]) {
+        const placed = seatWorldPoint(pose, seatLocalPoint(pose, anchor));
+        expect(Math.abs(placed[0])).toBeLessThanOrEqual(outerHalfWidth);
+        expect(Math.abs(placed[2])).toBeLessThanOrEqual(outerHalfDepth);
+      }
+    }
+  });
+});
+
+describe("ready-mode seat plaques attach to the physical rail", () => {
+  const targets = [
+    { width: 1024, height: 768 },
+    { width: 1100, height: 720 },
+    { width: 1280, height: 720 },
+    { width: 1366, height: 768 },
+    { width: 1920, height: 1080 },
+    { width: 2560, height: 1080 },
+  ] as const;
+
+  it("puts each anchor on the rail, outside the felt but not out in the room", () => {
+    for (const pose of seatPoses(6)) {
+      if (pose.seat === 0) continue;
+      const anchor = seatRailAnchor(pose);
+      // On the rail surface, never rising toward a face.
+      expect(anchor[1]).toBeCloseTo(TABLE_HEIGHT + 0.03, 6);
+      // Outside the felt anchor it belongs to, and within a rail width of the
+      // capsule boundary rather than adrift in the room.
+      expect(Math.hypot(anchor[0], anchor[2]))
+        .toBeGreaterThan(Math.hypot(pose.feltPosition[0], pose.feltPosition[2]));
+      expect(Math.abs(anchor[0])).toBeLessThanOrEqual(TABLE_WIDTH / 2 + TABLE_RAIL_WIDTH * 2);
+      expect(Math.abs(anchor[2])).toBeLessThanOrEqual(TABLE_DEPTH / 2 + TABLE_RAIL_WIDTH * 2);
+    }
+  });
+
+  it("projects the centre seat to the middle of the frame at recenter", () => {
+    const centre = seatPoses(6)[3];
+    expect(centre.position[0]).toBe(0);
+    for (const { width, height } of targets) {
+      const camera = cameraPose(0, "standard", width / height, width);
+      const projected = projectToViewport(seatRailAnchor(centre), camera, width, height);
+      expect(projected.behind).toBe(false);
+      expect(projected.xPercent).toBeCloseTo(50, 6);
+    }
+  });
+
+  /*
+   * The defect this replaces: fixed viewport percentages put the two near-side
+   * plaques at 14% and 86% of width regardless of where the chairs actually
+   * were, stranding them in unlit room well outside the rail.
+   */
+  it("keeps every plaque inside the frame at every required target", () => {
+    for (const { width, height } of targets) {
+      const camera = cameraPose(0, "standard", width / height, width);
+      for (const pose of seatPoses(6)) {
+        if (pose.seat === 0) continue;
+        const projected = projectToViewport(seatRailAnchor(pose), camera, width, height);
+        expect(projected.behind).toBe(false);
+        expect(projected.xPercent).toBeGreaterThan(0);
+        expect(projected.xPercent).toBeLessThan(100);
+        expect(projected.yPercent).toBeGreaterThan(0);
+        expect(projected.yPercent).toBeLessThan(100);
+      }
+    }
+  });
+
+  it("preserves left-to-right seat order so plaques never cross", () => {
+    for (const { width, height } of targets) {
+      const camera = cameraPose(0, "standard", width / height, width);
+      const xs = seatPoses(6).slice(1)
+        .map((pose) => projectToViewport(seatRailAnchor(pose), camera, width, height).xPercent);
+      const sorted = [...xs].sort((left, right) => left - right);
+      expect(xs).toEqual(sorted);
+    }
+  });
+
+  it("tracks the rail through pan rather than staying pinned to the viewport", () => {
+    const centre = seatPoses(6)[3];
+    const anchor = seatRailAnchor(centre);
+    const at = (pan: number) => projectToViewport(
+      anchor,
+      cameraPose(pan, "standard", 1366 / 768, 1366),
+      1366,
+      768,
+    ).xPercent;
+    // Turning the camera left pushes a centred world point to the right of frame.
+    expect(at(-MAX_PAN)).toBeGreaterThan(at(0));
+    expect(at(MAX_PAN)).toBeLessThan(at(0));
+  });
+
+  /*
+   * Blocker: the main pot plaque visually overlapped the centre player. An
+   * earlier version of this test compared the *pot anchor* on the felt and
+   * passed at 3.6% while the frame still collided -- because the plaque is a
+   * billboard raised above that anchor, which is what actually projects into the
+   * far rail's band. Compare the rendered plaque position.
+   */
+  it("separates the centre seat plaque from the rendered main pot plaque", () => {
+    // Mirrors tableScene's POT_PLAQUE_HEIGHT / POT_PLAQUE_FORWARD.
+    const potPlaqueWorld = [
+      OPEN_ARC_ANCHORS.mainPot[0],
+      OPEN_ARC_ANCHORS.mainPot[1] + 0.045,
+      OPEN_ARC_ANCHORS.mainPot[2] + 0.26,
+    ] as const;
+    for (const { width, height } of targets) {
+      const camera = cameraPose(0, "standard", width / height, width);
+      const plaque = projectToViewport(seatRailAnchor(seatPoses(6)[3]), camera, width, height);
+      const pot = projectToViewport(potPlaqueWorld, camera, width, height);
+      // The seat plaque's rail anchor is its bottom edge and it draws upward, so
+      // the pot must sit clearly *below* that anchor.
+      expect(pot.yPercent - plaque.yPercent).toBeGreaterThan(3.3);
+    }
+  });
+
+  /*
+   * Recenter separation is not sufficient on its own: panning swings the far rail
+   * and the billboarded pot plaques across each other, so a fix verified only at
+   * pan 0 can still collide at the look limits.
+   *
+   * The requirement is non-overlap, not vertical ordering. The two near-side
+   * seats sit a metre closer to the lens, so their rail plaques legitimately
+   * project *below* the pot -- they are foreground, and far from centre
+   * horizontally. Separation in either axis is therefore what counts.
+   */
+  it("never lets the pot plaque share screen space with a seat plaque", () => {
+    // Generous boxes: a seat plaque is about 130x24 px and the pot plaque about
+    // 170x28 px at these depths, so these half-extents are conservative.
+    const minHorizontalGapPercent = 9;
+    const minVerticalGapPercent = 2.6;
+    for (const { width, height } of targets) {
+      for (const pan of [-MAX_PAN, -1, 0, 1, MAX_PAN]) {
+        const camera = cameraPose(pan, "standard", width / height, width);
+        const pot = projectToViewport(
+          [
+            OPEN_ARC_ANCHORS.mainPot[0],
+            OPEN_ARC_ANCHORS.mainPot[1] + 0.045,
+            OPEN_ARC_ANCHORS.mainPot[2] + 0.26,
+          ],
+          camera,
+          width,
+          height,
+        );
+        for (const pose of seatPoses(6)) {
+          if (pose.seat === 0) continue;
+          const plaque = projectToViewport(seatRailAnchor(pose), camera, width, height);
+          const clear = Math.abs(pot.xPercent - plaque.xPercent) > minHorizontalGapPercent
+            || Math.abs(pot.yPercent - plaque.yPercent) > minVerticalGapPercent;
+          expect(clear, `seat ${pose.seat} at ${width}x${height} pan ${pan}: pot ${pot.xPercent.toFixed(1)},${pot.yPercent.toFixed(1)} vs plaque ${plaque.xPercent.toFixed(1)},${plaque.yPercent.toFixed(1)}`).toBe(true);
+        }
+      }
+    }
+  });
+});
+
 describe("the camera is seated, and its look is limited", () => {
   it("sits at eye height behind the hero rather than above the table", () => {
     const pose = cameraPose(0);
@@ -95,6 +301,18 @@ describe("the camera is seated, and its look is limited", () => {
 
   it("looks straight ahead when centred", () => {
     expect(cameraPose(0).yaw).toBe(0);
+  });
+
+  it("retains the approved seated pitch while responsive depth changes", () => {
+    for (const [aspect, width] of [[1024 / 768, 1024], [16 / 9, 1366], [2560 / 1080, 2560]] as const) {
+      const pose = cameraPose(0, "standard", aspect, width);
+      const horizontalDistance = Math.hypot(
+        pose.position[0] - pose.target[0],
+        pose.position[2] - pose.target[2],
+      );
+      const pitch = Math.atan2(pose.position[1] - pose.target[1], horizontalDistance) * 180 / Math.PI;
+      expect(pitch).toBeCloseTo(CAMERA_PITCH_DEGREES, 6);
+    }
   });
 
   it("clamps the yaw at the limit in both directions", () => {
@@ -120,11 +338,28 @@ describe("the camera is seated, and its look is limited", () => {
   });
 
   it("moves the look target left when panning left and right when panning right", () => {
+    // The seat looks down -Z, so the hero's left is -X. This previously asserted
+    // the inverse, which let the left control swing the camera to the right.
     const left = cameraPose(-2).target;
     const centre = cameraPose(0).target;
     const right = cameraPose(2).target;
-    expect(left[0]).toBeGreaterThan(centre[0]);
-    expect(right[0]).toBeLessThan(centre[0]);
+    expect(left[0]).toBeLessThan(centre[0]);
+    expect(right[0]).toBeGreaterThan(centre[0]);
+  });
+
+  it("brings the looked-at side's seats toward the middle of the frame", () => {
+    // Direction A requires the two seats on the looked-at side to stay readable.
+    // Panning left must therefore move the left-hand seat inward, not outward.
+    const leftSeat = seatPoses(6)[1];
+    expect(leftSeat.position[0]).toBeLessThan(0);
+    const xAt = (pan: number) => projectToViewport(
+      seatRailAnchor(leftSeat),
+      cameraPose(pan, "standard", 1366 / 768, 1366),
+      1366,
+      768,
+    ).xPercent;
+    expect(xAt(-MAX_PAN)).toBeGreaterThan(xAt(0));
+    expect(xAt(MAX_PAN)).toBeLessThan(xAt(0));
   });
 
   it("recentres exactly, so the control returns to a known pose", () => {
@@ -132,15 +367,17 @@ describe("the camera is seated, and its look is limited", () => {
     expect(cameraPose(0).yaw).toBe(0);
   });
 
-  it("maps close, standard, and wide settings to distinct comfortable WebGL views", () => {
+  it("keeps every view preference on the approved fixed vertical lens", () => {
     const close = cameraPose(0, "close");
     const standard = cameraPose(0, "standard");
     const wide = cameraPose(0, "wide");
-    expect(close.position[2]).toBeLessThan(standard.position[2]);
-    expect(standard.position[2]).toBeLessThan(wide.position[2]);
-    expect(close.fov).toBeLessThan(standard.fov);
-    expect(standard.fov).toBeLessThan(wide.fov);
-    expect(cameraViewPreset("standard")).toEqual({ distance: TABLE_RADIUS + 0.72, fov: 58 });
+    expect(close.position[2]).toBe(standard.position[2]);
+    expect(wide.position[2]).toBe(standard.position[2]);
+    expect(close.fov).toBe(CAMERA_VERTICAL_FOV);
+    expect(standard.fov).toBe(CAMERA_VERTICAL_FOV);
+    expect(wide.fov).toBe(CAMERA_VERTICAL_FOV);
+    expect(cameraViewPreset("standard")).toMatchObject({ fov: CAMERA_VERTICAL_FOV });
+    expect(cameraViewPreset("standard").distance).toBeGreaterThanOrEqual(CAMERA_DEPTH_MIN);
   });
 
   it("keeps all composition presets inside the same seated pan limit", () => {
@@ -224,7 +461,7 @@ describe("objects travel between real places", () => {
 });
 
 describe("the current-turn indicator", () => {
-  it("is a stable floor object outside the felt, clear of cards and faces", () => {
+  it("is a stable seat-local cue clear of cards and faces", () => {
     for (const pose of seatPoses(6)) {
       const indicator = turnIndicatorPosition(pose);
       const indicatorRadius = Math.hypot(indicator[0], indicator[2]);
@@ -232,7 +469,7 @@ describe("the current-turn indicator", () => {
 
       // The halo sits around the occupied chair at floor level. It cannot
       // cover the seat's cards on the felt or the character's head above it.
-      expect(indicatorRadius).toBeGreaterThan(TABLE_RADIUS);
+      expect(indicatorRadius).toBeGreaterThan(0.7);
       expect(indicator[1]).toBeLessThan(TABLE_HEIGHT);
       expect(cardDistance).toBeGreaterThan(0.6);
       expect(indicator).toEqual(turnIndicatorPosition(pose));
@@ -253,6 +490,71 @@ describe("the current-turn indicator", () => {
     expect(turnIndicatorPositionForPlayer("surviving-actor", (id) => byPlayer.get(id)))
       .toEqual(turnIndicatorPosition(poses[2]));
     expect(turnIndicatorPositionForPlayer("missing", (id) => byPlayer.get(id))).toBeUndefined();
+  });
+});
+
+describe("open-arc-v1 hero and pot anchors", () => {
+  it("keeps physical hero cards, stack, commitment, board, and main pot in their approved lanes", () => {
+    expect(OPEN_ARC_ANCHORS.heroCards).toEqual([
+      [-0.09, TABLE_HEIGHT, 0.5],
+      [0.09, TABLE_HEIGHT, 0.5],
+    ]);
+    expect(OPEN_ARC_ANCHORS.heroStack).toEqual([0.46, TABLE_HEIGHT, 0.48]);
+    expect(OPEN_ARC_ANCHORS.heroCommitted).toEqual([0.42, TABLE_HEIGHT, 0.3]);
+    expect(OPEN_ARC_ANCHORS.board).toEqual([0, TABLE_HEIGHT + 0.005, -0.18]);
+    expect(OPEN_ARC_ANCHORS.mainPot).toEqual([0, TABLE_HEIGHT + 0.005, 0.1]);
+    expect(OPEN_ARC_ANCHORS.sidePot(0)[0]).toBeCloseTo(0.34);
+    expect(OPEN_ARC_ANCHORS.sidePot(1)[0]).toBeCloseTo(-0.34);
+  });
+
+  /*
+   * These anchors had drifted past the outer rail (z 0.93 and 0.84 against an
+   * outer near rail of 0.83), which put the hero's cards and stack in mid-air
+   * off the table edge. Assert the physical containment, not just the numbers.
+   */
+  it("keeps every physical hero object resting on the felt inside the rail", () => {
+    const nearFeltEdge = TABLE_DEPTH / 2;
+    const halfWidth = TABLE_WIDTH / 2;
+    for (const anchor of [
+      ...OPEN_ARC_ANCHORS.heroCards,
+      OPEN_ARC_ANCHORS.heroStack,
+      OPEN_ARC_ANCHORS.heroCommitted,
+      OPEN_ARC_ANCHORS.board,
+      OPEN_ARC_ANCHORS.mainPot,
+      OPEN_ARC_ANCHORS.sidePot(0),
+      OPEN_ARC_ANCHORS.sidePot(1),
+    ]) {
+      expect(anchor[2]).toBeLessThan(nearFeltEdge);
+      expect(Math.abs(anchor[0])).toBeLessThan(halfWidth);
+      expect(anchor[1]).toBeGreaterThanOrEqual(TABLE_HEIGHT);
+    }
+  });
+
+  it("uses compact fitting only inside the approved bounds", () => {
+    expect(cameraViewPreset("standard", 1024 / 768, 1024)).toMatchObject({ fov: 52 });
+    expect(cameraViewPreset("standard", 1024 / 768, 1024).distance).toBeGreaterThan(3.5);
+    expect(cameraViewPreset("standard", 1024 / 768, 1024).distance).toBeLessThanOrEqual(CAMERA_DEPTH_MAX);
+    expect(cameraViewPreset("standard", 2560 / 1080, 2560)).toMatchObject({ fov: 52 });
+    expect(cameraViewPreset("standard", 2560 / 1080, 2560).distance).toBeGreaterThan(3);
+    expect(cameraViewPreset("standard", 2560 / 1080, 2560).distance).toBeLessThanOrEqual(CAMERA_DEPTH_MAX);
+  });
+
+  it("fits the capsule into the centered gameplay safe zone without widening the lens", () => {
+    const standard16by9 = cameraDepthForSafeFrame(52, 16 / 9, 1366);
+    const ultrawide = cameraDepthForSafeFrame(52, 2560 / 1080, 2560);
+    expect(standard16by9).toBeGreaterThan(2.8);
+    expect(standard16by9).toBeLessThanOrEqual(CAMERA_DEPTH_MAX);
+    // The world must not expand through 2560 px: its extra width is room wing,
+    // so it is allowed to sit no closer than the 16:9 play zone.
+    expect(ultrawide).toBeGreaterThanOrEqual(standard16by9);
+    expect(cameraPose(0, "standard", 16 / 9, 1366).position[2]).toBe(standard16by9);
+  });
+
+  it("allows compact native fitting to exceed the initial 2.25 m guide without widening the lens", () => {
+    const compact = cameraDepthForSafeFrame(52, 1024 / 768, 1024);
+    expect(compact).toBeGreaterThan(3.5);
+    expect(compact).toBeLessThanOrEqual(CAMERA_DEPTH_MAX);
+    expect(cameraPose(0, "standard", 1024 / 768, 1024).fov).toBe(CAMERA_VERTICAL_FOV);
   });
 });
 

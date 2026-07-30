@@ -17,6 +17,7 @@ export interface TableSceneSnapshotInput {
   readonly actingPlayerId?: string;
   readonly publicActions?: Readonly<Record<string, SeatActionKind | undefined>>;
   readonly pot: number;
+  readonly pots?: readonly { id: string; kind: "main" | "side"; amount: number }[];
   readonly boardCards: number;
   readonly publicBoardCardCodes?: readonly string[];
   readonly heroCardCodes?: readonly string[];
@@ -102,6 +103,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
   return {
     seats,
     pot: input.pot,
+    pots: input.pots,
     boardCards: input.boardCards,
     publicBoardCardCodes: input.publicBoardCardCodes ?? [],
     cameraPan: input.cameraPan,

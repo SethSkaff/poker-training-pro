@@ -187,20 +187,29 @@ wings without turning the camera into a spectator orbit.
 
 | Property | Production start target |
 |---|---|
-| Vertical FOV | standard 52°; close 48°; wide/accessibility 58° |
+| Vertical FOV | fixed 52° in every responsive and preference mode |
 | Camera eye height | 1.24–1.29 m; start 1.26 m |
-| Distance behind near rail | 0.78–0.96 m; start 0.88 m |
-| Camera position | `(0, 1.26, 1.66)` in the proposed table coordinates |
-| Recenter target | `(0, 0.73, -0.18)` |
-| Pitch | −14° to −18°; start −16° |
+| Distance behind near rail | Responsive closest safe position; original 0.78–0.96 m / `z=1.66` is the preferred close pose, not a fixed coordinate |
+| Camera position | `(0, 1.26, z)`; centered, with `z` solved per native safe frame |
+| Recenter target | centered on `(0, z=-0.18)`; target height is solved to retain the seated pitch as depth changes |
+| Pitch | fixed −16° seated gaze as responsive depth changes |
 | Look limits | yaw −32° left / +32° right; pitch fixed during ordinary play |
 | Recenter | yaw 0°, pitch −16°, 450–650 ms only when camera motion is full |
 | Near/far clip | 0.05 m / 45 m |
 | Current-actor attention | up to 5° yaw and 1.5° pitch over 450 ms; never while the hero acts or while the player is manually looking; return over 750 ms |
 
-FOV is a bounded accessibility/view preference, not a responsive-layout
-substitute. Responsive fitting first adjusts the camera by at most 0.14 m and
-then FOV by at most 4°.
+FOV is not a responsive-layout or view-preference substitute. **Approved
+reconciliation, 2026-07-29:** preserve the table, seat anchors, horizontal
+center, 1.26 m eye height, fixed 52° vertical FOV, physical hero foreground,
+and 16 px safe rectangle; change **camera distance only**.
+`open-arc-v1` solves the nearest centered depth in the preferred 1.66–2.25 m
+range when it fits, but may extend to the measured 3.75 m safe-frame ceiling.
+The solver takes the greater of the full chair/arm envelope and the fixed-size
+capsule rail's approved apparent-width bound; at 1024×768 this is about 3.62 m.
+At ultrawide widths it fits the table against the centered 1920 px gameplay
+zone and exposes room wings rather than stretching the table. It never widens
+FOV, scales the table, or removes foreground cards/chips merely to satisfy a
+capture.
 
 ### C. Table and seat geometry
 
@@ -286,15 +295,18 @@ of travel rather than a separate composition.
 
 | Native target | Composition behavior |
 |---|---|
-| 1100×720 | No side panel. 48 px top HUD, 58 px action band. Start FOV 56°, camera +0.12 m from rail. Near opponents shift only 0.06 m toward the far arc. Seat plaques use two 11 px lines. |
-| 1280×720 | Same compact-height bands; start FOV 54°. All five heads, plaques, cards, pots, and markers remain in the world-safe rectangle. |
-| 1366×768 | Reference composition shown in the artifact; FOV 52°, 0.88 m behind rail. |
-| 1920×1080 | Keep the table at 70–76% of viewport width rather than scaling it to fill every pixel. Use added room above and beside it; FOV 50–52°. Action band remains max 760 px. |
+| 1100×720 | No side panel. 48 px top HUD, 58 px action band. Fixed 52° lens; the centered depth solver uses the nearest safe pose. Seat plaques use two 11 px lines. |
+| 1280×720 | Same compact-height bands and fixed 52° lens. The depth solver retains all five heads, plaques, cards, pots, and markers inside the world-safe rectangle. |
+| 1366×768 | Reference composition uses the fixed 52° lens and the nearest centered safe depth. |
+| 1920×1080 | Keep the table at 70–76% of viewport width rather than scaling it to fill every pixel. Use added room above and beside it at the same fixed 52° lens. Action band remains max 760 px. |
 | 2560×1080 | Preserve the centered 1920 px gameplay safe zone and expose extra room wings. Do not stretch the table or spread seats. Optional secondary tournament information may occupy a collapsible wing drawer, never a permanent panel. |
 
-The legacy 1024×768 package target uses the 1100×720 compact rules with a
-54–58° bounded FOV and the same state inventory; it is retained for the existing
-M103 matrix even though the product target list starts at 1100×720.
+The legacy 1024×768 package target uses the 1100×720 compact rules and the same
+fixed 52° lens/state inventory. Its safe-frame solution may exceed the initial
+2.25 m depth guide (currently about 3.62 m): visual containment and the capsule
+rail's approved apparent width take priority over clipping a chair or widening
+the lens. It is retained for the existing M103 matrix even though the product
+target list starts at 1100×720.
 
 ### H. Accessibility and reduced motion
 

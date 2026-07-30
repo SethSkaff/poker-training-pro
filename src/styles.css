@@ -3086,6 +3086,193 @@ input[type="range"]::-webkit-slider-thumb {
   opacity: 0;
 }
 
+/* -------------------------------------------------------------------------
+   Direction A / open-arc-v1.  This is a structural ready-mode layout, not a
+   tuned version of the fallback ellipse: the canvas gets the complete room,
+   the dashboard column stops claiming width, and DOM remains the accessible
+   text/control mirror above it.  The fallback rules above remain untouched. */
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) {
+  display: block;
+  height: calc(100vh - 62px);
+  padding: 0;
+}
+
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .table-stage {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #0b0f0e;
+}
+
+/* Secondary information remains mounted for assistive technology and pause
+   navigation, but ordinary play no longer gives it a permanent dashboard bay. */
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .training-panel,
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .feedback-panel,
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .mode-preview-panel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .poker-scene {
+  inset: 0;
+  transform: none;
+  transition: none;
+}
+
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .poker-table {
+  inset: 0;
+  width: auto;
+  height: auto;
+  transform: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.poker-scene[data-spatial-scene="ready"] .opponent-cards,
+.poker-scene[data-spatial-scene="ready"] .dealer,
+.poker-scene[data-spatial-scene="ready"] .pot-groups,
+.poker-scene[data-spatial-scene="ready"] .table-readout {
+  opacity: 0;
+}
+
+/*
+  Five DOM plaques are attached to the open forward arc by *projecting the
+  physical rail*, not by fixed viewport percentages.  The previous anchors
+  (14%/57%, 18%/31%, 50%/21%, 82%/31%, 86%/57%) matched no actual chair: the
+  two near-side plaques landed in unlit room a metre outside the rail, and the
+  centre plaque collided with the main pot plaque.  `--seat-rail-x/y` come from
+  `seatPlaqueViewportAnchor`, so a plaque tracks its own chair through pan and
+  every responsive camera depth.  The percentages below are only the fallback
+  used for the frame before the scene reports its size.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat--hero { left: 50%; bottom: 15%; top: auto; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--lower-left { --seat-rail-x-default: 22%; --seat-rail-y-default: 60%; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--upper-left { --seat-rail-x-default: 33%; --seat-rail-y-default: 46%; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--top { --seat-rail-x-default: 50%; --seat-rail-y-default: 43%; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--upper-right { --seat-rail-x-default: 67%; --seat-rail-y-default: 46%; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--lower-right { --seat-rail-x-default: 78%; --seat-rail-y-default: 60%; }
+
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) {
+  left: var(--seat-rail-x, var(--seat-rail-x-default));
+  top: var(--seat-rail-y, var(--seat-rail-y-default));
+  bottom: auto;
+  right: auto;
+  /* The anchor is the rail point, so the plaque stack sits directly above it. */
+  transform: translate(-50%, -100%);
+}
+
+/*
+  The physical dealer puck and blind markers are the world-space owners of that
+  information, so the DOM badges must not paint a second copy floating beside
+  the plaque. They stay mounted for the accessible seat label and the 2.5D
+  fallback, which is the only place they are the real cue.
+*/
+.poker-scene[data-spatial-scene="ready"] .dealer-button {
+  opacity: 0;
+  animation: none;
+}
+
+/*
+  `opacity: 0` alone does not hide these. `.opponent-cards` carries
+  `animation: opponent-card-deal ... both`, and a running animation's keyframed
+  opacity beats a plain declaration in the cascade -- so the DOM card mirrors
+  kept painting over the room while the physical cards were also drawn. The
+  extra `.player-seat` raises specificity above the later `.is-folded`/
+  `.is-revealed` animation rules. Opacity, not visibility, so the revealed-card
+  text stays in the accessibility tree.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-bet,
+.poker-scene[data-spatial-scene="ready"] .player-seat .opponent-card-hand,
+.poker-scene[data-spatial-scene="ready"] .player-seat .opponent-cards {
+  opacity: 0;
+  animation: none;
+  transition: none;
+}
+
+/*
+  Seat text belongs in one short row sitting on the rail, not a stacked column.
+  A column of marker + action + nameplate is tall enough to reach the face above
+  it, which Direction A forbids ("faces never sit behind a ... action label").
+  One row keeps the whole block inside the rail-to-shoulder gap at every target.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: 30vw;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-label,
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-action-label {
+  position: static;
+  transform: none;
+  margin: 0;
+  inset: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/*
+  The position marker keeps its own anchor rather than joining the row. Left in
+  the flow it collided with the action label -- "UTG" drawn over "FOLDED" and
+  "BTN" over "CALLS" -- because it carries its own offsets and a higher z-index.
+  Above the plaque's leading edge it stays inside the measured 38-68 px
+  rail-to-chin gap and clear of both the name and the face.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-position-marker {
+  position: absolute;
+  inset: auto auto calc(100% + 3px) 0;
+  transform: none;
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* The DOM hero-card button remains the semantic/focus target while physical
+   cards own the ready-mode paint.  Peek exposes only compact readable text. */
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .hero-hole-cards {
+  bottom: 14%;
+  z-index: 44;
+  background: transparent;
+}
+.poker-scene[data-spatial-scene="ready"] .hero-hole-cards .playing-card,
+.poker-scene[data-spatial-scene="ready"] .hero-hole-cards .peek-label {
+  opacity: 0;
+}
+.poker-scene[data-spatial-scene="ready"] .hero-hole-cards.is-peeked .hero-card-wrap small {
+  display: block;
+  color: #fff9e8;
+  text-shadow: 0 2px 4px #000;
+}
+
+/* Defined HUD safe areas: a quiet top band, bounded bottom action rail, and a
+   top-right Skip that cannot cover the centre actor or felt. */
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .tournament-hud { top: 10px; left: 14px; padding: 6px 9px; }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .camera-controls { top: 10px; right: 138px; }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .skip-hand { top: 10px; right: 16px; left: auto; min-height: 44px; padding: 0 17px; transform: none; }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .skip-hand:hover,
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .skip-hand:focus-visible { transform: translateY(-1px); }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-dock { right: max(16px, calc((100% - 760px) / 2)); bottom: 10px; left: max(16px, calc((100% - 760px) / 2)); }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-button { min-height: 58px; }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-context { right: max(16px, calc((100% - 760px) / 2)); bottom: 76px; left: max(16px, calc((100% - 760px) / 2)); }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .spectator-dock { right: max(16px, calc((100% - 760px) / 2)); bottom: 10px; left: max(16px, calc((100% - 760px) / 2)); min-height: 44px; }
+
+@media (max-height: 800px) {
+  .table-layout:has(.poker-scene[data-spatial-scene="ready"]) { height: calc(100vh - 54px); }
+  .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .tournament-hud { max-height: 48px; overflow: hidden; }
+  .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-dock { bottom: 6px; }
+  .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-button { min-height: 58px; }
+  .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-context { bottom: 68px; }
+}
+
 .poker-table {
   position: absolute;
   top: 24%;

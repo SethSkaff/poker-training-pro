@@ -43,7 +43,7 @@ describe("seated camera controls", () => {
     // It doubles as the readout of where the camera is pointing.
     expect(table).toContain("table.camera.centered");
     expect(table).toContain("table.camera.offset");
-    expect(table).toContain("disabled={cameraPan === 0}");
+    expect(table).toContain("disabled={cameraFixed || effectiveCameraPan === 0}");
   });
 
   it("bounds the pan on every path, so normal play has no free camera", () => {
@@ -54,6 +54,13 @@ describe("seated camera controls", () => {
     }
   });
 
+  it("keeps reduced and off camera settings at the exact recenter pose", () => {
+    expect(table).toContain('const cameraFixed = settings.reducedMotion || settings.cameraMotion === "off"');
+    expect(table).toContain("const effectiveCameraPan = cameraFixed ? 0 : cameraPan");
+    expect(table).toContain("cameraPan: effectiveCameraPan");
+    expect(table).toContain("if (!cameraFixed) setCameraPan");
+  });
+
   it("exposes sensitivity, zoom, and an automatic-camera-motion switch", () => {
     expect(settingsPanel).toContain("cameraSensitivity: value");
     expect(settingsPanel).toContain("cameraView: value");
@@ -62,6 +69,8 @@ describe("seated camera controls", () => {
     expect(table).toContain('settings.cameraSensitivity === "low"');
     expect(table).toContain('settings.cameraView === "close"');
     expect(table).toContain("cameraMotion: settings.cameraMotion");
-    expect(table).not.toContain('settings.reducedMotion || settings.cameraMotion === "off"');
+    // Camera-off fixes only the seated view; it must not silently turn
+    // independent table-action motion into reduced motion.
+    expect(table).toContain('reducedMotion: settings.reducedMotion || settings.transitionMotion === "off"');
   });
 });

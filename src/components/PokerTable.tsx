@@ -40,6 +40,7 @@ import {
   createTableSceneSnapshot,
   type SceneSnapshotSeat,
 } from "../scene3d/tableSceneSnapshot";
+import { seatPlaqueViewportAnchor } from "../scene3d/tableSceneModel";
 import {
   trainingScenarios,
   type RatedTrainingScenario,
@@ -691,6 +692,12 @@ interface PlayerSeatProps {
   winningCardLabels?: ReadonlySet<string>;
   /** Adapter-owned public projection used for DOM/scene parity diagnostics. */
   sceneSeat?: SceneSnapshotSeat;
+  /**
+   * Ready-mode viewport anchor of this seat's physical rail, so the plaque hangs
+   * off the actual chair instead of a fixed viewport percentage. Absent in
+   * fallback, where the CSS ellipse remains the layout owner.
+   */
+  railAnchor?: { readonly xPercent: number; readonly yPercent: number };
 }
 
 /**
@@ -789,6 +796,7 @@ function PlayerSeat({
   revealedCards,
   winningCardLabels,
   sceneSeat,
+  railAnchor,
 }: PlayerSeatProps) {
   const appearance = describeOpponentAppearance(player.id);
   const isMucking = isSeatFoldedForPresentation(
@@ -832,6 +840,20 @@ function PlayerSeat({
         isOut ? "is-out" : ""
       } ${wonPot ? "is-winner" : ""} ${hasRevealedCards ? "is-revealed" : ""}`}
       role="group"
+      {...(
+        // Stable public action kind for packaged still-frame evidence. The
+        // visible plaque text is localized, so an audit matching on it would be
+        // asserting a translation rather than a terminal action state.
+        recentAction && !isHero ? { "data-seat-action": recentAction } : {}
+      )}
+      {...(railAnchor
+        ? {
+            style: {
+              "--seat-rail-x": `${railAnchor.xPercent}%`,
+              "--seat-rail-y": `${railAnchor.yPercent}%`,
+            } as CSSProperties,
+          }
+        : {})}
       {...sceneSeatDomAttributes(sceneSeat)}
       aria-label={playerSeatAriaLabel({
         isHero,
@@ -1535,12 +1557,45 @@ export function PokerTable({
   const [cameraPan, setCameraPan] = useState(
     initialTrainingPresentation?.cameraPan ?? 0,
   );
+  // Direction A's reduced and camera-off equivalents are a true seated
+  // recenter pose. They do not merely make a player-selected pan snap faster.
+  const cameraFixed = settings.reducedMotion || settings.cameraMotion === "off";
+  const effectiveCameraPan = cameraFixed ? 0 : cameraPan;
   const [sceneAvailability, setSceneAvailability] =
     useState<SceneAvailability>({ status: "idle" });
+  /*
+    Ready-mode seat plaques hang off the projected physical rail, so they need
+    the scene's real pixel box. Observing the element rather than the window
+    keeps the projection correct under the compact-height HUD bands, which
+    reserve different amounts of height at different native sizes.
+  */
+  const sceneElementRef = useRef<HTMLDivElement | null>(null);
+  const [sceneViewport, setSceneViewport] = useState<{ width: number; height: number }>(
+    { width: 0, height: 0 },
+  );
+  useEffect(() => {
+    const element = sceneElementRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const box = element.getBoundingClientRect();
+      setSceneViewport((current) =>
+        current.width === box.width && current.height === box.height
+          ? current
+          : { width: box.width, height: box.height },
+      );
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   /* A prior renderer must not make a replacement request fade DOM for a frame. */
   const sceneRequestRef = useRef(settings.spatialScene);
   const sceneRequestChanged = sceneRequestRef.current !== settings.spatialScene;
   sceneRequestRef.current = settings.spatialScene;
+  /* Exactly the condition that puts `data-spatial-scene="ready"` on the scene,
+     so DOM plaques never project against a camera that is not on screen. */
+  const sceneReadyForPlaques = settings.spatialScene
+    && !sceneRequestChanged
+    && sceneAvailability.status === "ready";
   const [elapsedMs, setElapsedMs] = useState(
     initialTrainingPresentation?.elapsedMs ?? 0,
   );
@@ -1692,6 +1747,10 @@ export function PokerTable({
   ]);
 
   useEffect(() => {
+    if (cameraFixed && cameraPan !== 0) setCameraPan(0);
+  }, [cameraFixed, cameraPan]);
+
+  useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
 
@@ -1788,11 +1847,11 @@ export function PokerTable({
   useEffect(() => {
     if (mode !== "training") return;
     onTrainingPresentationChange?.({
-      cameraPan,
+      cameraPan: effectiveCameraPan,
       elapsedMs: Math.max(0, Math.round(elapsedMs)),
       paused,
     });
-  }, [cameraPan, elapsedMs, mode, onTrainingPresentationChange, paused]);
+  }, [effectiveCameraPan, elapsedMs, mode, onTrainingPresentationChange, paused]);
 
   // The shared modal focus contract: initial focus inside the dialog, a
   // wraparound Tab trap, and exact restoration of the pre-pause focus. Subpage
@@ -2358,10 +2417,10 @@ export function PokerTable({
           submitPresetRaise("all-in");
           break;
         case "camera.left":
-          setCameraPan((value) => Math.max(-2, value - cameraStep));
+          if (!cameraFixed) setCameraPan((value) => Math.max(-2, value - cameraStep));
           break;
         case "camera.right":
-          setCameraPan((value) => Math.min(2, value + cameraStep));
+          if (!cameraFixed) setCameraPan((value) => Math.min(2, value + cameraStep));
           break;
         case "camera.center":
           setCameraPan(0);
@@ -2520,7 +2579,7 @@ export function PokerTable({
   };
 
   const tableStyle = {
-    "--camera-pan": `${cameraPan * -18}px`,
+    "--camera-pan": `${effectiveCameraPan * -18}px`,
     "--camera-zoom":
       settings.cameraView === "close"
         ? "1.06"
@@ -2721,6 +2780,14 @@ export function PokerTable({
     actingPlayerId: scenario.actingPlayerId,
     publicActions: sceneActions,
     pot: scenario.pot,
+    pots: (scenario.potBreakdown?.length
+      ? scenario.potBreakdown
+      : [{ id: "main", kind: "main", amount: scenario.pot }]
+    ).map((pot, index) => ({
+      id: `${pot.kind}-${index}`,
+      kind: pot.kind === "side" ? "side" as const : "main" as const,
+      amount: pot.amount,
+    })),
     boardCards: stagedBoard.length,
     publicBoardCardCodes: stagedBoard.map(cardLabel),
     heroCardCodes: scenario.heroCards.map(cardLabel),
@@ -2729,7 +2796,7 @@ export function PokerTable({
       : tournament?.presentationEvent?.kind === "all-in-reveal"
         ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
         : {},
-    cameraPan,
+    cameraPan: effectiveCameraPan,
     cameraView: settings.cameraView,
     cameraMotion: settings.cameraMotion,
     reducedMotion: settings.reducedMotion || settings.transitionMotion === "off",
@@ -3372,9 +3439,8 @@ export function PokerTable({
           <div className="camera-controls">
             <button
               type="button"
-              onClick={() =>
-                setCameraPan((value) => Math.max(-2, value - cameraStep))
-              }
+              onClick={() => !cameraFixed && setCameraPan((value) => Math.max(-2, value - cameraStep))}
+              disabled={cameraFixed}
               aria-label={formatMessage("table.camera.left")}
             >
               <ChevronLeft size={17} />
@@ -3389,16 +3455,16 @@ export function PokerTable({
               type="button"
               className="camera-controls__center"
               onClick={() => setCameraPan(0)}
-              disabled={cameraPan === 0}
+              disabled={cameraFixed || effectiveCameraPan === 0}
               aria-label={formatMessage("table.camera.center")}
             >
               <span>{formatMessage("table.camera.viewLabel")}</span>
               <b>
-                {cameraPan === 0
+                {effectiveCameraPan === 0
                   ? formatMessage("table.camera.centered")
                   : formatMessage("table.camera.offset", {
                       direction: formatMessage(
-                        cameraPan < 0
+                        effectiveCameraPan < 0
                           ? "table.camera.directionLeft"
                           : "table.camera.directionRight",
                       ),
@@ -3407,9 +3473,8 @@ export function PokerTable({
             </button>
             <button
               type="button"
-              onClick={() =>
-                setCameraPan((value) => Math.min(2, value + cameraStep))
-              }
+              onClick={() => !cameraFixed && setCameraPan((value) => Math.min(2, value + cameraStep))}
+              disabled={cameraFixed}
               aria-label={formatMessage("table.camera.right")}
             >
               <ChevronRight size={17} />
@@ -3417,6 +3482,7 @@ export function PokerTable({
           </div>
 
             <div
+              ref={sceneElementRef}
               className="poker-scene motion-vestibular"
               {...(settings.spatialScene && !sceneRequestChanged && sceneAvailability.status === "ready"
                 ? { "data-spatial-scene": "ready" }
@@ -3531,6 +3597,13 @@ export function PokerTable({
               data-table-street={scenario.street}
               data-scene-pot={String(sceneSnapshot.pot)}
               /*
+                The effective camera yaw step, so packaged evidence can prove
+                pointer, keyboard, and controller reach identical camera states.
+                Reading the recenter button's label instead would assert a
+                translation, and the canvas is unreadable by design.
+              */
+              data-table-camera-pan={String(effectiveCameraPan)}
+              /*
                 Marks that the 3D room is drawing the furniture, so the DOM's
                 own felt, chairs, and avatars can recede rather than being drawn
                 on top of the same table a second time. Only decoration fades:
@@ -3620,6 +3693,7 @@ export function PokerTable({
                       className={`pot-group pot-group--${group.kind}`}
                       key={group.id}
                       data-pot-kind={group.kind}
+                      data-pot-amount={group.amount}
                     >
                       <div
                         className="center-pot"
@@ -3664,6 +3738,7 @@ export function PokerTable({
                 tournament?.presentationEvent,
                 player.id,
               );
+              const seatSceneSeat = sceneSeatByPlayerId.get(player.id);
               return (
                 <PlayerSeat
                   key={player.id}
@@ -3689,7 +3764,18 @@ export function PokerTable({
                   positionLabel={positionLabelForSeat(player.seat)}
                   revealedCards={revealedCardsByPlayer.get(player.id)}
                   winningCardLabels={winningCardLabels}
-                  sceneSeat={sceneSeatByPlayerId.get(player.id)}
+                  sceneSeat={seatSceneSeat}
+                  railAnchor={
+                    sceneReadyForPlaques && seatSceneSeat
+                      ? seatPlaqueViewportAnchor(
+                          seatSceneSeat.relativeSeat,
+                          effectiveCameraPan,
+                          sceneViewport.width,
+                          sceneViewport.height,
+                          settings.cameraView,
+                        )
+                      : undefined
+                  }
                 />
               );
             })}

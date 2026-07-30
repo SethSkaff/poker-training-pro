@@ -37,7 +37,7 @@ interface Window {
     /** Present only in the isolated packaged lifecycle/scene audit. */
     sceneDiagnosticsEnabled?: true;
     /** Fixed runner seed exposed only to the isolated packaged scene audit. */
-    sceneAuditSeed?: "runner-showdown-3";
+    sceneAuditSeed?: "runner-showdown-3" | "scene-side-pot-0";
     /** Present only in the packaged WebGL fallback audit. */
     forceWebGl2Failure?: true;
     setFullscreen: (fullscreen: boolean) => Promise<boolean>;

@@ -236,9 +236,13 @@ describe("poker table live announcements", () => {
     });
 
     expect(sceneSeatDomAttributes(snapshot.seats[1])).toEqual({
+      "data-scene-player-id": "villain",
       "data-scene-canonical-seat": "8",
       "data-scene-relative-seat": "5",
       "data-scene-card-visibility": "hidden",
+      "data-scene-stack": "900",
+      "data-scene-bet": "25",
+      "data-scene-acting": "false",
     });
     expect(sceneSeatDomAttributes(undefined)).toEqual({});
   });
