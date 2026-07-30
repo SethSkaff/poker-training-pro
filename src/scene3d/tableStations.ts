@@ -22,8 +22,29 @@ export const TABLE_DEPTH = 1.15;
 export const TABLE_RAIL_WIDTH = 0.13;
 export const TABLE_HEIGHT = 0.76;
 
-/** How far a station's body centre sits outside the outer rail. */
-const STATION_CLEARANCE = 0.30;
+/**
+ * How far a station's body centre sits outside the outer rail.
+ *
+ * Raised from 0.30, where the hero's two neighbours sat 0.55 m from the eye and
+ * a neighbour's shoulder and forearm were the two largest objects in the frame.
+ * Most of that problem turned out to belong to the 70-degree lens rather than
+ * the spacing, and pushing the seats out to 0.42 to compensate simply moved it:
+ * at that distance nobody could rest their hands on their own rail without an
+ * arm long enough to look wrong. 0.34 is ordinary card-room spacing and, with
+ * the narrower lens, leaves the neighbours reading as people.
+ */
+export const STATION_CLEARANCE = 0.34;
+
+/**
+ * The dealer sits tighter to the table than the players do.
+ *
+ * They work at the felt -- pitching cards, pulling in bets, cutting out the pot
+ * -- so they sit right up against the rail rather than back from it. Giving the
+ * dealer a player's clearance meant their arms had to span half a metre of open
+ * air to reach the felt at all, which read as two long tubes laid across the
+ * table rather than a person dealing.
+ */
+export const DEALER_CLEARANCE = 0.20;
 
 /**
  * Angles are measured from the table's near centre (+Z) and increase toward +X.
@@ -43,6 +64,8 @@ export const PLAYER_ANGLES_DEGREES = [-108, -66, -22, 22, 66, 108] as const;
 export const PLAYER_STATION_COUNT = PLAYER_ANGLES_DEGREES.length;
 
 export interface Station {
+  /** Bearing around the table, in degrees from the near centre; see above. */
+  readonly angleDegrees: number;
   /** Ground position of the body centre. */
   readonly position: readonly [number, number, number];
   /** Rotation about Y so the body faces the middle of the table. */
@@ -60,9 +83,9 @@ function ellipseSemiAxes(clearance: number): readonly [number, number] {
   ];
 }
 
-function stationAt(angleDegrees: number): Station {
+function stationAt(angleDegrees: number, clearance = STATION_CLEARANCE): Station {
   const angle = (angleDegrees * Math.PI) / 180;
-  const [bodyA, bodyB] = ellipseSemiAxes(STATION_CLEARANCE);
+  const [bodyA, bodyB] = ellipseSemiAxes(clearance);
   const [railA, railB] = ellipseSemiAxes(0.015);
   /*
     Felt anchors sit just inboard of the ledge on the station's own bearing, so a
@@ -73,6 +96,7 @@ function stationAt(angleDegrees: number): Station {
   const feltA = TABLE_WIDTH / 2 - 0.20;
   const feltB = TABLE_DEPTH / 2 - 0.15;
   return {
+    angleDegrees,
     position: [bodyA * Math.sin(angle), 0, bodyB * Math.cos(angle)],
     // Faces the table centre from wherever the station is.
     facing: Math.atan2(-bodyA * Math.sin(angle), -bodyB * Math.cos(angle)),
@@ -83,12 +107,14 @@ function stationAt(angleDegrees: number): Station {
 
 /** The six player stations, in seat order around the table. */
 export function playerStations(): readonly Station[] {
-  return PLAYER_ANGLES_DEGREES.map(stationAt);
+  // Not `map(stationAt)`: `map` passes the index as a second argument, which
+  // would land in the clearance parameter and give each seat a different one.
+  return PLAYER_ANGLES_DEGREES.map((angleDegrees) => stationAt(angleDegrees));
 }
 
 /** The dealer's station. Not a player, and never dealt a hand. */
 export function dealerStation(): Station {
-  return stationAt(DEALER_ANGLE_DEGREES);
+  return stationAt(DEALER_ANGLE_DEGREES, DEALER_CLEARANCE);
 }
 
 /**
@@ -126,15 +152,19 @@ export const EYE_HEIGHT = 1.28;
 /** A player looks down at the felt in front of them. */
 export const CAMERA_PITCH_DEGREES = 24;
 /*
-  70 degrees vertical (about 102 horizontal at 16:9). Measured across all six hero
-  seats: at rest this frames the board, the pot, the hero's own cards and 3.3 of 5
-  opponents on average, and *all five* are reachable inside the +/-40 degree head
-  turn. Going wider only buys 0.4 more opponents at rest and costs real barrel
-  distortion, so the remaining coverage is handled by looking -- which is what a
-  seated player does, and what the composition doc already anticipated with its
-  off-screen-actor edge cue requirement.
+  62 degrees vertical (about 95 horizontal at 16:9), narrowed from 70.
+
+  Measured across all six hero seats this still frames the board, the pot and the
+  hero's own cards at every supported viewport, and every opponent is still
+  reachable inside the +/-40 degree head turn -- the framing tests assert both.
+  What 70 bought was peripheral coverage the hero was never looking at, and it
+  charged real barrel distortion for it: the neighbour at the frame edge was
+  stretched into an unrecognisable mass, which is the single loudest artefact a
+  wide lens produces on a face 1 m away. The remaining coverage is handled by
+  looking, which is what a seated player does, and what the composition doc
+  already anticipated with its off-screen-actor edge cue requirement.
 */
-export const CAMERA_VERTICAL_FOV = 70;
+export const CAMERA_VERTICAL_FOV = 62;
 /**
  * How far the eyes sit back from the station's body centre.
  *
@@ -214,6 +244,42 @@ export function stationAsPose(station: Station, seat: number): {
     feltPosition: station.feltPosition,
     facing: station.facing,
   };
+}
+
+/** Distance from a point to the table's centre line segment. */
+function capsuleDistance(x: number, z: number): number {
+  const straight = TABLE_WIDTH / 2 - TABLE_DEPTH / 2;
+  const clampedX = Math.min(straight, Math.max(-straight, x));
+  return Math.hypot(x - clampedX, z);
+}
+
+/**
+ * Where a station's ledge medallion is inlaid.
+ *
+ * The medallion has to land on the hard ledge ring -- the flat shelf between
+ * the felt and the padded rail -- on the station's own bearing. The table top is
+ * a capsule, not an ellipse, so scaling the seat's ellipse semi-axes does *not*
+ * land on it: at the corner stations that error was 27 mm, which put the inlay
+ * on the felt chamfer instead of the shelf. This walks out along the station's
+ * bearing until it reaches the ledge midline, which is correct for any outline
+ * the two share.
+ */
+const LEDGE_MIDLINE_OFFSET = 0.028;
+
+export function stationLedgeAnchor(station: Station): readonly [number, number, number] {
+  const length = Math.hypot(station.position[0], station.position[2]) || 1;
+  const ux = station.position[0] / length;
+  const uz = station.position[2] / length;
+  const target = TABLE_DEPTH / 2 + LEDGE_MIDLINE_OFFSET;
+  let low = 0;
+  let high = TABLE_WIDTH;
+  for (let step = 0; step < 48; step += 1) {
+    const mid = (low + high) / 2;
+    if (capsuleDistance(ux * mid, uz * mid) < target) low = mid;
+    else high = mid;
+  }
+  const distance = (low + high) / 2;
+  return [ux * distance, TABLE_HEIGHT, uz * distance];
 }
 
 /** Public poker-object anchors, in table space. */

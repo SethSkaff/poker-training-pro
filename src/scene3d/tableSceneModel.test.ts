@@ -24,6 +24,7 @@ import {
   TABLE_HEIGHT,
   TABLE_WIDTH,
   turnIndicatorPosition,
+  BET_CIRCLE_FORWARD,
   turnIndicatorPositionForPlayer,
 } from "./tableSceneModel";
 
@@ -175,9 +176,20 @@ describe("the current-turn indicator", () => {
     for (const pose of seatPoses(6)) {
       const indicator = turnIndicatorPosition(pose);
 
-      // That player's lane, not the chair and not the table centre.
-      expect(indicator[0]).toBeCloseTo(pose.feltPosition[0], 6);
-      expect(indicator[2]).toBeCloseTo(pose.feltPosition[2], 6);
+      /*
+        That player's lane, not the chair and not the table centre -- and
+        specifically on the bet circle printed in front of them, which is a
+        short step from the lane origin *toward the middle of the table*. The
+        cue is the felt's own printed circle lighting up rather than a ring
+        drawn around the actor's hole cards.
+      */
+      const lane = Math.hypot(pose.feltPosition[0], pose.feltPosition[2]);
+      const cue = Math.hypot(indicator[0], indicator[2]);
+      expect(cue).toBeLessThan(lane);
+      expect(Math.hypot(
+        indicator[0] - pose.feltPosition[0],
+        indicator[2] - pose.feltPosition[2],
+      )).toBeCloseTo(BET_CIRCLE_FORWARD, 6);
       // Resting on the felt: above the surface, but only just, so it reads as a
       // marking on the cloth rather than an object floating over it.
       expect(indicator[1]).toBeGreaterThan(TABLE_HEIGHT);

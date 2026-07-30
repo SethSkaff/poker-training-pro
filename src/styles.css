@@ -3143,6 +3143,25 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /*
+  The board is dealt onto the felt, so the DOM community row must not paint a
+  second copy of it floating over the table. Four crisp flat cards hanging in
+  screen space in front of the physical board were the last "UI pasted into the
+  scene" element left in the seated frame, and they were the reason the real
+  cards behind them looked like a mistake.
+
+  Faded, not unmounted: this row carries the accessible community-card label and
+  it is the real cue in the 2.5D fallback, so it stays mounted and stays in the
+  accessibility tree. `animation: none` is required as well -- the deal-in
+  keyframes run with `both`, and a filled animation outranks this opacity.
+*/
+.poker-scene[data-spatial-scene="ready"] .community-cards,
+.poker-scene[data-spatial-scene="ready"] .community-cards .playing-card {
+  opacity: 0;
+  animation: none;
+  transition: none;
+}
+
+/*
   Five DOM plaques are attached to the open forward arc by *projecting the
   physical rail*, not by fixed viewport percentages.  The previous anchors
   (14%/57%, 18%/31%, 50%/21%, 82%/31%, 86%/57%) matched no actual chair: the

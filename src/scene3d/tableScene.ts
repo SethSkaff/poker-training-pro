@@ -7,20 +7,21 @@
  * caller. It never reads the poker engine, never decides an action, and never
  * holds state the DOM layer does not also have.
  *
- * All geometry is built procedurally from primitives. That is deliberate for
- * this stage: it makes the slice original work by construction, with no
- * external mesh to license, no asset pipeline to stand up, and nothing fetched
- * at runtime (the CSP forbids that anyway). Authored glTF bodies replace these
- * primitives at M2 without changing this module's interface.
+ * The table, the playing card, and the casino chip come from the Blender
+ * library in `tools/blender/build_table.py`, by way of `tableGeometryLibrary`.
+ * Everything else -- the room, the seated bodies, the markers -- is still built
+ * procedurally from primitives here. Either way the geometry is original work by
+ * construction, with no external mesh to license and nothing fetched at runtime
+ * (the CSP forbids that anyway): the authored meshes are compiled into the
+ * bundle, so the scene still builds synchronously on the first frame.
  */
 import {
   AmbientLight,
-  BoxGeometry,
+  BufferGeometry,
   CanvasTexture,
   CircleGeometry,
   CylinderGeometry,
   Color,
-  ExtrudeGeometry,
   Fog,
   Group,
   IcosahedronGeometry,
@@ -34,7 +35,6 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   PointLight,
-  Shape,
   Scene,
   TorusGeometry,
   WebGLRenderer,
@@ -55,16 +55,15 @@ import {
   seatPoses,
   TABLE_ANCHORS,
   TABLE_HEIGHT,
-  TABLE_DEPTH,
-  TABLE_RAIL_WIDTH,
-  TABLE_RADIUS,
-  TABLE_WIDTH,
   turnIndicatorPositionForPlayer,
+  BET_CIRCLE_RADIUS,
   type SceneCameraMotion,
   type SceneCameraView,
   type SeatActionKind,
   type SeatPose,
 } from "./tableSceneModel";
+import { playerStations, stationLedgeAnchor, type Station } from "./tableStations";
+import { tableMeshGeometry, type TableMeshName } from "./tableGeometryLibrary";
 import { sceneGestureFor } from "./sceneGestures";
 import { buildCharacter, buildChair, buildDealer } from "./sceneCharacters";
 import { describeOpponentCharacter } from "../lib/opponentAppearance";
@@ -189,7 +188,20 @@ export function probeWebGl2(canvas: HTMLCanvasElement): WebGlProbeResult {
 */
 const FELT = 0x23211e;
 const FELT_EDGE = 0x1b1a18;
-const RAIL = 0x7b6b59;
+/* Printed felt graphics -- medallion, racetrack line, per-seat play zones. Only
+   a few percent lighter than the felt: at a real table these are printed in the
+   same dye, and a high-contrast line would draw the eye off the cards. */
+const FELT_PRINT = 0x322e28;
+/* Padded leather, not bare timber. At 0x7b6b59 the near rail was the brightest
+   large surface in the seated frame -- a pale tan band across the bottom third
+   that pulled the eye off the felt and read as moulded plastic. A darker hide
+   lets the brass trim be the highlight, which is the way round a real table
+   works. */
+const RAIL = 0x5c4735;
+/* The hard ledge between felt and padded rail, in a darker timber than the rail
+   so the three zones separate under the pendant key rather than merging. */
+const LEDGE = 0x4a3b2c;
+const PEDESTAL = 0x3a281e;
 const BRASS = 0xc9a227;
 const CARPET = 0x2a2340;
 const CARPET_PATTERN = 0x352c4f;
@@ -197,7 +209,9 @@ const WALL = 0x141821;
 const WALL_PANEL = 0x1e2430;
 const ROOM = 0x140d18;
 const CHAIR_SEAT = 0x3a2431;
-const CHAIR_FRAME = 0x241823;
+/* Lifted from 0x241823. At near-black the chair arms read as dark bars hooked
+   across the upholstery instead of as part of the chair. */
+const CHAIR_FRAME = 0x43303c;
 /* Chip colours read off PokerStars VR chip faces: green 25s and navy 100s are
    roughly 70% of visible chips and are the table's dominant saturated colour. */
 const CHIP_STACK = 0x2fa84f;
@@ -207,12 +221,33 @@ const CHIP_POT = 0x6b3fa0;
 /** One action's visible duration, in milliseconds. */
 const ACTION_MS = 620;
 
+/**
+ * How much larger the community cards are than a hole card, and how far toward
+ * the hero the board is laid from the table's centre mark.
+ *
+ * The board is the one object at the table that every seat must be able to read,
+ * and it is also the worst placed: from the two seats at the ends of the oval it
+ * lies 1.6 m away and is seen at 18 degrees off the felt, which resolves to about
+ * twenty pixels of card and no legible index at all. Hole cards have neither
+ * problem -- they are half a metre away and much steeper.
+ *
+ * Every VR poker room oversizes its community cards for exactly this reason.
+ * 1.5x plus a 0.26 m lift toward the hero roughly doubles the board's usable
+ * area from the worst seat, while leaving a clear 60 mm of felt between the
+ * board and the hero's own cards.
+ */
+const BOARD_CARD_SCALE = 1.5;
+const BOARD_FORWARD = 0.26;
+
 interface TableSceneResources {
   readonly ledger: SceneResourceLedger;
-  readonly cardGeometry: BoxGeometry;
+  readonly cardGeometry: BufferGeometry;
   readonly cardMaterial: MeshBasicMaterial;
   readonly cardBackMaterial: MeshLambertMaterial;
-  readonly chipGeometry: CylinderGeometry;
+  readonly chipGeometry: BufferGeometry;
+  /** The chip's contrasting edge spots, instanced alongside the body. */
+  readonly chipEdgeGeometry: BufferGeometry;
+  chipEdgeMaterial(color: number): MeshLambertMaterial;
   chipMaterial(color: number): MeshLambertMaterial;
   cardFaceMaterial(code: string): MeshBasicMaterial;
   markerMaterial(label: "D" | "SB" | "BB", color: number): MeshBasicMaterial;
@@ -243,20 +278,30 @@ function createTableSceneResources(): TableSceneResources {
     context.lineWidth = 3;
     context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
     /*
-      A real playing card carries its index in two opposite corners and is
-      180-degree rotationally symmetric, which is precisely why orientation never
-      matters when it is lying on a table. Drawing it that way removes a whole
-      class of bug: the single top-left index used before rendered upside down
-      once the card lay flat, because the box's top face maps the canvas top to
-      the card's far edge.
+      The index pair sits on the card's midline, not in its corners.
+
+      A real card puts the index in two opposite corners, and the card stays
+      readable because you hold it up. This board lies flat and is read at as
+      little as 18 degrees off the felt from the seats at the ends of the oval,
+      and that projection crushes the card's far edge hardest -- which is
+      precisely where a corner index lives. Moving the pair inboard to the
+      horizontal midline puts both copies in the least compressed band of the
+      card.
+
+      It is still drawn twice, 180 degrees apart, and a point reflection through
+      the card's centre maps one onto the other. That is the property that
+      matters: it is why a card lying on a table has no wrong way up, and it is
+      what stopped two earlier attempts at a single large centre index from
+      rendering upside down.
     */
     context.fillStyle = face.red ? "#b83232" : "#1f2933";
+    const middle = canvas.height / 2;
     const drawIndex = () => {
       context.textAlign = "center";
-      context.font = "700 30px Georgia, serif";
-      context.fillText(face.rank, 15, 32);
-      context.font = "24px Georgia, serif";
-      context.fillText(face.glyph, 15, 56);
+      context.font = "700 56px Georgia, serif";
+      context.fillText(face.rank, canvas.width * 0.30, middle - 4);
+      context.font = "42px Georgia, serif";
+      context.fillText(face.glyph, canvas.width * 0.30, middle + 42);
     };
     drawIndex();
     context.save();
@@ -264,10 +309,6 @@ function createTableSceneResources(): TableSceneResources {
     context.rotate(Math.PI);
     drawIndex();
     context.restore();
-    // Centre pip, sized so the rank still reads at the steeper v2 gaze.
-    context.textAlign = "center";
-    context.font = "56px Georgia, serif";
-    context.fillText(face.glyph, canvas.width / 2, canvas.height / 2 + 20);
     const texture = track(new CanvasTexture(canvas));
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
     texture.minFilter = LinearFilter;
@@ -329,11 +370,18 @@ function createTableSceneResources(): TableSceneResources {
   };
   return {
     ledger,
-    cardGeometry: track(new BoxGeometry(0.09, 0.005, 0.13)),
+    cardGeometry: track(tableMeshGeometry("card")),
     cardMaterial,
     cardBackMaterial: track(new MeshLambertMaterial({ color: 0x8d2733 })),
-    chipGeometry: track(new CylinderGeometry(0.024, 0.024, 0.0035, 12)),
+    chipGeometry: track(tableMeshGeometry("chip/body")),
+    chipEdgeGeometry: track(tableMeshGeometry("chip/edge")),
     chipMaterial: (color) => track(new MeshLambertMaterial({ color })),
+    /* Edge spots are drawn in the chip's own hue lifted toward white rather than
+       in a flat cream: a real chip's spots are an inlay of the same family, and a
+       single shared cream made every denomination's stack read the same. */
+    chipEdgeMaterial: (color) => track(new MeshLambertMaterial({
+      color: new Color(color).lerp(new Color(0xf4efe2), 0.72),
+    })),
     cardFaceMaterial,
     markerMaterial,
     potPlaqueMaterial,
@@ -375,7 +423,9 @@ export function createTableScene(
   const camera = new PerspectiveCamera(52, 16 / 9, 0.05, 45);
 
   buildRoom(scene, resources.ledger);
-  const table = buildTable(resources.ledger);
+  // Hero-relative seat order mapped onto the ring from wherever the hero sits.
+  const poses = seatPoses(6, initial.heroStationIndex ?? 0);
+  const table = buildTable(playerStations(), resources.ledger);
   scene.add(table);
 
   /*
@@ -423,8 +473,6 @@ export function createTableScene(
     return stool;
   })());
 
-  // Hero-relative seat order mapped onto the ring from wherever the hero sits.
-  const poses = seatPoses(6, initial.heroStationIndex ?? 0);
   const seatViews = new Map<string, { pose: SeatPose; view: SeatView }>();
   for (const [index, seat] of initial.seats.entries()) {
     const pose = poses[index];
@@ -437,8 +485,37 @@ export function createTableScene(
   const potChips = new Group();
   scene.add(potChips);
 
+  /*
+    The board sits on the table's own centre mark, not 0.16 m back toward the
+    dealer. With the hero seated at a real seat rather than standing where the
+    dealer stands, a board pushed to the far side of the felt was both further
+    away and more steeply foreshortened than it needed to be -- and the centre
+    medallion it should be sitting on was left conspicuously bare.
+  */
   const board = new Group();
-  board.position.set(0, TABLE_HEIGHT + 0.004, -0.16);
+  const heroFacing = poses[0]?.facing ?? 0;
+  // A station's facing points from the seat at the table centre, so the
+  // direction back toward the hero is its negation.
+  board.position.set(
+    TABLE_ANCHORS.board[0] - Math.sin(heroFacing) * BOARD_FORWARD,
+    TABLE_ANCHORS.board[1],
+    TABLE_ANCHORS.board[2] - Math.cos(heroFacing) * BOARD_FORWARD,
+  );
+  /*
+    The row is laid out across the hero's line of sight, not along the table's
+    long axis.
+
+    Along the long axis it read correctly only for the seats on the long sides.
+    From either end of the oval -- two of the six seats -- the hero looks
+    straight down the row, every card foreshortens onto the one behind it, and
+    the board becomes an unreadable diagonal pile. That is not a defect of the
+    cards; it is what a row of cards does when you sit at the end of it.
+
+    A dealer squares the board up to the table as a matter of habit, so this is
+    a deliberate departure. It is a stable one: the hero's seat is fixed for the
+    whole event, so the board does not swing around between hands.
+  */
+  board.rotation.y = heroFacing;
   scene.add(board);
 
   const buttonMarker = buildTableMarker("D", 0xf3ede0, resources);
@@ -847,60 +924,74 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   }
 }
 
-function buildTable(resources: SceneResourceLedger): Group {
+/**
+ * The table, assembled from the Blender-authored meshes.
+ *
+ * Three zones, outward from the middle: printed felt (centre medallion,
+ * racetrack betting line, one play zone per seat), the hard ledge ring carrying
+ * each seat's inlaid medallion, and the padded rail with its metal trim bead.
+ * That silhouette is what makes the table read as a modern card-room table
+ * rather than a felt oval with a border, and every dimension comes from the
+ * same constants the composition solver uses.
+ *
+ * The authored geometry has the felt plane at y=0, so the whole assembly is
+ * placed by one `TABLE_HEIGHT` offset and nothing here re-derives a height.
+ */
+function buildTable(stations: readonly Station[], resources: SceneResourceLedger): Group {
   const group = new Group();
-  const feltShape = capsuleShape(TABLE_WIDTH, TABLE_DEPTH);
-  const felt = new Mesh(
-    resources.track(new ExtrudeGeometry(feltShape, { depth: 0.075, bevelEnabled: false, curveSegments: 16 })),
-    resources.track(new MeshLambertMaterial({ color: FELT })),
-  );
-  felt.rotation.x = Math.PI / 2;
-  felt.position.y = TABLE_HEIGHT - 0.075;
-  group.add(felt);
+  group.position.y = TABLE_HEIGHT;
 
-  const railShape = capsuleShape(TABLE_WIDTH + TABLE_RAIL_WIDTH * 2, TABLE_DEPTH + TABLE_RAIL_WIDTH * 2);
-  railShape.holes.push(capsuleShape(TABLE_WIDTH - TABLE_RAIL_WIDTH * 0.35, TABLE_DEPTH - TABLE_RAIL_WIDTH * 0.35));
-  const rail = new Mesh(
-    resources.track(new ExtrudeGeometry(railShape, { depth: 0.10, bevelEnabled: false, curveSegments: 16 })),
-    resources.track(new MeshLambertMaterial({ color: RAIL })),
-  );
-  rail.rotation.x = Math.PI / 2;
-  rail.position.y = TABLE_HEIGHT - 0.005;
-  group.add(rail);
+  const zone = (name: TableMeshName, color: number, name3d: string): Mesh => {
+    const mesh = new Mesh(
+      resources.track(tableMeshGeometry(name)),
+      resources.track(new MeshLambertMaterial({ color })),
+    );
+    mesh.name = name3d;
+    group.add(mesh);
+    return mesh;
+  };
+
+  zone("table/felt", FELT, "table-felt");
+  zone("table/print", FELT_PRINT, "table-print");
+  zone("table/ledge", LEDGE, "table-ledge");
+  zone("table/rail", RAIL, "table-rail");
+  zone("table/trim", BRASS, "table-trim");
+  zone("table/pedestal", PEDESTAL, "table-pedestal");
 
   /*
-    A tapered column and a foot, in the rail's own timber, rather than a
-    0.72 x 0.66 x 0.48 box in near-black. The box read as a hard black slab
-    hanging under the felt -- the single most conspicuous unnatural shape in the
-    seated frame, because its flat front face caught no light against the floor.
+    Per-seat printed graphics. One geometry and one material each, cloned to the
+    six stations, so six play zones plus six inlays cost two draw calls rather
+    than twelve: the printed felt is decoration and must not eat the budget the
+    players and their chips need.
   */
-  const pedestalMaterial = resources.track(new MeshLambertMaterial({ color: 0x3a281e }));
-  const column = new Mesh(
-    resources.track(new CylinderGeometry(0.17, 0.29, TABLE_HEIGHT - 0.14, 14)),
-    pedestalMaterial,
-  );
-  column.position.y = (TABLE_HEIGHT - 0.14) / 2 + 0.03;
-  group.add(column);
-  const foot = new Mesh(
-    resources.track(new CylinderGeometry(0.46, 0.52, 0.05, 16)),
-    pedestalMaterial,
-  );
-  foot.position.y = 0.025;
-  group.add(foot);
+  const playZoneGeometry = resources.track(tableMeshGeometry("table/play-zone"));
+  const inlayGeometry = resources.track(tableMeshGeometry("table/seat-inlay"));
+  const printMaterial = resources.track(new MeshLambertMaterial({ color: FELT_PRINT }));
+  /* Aged bronze, not the trim's bright brass: six unlit-bright discs sitting on
+     the ledge around the table drew the eye harder than the cards did. */
+  const inlayMaterial = resources.track(new MeshLambertMaterial({ color: 0x8a6b32 }));
+  const playZones = new InstancedMesh(playZoneGeometry, printMaterial, stations.length);
+  const inlays = new InstancedMesh(inlayGeometry, inlayMaterial, stations.length);
+  playZones.name = "table-play-zones";
+  inlays.name = "table-seat-inlays";
+  const placement = new Matrix4();
+  const rotation = new Matrix4();
+  stations.forEach((station, index) => {
+    rotation.makeRotationY(station.facing);
+    placement.copy(rotation).setPosition(
+      station.feltPosition[0],
+      0,
+      station.feltPosition[2],
+    );
+    playZones.setMatrixAt(index, placement);
+    const ledge = stationLedgeAnchor(station);
+    placement.copy(rotation).setPosition(ledge[0], 0, ledge[2]);
+    inlays.setMatrixAt(index, placement);
+  });
+  playZones.instanceMatrix.needsUpdate = true;
+  inlays.instanceMatrix.needsUpdate = true;
+  group.add(playZones, inlays);
   return group;
-}
-
-/** A soft capsule in the X/Z table plane, used by both felt and independent rail. */
-function capsuleShape(width: number, depth: number): Shape {
-  const radius = depth / 2;
-  const straight = Math.max(0, width / 2 - radius);
-  const shape = new Shape();
-  shape.moveTo(-straight, -radius);
-  shape.lineTo(straight, -radius);
-  shape.absarc(straight, 0, radius, -Math.PI / 2, Math.PI / 2, false);
-  shape.lineTo(-straight, radius);
-  shape.absarc(-straight, 0, radius, Math.PI / 2, Math.PI * 1.5, false);
-  return shape;
 }
 
 function buildTableMarker(
@@ -908,8 +999,13 @@ function buildTableMarker(
   color: number,
   resources: TableSceneResources,
 ): Mesh {
+  /*
+    A real dealer button is about 50 mm across -- roughly a chip and a half, and
+    smaller than a playing card. At 90 mm these read as dinner plates: the big
+    blind's disc was wider than the two hole cards it sat on top of.
+  */
   const marker = new Mesh(
-    resources.ledger.track(new CylinderGeometry(0.045, 0.045, 0.012, 16)),
+    resources.ledger.track(new CylinderGeometry(0.028, 0.028, 0.009, 16)),
     resources.markerMaterial(label, color),
   );
   return marker;
@@ -924,8 +1020,21 @@ function placeMarker(
   marker.visible = Boolean(pose);
   marker.userData.publicPlayerId = pose ? playerId : null;
   if (!pose) return;
-  // Markers live beside the player's commitment lane, never over their face.
-  marker.position.set(pose.feltPosition[0] + Math.sign(pose.feltPosition[0] || 1) * 0.09, TABLE_HEIGHT + 0.014, pose.feltPosition[2]);
+  /*
+    Beside the owner's cards, in the owner's own frame.
+
+    Offsetting by the sign of the world x put the marker on the *table's* left
+    or right rather than the seat's, so for seats on the far side it landed
+    between the cards and, for the seats nearest the middle, on top of them.
+    0.135 m along the seat's local right is inside their printed play zone and
+    clear of both hole cards, whichever way the seat faces.
+  */
+  const right = [Math.cos(pose.facing), -Math.sin(pose.facing)] as const;
+  marker.position.set(
+    pose.feltPosition[0] + right[0] * 0.135,
+    TABLE_HEIGHT + 0.012,
+    pose.feltPosition[2] + right[1] * 0.135,
+  );
 }
 
 /**
@@ -933,8 +1042,9 @@ function placeMarker(
  */
 function buildTurnIndicator(resources: TableSceneResources): Mesh {
   const indicator = new Mesh(
-    resources.ledger.track(new TorusGeometry(0.17, 0.018, 6, 24)),
-    resources.ledger.track(new MeshBasicMaterial({ color: 0xffcb66 })),
+    // Sized and placed to sit exactly on the felt's own printed bet circle.
+    resources.ledger.track(new TorusGeometry(BET_CIRCLE_RADIUS + 0.004, 0.006, 6, 28)),
+    resources.ledger.track(new MeshBasicMaterial({ color: 0xf0c473 })),
   );
   indicator.name = "active-turn-indicator";
   indicator.rotation.x = Math.PI / 2;
@@ -1169,8 +1279,16 @@ function sameCameraPose(
 }
 
 const MAX_RENDERED_CHIPS = 18;
-/** Chips per column before a new one starts beside it; see `setChipStack`. */
-const CHIPS_PER_COLUMN = 12;
+/**
+ * Chips per column before a new one starts beside it; see `setChipStack`.
+ *
+ * Eight, not twelve. A twelve-high column is 44 mm of chip on a 48 mm base and
+ * still reads as a single squat cylinder rather than a stack, and it meant a
+ * whole pot sat in one column. Eight breaks every holding worth looking at into
+ * two or three columns, which is both what players actually do and what makes
+ * the size of a holding readable across the table.
+ */
+const CHIPS_PER_COLUMN = 8;
 /** Slightly wider than the 0.035 chip radius so columns read as separate. */
 const CHIP_COLUMN_PITCH = 0.052;
 /*
@@ -1191,17 +1309,34 @@ const POT_PLAQUE_SIZE = [0.22, 0.058] as const;
  */
 function setChipStack(group: Group, count: number, color: number, resources: TableSceneResources): void {
   let stack = group.getObjectByName("instanced-chip-stack") as InstancedMesh | undefined;
-  if (!stack) {
+  let spots = group.getObjectByName("instanced-chip-spots") as InstancedMesh | undefined;
+  if (!stack || !spots) {
     stack = new InstancedMesh(
       resources.chipGeometry,
       resources.chipMaterial(color),
       MAX_RENDERED_CHIPS,
     );
     stack.name = "instanced-chip-stack";
-    group.add(stack);
+    /*
+      The edge spots are a second instanced mesh sharing the body's matrices.
+      They are what makes a stack read as chips at the seated distance -- an
+      unbroken cylinder of one colour reads as a rod -- and one extra draw call
+      per stack is well inside the approved budget.
+    */
+    spots = new InstancedMesh(
+      resources.chipEdgeGeometry,
+      resources.chipEdgeMaterial(color),
+      MAX_RENDERED_CHIPS,
+    );
+    spots.name = "instanced-chip-spots";
+    group.add(stack, spots);
   }
   const material = stack.material;
   if (material instanceof MeshLambertMaterial) material.color.setHex(color);
+  const spotMaterial = spots.material;
+  if (spotMaterial instanceof MeshLambertMaterial) {
+    spotMaterial.color.setHex(color).lerp(new Color(0xf4efe2), 0.72);
+  }
   const renderedCount = Math.min(MAX_RENDERED_CHIPS, Math.max(0, count));
   const matrix = new Matrix4();
   /*
@@ -1213,16 +1348,27 @@ function setChipStack(group: Group, count: number, color: number, resources: Tab
   for (let index = 0; index < renderedCount; index += 1) {
     const column = Math.floor(index / CHIPS_PER_COLUMN);
     const height = index % CHIPS_PER_COLUMN;
-    matrix.makeTranslation(
+    /*
+      Hand-stacked chips are never perfectly clocked. A small deterministic yaw
+      per chip breaks the edge spots out of a vertical stripe and gives the
+      stack the spiralled look a real one has, at no cost -- it is the same
+      matrix that was already being written.
+    */
+    matrix.makeRotationY(((index * 37) % 360) * (Math.PI / 180));
+    matrix.setPosition(
       (column % 3) * CHIP_COLUMN_PITCH,
       height * 0.0037,
       Math.floor(column / 3) * CHIP_COLUMN_PITCH,
     );
     stack.setMatrixAt(index, matrix);
+    spots.setMatrixAt(index, matrix);
   }
   stack.count = renderedCount;
   stack.instanceMatrix.needsUpdate = true;
   stack.computeBoundingSphere();
+  spots.count = renderedCount;
+  spots.instanceMatrix.needsUpdate = true;
+  spots.computeBoundingSphere();
   group.userData.publicChipCount = renderedCount;
 }
 
@@ -1273,7 +1419,15 @@ function setPotLanes(
     setChipStack(chips, chipCountForAmount(pot.amount), pot.kind === "main" ? 0xd8b45a : 0x78a9e8, resources);
     plaque.visible = pot.amount > 0;
     plaque.material = resources.potPlaqueMaterial(potPlaqueLabel(pot.kind, pot.amount), pot.kind);
-    plaque.position.y = 0.16 + Math.min(0.12, chipStackCount(chips) * 0.012);
+    /*
+      Just clear of the top of its own pile, not floating above the table.
+
+      At 0.16 + 12 mm a chip the label hung in mid-air over the far felt with
+      daylight under it, which is what made it read as a HUD overlay pasted into
+      the scene rather than a marker sitting on the table. Riding the pile keeps
+      it attached to the thing it labels while still never being buried by it.
+    */
+    plaque.position.y = 0.055 + Math.min(0.06, chipStackCount(chips) * 0.006);
   });
 }
 
@@ -1292,7 +1446,8 @@ function setBoardCards(
 ): void {
   while (group.children.length < count) {
     const card = new Mesh(resources.cardGeometry, resources.cardMaterial);
-    card.position.x = (group.children.length - 2) * 0.105;
+    card.position.x = (group.children.length - 2) * 0.105 * BOARD_CARD_SCALE;
+    card.scale.setScalar(BOARD_CARD_SCALE);
     group.add(card);
   }
   while (group.children.length > count) {

@@ -147,8 +147,26 @@ export function seatWorldPoint(
 
 /** The actor cue sits on that player's own felt lane, never inside their body. */
 export function turnIndicatorPosition(pose: SeatPose): readonly [number, number, number] {
-  return [pose.feltPosition[0], TABLE_HEIGHT + 0.004, pose.feltPosition[2]];
+  /*
+    On the actor's printed bet circle, not around their cards.
+
+    Centred on the felt lane the cue was a 0.34 m ring enclosing the actor's two
+    hole cards, and from the seat beside them it filled a fifth of the frame as a
+    bright gold donut lying over the table -- unmistakably a piece of interface
+    rather than a light. The bet circle is already printed on the felt in front of
+    every seat, so lighting that up is a cue the table itself provides.
+  */
+  const forward = BET_CIRCLE_FORWARD;
+  return [
+    pose.feltPosition[0] + Math.sin(pose.facing) * forward,
+    TABLE_HEIGHT + 0.004,
+    pose.feltPosition[2] + Math.cos(pose.facing) * forward,
+  ];
 }
+
+/** Distance from a seat's felt lane to its printed bet circle; see build_table.py. */
+export const BET_CIRCLE_FORWARD = 0.082;
+export const BET_CIRCLE_RADIUS = 0.040;
 
 /** Resolve the actor cue by stable player identity, never an array slot. */
 export function turnIndicatorPositionForPlayer(

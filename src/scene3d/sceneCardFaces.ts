@@ -35,8 +35,16 @@ export function parsePublicCardFace(code: string): PublicCardFace | null {
   return { rank, ...suit };
 }
 
-/** Bounded local procedural atlas dimensions; 52 faces are about 2.5 MiB. */
-export const PROCEDURAL_CARD_FACE_SIZE = Object.freeze({ width: 96, height: 136 });
+/**
+ * Bounded local procedural atlas dimensions; 52 faces are about 4.7 MiB.
+ *
+ * Raised from 96x136. The board lies flat on the felt 1.4 m from a seated eye
+ * and is read at a 25-degree grazing angle, which is a far harder job than the
+ * hero's own two cards: at the old size a board card resolved to about thirty
+ * pixels of usable face and the rank was a guess. The extra memory is a
+ * rounding error against the 128 MiB texture budget.
+ */
+export const PROCEDURAL_CARD_FACE_SIZE = Object.freeze({ width: 132, height: 186 });
 export const PROCEDURAL_TABLE_MARKER_SIZE = Object.freeze({ width: 64, height: 64 });
 
 /** No mip chain: card faces stay screen-facing and use one exact base level. */

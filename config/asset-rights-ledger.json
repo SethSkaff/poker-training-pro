@@ -10,6 +10,7 @@
   ],
   "runtimeAssetExtensions": [
     ".gif",
+    ".glb",
     ".ico",
     ".jpeg",
     ".jpg",
@@ -367,6 +368,36 @@
         "Archive generation request, output receipt, terms version, and designated master.",
         "Complete third-party IP review and record publisher commercial-use approval."
       ]
+    },
+    {
+      "path": "src/assets/table.glb",
+      "shippingRole": "authored-3d-table-card-and-chip-master-compiled-into-the-bundle",
+      "format": "GLB",
+      "bytes": 138132,
+      "sha256": "4bd2ad9cda7594df93cc3b6656fa426a4157ee73406ef0c7d279bc92dcd07e49",
+      "dimensions": "11 meshes, 3825 triangles",
+      "embeddedMetadata": {
+        "inspection": "glTF 2.0 binary; JSON + BIN chunks only; no materials, no textures, no images, no external URIs, no extensions."
+      },
+      "provenanceStatus": "generated-provenance-verified",
+      "rightsStatus": "approved-commercial-redistribution",
+      "derivationEvidence": {
+        "status": "recipe-archived-and-reproducible",
+        "detail": "Generated, not derived from any other declared asset. Exported by `blender --background --factory-startup --python tools/blender/build_table.py -- --out src/assets/table.glb`. That script is checked in, takes no external input, and builds every mesh arithmetically from the dimensions in src/scene3d/tableStations.ts. `tools/glb-to-geometry.mjs` compiles this file into src/scene3d/generated/tableGeometry.ts, which is what the bundle actually ships."
+      },
+      "sourceEvidence": {
+        "releaseSufficient": true,
+        "detail": "Original work with no external source asset: the mesh is generated arithmetically by a checked-in script from checked-in constants. Blender 2.93.5 is the tool, not a content source, and contributes no geometry, material, or texture to the output."
+      },
+      "masterEvidence": {
+        "releaseSufficient": true,
+        "detail": "This file is the master. It is byte-reproducible from tools/blender/build_table.py, and src/scene3d/tableGeometryLibrary.test.ts asserts the compiled geometry still matches the composition constants."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": true,
+        "detail": "Project-owned original work; no third-party licence applies. Blender's GPL covers the application, not files it exports."
+      },
+      "publisherMustProvide": []
     }
   ],
   "fontPackages": [

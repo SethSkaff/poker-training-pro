@@ -16,7 +16,10 @@ import {
   Group,
   Mesh,
   MeshLambertMaterial,
+  Quaternion,
   SphereGeometry,
+  TorusGeometry,
+  Vector3,
   type BufferGeometry,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -28,7 +31,9 @@ import {
   headCentreHeight,
   HEAD_RADIUS,
   TORSO_BASE_Y,
+  type BodyProportions,
 } from "./characterModel";
+import { DEALER_CLEARANCE, STATION_CLEARANCE, TABLE_HEIGHT } from "./tableStations";
 import type { SceneResourceLedger } from "./sceneResources";
 
 export interface CharacterView {
@@ -125,10 +130,17 @@ function skinGeometry(character: OpponentCharacter): BufferGeometry[] {
     [0, headY, 0],
     [face.jaw, 1.14 / Math.max(0.85, face.chin), 1.04 * face.cheek * 0.92],
   ));
+  /*
+    The brow sits *in* the forehead, not on it. At 0.15 R scaled 2.1 wide it stood
+    proud enough to cast its own terminator line, and on the neighbour a metre
+    from the camera that line read as a dark horizontal slot across the face --
+    a letterbox, not a brow. Half the projection and a shorter span keeps the
+    variation between face presets while staying part of the skull.
+  */
   parts.push(sphere(
-    HEAD_RADIUS * 0.15 * face.brow,
-    [0, headY + HEAD_RADIUS * 0.3, HEAD_RADIUS * 0.55],
-    [2.1, 0.38, 0.42],
+    HEAD_RADIUS * 0.13 * face.brow,
+    [0, headY + HEAD_RADIUS * 0.28, HEAD_RADIUS * 0.48],
+    [1.75, 0.34, 0.30],
   ));
   parts.push(sphere(
     HEAD_RADIUS * 0.085 * face.nose,
@@ -142,18 +154,124 @@ function skinGeometry(character: OpponentCharacter): BufferGeometry[] {
     anything at head-centre height down toward the chin. Dropping them is a
     straight gain in readability and costs nothing anyone can see.
   */
-  // Hands rest at the felt, which is where cards and chips are.
-  for (const side of [-1, 1]) {
-    parts.push(sphere(
-      body.neckRadius * 0.8,
-      [side * body.shoulderHalfWidth * 0.8, top - 0.3, 0.34],
-      [1, 0.65, 1.25],
-    ));
-  }
+  for (const side of [-1, 1]) parts.push(handPart(body, side));
   return parts;
 }
 
-/** The clothed torso, shoulders, and upper arms. */
+/**
+ * Where a seated player's arms go.
+ *
+ * The hero's two neighbours sit about a metre from their eyes and roughly 45
+ * degrees off the view axis, so their torsos fall just outside the frame while
+ * their arms, reaching inward, fall just inside it. That makes the arms the one
+ * part of a neighbour the hero sees close up, and it means a wrong arm reads as
+ * two disembodied tubes floating over the carpet -- which is exactly what the
+ * first two passes produced, because the hands stopped 0.12 m short of the rail
+ * and had nothing to rest on.
+ *
+ * So the pose is defined by where the hand has to end up: on the rail top, in
+ * front of its owner, converging slightly inward toward their own cards. The
+ * shoulder, elbow and hand are three explicit points and the segments are built
+ * between them, so a hand can never end up somewhere its forearm does not
+ * reach.
+ */
+/*
+  Where a resting hand lands, in the seat's own frame. The station's clearance is
+  measured from the outer rail, so a hand a little past that distance is sitting
+  on the rail top -- and it moves with the clearance instead of being a constant
+  that silently stops reaching whenever the seating changes.
+*/
+const HAND_LOCAL_Z = STATION_CLEARANCE + 0.05;
+/** Rail crest height; see `build_table.py`. */
+const RAIL_TOP_Y = TABLE_HEIGHT + 0.063;
+
+function armJoints(body: BodyProportions, side: number): {
+  shoulder: readonly [number, number, number];
+  elbow: readonly [number, number, number];
+  hand: readonly [number, number, number];
+} {
+  const top = TORSO_BASE_Y + body.torsoHeight;
+  const shoulder = [side * body.shoulderHalfWidth * 0.92, top - 0.02, 0.03] as const;
+  const elbow = [side * body.shoulderHalfWidth * 0.90, top - 0.23, 0.15] as const;
+  // Forearms angle inward so the hands come together in front of the player
+  // rather than running parallel; a resting forearm also rises to the rail.
+  const hand = [
+    side * (body.shoulderHalfWidth * 0.90 - 0.075),
+    RAIL_TOP_Y + 0.022,
+    HAND_LOCAL_Z,
+  ] as const;
+  return { shoulder, elbow, hand };
+}
+
+/**
+ * A tapered limb segment between two points.
+ *
+ * Cylinders are authored along +Y, so this rotates the whole geometry onto the
+ * joint-to-joint direction rather than composing hand-solved Euler angles. Two
+ * earlier passes did the latter and both left the hand detached from the arm
+ * the moment any one of the angles changed.
+ */
+function limb(
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+  radiusTop: number,
+  radiusBottom: number,
+): BufferGeometry {
+  const axis = new Vector3(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+  const length = axis.length() || 0.0001;
+  const geometry = new CylinderGeometry(radiusTop, radiusBottom, length, CYLINDER_SEGMENTS, 1, false);
+  geometry.applyQuaternion(
+    new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), axis.clone().normalize()),
+  );
+  geometry.translate(
+    (from[0] + to[0]) / 2,
+    (from[1] + to[1]) / 2,
+    (from[2] + to[2]) / 2,
+  );
+  return geometry;
+}
+
+function handPart(body: BodyProportions, side: number): BufferGeometry {
+  const { elbow, hand } = armJoints(body, side);
+  // A flattened palm stretched along the forearm, nudged past the wrist so it
+  // reads as a hand lying on the rail. A round ball at this size read as a knob
+  // on the end of a pipe from the seat beside it.
+  const reach = 0.035;
+  const direction = new Vector3(hand[0] - elbow[0], hand[1] - elbow[1], hand[2] - elbow[2]).normalize();
+  return sphere(
+    body.neckRadius * 0.60,
+    [
+      hand[0] + direction.x * reach,
+      hand[1] + direction.y * reach,
+      hand[2] + direction.z * reach,
+    ],
+    [1.05, 0.5, 1.5],
+  );
+}
+
+function sleeveParts(body: BodyProportions, side: number): BufferGeometry[] {
+  const { shoulder, elbow, hand } = armJoints(body, side);
+  /*
+    Elbow, and a cuff three quarters of the way to the wrist. Both are there for
+    the same reason: a neighbour's forearm is a metre from the hero's eye and an
+    unbroken taper at that size reads as a length of pipe. Two changes of radius
+    along it are enough to make it read as a sleeved arm, and cost eighteen
+    triangles inside a merged mesh.
+    */
+  const cuffAt = (t: number): readonly [number, number, number] => [
+    elbow[0] + (hand[0] - elbow[0]) * t,
+    elbow[1] + (hand[1] - elbow[1]) * t,
+    elbow[2] + (hand[2] - elbow[2]) * t,
+  ];
+  return [
+    limb(shoulder, elbow, body.neckRadius * 0.80, body.neckRadius * 0.92),
+    limb(elbow, hand, body.neckRadius * 0.52, body.neckRadius * 0.78),
+    sphere(body.neckRadius * 0.86, elbow, [1, 1, 1]),
+    limb(cuffAt(0.68), cuffAt(0.80), body.neckRadius * 0.66, body.neckRadius * 0.66),
+  ];
+}
+
+/** The clothed torso, shoulders, and sleeved arms. */
 function clothGeometry(character: OpponentCharacter): BufferGeometry[] {
   const body = bodyProportions(character.gender, character.body);
   const top = TORSO_BASE_Y + body.torsoHeight;
@@ -174,17 +292,7 @@ function clothGeometry(character: OpponentCharacter): BufferGeometry[] {
       [side * body.shoulderHalfWidth * 0.88, top - 0.028, 0],
       [1, 0.72, depthRatio * 1.05],
     ));
-    parts.push(taper(
-      body.neckRadius * 0.86,
-      body.neckRadius * 0.94,
-      0.28,
-      [side * body.shoulderHalfWidth * 0.92, top - 0.16, 0.02],
-    ));
-    // Forearm angled down toward the felt: the pose a seated player holds.
-    const forearm = taper(body.neckRadius * 0.7, body.neckRadius * 0.84, 0.3, [0, 0, 0]);
-    forearm.rotateX(Math.PI / 2.35);
-    forearm.translate(side * body.shoulderHalfWidth * 0.86, top - 0.3, 0.2);
-    parts.push(forearm);
+    parts.push(...sleeveParts(body, side));
   }
   return parts;
 }
@@ -303,31 +411,27 @@ export function buildDealer(
   waistcoat.push(taper(shoulder * 1.02, shoulder * 0.9, torsoHeight * 0.82, [0, base + torsoHeight * 0.44, 0.012], [1, 1, 0.58]));
   for (const side of [-1, 1]) {
     shirt.push(sphere(shoulder * 0.3, [side * shoulder * 0.88, top - 0.03, 0], [1, 0.72, 0.66]));
-    // Both forearms reach in over the felt: the dealing pose.
-    // Shorter and less horizontal than the first pass, where 0.34 m at nearly
-    // 90 degrees read as two long tubes laid across the felt.
     /*
-      The hand is placed at the *computed end* of the forearm rather than at a
-      separately guessed point. Hard-coding both meant every tweak to the arm left
-      the hands floating detached in mid-air beside it.
+      Both forearms reach in over the felt: the dealing pose, and the one thing
+      that separates the dealer's silhouette from a player's at a glance.
+
+      Built from explicit joints through `limb`, like the players' arms, so the
+      hands land where the pose says rather than at whatever point a hand-solved
+      rotation happens to end at. The reach is measured from the station's own
+      clearance: the dealer sits `STATION_CLEARANCE` back from the rail, so the
+      hands have to travel the rail width plus that clearance to be over the felt
+      at all.
     */
-    const forearmLength = 0.24;
-    const forearmTilt = Math.PI / 2.9;
-    const armX = side * shoulder * 0.66;
-    const armY = top - 0.17;
-    const armZ = 0.17;
-    const forearm = taper(0.04, 0.047, forearmLength, [0, 0, 0]);
-    forearm.rotateX(forearmTilt);
-    forearm.translate(armX, armY, armZ);
-    shirt.push(forearm);
-    // Local +Y maps to (0, cos, sin) after a rotation about X, so the far end of
-    // the cylinder is half its length along that direction.
-    const reach = forearmLength / 2;
-    skin.push(sphere(
-      0.043,
-      [armX, armY - Math.cos(forearmTilt) * reach, armZ + Math.sin(forearmTilt) * reach],
-      [1, 0.62, 1.15],
-    ));
+    const shoulderPoint = [side * shoulder * 0.88, top - 0.05, 0.02] as const;
+    const elbowPoint = [side * shoulder * 0.76, top - 0.20, 0.17] as const;
+    const handPoint = [
+      side * shoulder * 0.52,
+      TABLE_HEIGHT + 0.055,
+      DEALER_CLEARANCE + 0.20,
+    ] as const;
+    shirt.push(limb(shoulderPoint, elbowPoint, 0.044, 0.050));
+    shirt.push(limb(elbowPoint, handPoint, 0.036, 0.048));
+    skin.push(sphere(0.041, handPoint, [1, 0.58, 1.35]));
   }
   skin.push(taper(0.05, 0.056, 0.06, [0, top + 0.03, 0]));
   skin.push(sphere(HEAD_RADIUS, [0, headY, 0], [0.98, 1.14, 1.02]));
@@ -381,15 +485,43 @@ export function buildChair(
     barrel wrapped around the character and hid the torso completely -- the body
     was rendering the whole time, just occluded by its own chair.
   */
-  const pan = ledger.track(new CylinderGeometry(0.25, 0.23, 0.07, 12));
+  const pan = ledger.track(new CylinderGeometry(0.25, 0.23, 0.07, 14));
   const panMesh = new Mesh(pan, seatMaterial);
   panMesh.position.y = 0.44;
   chair.add(panMesh);
 
-  const back = ledger.track(new BoxGeometry(0.44, 0.48, 0.055));
+  /*
+    A curved tub back rather than a flat slab.
+
+    The slab version was 0.44 x 0.48 x 0.055 standing square behind the seat,
+    and from the neighbouring station -- which is where the hero actually sits --
+    it presented its whole broad face to the camera and read as a coloured
+    panel, not a chair. Half a cylinder open to the front wraps the occupant the
+    way a card-room chair does, is seen edge-on from beside it, and cannot hide
+    the torso because it only spans the rear 180 degrees.
+  */
+  const back = ledger.track(new CylinderGeometry(0.27, 0.25, 0.40, 16, 1, true, Math.PI / 2, Math.PI));
   const backMesh = new Mesh(back, seatMaterial);
-  backMesh.position.set(0, 0.74, -0.27);
+  backMesh.position.set(0, 0.66, 0);
   chair.add(backMesh);
+
+  // Rolled top edge, in the upholstery rather than the frame: in the frame
+  // colour it read as a dark handlebar hooked over the back of the chair.
+  const cap = ledger.track(new TorusGeometry(0.262, 0.016, 6, 18, Math.PI));
+  const capMesh = new Mesh(cap, seatMaterial);
+  capMesh.position.set(0, 0.86, 0);
+  capMesh.rotation.x = Math.PI / 2;
+  capMesh.rotation.z = Math.PI / 2;
+  chair.add(capMesh);
+
+  // Low armrests. They cost two boxes and give the seated silhouette the
+  // horizontal line that reads as furniture rather than a stool.
+  const armGeometry = ledger.track(new BoxGeometry(0.055, 0.045, 0.30));
+  for (const side of [-1, 1]) {
+    const arm = new Mesh(armGeometry, frameMaterial);
+    arm.position.set(side * 0.255, 0.60, 0.05);
+    chair.add(arm);
+  }
 
   const post = ledger.track(new CylinderGeometry(0.05, 0.07, 0.40, 8));
   const postMesh = new Mesh(post, frameMaterial);
