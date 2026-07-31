@@ -30,6 +30,7 @@ import {
   hairParts,
   headCentreHeight,
   HEAD_RADIUS,
+  lockJitter,
   TORSO_BASE_Y,
   type BodyProportions,
 } from "./characterModel";
@@ -155,6 +156,55 @@ function skinGeometry(character: OpponentCharacter): BufferGeometry[] {
     straight gain in readability and costs nothing anyone can see.
   */
   for (const side of [-1, 1]) parts.push(handPart(body, side));
+  return parts;
+}
+
+/**
+ * Eyes, brows and mouth, as one mesh in a single dark tone.
+ *
+ * The heads were a skull, a brow ridge and a nose -- anatomically a face, and
+ * from any distance a blank egg. Featurelessness is not a style here, it is the
+ * single loudest thing about the characters: the seat beside the hero is a metre
+ * from the camera and it has nobody in it.
+ *
+ * These are deliberately flat inlays rather than modelled eyeballs. A sphere
+ * with an iris on it needs to be aimed at something to look right, and an
+ * unaimed pair of eyeballs on a low-poly head is markedly worse than none. Almond
+ * slots that follow the skull read as eyes at every distance the table uses and
+ * never look like they are staring past you.
+ */
+function featureGeometry(character: OpponentCharacter): BufferGeometry[] {
+  const body = bodyProportions(character.gender, character.body);
+  const face = faceProportions(character.face);
+  const headY = headCentreHeight(body);
+  // Sit the features on the skull's own scaled surface, not on a sphere of
+  // HEAD_RADIUS, or a wide jaw pushes them inside the head.
+  const outward = HEAD_RADIUS * 1.04 * face.cheek * 0.92;
+  const wide = HEAD_RADIUS * face.jaw;
+  const parts: BufferGeometry[] = [];
+
+  for (const side of [-1, 1]) {
+    parts.push(sphere(
+      HEAD_RADIUS * 0.115,
+      [side * wide * 0.36, headY + HEAD_RADIUS * 0.10, outward * 0.86],
+      [1.45, 0.62, 0.34],
+    ));
+    // Brows sit above and slightly wider than the eye, angled by preset: a low
+    // heavy brow and a high thin one are most of the difference between two
+    // faces that share a skull.
+    const brow = sphere(
+      HEAD_RADIUS * 0.105 * face.brow,
+      [side * wide * 0.38, headY + HEAD_RADIUS * (0.27 + 0.04 * face.brow), outward * 0.82],
+      [1.7, 0.30, 0.30],
+    );
+    brow.rotateZ(side * 0.14);
+    parts.push(brow);
+  }
+  parts.push(sphere(
+    HEAD_RADIUS * 0.10,
+    [0, headY - HEAD_RADIUS * (0.42 / Math.max(0.85, face.chin)), outward * 0.80],
+    [1.9, 0.26, 0.28],
+  ));
   return parts;
 }
 
@@ -319,6 +369,26 @@ function hairGeometry(character: OpponentCharacter): BufferGeometry[] {
         [part.offset[0], headY + part.offset[1], part.offset[2]],
         part.scale,
       ));
+    } else if (part.kind === "locks") {
+      /*
+        A band of locks around the back and sides of the skull. Centred on the
+        back of the head and wrapped forward by `arc`, so the fringe and the
+        face are never covered however wide the band is set.
+      */
+      for (let index = 0; index < part.count; index += 1) {
+        const wobble = lockJitter(part.seed, index);
+        const angle = Math.PI + (index / Math.max(1, part.count - 1) - 0.5) * part.arc;
+        const radius = HEAD_RADIUS * (1 + part.bulge * (0.7 + wobble * 0.6));
+        parts.push(sphere(
+          HEAD_RADIUS * part.radiusScale * (0.78 + wobble * 0.44),
+          [
+            Math.sin(angle) * radius,
+            headY + HEAD_RADIUS * (part.latitude + (wobble - 0.5) * 0.10),
+            Math.cos(angle) * radius,
+          ],
+          [1, 1.25, 1],
+        ));
+      }
     } else {
       const strand = taper(part.radiusTop, part.radiusBottom, part.length, [0, 0, 0]);
       if (part.tiltX !== 0) strand.rotateX(part.tiltX);
@@ -349,6 +419,7 @@ export function buildCharacter(
   const skin = merged(skinGeometry(character), ledger);
   const cloth = merged(clothGeometry(character), ledger);
   const hair = merged(hairGeometry(character), ledger);
+  const features = merged(featureGeometry(character), ledger);
 
   if (cloth) {
     body.add(new Mesh(cloth, ledger.track(new MeshLambertMaterial({
@@ -363,6 +434,14 @@ export function buildCharacter(
   if (hair) {
     body.add(new Mesh(hair, ledger.track(new MeshLambertMaterial({
       color: character.hairColor,
+    }))));
+  }
+  if (features) {
+    /* One dark tone for eyes, brows and mouth. Brows in the identity's hair
+       colour would be more correct and would cost a fourth mesh per character
+       to say something nobody can see at this distance. */
+    body.add(new Mesh(features, ledger.track(new MeshLambertMaterial({
+      color: 0x2b211c,
     }))));
   }
 

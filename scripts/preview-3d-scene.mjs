@@ -135,6 +135,53 @@ async function main() {
     console.log("captures:");
     await shoot(cdp, "table-preflop");
 
+    /*
+      Hold the hole cards down and capture the squeeze. `hero-hole-cards` is the
+      DOM hit target that sits over the physical cards; a real pointerdown on it
+      is the same path a player takes, so this exercises the actual gesture and
+      not a state poke.
+    */
+    await evaluate(cdp, `(() => {
+      const target = document.querySelector('.hero-hole-cards');
+      if (!(target instanceof HTMLElement)) return false;
+      const box = target.getBoundingClientRect();
+      target.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, pointerId: 7, button: 0,
+        clientX: box.left + box.width / 2, clientY: box.top + box.height / 2,
+      }));
+      return true;
+    })()`);
+    await new Promise((done) => setTimeout(done, 900));
+    await shoot(cdp, "table-peeked");
+    await evaluate(cdp, `(() => {
+      const target = document.querySelector('.hero-hole-cards');
+      if (!(target instanceof HTMLElement)) return false;
+      target.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7, button: 0 }));
+      return true;
+    })()`);
+    await new Promise((done) => setTimeout(done, 400));
+
+    /*
+      Opponents must act on their own clock. Sample the hand's public action
+      history without touching a control: if it grows while the hero does
+      nothing, the table is running itself.
+    */
+    const tableState = () => evaluate(cdp, `(() => {
+      const header = document.querySelector('.tournament-hud, .table-header, header');
+      const deciding = document.querySelector('.action-context');
+      const pot = document.querySelector('.center-pot, .pot-groups');
+      return [
+        (header?.textContent || '').trim(),
+        (deciding?.textContent || '').trim(),
+        (pot?.textContent || '').trim(),
+      ].join(' | ');
+    })()`);
+    const before = await tableState();
+    await new Promise((done) => setTimeout(done, 9_000));
+    const after = await tableState();
+    console.log(`opponents acted unprompted: ${after !== before}`);
+    if (after === before) console.log(`  state held at: ${before.slice(0, 160)}`);
+
     // Deal out to the river so the board, the pot pile and several committed
     // stacks are all on the felt at once -- the frame the design is judged on.
     for (const name of ["flop", "turn", "river"]) {
@@ -156,6 +203,39 @@ async function main() {
       await new Promise((done) => setTimeout(done, 1_200));
       await shoot(cdp, `table-${name}`);
     }
+
+    /*
+      Drag the felt to look around. Dispatches a real pointer sequence on the
+      scene container -- the same path a mouse takes -- and reads the camera
+      control's own label back, so this proves the drag reaches the camera and
+      not merely that a handler exists.
+    */
+    const cameraLabel = () => evaluate(cdp, `(() => {
+      const node = [...document.querySelectorAll('*')].find((entry) =>
+        entry.children.length === 0 && /^(Centered|Looking (left|right))$/.test((entry.textContent || '').trim()));
+      return (node?.textContent || '').trim();
+    })()`);
+    const beforeDrag = await cameraLabel();
+    await evaluate(cdp, `(() => {
+      const scene = document.querySelector('.poker-scene');
+      if (!(scene instanceof HTMLElement)) return false;
+      const box = scene.getBoundingClientRect();
+      const y = box.top + box.height * 0.35;
+      const send = (type, x) => scene.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, pointerId: 3, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+        clientX: x, clientY: y,
+      }));
+      send('pointerdown', box.left + box.width * 0.5);
+      for (let step = 1; step <= 8; step += 1) send('pointermove', box.left + box.width * 0.5 + step * 60);
+      send('pointerup', box.left + box.width * 0.5 + 480);
+      return true;
+    })()`);
+    await new Promise((done) => setTimeout(done, 1_200));
+    const afterDrag = await cameraLabel();
+    console.log(`drag turns the view: ${afterDrag !== beforeDrag} (${beforeDrag} -> ${afterDrag})`);
+    await shoot(cdp, "table-dragged");
+    await evaluate(cdp, clickButton("Recenter"));
+    await new Promise((done) => setTimeout(done, 600));
 
     for (const pan of [-2, 2]) {
       await evaluate(cdp, `(() => {

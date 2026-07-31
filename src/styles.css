@@ -3346,10 +3346,21 @@ input[type="range"]::-webkit-slider-thumb {
 .poker-scene[data-spatial-scene="ready"] .hero-hole-cards .peek-label {
   opacity: 0;
 }
+/*
+  No text tag over the physical cards. This used to be the only way to read the
+  hero's hand in ready mode, because the physical cards were face up and too
+  small to resolve; now a squeeze turns the real cards over and bends the corner
+  up, and a floating "Q<>" label beside them is the floating UI that squeeze
+  exists to replace. The label stays in the DOM for assistive technology and for
+  the 2.5D fallback, where it is the real cue.
+*/
 .poker-scene[data-spatial-scene="ready"] .hero-hole-cards.is-peeked .hero-card-wrap small {
-  display: block;
-  color: #fff9e8;
-  text-shadow: 0 2px 4px #000;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Defined HUD safe areas: a quiet top band, bounded bottom action rail, and a

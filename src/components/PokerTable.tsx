@@ -1564,6 +1564,56 @@ export function PokerTable({
   // recenter pose. They do not merely make a player-selected pan snap faster.
   const cameraFixed = settings.reducedMotion || settings.cameraMotion === "off";
   const effectiveCameraPan = cameraFixed ? 0 : cameraPan;
+
+  /*
+    Drag anywhere on the felt to look around.
+
+    The camera controls were three buttons and two arrow keys, which is a fine
+    accessible path and a poor primary one -- turning your head is a continuous
+    motion and the discrete controls made it feel like the view was on rails.
+    `cameraPan` was already a float clamped to +/-2, so a drag needs no new
+    camera model: it writes the same value the buttons step.
+
+    A drag that starts on a control is not a camera drag. The DOM table is the
+    interaction surface and it sits on top of the canvas, so the guard is what
+    keeps "press Fold" from also swinging the view when the pointer wobbles.
+  */
+  const cameraDragRef = useRef<{ pointerId: number; startX: number; startPan: number } | null>(null);
+  const CAMERA_DRAG_PIXELS_PER_PAN = 260;
+
+  const beginCameraDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (cameraFixed || event.button !== 0) return;
+    if (
+      event.target instanceof Element
+      && event.target.closest('button, a, input, select, textarea, [role="button"], [role="slider"]')
+    ) {
+      return;
+    }
+    cameraDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startPan: cameraPan,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, [cameraFixed, cameraPan]);
+
+  const updateCameraDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = cameraDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    // Drag right, look right: the same direction the "Look right" control and
+    // the right arrow key move the view.
+    const next = drag.startPan + (event.clientX - drag.startX) / CAMERA_DRAG_PIXELS_PER_PAN;
+    setCameraPan(Math.max(-2, Math.min(2, next)));
+  }, []);
+
+  const endCameraDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = cameraDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    cameraDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
   const [sceneAvailability, setSceneAvailability] =
     useState<SceneAvailability>({ status: "idle" });
   /*
@@ -1597,11 +1647,18 @@ export function PokerTable({
   /* Exactly the condition that puts `data-spatial-scene="ready"` on the scene,
      so DOM plaques never project against a camera that is not on screen. */
   /*
-    Which seat the hero occupies. Stable in the scenario's identity so a player
-    keeps their chair for a whole event instead of moving between hands, and so a
-    replay of the same table reproduces the same view.
+    Which seat the hero occupies.
+
+    Keyed on the hero's own player identity, which is constant for a whole event
+    and reproduces exactly on replay. It was keyed on `scenario.id` -- but that
+    is the *hand* id, not the table's, so the seat was re-drawn every hand and
+    the player's whole view teleported around the table between deals. Nothing in
+    the seating model was wrong; it was being asked the wrong question.
   */
-  const heroStationIndexForTable = heroStationIndex(scenario.id);
+  const heroPlayerId = scenario.players.find(
+    (player) => player.seat === scenario.heroSeat,
+  )?.id ?? "hero";
+  const heroStationIndexForTable = heroStationIndex(heroPlayerId);
   const sceneReadyForPlaques = settings.spatialScene
     && !sceneRequestChanged
     && sceneAvailability.status === "ready";
@@ -1912,12 +1969,24 @@ export function PokerTable({
     setPaused(true);
   }, []);
 
+  /*
+    Losing keyboard focus is not the same thing as walking away.
+
+    Clicking a browser window on a second monitor, alt-tabbing to read something,
+    or clicking the taskbar all fire `blur` while the table is still fully
+    visible in front of the player -- and the table was freezing the hand and
+    demanding an explicit resume every time. A multi-monitor player could not
+    click anything else without interrupting their own game.
+
+    Minimize, system suspend, screen lock and a hidden document all still pause:
+    in every one of those the table has genuinely stopped being on screen, which
+    is the condition the freeze policy exists for. Only bare focus loss is
+    excluded, and audio still ducks on blur through its own focus policy.
+  */
   useEffect(() => {
-    const pauseForInactiveWindow = () => requestPause("window-blurred");
     const pauseForHiddenDocument = () => {
       if (document.hidden) requestPause("document-hidden");
     };
-    window.addEventListener("blur", pauseForInactiveWindow);
     document.addEventListener("visibilitychange", pauseForHiddenDocument);
     // Minimize, Windows suspend, and screen lock arrive from the Electron main
     // process via a narrow preload bridge. They freeze the same delays and use
@@ -1929,12 +1998,9 @@ export function PokerTable({
         requestPause("system-suspended");
       } else if (event.kind === "screen-lock" && event.locked) {
         requestPause("screen-locked");
-      } else if (event.kind === "window-focus" && !event.focused) {
-        requestPause("window-blurred");
       }
     });
     return () => {
-      window.removeEventListener("blur", pauseForInactiveWindow);
       document.removeEventListener("visibilitychange", pauseForHiddenDocument);
       unsubscribe?.();
     };
@@ -2517,10 +2583,23 @@ export function PokerTable({
     cameraStep,
   ]);
 
+  /*
+    Press and hold to look at your own hand, release to put it back down.
+
+    It used to be a toggle: one click turned the hole cards face up and they
+    stayed that way. That is not how anyone holds a poker hand, and with the
+    cards now lying physically on the felt it meant the hero's hand sat face up
+    on the table for the rest of the deal. Holding is also the honest gesture --
+    the cards are exposed for exactly as long as you are looking at them.
+
+    The keyboard binding stays a toggle. Requiring a held key to read your own
+    cards is a hostile thing to ask of anyone who cannot hold one.
+  */
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!canStartHeroGesture(heroFoldState)) return;
     dragStart.current = { x: event.clientX, y: event.clientY };
     didDrag.current = false;
+    setPeeked(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -2548,9 +2627,9 @@ export function PokerTable({
     const shouldFold = !cancelled && didDrag.current && foldProgress >= 82;
     dragStart.current = null;
     setDragging(false);
+    setPeeked(false);
     if (shouldFold) handleAction("fold");
-    else if (!didDrag.current && !cancelled) setPeeked((value) => !value);
-    else setFoldProgress(0);
+    else if (didDrag.current || cancelled) setFoldProgress(0);
     didDrag.current = false;
   };
 
@@ -2807,6 +2886,10 @@ export function PokerTable({
         : {},
     cameraPan: effectiveCameraPan,
     heroStationIndex: heroStationIndexForTable,
+    /* Only the squeeze. A showdown reveal turns the hand over through
+       `revealedCardCodesByPlayer`, which the snapshot already honours for every
+       seat including this one. */
+    heroPeeked: peeked,
     cameraView: settings.cameraView,
     cameraMotion: settings.cameraMotion,
     reducedMotion: settings.reducedMotion || settings.transitionMotion === "off",
@@ -3494,6 +3577,10 @@ export function PokerTable({
             <div
               ref={sceneElementRef}
               className="poker-scene motion-vestibular"
+              onPointerDown={beginCameraDrag}
+              onPointerMove={updateCameraDrag}
+              onPointerUp={endCameraDrag}
+              onPointerCancel={endCameraDrag}
               {...(settings.spatialScene && !sceneRequestChanged && sceneAvailability.status === "ready"
                 ? { "data-spatial-scene": "ready" }
                 : {})}

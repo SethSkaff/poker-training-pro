@@ -114,6 +114,56 @@ def finish(obj, bm, smooth=False):
     return obj
 
 
+# --- Primitive helpers -------------------------------------------------------
+
+
+def add_sphere(bm, centre, radius, scale=(1.0, 1.0, 1.0), segments=12, rings=8):
+    # Blender 2.9x names these operator arguments `diameter` and `diameter1/2`,
+    # but they are radii -- a long-standing misnomer in the bmesh operator API.
+    # Passing radius * 2 here silently produced everything at double size.
+    result = bmesh.ops.create_uvsphere(
+        bm, u_segments=segments, v_segments=rings, diameter=radius
+    )
+    verts = result["verts"]
+    if scale != (1.0, 1.0, 1.0):
+        bmesh.ops.scale(bm, vec=scale, verts=verts)
+    bmesh.ops.translate(bm, vec=centre, verts=verts)
+    return verts
+
+
+def add_cylinder(bm, centre, radius_top, radius_bottom, height, segments=12):
+    result = bmesh.ops.create_cone(
+        bm,
+        cap_ends=True,
+        cap_tris=False,
+        segments=segments,
+        diameter1=radius_bottom,
+        diameter2=radius_top,
+        depth=height,
+    )
+    verts = result["verts"]
+    bmesh.ops.translate(bm, vec=centre, verts=verts)
+    return verts
+
+
+def _translation(x, y, z):
+    from mathutils import Matrix
+
+    return Matrix.Translation((x, y, z))
+
+
+def _rotation_x(angle):
+    from mathutils import Matrix
+
+    return Matrix.Rotation(angle, 4, "X")
+
+
+def _rotation_z(angle):
+    from mathutils import Matrix
+
+    return Matrix.Rotation(angle, 4, "Z")
+
+
 # --- Outline helpers ---------------------------------------------------------
 
 
@@ -436,13 +486,41 @@ def build_pedestal():
 # --- Table objects -----------------------------------------------------------
 
 
-def build_card():
+CARD_PEEK_LIFT = 0.030
+CARD_PEEK_SPAN = 0.55
+
+
+def _peek_lift(x, y):
+    """
+    How far a point on the card rises when its near corner is squeezed up.
+
+    A player lifts the corner nearest them -- here +X/-Y, which the exporter
+    maps to the hero's near right -- and the card bends over a diagonal crease
+    rather than hinging on a line. Distance from that corner, normalised across
+    the card's diagonal, with a smoothstep so the crease is a curve and not a
+    fold: cardboard bends, it does not crack.
+    """
+    corner_x = CARD_WIDTH / 2.0
+    corner_y = -CARD_LENGTH / 2.0
+    diagonal = math.hypot(CARD_WIDTH, CARD_LENGTH)
+    distance = math.hypot(x - corner_x, y - corner_y) / diagonal
+    t = 1.0 - min(1.0, distance / CARD_PEEK_SPAN)
+    return CARD_PEEK_LIFT * t * t * (3.0 - 2.0 * t)
+
+
+def build_card(name="card", peeked=False):
     """
     A playing card with rounded corners, lying in the X/Y plane with its face
     up. UVs are a planar projection from above, so the runtime's generated face
     texture maps to the top face exactly and the thin sides sample its border.
+
+    With `peeked`, the near corner is bent up the way a player squeezes a hand
+    to read it without showing it to the table. It is a separate mesh rather
+    than a runtime deformation so the bend is authored once, shares the card's
+    UVs exactly, and costs the renderer a geometry swap instead of per-frame
+    vertex work.
     """
-    obj, bm = new_mesh("card")
+    obj, bm = new_mesh(name)
     points = rounded_rect_points(CARD_WIDTH, CARD_LENGTH, CARD_CORNER, corner_segments=4)
     top = [bm.verts.new((x, y, CARD_THICKNESS / 2.0)) for x, y in points]
     bottom = [bm.verts.new((x, y, -CARD_THICKNESS / 2.0)) for x, y in points]
@@ -456,6 +534,9 @@ def build_card():
         bm.faces.new((top_hub, top[index], top[nxt]))
         bm.faces.new((bottom_hub, bottom[nxt], bottom[index]))
         bm.faces.new((top[nxt], bottom[nxt], bottom[index], top[index]))
+    if peeked:
+        for vert in bm.verts:
+            vert.co.z += _peek_lift(vert.co.x, vert.co.y)
     finish(obj, bm)
 
     # u runs from +x to -x, not the other way about. The exporter maps Blender
@@ -471,6 +552,86 @@ def build_card():
             min(1.0, max(0.0, y / CARD_LENGTH + 0.5)),
         )
     return obj
+
+
+def build_hand():
+    """
+    The player's own right hand, resting on the card it is squeezing.
+
+    The hero has no body -- the camera stands where it would be -- so this is
+    the only part of themselves a player ever sees, and it appears for exactly
+    as long as they hold their cards up. That makes it worth modelling properly:
+    a palm, four tapered fingers curling forward over the card, and a thumb
+    tucked under the near corner doing the actual lifting.
+
+    Authored with the wrist at the origin and the fingers reaching along -Y,
+    which the exporter maps to the hero's +Z -- away from them, across the card.
+    """
+    obj, bm = new_mesh("hand/peek")
+
+    # Palm: a flattened, slightly tapered slab. Wider at the knuckles.
+    palm = add_cylinder(bm, (0.0, -0.045, 0.0), 0.041, 0.033, 0.090, segments=12)
+    bmesh.ops.rotate(
+        bm, verts=palm, cent=(0.0, -0.045, 0.0), matrix=_rotation_x(math.pi / 2.0)
+    )
+    bmesh.ops.scale(
+        bm, vec=(1.0, 1.0, 0.42), verts=palm, space=_translation(0.0, 0.0, 0.0)
+    )
+    # Wrist, so the hand does not end in a flat disc floating in the air.
+    wrist = add_cylinder(bm, (0.0, 0.020, 0.0), 0.030, 0.032, 0.055, segments=10)
+    bmesh.ops.rotate(
+        bm, verts=wrist, cent=(0.0, 0.020, 0.0), matrix=_rotation_x(math.pi / 2.0)
+    )
+    bmesh.ops.scale(
+        bm, vec=(1.0, 1.0, 0.46), verts=wrist, space=_translation(0.0, 0.0, 0.0)
+    )
+
+    # Four fingers, splayed slightly and curling down toward the felt. Lengths
+    # follow a real hand: index and ring shorter than the middle, little
+    # shortest, which is most of what stops a set of cylinders reading as a fork.
+    fingers = (
+        (-0.024, 0.058, 0.0120, -0.07),
+        (-0.008, 0.064, 0.0125, -0.03),
+        (0.008, 0.060, 0.0120, 0.02),
+        (0.024, 0.048, 0.0105, 0.07),
+    )
+    for offset_x, length, radius, splay in fingers:
+        for segment, (start, seg_length, tilt) in enumerate((
+            (0.0, length * 0.55, -0.10),
+            (length * 0.55, length * 0.45, -0.55),
+        )):
+            centre_y = -0.090 - start - seg_length / 2.0
+            bone = add_cylinder(
+                bm,
+                (offset_x, centre_y, 0.0),
+                radius * (0.86 if segment else 1.0),
+                radius,
+                seg_length,
+                segments=8,
+            )
+            bmesh.ops.rotate(
+                bm, verts=bone, cent=(offset_x, centre_y, 0.0),
+                matrix=_rotation_x(math.pi / 2.0 + tilt),
+            )
+            bmesh.ops.rotate(
+                bm, verts=bone, cent=(offset_x, -0.090, 0.0),
+                matrix=_rotation_z(splay),
+            )
+        # Knuckle, so the two segments read as one jointed finger.
+        add_sphere(bm, (offset_x, -0.092, 0.0), radius * 1.05, segments=8, rings=6)
+
+    # Thumb: out to the side and forward, tucked under the lifted corner.
+    thumb = add_cylinder(bm, (0.036, -0.060, -0.004), 0.013, 0.016, 0.056, segments=8)
+    bmesh.ops.rotate(
+        bm, verts=thumb, cent=(0.036, -0.060, -0.004),
+        matrix=_rotation_x(math.pi / 2.0 - 0.35),
+    )
+    bmesh.ops.rotate(
+        bm, verts=thumb, cent=(0.034, -0.034, 0.0), matrix=_rotation_z(-0.55)
+    )
+    add_sphere(bm, (0.034, -0.034, 0.0), 0.018, segments=8, rings=6)
+
+    return finish(obj, bm, smooth=True)
 
 
 def build_chip_body():
@@ -580,6 +741,8 @@ def main():
         build_seat_inlay(),
         build_pedestal(),
         build_card(),
+        build_card("card/peeked", peeked=True),
+        build_hand(),
         build_chip_body(),
         build_chip_edge(),
     ]

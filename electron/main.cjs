@@ -116,6 +116,17 @@ function createWindow() {
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
+      /*
+        Chromium throttles timers to roughly once a second and suspends
+        animation frames in a backgrounded window. For an app that is mostly a
+        clock -- blind levels, decision timers, and a presentation queue that
+        hands one public event to the renderer at a time -- that reads to the
+        player as the game stopping dead the moment they click a window on
+        another monitor. The table is still fully visible; only keyboard focus
+        moved. Genuine invisibility (minimize, screen lock, system suspend) is
+        handled explicitly by the lifecycle bridge and still freezes the hand.
+      */
+      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

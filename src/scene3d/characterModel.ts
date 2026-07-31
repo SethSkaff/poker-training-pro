@@ -133,24 +133,56 @@ export type HairPart =
       readonly length: number;
       readonly offset: readonly [number, number, number];
       readonly tiltX: number;
+    }
+  /**
+   * A band of overlapping locks hugging the skull.
+   *
+   * A `cap` on its own is a smooth shell, and a smooth shell is exactly what
+   * makes procedural hair read as a moulded helmet however well it is coloured.
+   * Real hair has a silhouette that breaks up -- it is the *edge* the eye reads,
+   * not the surface. `count` ellipsoids around a latitude band, each with a
+   * deterministic size and depth wobble, give that edge for a few dozen
+   * triangles inside an already-merged mesh.
+   */
+  | {
+      readonly kind: "locks";
+      readonly count: number;
+      /** Height on the skull, as a multiple of HEAD_RADIUS. */
+      readonly latitude: number;
+      readonly radiusScale: number;
+      /** How far the band wraps, in radians, centred on the back of the head. */
+      readonly arc: number;
+      /** Outward push, as a multiple of HEAD_RADIUS. */
+      readonly bulge: number;
+      readonly seed: number;
     };
+
+/** Deterministic per-lock wobble; two builds of one identity must be identical. */
+export function lockJitter(seed: number, index: number): number {
+  const value = Math.sin(seed * 12.9898 + index * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
 
 export const HAIR_PARTS: Readonly<Record<string, readonly HairPart[]>> = Object.freeze({
   "male:buzz": [
     { kind: "cap", radiusScale: 1.035, scale: [1, 1.02, 1.04], offset: [0, 0.006, 0], floorY: HEAD_RADIUS * 0.30 },
+    { kind: "locks", count: 22, latitude: 0.34, radiusScale: 0.062, arc: 4.4, bulge: 0.009, seed: 131 },
   ],
   "male:short-side-part": [
     { kind: "cap", radiusScale: 1.06, scale: [1.02, 1.02, 1.03], offset: [0.008, 0.008, 0], floorY: HEAD_RADIUS * 0.26 },
     { kind: "blob", radiusScale: 0.22, scale: [1.5, 0.9, 0.55], offset: [-HEAD_RADIUS * 0.34, HEAD_RADIUS * 0.62, HEAD_RADIUS * 0.5] },
+    { kind: "locks", count: 22, latitude: 0.42, radiusScale: 0.104, arc: 4.2, bulge: 0.027, seed: 11 },
   ],
   "male:textured-crop": [
     { kind: "cap", radiusScale: 1.07, scale: [1, 1.03, 1.04], offset: [0, 0.008, 0], floorY: HEAD_RADIUS * 0.28 },
     { kind: "blob", radiusScale: 0.18, scale: [1, 0.7, 1], offset: [-0.045, HEAD_RADIUS * 0.92, -HEAD_RADIUS * 0.3] },
     { kind: "blob", radiusScale: 0.18, scale: [1, 0.7, 1], offset: [0, HEAD_RADIUS * 0.95, -HEAD_RADIUS * 0.3] },
     { kind: "blob", radiusScale: 0.18, scale: [1, 0.7, 1], offset: [0.045, HEAD_RADIUS * 0.92, -HEAD_RADIUS * 0.3] },
+    { kind: "locks", count: 26, latitude: 0.55, radiusScale: 0.099, arc: 5.4, bulge: 0.041, seed: 23 },
   ],
   "male:slick-back": [
     { kind: "cap", radiusScale: 1.055, scale: [1, 1.03, 1.08], offset: [0, 0.012, 0.022], floorY: HEAD_RADIUS * 0.26 },
+    { kind: "locks", count: 18, latitude: 0.50, radiusScale: 0.083, arc: 3.0, bulge: 0.023, seed: 37 },
   ],
   // A faint scalp shell, so a bald head takes stubble tinting instead of showing
   // a hard skin/hair seam.
@@ -166,14 +198,18 @@ export const HAIR_PARTS: Readonly<Record<string, readonly HairPart[]>> = Object.
   "female:ponytail": [
     { kind: "cap", radiusScale: 1.06, scale: [1.02, 1.03, 1.04], offset: [0, 0.008, 0], floorY: HEAD_RADIUS * 0.14 },
     { kind: "strand", radiusTop: 0.03, radiusBottom: 0.052, length: 0.24, offset: [0, -HEAD_RADIUS * 0.3, -HEAD_RADIUS * 0.9], tiltX: 0.3 },
+    { kind: "locks", count: 24, latitude: 0.30, radiusScale: 0.088, arc: 4.6, bulge: 0.023, seed: 53 },
   ],
   "female:bob": [
     { kind: "cap", radiusScale: 1.09, scale: [1.05, 1.04, 1.05], offset: [0, 0.006, 0], floorY: -HEAD_RADIUS * 0.45 },
+    { kind: "locks", count: 30, latitude: -0.35, radiusScale: 0.125, arc: 5.0, bulge: 0.050, seed: 71 },
+    { kind: "locks", count: 26, latitude: 0.25, radiusScale: 0.104, arc: 5.0, bulge: 0.036, seed: 79 },
   ],
   "female:long-straight": [
     { kind: "cap", radiusScale: 1.08, scale: [1.04, 1.04, 1.05], offset: [0, 0.006, 0], floorY: -HEAD_RADIUS * 0.26 },
     { kind: "strand", radiusTop: 0.05, radiusBottom: 0.065, length: 0.30, offset: [-HEAD_RADIUS * 0.66, -HEAD_RADIUS * 1.35, -HEAD_RADIUS * 0.35], tiltX: 0 },
     { kind: "strand", radiusTop: 0.05, radiusBottom: 0.065, length: 0.30, offset: [HEAD_RADIUS * 0.66, -HEAD_RADIUS * 1.35, -HEAD_RADIUS * 0.35], tiltX: 0 },
+    { kind: "locks", count: 28, latitude: -0.20, radiusScale: 0.114, arc: 4.8, bulge: 0.050, seed: 97 },
   ],
   "female:curly-shoulder": [
     { kind: "cap", radiusScale: 1.10, scale: [1.06, 1.05, 1.04], offset: [0, 0.008, 0], floorY: -HEAD_RADIUS * 0.18 },
@@ -194,6 +230,7 @@ export const HAIR_PARTS: Readonly<Record<string, readonly HairPart[]>> = Object.
   "female:top-knot": [
     { kind: "cap", radiusScale: 1.05, scale: [1.02, 1.03, 1.04], offset: [0, 0.006, 0], floorY: HEAD_RADIUS * 0.12 },
     { kind: "blob", radiusScale: 0.30, scale: [1, 0.85, 1], offset: [0, HEAD_RADIUS * 1.02, HEAD_RADIUS * 0.1] },
+    { kind: "locks", count: 20, latitude: 0.55, radiusScale: 0.078, arc: 3.6, bulge: 0.023, seed: 113 },
   ],
 });
 

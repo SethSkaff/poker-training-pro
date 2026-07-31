@@ -34,6 +34,31 @@ const sceneBudgets = Object.freeze({
   frameP95Ms: 25,
   textureEstimateMiB: 128,
 });
+/**
+ * Did the native window actually come up at the requested size?
+ *
+ * `window.outerWidth` is CSS pixels: Chromium divides the real window rect by
+ * the display scale and rounds. On a 100%-scaled display that is lossless and
+ * the comparison is exact, which is how this was calibrated. On a fractionally
+ * scaled display -- 150% is the Windows default on a lot of laptops -- a window
+ * created at 1366 device-independent pixels reads back as 1367, and no amount of
+ * correctness in the app can change that. Asserting equality there was testing
+ * the reviewer's monitor, not the build.
+ *
+ * So: exact at 1x, and one CSS pixel of slack when the readback is lossy. That
+ * is tight enough to still catch the failure this guards -- a window that
+ * silently came up at the default 1440x920, or at a CDP-emulated size with no
+ * native resize behind it -- both of which are hundreds of pixels out.
+ */
+function nativeWindowMatches(nativeWindow, viewport) {
+  if (!nativeWindow) return false;
+  const ratio = nativeWindow.devicePixelRatio;
+  if (!Number.isFinite(ratio) || ratio <= 0) return false;
+  const slack = ratio === 1 ? 0 : 1;
+  return Math.abs(nativeWindow.outerWidth - viewport.width) <= slack
+    && Math.abs(nativeWindow.outerHeight - viewport.height) <= slack;
+}
+
 const compositionViewports = Object.freeze([
   { name: "1024x768", width: 1024, height: 768 },
   { name: "1100x720", width: 1100, height: 720 },
@@ -1243,6 +1268,7 @@ async function observe(session) {
       nativeWindow: {
         outerWidth: window.outerWidth,
         outerHeight: window.outerHeight,
+        devicePixelRatio: window.devicePixelRatio,
         compactHeightMediaActive: window.matchMedia('(max-height: 800px)').matches,
       },
       // Read computed styles rather than pixels: this catches the exact
@@ -1522,8 +1548,7 @@ export function assertCase(result) {
         || !capture?.composition?.duplicateFurnitureFaded
         || !capture?.composition?.conditionalDuplicatesFaded
         || !capture?.composition?.readableHudMounted
-        || capture?.nativeWindow?.outerWidth !== compositionViewports[index].width
-        || capture?.nativeWindow?.outerHeight !== compositionViewports[index].height
+        || !nativeWindowMatches(capture?.nativeWindow, compositionViewports[index])
         || capture?.nativeWindow?.compactHeightMediaActive !== (compositionViewports[index].height <= 800)
         || !Number.isFinite(capture?.screenshotBytes) || capture.screenshotBytes <= 0
         || typeof capture?.screenshotPngBase64 !== "string" || capture.screenshotPngBase64.length === 0

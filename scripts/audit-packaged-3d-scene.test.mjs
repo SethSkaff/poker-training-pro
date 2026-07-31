@@ -119,6 +119,9 @@ function normalResult(overrides = {}) {
       nativeWindow: {
         outerWidth: Number(viewport.split("x")[0]),
         outerHeight: Number(viewport.split("x")[1]),
+        // A 1x display: the size readback is lossless and the audit
+        // compares it exactly. See `nativeWindowMatches`.
+        devicePixelRatio: 1,
         compactHeightMediaActive: Number(viewport.split("x")[1]) <= 800,
       },
       screenshotBytes: 100,
@@ -263,6 +266,35 @@ test("scene package audit rejects a viewport-emulated composition capture", () =
   result.compositionMatrix[0].nativeWindow.outerHeight = 920;
   result.compositionMatrix[0].nativeWindow.compactHeightMediaActive = false;
   assert.throws(() => assertCase(result), /composition matrix was incomplete/);
+});
+
+test("scene package audit tolerates one CSS pixel only on a fractionally scaled display", () => {
+  /*
+    `window.outerWidth` is the window rect divided by the display scale and
+    rounded, so at 150% a window genuinely created at 1366 device-independent
+    pixels reads back as 1367. Requiring equality there failed the build on the
+    reviewer's monitor rather than on anything in the build.
+  */
+  const scaled = normalResult();
+  scaled.compositionMatrix[3].nativeWindow.devicePixelRatio = 1.5;
+  scaled.compositionMatrix[3].nativeWindow.outerWidth = 1367;
+  assert.doesNotThrow(() => assertCase(scaled));
+
+  // The same drift on a 1x display is a real mis-sizing, and still fails.
+  const unscaled = normalResult();
+  unscaled.compositionMatrix[3].nativeWindow.outerWidth = 1367;
+  assert.throws(() => assertCase(unscaled), /composition matrix was incomplete/);
+
+  // The slack is one pixel, not a licence to accept the default window.
+  const wrong = normalResult();
+  wrong.compositionMatrix[3].nativeWindow.devicePixelRatio = 1.5;
+  wrong.compositionMatrix[3].nativeWindow.outerWidth = 1440;
+  assert.throws(() => assertCase(wrong), /composition matrix was incomplete/);
+
+  // A capture that cannot say what display it was on proves nothing.
+  const silent = normalResult();
+  delete silent.compositionMatrix[3].nativeWindow.devicePixelRatio;
+  assert.throws(() => assertCase(silent), /composition matrix was incomplete/);
 });
 
 test("native audit sizing remains inaccessible to ordinary packaged launches", () => {

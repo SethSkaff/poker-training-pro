@@ -34,8 +34,29 @@ describe("table scene snapshot", () => {
       bigBlindPlayerId: "folded",
       tier: "regional",
     });
-    expect(snapshot.seats.map((seat) => [seat.id, seat.cardVisibility])).toEqual([["hero", "shown"], ["folded", "hidden"], ["villain", "shown"]]);
+    /*
+      The hero's own hand is face down like everyone else's. It used to be
+      unconditionally "shown", which with physical cards on the felt meant the
+      hero's hole cards lay face up on the table for the whole deal. Only a
+      squeeze or a public reveal turns a hand over.
+    */
+    expect(snapshot.seats.map((seat) => [seat.id, seat.cardVisibility])).toEqual([["hero", "hidden"], ["folded", "hidden"], ["villain", "shown"]]);
     expect(snapshot.seats[0].appearance).toBe(createTableSceneSnapshot(input).seats[0].appearance);
+  });
+
+  it("turns the hero's own hand up only while they are holding it", () => {
+    const down = createTableSceneSnapshot(input);
+    expect(down.seats[0].cardVisibility).toBe("hidden");
+    expect(down.seats[0].publicCardCodes).toEqual([]);
+    expect(down.heroPeeked).toBe(false);
+
+    const squeezed = createTableSceneSnapshot({ ...input, heroPeeked: true });
+    expect(squeezed.seats[0].cardVisibility).toBe("shown");
+    expect(squeezed.heroPeeked).toBe(true);
+
+    // A squeeze is the hero's alone: it must never expose an opponent's hand.
+    expect(squeezed.seats.slice(1).map((seat) => seat.cardVisibility))
+      .toEqual(down.seats.slice(1).map((seat) => seat.cardVisibility));
   });
 
   it("reconciles a table move by immutable identity rather than array position", () => {
@@ -57,7 +78,9 @@ describe("table scene snapshot", () => {
   });
 
   it("contains card identities only for the hero and engine-authorized reveal", () => {
-    const snapshot = createTableSceneSnapshot({ ...input, heroCardCodes: ["As", "Kd"], publicBoardCardCodes: ["2c", "3d", "4h"], revealedPlayerIds: ["villain"], revealedCardCodesByPlayer: { villain: ["Qs", "Qd"] } });
+    // The hero is holding their cards up; face down they carry no identity at
+    // all, which is the subject of its own test above.
+    const snapshot = createTableSceneSnapshot({ ...input, heroPeeked: true, heroCardCodes: ["As", "Kd"], publicBoardCardCodes: ["2c", "3d", "4h"], revealedPlayerIds: ["villain"], revealedCardCodesByPlayer: { villain: ["Qs", "Qd"] } });
     expect(snapshot.publicBoardCardCodes).toEqual(["2c", "3d", "4h"]);
     expect(snapshot.seats.map((seat) => [seat.id, seat.publicCardCodes])).toEqual([["hero", ["As", "Kd"]], ["folded", []], ["villain", ["Qs", "Qd"]]]);
   });
@@ -65,6 +88,7 @@ describe("table scene snapshot", () => {
   it("reconciles a fixed public hand through every street without exposing a live opponent", () => {
     const publicHand = {
       ...input,
+      heroPeeked: true,
       heroCardCodes: ["A♠", "K♦"],
       buttonCanonicalSeat: 8,
       smallBlindCanonicalSeat: 3,

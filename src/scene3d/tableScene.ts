@@ -16,6 +16,7 @@
  * bundle, so the scene still builds synchronously on the first frame.
  */
 import {
+  ACESFilmicToneMapping,
   AmbientLight,
   BufferGeometry,
   CanvasTexture,
@@ -35,7 +36,10 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   PointLight,
+  RepeatWrapping,
   Scene,
+  SRGBColorSpace,
+  Texture,
   TorusGeometry,
   WebGLRenderer,
 } from "three";
@@ -62,8 +66,21 @@ import {
   type SeatActionKind,
   type SeatPose,
 } from "./tableSceneModel";
-import { playerStations, stationLedgeAnchor, type Station } from "./tableStations";
+import {
+  playerStations,
+  stationLedgeAnchor,
+  TABLE_DEPTH,
+  TABLE_WIDTH,
+  type Station,
+} from "./tableStations";
 import { tableMeshGeometry, type TableMeshName } from "./tableGeometryLibrary";
+import {
+  drawCarpetTexture,
+  drawFeltTexture,
+  drawWallTexture,
+  SURFACE_TEXTURE_SIZE,
+  surfaceTextureBytes,
+} from "./sceneSurfaceTextures";
 import { sceneGestureFor } from "./sceneGestures";
 import { buildCharacter, buildChair, buildDealer } from "./sceneCharacters";
 import { describeOpponentCharacter } from "../lib/opponentAppearance";
@@ -122,6 +139,8 @@ export interface TableSceneState {
   readonly publicBoardCardCodes?: readonly string[];
   /** Which player station the hero occupies; the camera sits there. */
   readonly heroStationIndex?: number;
+  /** True while the hero holds their own cards up to read them. */
+  readonly heroPeeked?: boolean;
   /** Current public queue item, sampled from the authoritative delay clock. */
   readonly transition?: SceneTransition;
 }
@@ -174,56 +193,81 @@ export function probeWebGl2(canvas: HTMLCanvasElement): WebGlProbeResult {
 }
 
 /*
-  v2 palette. The v1 room was one green and one brown, which the owner rightly
-  called flat and un-casino-like. This keeps the felt as the only saturated
-  green, wraps it in warm timber and brass, and puts a deep red patterned carpet
-  and plum walls around it so the felt reads as the lit centre of a room rather
-  than one green shape against another brown one.
+  v3 palette: a green baize table in a warm card room.
+
+  The two previous passes both chased a single reference and both ended up
+  monochrome -- v1 was one green and one brown, v2 went charcoal-on-plum after a
+  PokerStars VR study and lost the thing that makes a poker table legible on
+  sight. Green is what a poker table is. It also does real work here: it is the
+  only cool hue in the room, so the felt separates from the timber, the carpet
+  and the chips without needing to be the brightest thing in frame.
+
+  The room around it is a card room rather than a void: red figured carpet,
+  panelled timber walls, brass rail and cove. All of it sits well below the felt
+  in value so the pendant key still pools on the table.
 */
-/*
-  Charcoal, not green. A study of PokerStars VR found every venue uses charcoal,
-  crimson or navy felt and never casino green, and named that -- together with a
-  dark room and a pooled light over the table -- as the strongest single element of
-  its look. The rail moves to the sampled warm olive-tan leather with gold trim.
-*/
-const FELT = 0x23211e;
-const FELT_EDGE = 0x1b1a18;
-/* Printed felt graphics -- medallion, racetrack line, per-seat play zones. Only
-   a few percent lighter than the felt: at a real table these are printed in the
-   same dye, and a high-contrast line would draw the eye off the cards. */
-const FELT_PRINT = 0x322e28;
+const FELT = 0x1d6b3c;
+const FELT_EDGE = 0x0e3a21;
+/* Printed felt graphics -- medallion, racetrack line, per-seat play zones. A
+   shade lighter than the baize, as printed felt actually is: high contrast here
+   pulls the eye off the cards, which is the only thing on the table that
+   matters. */
+const FELT_PRINT = 0x2b8552;
 /* Padded leather, not bare timber. At 0x7b6b59 the near rail was the brightest
    large surface in the seated frame -- a pale tan band across the bottom third
    that pulled the eye off the felt and read as moulded plastic. A darker hide
    lets the brass trim be the highlight, which is the way round a real table
    works. */
-const RAIL = 0x5c4735;
+const RAIL = 0x5a4131;
 /* The hard ledge between felt and padded rail, in a darker timber than the rail
    so the three zones separate under the pendant key rather than merging. */
-const LEDGE = 0x4a3b2c;
-const PEDESTAL = 0x3a281e;
+const LEDGE = 0x46311f;
+const PEDESTAL = 0x33231a;
 const BRASS = 0xc9a227;
-const CARPET = 0x2a2340;
-const CARPET_PATTERN = 0x352c4f;
-const WALL = 0x141821;
-const WALL_PANEL = 0x1e2430;
-const ROOM = 0x140d18;
-const CHAIR_SEAT = 0x3a2431;
+const CARPET = 0x5c1a28;
+const CARPET_PATTERN = 0x7d2837;
+const CARPET_ACCENT = 0x9a7a2c;
+const WALL = 0x4a3626;
+const WALL_PANEL = 0x5e4530;
+const WALL_TRIM = 0x7d5a33;
+const ROOM = 0x1a0f0a;
+const CHAIR_SEAT = 0x5a1d24;
 /* Lifted from 0x241823. At near-black the chair arms read as dark bars hooked
    across the upholstery instead of as part of the chair. */
-const CHAIR_FRAME = 0x43303c;
-/* Chip colours read off PokerStars VR chip faces: green 25s and navy 100s are
-   roughly 70% of visible chips and are the table's dominant saturated colour. */
-const CHIP_STACK = 0x2fa84f;
-const CHIP_BET = 0x1b2340;
-const CHIP_POT = 0x6b3fa0;
+const CHAIR_FRAME = 0x3a2318;
+
+/*
+  Real denominations, not one colour per group.
+
+  Every chip on the table used to be one of three flat saturated colours, which
+  is what made a stack read as a bright plastic blob: a real stack is several
+  denominations and the colour changes every few chips. These are the standard
+  house values, and `setChipStack` assigns them per column by size so a big
+  holding shows high denominations and a short one does not.
+*/
+const CHIP_DENOMINATIONS = [
+  { value: 1, color: 0xd8d2c2 },
+  { value: 5, color: 0x8e1f28 },
+  { value: 25, color: 0x14663a },
+  { value: 100, color: 0x14161c },
+  { value: 500, color: 0x4b2569 },
+  { value: 1000, color: 0x9a7a2c },
+] as const;
+/* Pot and committed-bet piles keep an identifiable tint so a player can still
+   tell their own bet from the pot at a glance. */
+const CHIP_BET_BIAS = 2;
+const CHIP_POT_BIAS = 4;
+
+/** `#rrggbb` for a palette constant, so canvas drawing shares the same source. */
+function hexCss(color: number): string {
+  return `#${color.toString(16).padStart(6, "0")}`;
+}
 
 /** One action's visible duration, in milliseconds. */
 const ACTION_MS = 620;
 
 /**
- * How much larger the community cards are than a hole card, and how far toward
- * the hero the board is laid from the table's centre mark.
+ * How much larger the community cards are than a hole card.
  *
  * The board is the one object at the table that every seat must be able to read,
  * and it is also the worst placed: from the two seats at the ends of the oval it
@@ -232,25 +276,28 @@ const ACTION_MS = 620;
  * problem -- they are half a metre away and much steeper.
  *
  * Every VR poker room oversizes its community cards for exactly this reason.
- * 1.5x plus a 0.26 m lift toward the hero roughly doubles the board's usable
- * area from the worst seat, while leaving a clear 60 mm of felt between the
- * board and the hero's own cards.
+ * It is the one lever available that does not move the board off the table's
+ * centre mark, which is where a dealer lays it and where it has to stay.
  */
 const BOARD_CARD_SCALE = 1.5;
-const BOARD_FORWARD = 0.26;
 
 interface TableSceneResources {
   readonly ledger: SceneResourceLedger;
   readonly cardGeometry: BufferGeometry;
+  /** The same card with its near corner bent up; see `applySeat`. */
+  readonly peekedCardGeometry: BufferGeometry;
   readonly cardMaterial: MeshBasicMaterial;
   readonly cardBackMaterial: MeshLambertMaterial;
   readonly chipGeometry: BufferGeometry;
   /** The chip's contrasting edge spots, instanced alongside the body. */
   readonly chipEdgeGeometry: BufferGeometry;
-  chipEdgeMaterial(color: number): MeshLambertMaterial;
-  chipMaterial(color: number): MeshLambertMaterial;
+  chipEdgeMaterial(): MeshLambertMaterial;
+  chipMaterial(): MeshLambertMaterial;
   cardFaceMaterial(code: string): MeshBasicMaterial;
   markerMaterial(label: "D" | "SB" | "BB", color: number): MeshBasicMaterial;
+  /** Tiled surface maps for the felt, the carpet, and the panelled walls. */
+  surfaceTexture(kind: "felt" | "carpet" | "wall", repeatX: number, repeatY: number): Texture | null;
+  surfaceTextureEstimateMiB(): number;
   potPlaqueMaterial(label: string, kind: "main" | "side"): MeshBasicMaterial;
   cardTextureEstimateMiB(): number;
 }
@@ -317,6 +364,49 @@ function createTableSceneResources(): TableSceneResources {
     return material;
   };
   const cardMaterial = track(new MeshBasicMaterial({ color: 0xf3ede0 }));
+  /*
+    One canvas per surface kind, cloned per repeat. A three.js Texture owns its
+    own wrap/repeat, so two surfaces that need different tiling cannot share one
+    Texture object -- but they can and do share the decoded canvas, which is
+    where the memory actually is.
+  */
+  const surfaceCanvases = new Map<string, HTMLCanvasElement>();
+  let surfaceTextureCount = 0;
+  const surfaceTexture = (
+    kind: "felt" | "carpet" | "wall",
+    repeatX: number,
+    repeatY: number,
+  ): Texture | null => {
+    let canvas = surfaceCanvases.get(kind);
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.width = SURFACE_TEXTURE_SIZE;
+      canvas.height = SURFACE_TEXTURE_SIZE;
+      const context = canvas.getContext("2d");
+      if (!context) return null;
+      if (kind === "felt") drawFeltTexture(context, hexCss(FELT));
+      else if (kind === "carpet") {
+        drawCarpetTexture(context, hexCss(CARPET), hexCss(CARPET_PATTERN), hexCss(CARPET_ACCENT));
+      } else drawWallTexture(context, hexCss(WALL), hexCss(WALL_PANEL), hexCss(WALL_TRIM));
+      surfaceCanvases.set(kind, canvas);
+    }
+    const texture = track(new CanvasTexture(canvas));
+    /*
+      Tag the texel data sRGB. A CanvasTexture defaults to no colour space, so
+      the renderer treats an 0x14512e baize as *linear* 0.08/0.32/0.18 and
+      lights it as if it were roughly 0x63a97e -- which is why the felt kept
+      coming out mint however dark a green it was given, and why the flat-tinted
+      printed lines on top of it looked darker than the cloth they are printed
+      on. Two rounds of hue adjustment were chasing this one flag.
+    */
+    texture.colorSpace = SRGBColorSpace;
+    texture.wrapS = RepeatWrapping;
+    texture.wrapT = RepeatWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    texture.anisotropy = 4;
+    surfaceTextureCount += 1;
+    return texture;
+  };
   const markerMaterial = (label: "D" | "SB" | "BB", color: number): MeshBasicMaterial => {
     const cached = markerMaterials.get(label);
     if (cached) return cached;
@@ -371,20 +461,20 @@ function createTableSceneResources(): TableSceneResources {
   return {
     ledger,
     cardGeometry: track(tableMeshGeometry("card")),
+    peekedCardGeometry: track(tableMeshGeometry("card/peeked")),
     cardMaterial,
     cardBackMaterial: track(new MeshLambertMaterial({ color: 0x8d2733 })),
     chipGeometry: track(tableMeshGeometry("chip/body")),
     chipEdgeGeometry: track(tableMeshGeometry("chip/edge")),
-    chipMaterial: (color) => track(new MeshLambertMaterial({ color })),
-    /* Edge spots are drawn in the chip's own hue lifted toward white rather than
-       in a flat cream: a real chip's spots are an inlay of the same family, and a
-       single shared cream made every denomination's stack read the same. */
-    chipEdgeMaterial: (color) => track(new MeshLambertMaterial({
-      color: new Color(color).lerp(new Color(0xf4efe2), 0.72),
-    })),
+    /* White materials tinted per instance: `setChipStack` writes a real
+       denomination colour per chip, so the material must not impose one. */
+    chipMaterial: () => track(new MeshLambertMaterial({ color: 0xffffff })),
+    chipEdgeMaterial: () => track(new MeshLambertMaterial({ color: 0xffffff })),
     cardFaceMaterial,
     markerMaterial,
     potPlaqueMaterial,
+    surfaceTexture,
+    surfaceTextureEstimateMiB: () => (surfaceCanvases.size * surfaceTextureBytes()) / 1024 / 1024,
     cardTextureEstimateMiB: () => (
       (faceMaterials.size * proceduralCardFaceBytes()
         + markerMaterials.size * proceduralTableMarkerBytes()
@@ -409,6 +499,21 @@ export function createTableScene(
     powerPreference: "high-performance",
   });
   renderer.setClearColor(new Color(ROOM), 1);
+  /*
+    Filmic tone mapping, and light intensities that mean something.
+
+    three.js point lights are physical: intensity falls off as 1/d^2, so the
+    pendant at 8.5 delivered roughly five times full exposure to a felt 1.3 m
+    below it. Everything under the light clipped, and a dark green baize came out
+    as pale mint no matter what hue it was given -- two passes were spent
+    adjusting the colour of a surface whose problem was exposure.
+
+    ACES rolls the highlights off instead of clipping them, which is what lets
+    the table hold a pool of warm light and still read as green cloth, and what
+    keeps a white chip from turning into a white blob.
+  */
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
 
   const scene = new Scene();
   /*
@@ -422,10 +527,10 @@ export function createTableScene(
 
   const camera = new PerspectiveCamera(52, 16 / 9, 0.05, 45);
 
-  buildRoom(scene, resources.ledger);
+  buildRoom(scene, resources);
   // Hero-relative seat order mapped onto the ring from wherever the hero sits.
   const poses = seatPoses(6, initial.heroStationIndex ?? 0);
-  const table = buildTable(playerStations(), resources.ledger);
+  const table = buildTable(playerStations(), resources);
   scene.add(table);
 
   /*
@@ -435,11 +540,33 @@ export function createTableScene(
     room -- that pool-of-light contrast is most of what makes a card room read as
     a card room. Still Lambert, still no shadow maps, so the frame budget holds.
   */
-  scene.add(new AmbientLight(0x2a2233, 1.9));
-  const key = new PointLight(0xffd9a0, 15, 5.6, 2);
+  /*
+    A warm neutral ambient, not plum.
+
+    The v2 room lit everything with a 0x2a2233 plum fill, which was invisible
+    against a charcoal felt and a purple carpet and became glaring the moment the
+    room turned warm: it pushed the red carpet to magenta and put a violet cast
+    on every skin tone. A card room's fill is bounced light off timber.
+  */
+  /*
+    The ambient's *colour* is the multiplier, not just its intensity. A
+    0x271d15 fill at 1.35 delivered about 0.20 of light, so every Lambert
+    surface it was the only light on -- the entire room past the pendant's
+    5 m reach -- came out at a twentieth of its own albedo and the panelled
+    walls rendered as flat black. A warm near-white at a low intensity is the
+    same warmth and actually lights something.
+  */
+  scene.add(new AmbientLight(0xffe8cc, 0.55));
+  /*
+    The key drops from 15 to 8.5. At 15 with quadratic falloff 1.3 m above the
+    cloth the felt's own texture was clipping to near-white in the middle of the
+    table -- a green baize that read as a lit lime panel. Baize is a dark surface
+    that a pendant *pools* on; it never becomes the brightest thing in the room.
+  */
+  const key = new PointLight(0xffd9a0, 6.2, 5.2, 2);
   key.position.set(0, 2.05, -0.15);
   scene.add(key);
-  const rim = new PointLight(0x7fa8ff, 10, 9, 2);
+  const rim = new PointLight(0x8fb0e8, 3.2, 11, 2);
   rim.position.set(0, 2.3, -3.1);
   scene.add(rim);
   /*
@@ -447,12 +574,21 @@ export function createTableScene(
     from behind, the opponents' faces and clothing sat in shadow and every torso
     read as the same dark shape regardless of its outfit colour.
   */
-  const seatFill = new PointLight(0xffe1b8, 9, 3.4, 2);
+  const seatFill = new PointLight(0xffe1b8, 2.4, 4.2, 2);
   seatFill.position.set(0, 1.55, 0.55);
   scene.add(seatFill);
-  const warmFill = new PointLight(0xffb066, 6, 8, 2);
+  const warmFill = new PointLight(0xffb066, 2.0, 9, 2);
   warmFill.position.set(2.6, 1.9, 1.4);
   scene.add(warmFill);
+  /*
+    A house light grazing the rear wall. Without it the room's architecture is
+    lit by ambient alone and has no gradient, so the panelling, the chair rail
+    and the sconces all sit at one flat value and the wall reads as a backdrop
+    photograph rather than a surface behind the table.
+  */
+  const roomLight = new PointLight(0xffcf9a, 8.0, 16, 2);
+  roomLight.position.set(0, 3.1, -4.2);
+  scene.add(roomLight);
 
   // Keep the six physical chairs stable. A player leaving must hide their
   // chair/body, never cause every surviving identity to slide one chair over.
@@ -477,7 +613,7 @@ export function createTableScene(
   for (const [index, seat] of initial.seats.entries()) {
     const pose = poses[index];
     if (!pose) continue;
-    const view = buildSeat(pose, resources, seat.id);
+    const view = buildSeat(pose, resources, seat.id, seat.isHero || index === 0);
     scene.add(view.root);
     seatViews.set(seat.id, { pose, view });
   }
@@ -493,29 +629,16 @@ export function createTableScene(
     medallion it should be sitting on was left conspicuously bare.
   */
   const board = new Group();
-  const heroFacing = poses[0]?.facing ?? 0;
-  // A station's facing points from the seat at the table centre, so the
-  // direction back toward the hero is its negation.
-  board.position.set(
-    TABLE_ANCHORS.board[0] - Math.sin(heroFacing) * BOARD_FORWARD,
-    TABLE_ANCHORS.board[1],
-    TABLE_ANCHORS.board[2] - Math.cos(heroFacing) * BOARD_FORWARD,
-  );
+  board.position.set(...TABLE_ANCHORS.board);
   /*
-    The row is laid out across the hero's line of sight, not along the table's
-    long axis.
+    Square to the table, on the centre mark, which is where a dealer puts it.
 
-    Along the long axis it read correctly only for the seats on the long sides.
-    From either end of the oval -- two of the six seats -- the hero looks
-    straight down the row, every card foreshortens onto the one behind it, and
-    the board becomes an unreadable diagonal pile. That is not a defect of the
-    cards; it is what a row of cards does when you sit at the end of it.
-
-    A dealer squares the board up to the table as a matter of habit, so this is
-    a deliberate departure. It is a stable one: the hero's seat is fixed for the
-    whole event, so the board does not swing around between hands.
+    An earlier pass rotated the row to face the hero and lifted it toward them,
+    because from the two seats at the ends of the oval a long-axis row
+    foreshortens badly. That bought readability by putting the board somewhere no
+    card room puts it, and it read as the board belonging to one player. The
+    oversized card carries the readability instead.
   */
-  board.rotation.y = heroFacing;
   scene.add(board);
 
   const buttonMarker = buildTableMarker("D", 0xf3ede0, resources);
@@ -605,7 +728,7 @@ export function createTableScene(
             const used = new Set([...seatViews.values()].map((value) => value.pose));
             const pose = poses.find((candidate) => !used.has(candidate));
             if (pose) {
-              const view = buildSeat(pose, resources, seat.id);
+              const view = buildSeat(pose, resources, seat.id, seat.isHero);
               scene.add(view.root);
               entry = { pose, view };
               seatViews.set(seat.id, entry);
@@ -623,6 +746,7 @@ export function createTableScene(
           state.reducedMotion,
           state.transition,
           resources,
+          state.heroPeeked === true,
         );
       }
       placeMarker(buttonMarker, state.buttonPlayerId, seatViews);
@@ -728,7 +852,7 @@ export function createTableScene(
       // Public card faces are local 96×136 RGBA canvases with mipmaps disabled.
       // The cache is bounded by the 52 canonical rank/suit pairs, so this is an
       // exact decoded-byte estimate instead of treating every texture as unknown.
-      textureEstimateMiB: resources.cardTextureEstimateMiB(),
+      textureEstimateMiB: resources.cardTextureEstimateMiB() + resources.surfaceTextureEstimateMiB(),
       resources: resources.ledger.counts().resources,
       running: lifecycle?.isRunning() ?? false,
       ...frameTelemetry.snapshot(),
@@ -790,13 +914,38 @@ interface SeatView {
   readonly body: Group;
   readonly arm: Object3D;
   readonly cards: Group;
+  /** The hero's own hand, shown only while they hold their cards up. */
+  readonly hand: Object3D;
   readonly betChips: Group;
   readonly stackChips: Group;
 }
 
 
 
-function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
+/**
+ * A panelled wall that takes the pendant light rather than ignoring it.
+ *
+ * The walls were `MeshBasicMaterial`, i.e. unlit -- which is why the room read
+ * as a flat painted backdrop and why the far corners had no falloff. Lambert
+ * plus the panel texture gives the architecture a value gradient away from the
+ * table, which is what actually makes a dark room feel like a room.
+ */
+function wallMaterial(
+  bundle: TableSceneResources,
+  repeatX: number,
+  repeatY: number,
+): MeshLambertMaterial {
+  const material = bundle.ledger.track(new MeshLambertMaterial({ color: WALL }));
+  const texture = bundle.surfaceTexture("wall", repeatX, repeatY);
+  if (texture) {
+    material.map = texture;
+    material.color.setHex(0xffffff);
+  }
+  return material;
+}
+
+function buildRoom(scene: Scene, bundle: TableSceneResources): void {
+  const resources = bundle.ledger;
   /*
     A warm carpet rather than near-black. At 0x141a17 the foreground floor -- a
     real 2 m of room between the hero's seat and the near rail, and up to 30% of
@@ -804,32 +953,29 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
     Direction A's environment framing forbids. This is still dark enough to keep
     the felt dominant.
   */
-  const floor = new Mesh(
-    resources.track(new PlaneGeometry(26, 26)),
-    resources.track(new MeshLambertMaterial({ color: CARPET })),
-  );
+  const floorMaterial = resources.track(new MeshLambertMaterial({ color: CARPET }));
+  const carpetTexture = bundle.surfaceTexture("carpet", 13, 13);
+  if (carpetTexture) {
+    floorMaterial.map = carpetTexture;
+    floorMaterial.color.setHex(0xffffff);
+  }
+  const floor = new Mesh(resources.track(new PlaneGeometry(26, 26)), floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
   /*
-    A patterned carpet ring under the table. Card rooms have figured carpet, and
-    a single flat colour was a large part of why the floor read as dead space --
-    with nothing on it there is no cue for scale or depth. Concentric rings are
-    the cheapest pattern that reads as a woven floor at this angle.
+    A plain border inlay under the table, in the carpet's own figure colour. The
+    three concentric rings that used to stand in for a pattern are gone: the
+    carpet is genuinely figured now, and stacking flat discs on top of a
+    patterned floor only produced visible banding.
   */
-  for (const [radius, colour] of [
-    [3.4, CARPET_PATTERN],
-    [2.6, CARPET],
-    [1.9, CARPET_PATTERN],
-  ] as const) {
-    const ring = new Mesh(
-      resources.track(new CircleGeometry(radius, 40)),
-      resources.track(new MeshLambertMaterial({ color: colour })),
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(0, 0.002 + (3.4 - radius) * 0.001, -0.2);
-    scene.add(ring);
-  }
+  const inlay = new Mesh(
+    resources.track(new CircleGeometry(3.1, 48)),
+    resources.track(new MeshLambertMaterial({ color: CARPET_PATTERN })),
+  );
+  inlay.rotation.x = -Math.PI / 2;
+  inlay.position.set(0, 0.002, -0.2);
+  scene.add(inlay);
 
   // A continuous emissive-looking rear wall creates Direction A's intentional
   // horizon instead of letting the fixed 52-degree lens resolve extra height
@@ -840,7 +986,7 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
     // architectural wall keeps both room wings present without moving the
     // table, seats, or camera laterally.
     resources.track(new PlaneGeometry(36, 7.4)),
-    resources.track(new MeshBasicMaterial({ color: WALL })),
+    wallMaterial(bundle, 14, 3),
   );
   horizon.position.set(0, 3.4, -6.5);
   scene.add(horizon);
@@ -850,8 +996,11 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   // horizon band with the fixed −16° seated gaze, while the physical
   // wall/floor junction remains naturally lower in the room.
   const horizonBand = new Mesh(
-    resources.track(new PlaneGeometry(36, 0.13)),
-    resources.track(new MeshBasicMaterial({ color: BRASS })),
+    resources.track(new PlaneGeometry(36, 0.10)),
+    // Dimmed from full brass. Unlit at 0xc9a227 the cove was a fluorescent
+    // stripe across the room and the brightest thing in a frame whose subject
+    // is a table 1 m away.
+    resources.track(new MeshBasicMaterial({ color: 0x7d6220 })),
   );
   horizonBand.position.set(0, 1.1, -6.47);
   scene.add(horizonBand);
@@ -865,29 +1014,36 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
   for (const side of [-1, 1]) {
     const sideWall = new Mesh(
       resources.track(new PlaneGeometry(13, 7.4)),
-      resources.track(new MeshBasicMaterial({ color: WALL })),
+      wallMaterial(bundle, 5, 3),
     );
     sideWall.position.set(side * 9.5, 3.4, -1.6);
     sideWall.rotation.y = side * -Math.PI / 2;
     scene.add(sideWall);
     const sideCove = new Mesh(
-      resources.track(new PlaneGeometry(13, 0.13)),
-      resources.track(new MeshBasicMaterial({ color: BRASS })),
+      resources.track(new PlaneGeometry(13, 0.10)),
+      resources.track(new MeshBasicMaterial({ color: 0x7d6220 })),
     );
     sideCove.position.set(side * 9.47, 1.1, -1.6);
     sideCove.rotation.y = side * -Math.PI / 2;
     scene.add(sideCove);
   }
 
-  // Three quiet wall bays make the horizon read as a room rather than a flat
-  // green card. They remain background-only and require no final M3 assets.
-  for (const x of [-11, -5.5, 0, 5.5, 11]) {
-    const bay = new Mesh(
-      resources.track(new PlaneGeometry(2.8, 3.1)),
-      resources.track(new MeshBasicMaterial({ color: WALL_PANEL })),
-    );
-    bay.position.set(x, 2.25, -6.46);
-    scene.add(bay);
+  /*
+    The five flat bay planes are gone. They existed to stop the rear wall reading
+    as one blank card, and the panelled wall texture now does that job at the
+    right scale -- with them still in place they sat *on top of* the panelling as
+    five oversized blank rectangles, which is exactly the artefact they were
+    added to prevent.
+
+    Wall sconces replace them: small warm plates at head height, which is what
+    actually tells you a dark room is a room someone lit on purpose.
+  */
+  const sconceGeometry = resources.track(new PlaneGeometry(0.16, 0.30));
+  const sconceMaterial = resources.track(new MeshBasicMaterial({ color: 0xa8813f }));
+  for (const x of [-9.5, -5.7, -1.9, 1.9, 5.7, 9.5]) {
+    const sconce = new Mesh(sconceGeometry, sconceMaterial);
+    sconce.position.set(x, 1.62, -6.44);
+    scene.add(sconce);
   }
 
   // A few distant tables so the room has depth beyond this one. Low-poly and
@@ -937,7 +1093,8 @@ function buildRoom(scene: Scene, resources: SceneResourceLedger): void {
  * The authored geometry has the felt plane at y=0, so the whole assembly is
  * placed by one `TABLE_HEIGHT` offset and nothing here re-derives a height.
  */
-function buildTable(stations: readonly Station[], resources: SceneResourceLedger): Group {
+function buildTable(stations: readonly Station[], scene: TableSceneResources): Group {
+  const resources = scene.ledger;
   const group = new Group();
   group.position.y = TABLE_HEIGHT;
 
@@ -951,7 +1108,18 @@ function buildTable(stations: readonly Station[], resources: SceneResourceLedger
     return mesh;
   };
 
-  zone("table/felt", FELT, "table-felt");
+  /*
+    The baize is textured, not a flat fill. An unbroken green plane 2.3 m across
+    is the single largest surface in the frame and, without a weave, reads as
+    painted plastic -- which was most of what made the previous felt look wrong
+    whatever hue it was given. The tile repeats about every 12 cm of table, close
+    to the real scale of the cloth.
+  */
+  const felt = zone("table/felt", 0xffffff, "table-felt");
+  const feltMaterial = felt.material as MeshLambertMaterial;
+  const feltTexture = scene.surfaceTexture("felt", TABLE_WIDTH / 0.12, TABLE_DEPTH / 0.12);
+  if (feltTexture) feltMaterial.map = feltTexture;
+  else feltMaterial.color.setHex(FELT);
   zone("table/print", FELT_PRINT, "table-print");
   zone("table/ledge", LEDGE, "table-ledge");
   zone("table/rail", RAIL, "table-rail");
@@ -1102,6 +1270,7 @@ function buildSeat(
   pose: SeatPose,
   resources: TableSceneResources,
   playerId: string,
+  isHero = false,
 ): SeatView {
   const root = new Group();
   root.position.set(...pose.position);
@@ -1109,29 +1278,49 @@ function buildSeat(
 
   /*
     The chair belongs to the body group, not the seat root, so hiding an
-    occupant hides their chair with them. The hero's seat is the camera's own,
-    and a chair rendered there sits inside the lens.
+    occupant hides their chair with them.
+
+    The hero's seat gets no body and no chair at all. The camera is at the
+    hero's eyes, 0.10 m behind their own station, so a character built there is
+    *inside the lens*: the near plane slices through it and what reaches the
+    frame is the inside of a skull and a shoulder floating across the view. It
+    looked exactly like sitting on top of another player, which is what it was.
+    The hero's own cards and chips still belong to this seat -- only the body
+    the camera is standing in is omitted.
   */
   const body = new Group();
-  body.add(buildChair(CHAIR_SEAT, CHAIR_FRAME, resources.ledger));
-  const character = buildCharacter(
-    describeOpponentCharacter(playerId),
-    resources.ledger,
-  );
-  body.add(character.root);
-  // The gesture code leans the body and reaches an arm; both still work because
-  // the character exposes the same two handles the old primitives did.
-  const arm = character.arms;
+  // The gesture code leans the body and reaches an arm. With no character there
+  // is still an arm handle, just an empty one, so every gesture stays a no-op on
+  // the hero rather than a null check at each call site.
+  let arm: Object3D = new Group();
+  if (!isHero) {
+    body.add(buildChair(CHAIR_SEAT, CHAIR_FRAME, resources.ledger));
+    const character = buildCharacter(describeOpponentCharacter(playerId), resources.ledger);
+    body.add(character.root);
+    arm = character.arms;
+  }
   root.add(body);
 
   const cards = new Group();
   root.add(cards);
+  /*
+    Only the hero ever squeezes a card in view, so only the hero's seat pays for
+    a hand. An opponent's peek is not public information and is not shown.
+  */
+  const hand: Object3D = isHero
+    ? new Mesh(
+      resources.ledger.track(tableMeshGeometry("hand/peek")),
+      resources.ledger.track(new MeshLambertMaterial({ color: 0xd8ab86 })),
+    )
+    : new Group();
+  hand.visible = false;
+  root.add(hand);
   const betChips = new Group();
   root.add(betChips);
   const stackChips = new Group();
   root.add(stackChips);
 
-  return { root, body, arm, cards, betChips, stackChips };
+  return { root, body, arm, cards, hand, betChips, stackChips };
 }
 
 function applySeat(
@@ -1143,6 +1332,7 @@ function applySeat(
   reducedMotion: boolean,
   transition: TableSceneState["transition"],
   resources: TableSceneResources,
+  peeked: boolean,
 ): void {
   const started = startedAt.get(seat.seat) ?? nowMs;
   const localProgress = reducedMotion
@@ -1185,6 +1375,16 @@ function applySeat(
     without any special case. Only the body stays hidden, because the camera is
     their eyes.
   */
+  /*
+    Face down unless someone is looking at them.
+
+    Every hand on the table lies face down, including the hero's -- that is what
+    a poker table looks like, and it is the only arrangement in which a hand is
+    actually private. `peeked` is the squeeze: the geometry swaps for the
+    corner-bent card, the faces turn up, and a hand appears over them for as long
+    as the player holds. Release and they are cardboard again.
+  */
+  const squeezing = seat.isHero && peeked && !folded;
   view.cards.children.forEach((card, index) => {
     const target = folded
       ? muckedCardPosition(pose, progress)
@@ -1195,9 +1395,32 @@ function applySeat(
     card.position.set(local[0] + (index === 0 ? -0.055 : 0.055), local[1], local[2]);
     card.rotation.x = 0;
     card.scale.setScalar(1);
+    const mesh = card as Mesh;
     const code = seat.publicCardCodes?.[index];
-    (card as Mesh).material = code ? resources.cardFaceMaterial(code) : resources.cardBackMaterial;
+    mesh.geometry = squeezing ? resources.peekedCardGeometry : resources.cardGeometry;
+    mesh.material = code ? resources.cardFaceMaterial(code) : resources.cardBackMaterial;
   });
+  view.hand.visible = squeezing;
+  if (squeezing) {
+    const local = seatLocalPoint(pose, pose.feltPosition);
+    /*
+      Behind the right-hand card, not on top of it. The hand comes from the
+      player, so the wrist is nearer them (local -Z) and the fingers reach across
+      the card toward the middle of the table; the thumb is then at the near
+      corner, which is the corner the peeked mesh bends up. Placed forward of the
+      cards instead, it sat in the middle of the pair like a glove someone had
+      dropped there.
+    */
+    /*
+      Outboard of the card it is lifting, not on top of it. A seat's local +X is
+      screen *left* from that seat's own camera -- the station frame is the
+      mirror of the view frame -- so the authored bend, which is at the card's
+      +X/near corner, is the near-left corner on screen. Sitting the hand at the
+      cards' centre covered one of the two faces the squeeze exists to reveal.
+    */
+    view.hand.position.set(local[0] + 0.112, local[1] + 0.004, local[2] - 0.042);
+    view.hand.rotation.y = -0.42;
+  }
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,
   // and it is a body doing something rather than a rectangle oscillating.
@@ -1205,13 +1428,13 @@ function applySeat(
   view.arm.position.z = 0.22 + gesture.armReach;
 
   const betChips = chipCountForAmount(seat.bet);
-  setChipStack(view.betChips, betChips, CHIP_BET, resources);
+  setChipStack(view.betChips, betChips, CHIP_BET_BIAS, resources);
   if (betChips > 0) {
     const local = seatLocalPoint(pose, chipPositionForGesture(pose, gesture.chipMotion, progress));
     view.betChips.position.set(local[0], local[1], local[2]);
   }
 
-  setChipStack(view.stackChips, chipCountForAmount(seat.stack), CHIP_STACK, resources);
+  setChipStack(view.stackChips, chipCountForAmount(seat.stack), 0, resources);
   const stackLocal = seatLocalPoint(pose, [
     pose.feltPosition[0] * 0.86,
     TABLE_HEIGHT,
@@ -1307,13 +1530,13 @@ const POT_PLAQUE_SIZE = [0.22, 0.058] as const;
  * instanced mesh prevents a safe-frame camera retreat from regressing the
  * approved draw-call budget by bringing more existing stacks into view.
  */
-function setChipStack(group: Group, count: number, color: number, resources: TableSceneResources): void {
+function setChipStack(group: Group, count: number, bias: number, resources: TableSceneResources): void {
   let stack = group.getObjectByName("instanced-chip-stack") as InstancedMesh | undefined;
   let spots = group.getObjectByName("instanced-chip-spots") as InstancedMesh | undefined;
   if (!stack || !spots) {
     stack = new InstancedMesh(
       resources.chipGeometry,
-      resources.chipMaterial(color),
+      resources.chipMaterial(),
       MAX_RENDERED_CHIPS,
     );
     stack.name = "instanced-chip-stack";
@@ -1325,20 +1548,17 @@ function setChipStack(group: Group, count: number, color: number, resources: Tab
     */
     spots = new InstancedMesh(
       resources.chipEdgeGeometry,
-      resources.chipEdgeMaterial(color),
+      resources.chipEdgeMaterial(),
       MAX_RENDERED_CHIPS,
     );
     spots.name = "instanced-chip-spots";
     group.add(stack, spots);
   }
-  const material = stack.material;
-  if (material instanceof MeshLambertMaterial) material.color.setHex(color);
-  const spotMaterial = spots.material;
-  if (spotMaterial instanceof MeshLambertMaterial) {
-    spotMaterial.color.setHex(color).lerp(new Color(0xf4efe2), 0.72);
-  }
   const renderedCount = Math.min(MAX_RENDERED_CHIPS, Math.max(0, count));
   const matrix = new Matrix4();
+  const body = new Color();
+  const inlay = new Color();
+  const cream = new Color(0xf4efe2);
   /*
     Real players break a deep holding into several short columns rather than one
     tottering tower. An 18-chip single column stood 0.22 m tall and read as a
@@ -1362,12 +1582,29 @@ function setChipStack(group: Group, count: number, color: number, resources: Tab
     );
     stack.setMatrixAt(index, matrix);
     spots.setMatrixAt(index, matrix);
+    /*
+      One denomination per column, descending. A player racks their highest
+      chips into the back column and works down, so a deep stack shows blacks
+      and purples behind greens and reds -- which is both what a real table looks
+      like and the only cue at this distance for how big a holding is beyond
+      counting columns. `bias` shifts the whole run so a committed bet and the
+      pot stay distinguishable from a player's own stack.
+    */
+    const denomination = CHIP_DENOMINATIONS[
+      Math.min(CHIP_DENOMINATIONS.length - 1, bias + column)
+    ];
+    body.setHex(denomination.color);
+    stack.setColorAt(index, body);
+    inlay.copy(body).lerp(cream, 0.78);
+    spots.setColorAt(index, inlay);
   }
   stack.count = renderedCount;
   stack.instanceMatrix.needsUpdate = true;
+  if (stack.instanceColor) stack.instanceColor.needsUpdate = true;
   stack.computeBoundingSphere();
   spots.count = renderedCount;
   spots.instanceMatrix.needsUpdate = true;
+  if (spots.instanceColor) spots.instanceColor.needsUpdate = true;
   spots.computeBoundingSphere();
   group.userData.publicChipCount = renderedCount;
 }
@@ -1416,7 +1653,7 @@ function setPotLanes(
     const chips = lane.getObjectByName("pot-chip-stack") as Group | undefined;
     const plaque = lane.getObjectByName("pot-amount-plaque") as Mesh | undefined;
     if (!chips || !plaque) return;
-    setChipStack(chips, chipCountForAmount(pot.amount), pot.kind === "main" ? 0xd8b45a : 0x78a9e8, resources);
+    setChipStack(chips, chipCountForAmount(pot.amount), pot.kind === "main" ? CHIP_POT_BIAS : CHIP_POT_BIAS - 1, resources);
     plaque.visible = pot.amount > 0;
     plaque.material = resources.potPlaqueMaterial(potPlaqueLabel(pot.kind, pot.amount), pot.kind);
     /*

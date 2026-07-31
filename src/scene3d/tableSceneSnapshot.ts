@@ -21,6 +21,16 @@ export interface TableSceneSnapshotInput {
   readonly boardCards: number;
   readonly publicBoardCardCodes?: readonly string[];
   readonly heroCardCodes?: readonly string[];
+  /**
+   * True only while the player is actively holding their own cards up.
+   *
+   * The hero's hole cards lie face down on the felt like everyone else's, which
+   * is what a poker table looks like and what stops a shoulder-surfer reading
+   * them. This is the squeeze: it lifts the near corner and turns the faces up
+   * for exactly as long as the player holds. It is never persisted and never
+   * part of a replay -- it describes a hand on a card, not a game state.
+   */
+  readonly heroPeeked?: boolean;
   readonly revealedCardCodesByPlayer?: Readonly<Record<string, readonly string[]>>;
   readonly cameraPan: number;
   /** Which player station the hero occupies; the seated camera sits there. */
@@ -85,9 +95,19 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
       folded: player.status === "folded" || input.transition?.foldedPlayerIds.includes(player.id) === true,
       acting: input.actingPlayerId === player.id,
       isHero: player.id === input.heroId,
-      cardVisibility: player.id === input.heroId || revealed.has(player.id) ? "shown" : "hidden",
+      cardVisibility: (player.id === input.heroId && input.heroPeeked) || revealed.has(player.id)
+        ? "shown"
+        : "hidden",
+      /*
+        A face-down card carries no rank. The hero's codes used to be handed to
+        the renderer unconditionally, so the physical hole cards painted their
+        faces whatever `cardVisibility` said -- the visibility flag was computed
+        and then not used by the thing that draws. Gating the codes themselves
+        means "face down" is a property of the data, not a rule the renderer has
+        to remember to apply.
+      */
       publicCardCodes: player.id === input.heroId
-        ? input.heroCardCodes ?? []
+        ? (input.heroPeeked || revealed.has(player.id) ? input.heroCardCodes ?? [] : [])
         : revealed.has(player.id)
           ? input.revealedCardCodesByPlayer?.[player.id] ?? []
           : [],
@@ -110,6 +130,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
     publicBoardCardCodes: input.publicBoardCardCodes ?? [],
     cameraPan: input.cameraPan,
     heroStationIndex: input.heroStationIndex,
+    heroPeeked: input.heroPeeked ?? false,
     cameraView: input.cameraView ?? "standard",
     cameraMotion: input.cameraMotion ?? "full",
     reducedMotion: input.reducedMotion,
