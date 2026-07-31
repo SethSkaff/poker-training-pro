@@ -304,6 +304,23 @@ def band_from_points(bm, points, thickness, height, close=True):
 # --- Table zones -------------------------------------------------------------
 
 
+def planar_uv(obj, width, depth):
+    """
+    Project a top-down UV over an object, normalised to `width` x `depth`.
+
+    Only the cards carried UVs before this, because they were the only mesh with
+    a per-face image. A *tiled* map needs coordinates just as much, and without
+    them three.js samples one texel and renders a flat fill -- which is exactly
+    what the felt did.
+    """
+    mesh = obj.data
+    layer = mesh.uv_layers.new(name="UVMap")
+    for loop in mesh.loops:
+        x, y, _ = mesh.vertices[loop.vertex_index].co
+        layer.data[loop.index].uv = (x / width + 0.5, y / depth + 0.5)
+    return obj
+
+
 def build_felt():
     """
     The recessed playing surface: a capsule cap at z=0 with a shallow skirt so
@@ -317,7 +334,12 @@ def build_felt():
         TABLE_DEPTH,
         [(0.0, 0.0), (0.004, -0.012), (0.004, -0.075)],
     )
-    return finish(obj, bm)
+    finish(obj, bm)
+    # The felt is the one surface with a tiled cloth map on it, and it had no UV
+    # layer at all -- so the weave sampled a single texel and the renderer drew
+    # 2.3 m of flat green whatever the texture said. Planar from above, in metres
+    # normalised over the table, which is what a tiled repeat wants.
+    return planar_uv(obj, TABLE_WIDTH, TABLE_DEPTH)
 
 
 def build_ledge():
@@ -749,6 +771,27 @@ def build_chip_body():
     return finish(obj, bm)
 
 
+def build_chip_inlay():
+    """
+    The printed disc on a chip's face, as its own mesh so the runtime tints it.
+
+    A chip seen from a seated eye is mostly its top face, and that face was a
+    single flat colour -- so a chip lying on the felt read as a coloured blob and
+    a green one on green cloth barely read at all. Every real chip has a lighter
+    printed centre inside a ring of the body colour, and that centre is most of
+    what identifies it from above. It is two discs, one per face, so a chip
+    flipped in a stack still shows one.
+    """
+    obj, bm = new_mesh("chip/inlay")
+    half = CHIP_HEIGHT / 2.0
+    # Clear of the rim by the width of the body's own lip, so the body colour
+    # still frames it rather than the inlay running to the edge.
+    radius = CHIP_RADIUS * 0.62
+    for sign in (1.0, -1.0):
+        disc(bm, radius, sign * (half - 0.0003), segments=CHIP_SEGMENTS)
+    return finish(obj, bm)
+
+
 def build_chip_edge():
     """
     The contrasting edge inlays, as a separate mesh so the runtime can tint them
@@ -816,6 +859,7 @@ def main():
         build_card("card/peeked", peeked=True),
         build_hand(),
         build_chip_body(),
+        build_chip_inlay(),
         build_chip_edge(),
     ]
 

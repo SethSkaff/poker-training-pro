@@ -299,6 +299,19 @@ describe("six-seat tournament session", () => {
     // contain those letters (e.g. "F-rank-ie").
     expect(JSON.stringify(snapshot.potBreakdown)).not.toContain('"rank":');
     expect(JSON.stringify(snapshot.potBreakdown)).not.toContain('"suit":');
+
+    /*
+      One pot at the start of a hand, with nobody all-in.
+
+      `buildPots` layers contributions at every distinct commitment level, which
+      is right at settlement and wrong here: with antes posted, the opening
+      position of every hand has three levels -- ante, small blind, big blind --
+      and the table announced a side pot on all of them. A side pot needs
+      somebody all-in for less than the rest have committed; unequal chips in
+      the middle of a betting round is just a betting round.
+    */
+    expect(snapshot.potBreakdown?.filter((pot) => pot.kind === "side")).toEqual([]);
+    expect(snapshot.potBreakdown).toHaveLength(1);
   });
 
   it("separates live main and side pots before a runout", () => {

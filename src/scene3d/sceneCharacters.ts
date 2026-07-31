@@ -585,7 +585,17 @@ export function buildDealer(
   // "this one is the dealer" cue at a glance.
   const visor: BufferGeometry[] = [];
   const band = sphere(HEAD_RADIUS * 1.03, [0, headY + 0.004, 0], [1, 1.02, 1.02]);
-  clampBelow(band, HEAD_RADIUS * 0.42);
+  /*
+    Clamped in world Y, which is the space `sphere` has already translated into.
+
+    Passing the bare `HEAD_RADIUS * 0.42` clamped against a floor of 0.07 m --
+    somewhere around the dealer's shins. No vertex of a head sitting at 1.45 m is
+    below that, so nothing was flattened and the "band" stayed a complete sphere
+    one and a bit head-radii across: the dealer's whole head was a green ball.
+    The hair code above gets this right by clamping at the origin and translating
+    afterwards; this one translates first, so the floor has to be offset too.
+  */
+  clampBelow(band, headY + HEAD_RADIUS * 0.42);
   visor.push(band);
   const brim = taper(HEAD_RADIUS * 0.95, HEAD_RADIUS * 0.95, 0.012, [0, headY + HEAD_RADIUS * 0.34, HEAD_RADIUS * 0.5], [1.15, 1, 0.7]);
   brim.rotateX(-0.22);

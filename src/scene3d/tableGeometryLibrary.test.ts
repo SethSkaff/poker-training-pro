@@ -36,6 +36,7 @@ describe("authored table geometry", () => {
       "card/peeked",
       "chip/body",
       "chip/edge",
+      "chip/inlay",
       "hand/peek",
       "table/felt",
       "table/ledge",
@@ -90,6 +91,36 @@ describe("authored table geometry", () => {
     expect(print.max[1]).toBeGreaterThan(0);
     expect(print.max[1]).toBeLessThan(ledge.max[1]);
     expect(print.max[1]).toBeLessThan(0.005);
+  });
+
+  /*
+    The felt is the only surface carrying a tiled map, and it shipped without a
+    UV layer -- so the weave sampled one texel and 2.3 m of table rendered as
+    flat green. Nothing failed: the material had its map, the texture existed and
+    was the right size, and the budget audit counted its bytes. The defect was
+    only ever visible by looking at the table.
+  */
+  it("gives the felt the UVs its cloth texture is sampled through", () => {
+    const geometry = tableMeshGeometry("table/felt");
+    const uv = geometry.getAttribute("uv");
+    expect(uv).toBeDefined();
+    expect(uv.count).toBe(geometry.getAttribute("position").count);
+    let minU = Infinity;
+    let maxU = -Infinity;
+    let minV = Infinity;
+    let maxV = -Infinity;
+    for (let index = 0; index < uv.count; index += 1) {
+      minU = Math.min(minU, uv.getX(index));
+      maxU = Math.max(maxU, uv.getX(index));
+      minV = Math.min(minV, uv.getY(index));
+      maxV = Math.max(maxV, uv.getY(index));
+    }
+    // Spans the whole tile, so a repeat count means what it says in metres.
+    expect(minU).toBeCloseTo(0, 2);
+    expect(maxU).toBeCloseTo(1, 2);
+    expect(minV).toBeCloseTo(0, 2);
+    expect(maxV).toBeCloseTo(1, 2);
+    geometry.dispose();
   });
 
   it("hangs the pedestal entirely below the felt", () => {

@@ -51,27 +51,39 @@ export function drawFeltTexture(
   context.fillStyle = base;
   context.fillRect(0, 0, size, size);
 
-  context.lineWidth = 1;
-  for (let x = 0; x < size; x += 2) {
-    context.strokeStyle = `rgba(255,255,255,${0.020 + random() * 0.016})`;
+  /*
+    A weave you can actually see.
+
+    The first version drew threads every 2 px at 2-5% alpha. Both halves of that
+    were wrong at once: at the tiling this is used at, a 2 px thread lands well
+    inside a single screen pixel, so the whole weave averaged back to the flat
+    fill it was drawn over -- and even resolved, 2% alpha is below what survives
+    tone mapping. The table read as painted plastic, which is exactly what the
+    texture exists to prevent. Coarser threads at real contrast, and the caller
+    tiles it larger, so a thread is a couple of pixels on screen instead of a
+    fifth of one.
+  */
+  context.lineWidth = 2;
+  for (let x = 0; x < size; x += 5) {
+    context.strokeStyle = `rgba(255,255,255,${0.075 + random() * 0.05})`;
     context.beginPath();
-    context.moveTo(x + 0.5, 0);
-    context.lineTo(x + 0.5, size);
+    context.moveTo(x + 1, 0);
+    context.lineTo(x + 1, size);
     context.stroke();
   }
-  for (let y = 0; y < size; y += 2) {
-    context.strokeStyle = `rgba(0,0,0,${0.026 + random() * 0.020})`;
+  for (let y = 0; y < size; y += 5) {
+    context.strokeStyle = `rgba(0,0,0,${0.11 + random() * 0.07})`;
     context.beginPath();
-    context.moveTo(0, y + 0.5);
-    context.lineTo(size, y + 0.5);
+    context.moveTo(0, y + 1);
+    context.lineTo(size, y + 1);
     context.stroke();
   }
   // A scatter of slightly lighter flecks: baize is a pressed wool, never a
   // perfectly even dye, and the flecks are what stop a large area of it from
   // looking like painted card.
-  for (let index = 0; index < 900; index += 1) {
-    context.fillStyle = `rgba(255,255,255,${random() * 0.05})`;
-    context.fillRect(random() * size, random() * size, 1, 1);
+  for (let index = 0; index < 1400; index += 1) {
+    context.fillStyle = `rgba(255,255,255,${random() * 0.13})`;
+    context.fillRect(random() * size, random() * size, 2, 2);
   }
 }
 

@@ -208,13 +208,18 @@ export function probeWebGl2(canvas: HTMLCanvasElement): WebGlProbeResult {
   panelled timber walls, brass rail and cove. All of it sits well below the felt
   in value so the pendant key still pools on the table.
 */
-const FELT = 0x1d6b3c;
+/* Darkened from 0x1d6b3c. The baize is the largest surface in the frame and
+   at the old value it was also the brightest, which both blew out under the
+   pendant and left the green $25 chips sitting on a green of their own value --
+   invisible until they moved. A card room's cloth is deep, and everything laid
+   on it reads against it. */
+const FELT = 0x155232;
 const FELT_EDGE = 0x0e3a21;
 /* Printed felt graphics -- medallion, racetrack line, per-seat play zones. A
    shade lighter than the baize, as printed felt actually is: high contrast here
    pulls the eye off the cards, which is the only thing on the table that
    matters. */
-const FELT_PRINT = 0x2b8552;
+const FELT_PRINT = 0x24704a;
 /* Padded leather, not bare timber. At 0x7b6b59 the near rail was the brightest
    large surface in the seated frame -- a pale tan band across the bottom third
    that pulled the eye off the felt and read as moulded plastic. A darker hide
@@ -250,7 +255,9 @@ const CHAIR_FRAME = 0x3a2318;
 const CHIP_DENOMINATIONS = [
   { value: 1, color: 0xd8d2c2 },
   { value: 5, color: 0x8e1f28 },
-  { value: 25, color: 0x14663a },
+  /* Lifted well clear of the felt: a $25 chip is green and so is the table,
+     so the separation has to come from value rather than hue. */
+  { value: 25, color: 0x1c8f4e },
   { value: 100, color: 0x14161c },
   { value: 500, color: 0x4b2569 },
   { value: 1000, color: 0x9a7a2c },
@@ -288,14 +295,19 @@ interface TableSceneResources {
   readonly cardGeometry: BufferGeometry;
   /** The same card with its near corner bent up; see `applySeat`. */
   readonly peekedCardGeometry: BufferGeometry;
-  readonly cardMaterial: MeshBasicMaterial;
+  readonly cardMaterial: MeshLambertMaterial;
   readonly cardBackMaterial: MeshLambertMaterial;
+  /** The flap of face a squeezed card shows; see `cardCornerMaterial`. */
+  readonly cornerIndexGeometry: BufferGeometry;
   readonly chipGeometry: BufferGeometry;
   /** The chip's contrasting edge spots, instanced alongside the body. */
   readonly chipEdgeGeometry: BufferGeometry;
+  /** The printed disc on the chip's face; see `build_chip_inlay`. */
+  readonly chipInlayGeometry: BufferGeometry;
   chipEdgeMaterial(): MeshLambertMaterial;
   chipMaterial(): MeshLambertMaterial;
-  cardFaceMaterial(code: string): MeshBasicMaterial;
+  cardFaceMaterial(code: string): MeshLambertMaterial;
+  cardCornerMaterial(code: string): MeshLambertMaterial;
   markerMaterial(label: "D" | "SB" | "BB", color: number): MeshBasicMaterial;
   /** Tiled surface maps for the felt, the carpet, and the panelled walls. */
   surfaceTexture(kind: "felt" | "carpet" | "wall", repeatX: number, repeatY: number): Texture | null;
@@ -307,10 +319,10 @@ interface TableSceneResources {
 function createTableSceneResources(): TableSceneResources {
   const ledger = createSceneResourceLedger();
   const track = <T extends { dispose(): void }>(resource: T): T => ledger.track(resource);
-  const faceMaterials = new Map<string, MeshBasicMaterial>();
+  const faceMaterials = new Map<string, MeshLambertMaterial>();
   const markerMaterials = new Map<string, MeshBasicMaterial>();
   const potPlaqueMaterials = new Map<string, MeshBasicMaterial>();
-  const cardFaceMaterial = (code: string): MeshBasicMaterial => {
+  const cardFaceMaterial = (code: string): MeshLambertMaterial => {
     const face = parsePublicCardFace(code);
     if (!face) return cardMaterial;
     const key = `${face.rank}${face.glyph}`;
@@ -372,11 +384,96 @@ function createTableSceneResources(): TableSceneResources {
     const texture = track(new CanvasTexture(canvas));
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
     texture.minFilter = LinearFilter;
-    const material = track(new MeshBasicMaterial({ map: texture }));
+    const material = track(new MeshLambertMaterial({ map: texture }));
     faceMaterials.set(key, material);
     return material;
   };
-  const cardMaterial = track(new MeshBasicMaterial({ color: 0xf3ede0 }));
+  /*
+    The corner index: what a squeeze actually shows you.
+
+    A real player lifts the near corner a few millimetres and reads one index off
+    the underside. They do not turn the card over, and neither should this --
+    swapping the whole top face to the printed side showed the hero's hand
+    face-up on the table for as long as they held the button, which is both the
+    wrong picture and the one thing a hole card exists to prevent. So the card
+    keeps its back, and this is the sliver of face the lifted flap reveals.
+  */
+  const cornerMaterials = new Map<string, MeshLambertMaterial>();
+  const cardCornerMaterial = (code: string): MeshLambertMaterial => {
+    const face = parsePublicCardFace(code);
+    if (!face) return cardMaterial;
+    const key = `${face.rank}${face.glyph}`;
+    const cached = cornerMaterials.get(key);
+    if (cached) return cached;
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 80;
+    const context = canvas.getContext("2d");
+    if (!context) return cardMaterial;
+    context.fillStyle = "#f8f1df";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = face.red ? "#b83232" : "#1f2933";
+    context.textAlign = "center";
+    // One index, filling the flap. At this size it is a few dozen pixels on
+    // screen, so it has to be the whole picture rather than a corner of one.
+    context.font = "700 40px Georgia, serif";
+    context.fillText(face.rank, canvas.width / 2, 38);
+    context.font = "34px Georgia, serif";
+    context.fillText(face.glyph, canvas.width / 2, 74);
+    const texture = track(new CanvasTexture(canvas));
+    texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
+    texture.minFilter = LinearFilter;
+    const material = track(new MeshLambertMaterial({ map: texture }));
+    cornerMaterials.set(key, material);
+    return material;
+  };
+  const cardMaterial = track(new MeshLambertMaterial({ color: 0xf3ede0 }));
+  /*
+    A patterned back, because a flat one is not a card.
+
+    Every face-down card on the table -- which is most of them, most of the time
+    -- was a solid crimson rectangle with a rounded corner, and it read as a
+    playing piece rather than as a card: no border, no printing, nothing to
+    catch the light differently from its neighbour. The lattice is the standard
+    diagonal guilloche a card back has had for two centuries, drawn once and
+    shared by every card, so it costs one texture for the whole table.
+  */
+  function cardBackMaterial(): MeshLambertMaterial {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 90;
+    const context = canvas.getContext("2d");
+    if (!context) return new MeshLambertMaterial({ color: 0x8d2733 });
+    context.fillStyle = "#8d2733";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    // The white border a real back leaves round its printed panel.
+    context.fillStyle = "#f0e7d5";
+    context.fillRect(0, 0, canvas.width, 4);
+    context.fillRect(0, canvas.height - 4, canvas.width, 4);
+    context.fillRect(0, 0, 4, canvas.height);
+    context.fillRect(canvas.width - 4, 0, 4, canvas.height);
+    context.save();
+    context.beginPath();
+    context.rect(5, 5, canvas.width - 10, canvas.height - 10);
+    context.clip();
+    context.strokeStyle = "rgba(240,231,213,0.26)";
+    context.lineWidth = 1;
+    for (let offset = -canvas.height; offset < canvas.width * 2; offset += 7) {
+      context.beginPath();
+      context.moveTo(offset, 0);
+      context.lineTo(offset + canvas.height, canvas.height);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(offset, canvas.height);
+      context.lineTo(offset + canvas.height, 0);
+      context.stroke();
+    }
+    context.restore();
+    const texture = track(new CanvasTexture(canvas));
+    texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
+    texture.minFilter = LinearFilter;
+    return new MeshLambertMaterial({ map: texture });
+  }
   /*
     One canvas per surface kind, cloned per repeat. A three.js Texture owns its
     own wrap/repeat, so two surfaces that need different tiling cannot share one
@@ -476,14 +573,18 @@ function createTableSceneResources(): TableSceneResources {
     cardGeometry: track(tableMeshGeometry("card")),
     peekedCardGeometry: track(tableMeshGeometry("card/peeked")),
     cardMaterial,
-    cardBackMaterial: track(new MeshLambertMaterial({ color: 0x8d2733 })),
+    cardBackMaterial: track(cardBackMaterial()),
+    // Roughly the area of a real card's index block, in metres.
+    cornerIndexGeometry: track(new PlaneGeometry(0.026, 0.033)),
     chipGeometry: track(tableMeshGeometry("chip/body")),
     chipEdgeGeometry: track(tableMeshGeometry("chip/edge")),
+    chipInlayGeometry: track(tableMeshGeometry("chip/inlay")),
     /* White materials tinted per instance: `setChipStack` writes a real
        denomination colour per chip, so the material must not impose one. */
     chipMaterial: () => track(new MeshLambertMaterial({ color: 0xffffff })),
     chipEdgeMaterial: () => track(new MeshLambertMaterial({ color: 0xffffff })),
     cardFaceMaterial,
+    cardCornerMaterial,
     markerMaterial,
     potPlaqueMaterial,
     surfaceTexture,
@@ -526,7 +627,10 @@ export function createTableScene(
     keeps a white chip from turning into a white blob.
   */
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  /* 1.05 clipped the felt, the chips and the cards together. The scene is lit
+     by physical point lights, so exposure is the one control that moves all of
+     them at once without re-balancing five lamps against each other. */
+  renderer.toneMappingExposure = 0.86;
 
   const scene = new Scene();
   /*
@@ -953,6 +1057,8 @@ interface SeatView {
   readonly body: Group;
   readonly arm: Object3D;
   readonly cards: Group;
+  /** One index flap per card, shown only under the lifted corner. */
+  readonly corners: Group;
   /** The hero's own hand, shown only while they hold their cards up. */
   readonly hand: Object3D;
   readonly betChips: Group;
@@ -1156,7 +1262,9 @@ function buildTable(stations: readonly Station[], scene: TableSceneResources): G
   */
   const felt = zone("table/felt", 0xffffff, "table-felt");
   const feltMaterial = felt.material as MeshLambertMaterial;
-  const feltTexture = scene.surfaceTexture("felt", TABLE_WIDTH / 0.12, TABLE_DEPTH / 0.12);
+  // Tiled every 26 cm rather than every 12: the weave has to be resolvable on
+  // screen to be worth drawing, and at the old repeat it was subpixel.
+  const feltTexture = scene.surfaceTexture("felt", TABLE_WIDTH / 0.26, TABLE_DEPTH / 0.26);
   if (feltTexture) feltMaterial.map = feltTexture;
   else feltMaterial.color.setHex(FELT);
   zone("table/print", FELT_PRINT, "table-print");
@@ -1354,12 +1462,15 @@ function buildSeat(
     : new Group();
   hand.visible = false;
   root.add(hand);
+  const corners = new Group();
+  corners.visible = false;
+  root.add(corners);
   const betChips = new Group();
   root.add(betChips);
   const stackChips = new Group();
   root.add(stackChips);
 
-  return { root, body, arm, cards, hand, betChips, stackChips };
+  return { root, body, arm, cards, corners, hand, betChips, stackChips };
 }
 
 /**
@@ -1375,6 +1486,32 @@ const DEALER_TASK_FOR_ACTION: Readonly<Record<string, DealerWork["task"] | undef
   collect: "collect",
   win: "push",
 };
+
+/**
+ * Where the peeked card's bent corner is, in the card's own frame.
+ *
+ * The bend is the highest point on the mesh, so this reads it off the geometry
+ * instead of restating the Blender constants that produced it. Cached per
+ * geometry: it is a scan of every vertex and the answer cannot change while the
+ * buffer lives.
+ */
+const peekCorners = new WeakMap<BufferGeometry, readonly [number, number, number]>();
+function peekedCornerOffset(geometry: BufferGeometry): readonly [number, number, number] {
+  const cached = peekCorners.get(geometry);
+  if (cached) return cached;
+  const position = geometry.getAttribute("position");
+  let highest = 0;
+  for (let index = 1; index < position.count; index += 1) {
+    if (position.getY(index) > position.getY(highest)) highest = index;
+  }
+  const corner = [
+    position.getX(highest),
+    position.getY(highest),
+    position.getZ(highest),
+  ] as const;
+  peekCorners.set(geometry, corner);
+  return corner;
+}
 
 function applySeat(
   view: SeatView,
@@ -1429,13 +1566,20 @@ function applySeat(
     their eyes.
   */
   /*
-    Face down unless someone is looking at them.
+    Face down, and face down *while being read*.
 
     Every hand on the table lies face down, including the hero's -- that is what
     a poker table looks like, and it is the only arrangement in which a hand is
     actually private. `peeked` is the squeeze: the geometry swaps for the
-    corner-bent card, the faces turn up, and a hand appears over them for as long
-    as the player holds. Release and they are cardboard again.
+    corner-bent card and a hand comes over it for as long as the player holds.
+
+    What the squeeze must not do is turn the card over. It used to swap the whole
+    top surface to the printed face, so holding the button laid the hero's hand
+    face-up on the felt in front of five opponents -- the exact thing a hole card
+    exists to prevent, and not what the gesture looks like anyway. A player lifts
+    the near corner a few millimetres and reads one index off the underside. So
+    the card keeps its back, and the flap under the lifted corner carries the
+    index. Release and it is cardboard again.
   */
   const squeezing = seat.isHero && peeked && !folded;
   view.cards.children.forEach((card, index) => {
@@ -1451,8 +1595,48 @@ function applySeat(
     const mesh = card as Mesh;
     const code = seat.publicCardCodes?.[index];
     mesh.geometry = squeezing ? resources.peekedCardGeometry : resources.cardGeometry;
-    mesh.material = code ? resources.cardFaceMaterial(code) : resources.cardBackMaterial;
+    // Squeezing keeps the back uppermost; only the flap below shows an index.
+    mesh.material = code && !squeezing
+      ? resources.cardFaceMaterial(code)
+      : resources.cardBackMaterial;
   });
+
+  view.corners.visible = squeezing;
+  if (squeezing) {
+    while (view.corners.children.length < 2) {
+      view.corners.add(new Mesh(resources.cornerIndexGeometry, resources.cardMaterial));
+    }
+    /*
+      Located from the mesh itself rather than from a copy of the Blender
+      constants. The bent corner is by definition the highest point of the
+      peeked card, so the geometry can say where it is -- and then a change to
+      CARD_PEEK_LIFT or to which corner bends cannot leave the index floating
+      over the wrong end of the card.
+    */
+    const [cornerX, cornerY, cornerZ] = peekedCornerOffset(resources.peekedCardGeometry);
+    const base = seatLocalPoint(pose, pose.feltPosition);
+    view.corners.children.forEach((flap, index) => {
+      const code = seat.publicCardCodes?.[index];
+      flap.visible = Boolean(code);
+      if (!code) return;
+      (flap as Mesh).material = resources.cardCornerMaterial(code);
+      flap.position.set(
+        base[0] + (index === 0 ? -0.055 : 0.055) + cornerX * 0.58,
+        base[1] + cornerY * 0.74,
+        base[2] + cornerZ * 0.58,
+      );
+      /*
+        Facing up and back toward the player, which is the whole point: the
+        underside of a lifted flap is readable from the seat that lifted it and
+        from nowhere else. Flat-on-the-felt is `-PI/2`; the extra rotation goes
+        *negative* to tip the normal toward local -Z, where the player is.
+        Positive would tip it toward the middle of the table and show the hero's
+        hand to everyone but the hero.
+      */
+      flap.rotation.set(-Math.PI / 2 - 0.85, 0, 0);
+    });
+  }
+
   view.hand.visible = squeezing;
   if (squeezing) {
     const local = seatLocalPoint(pose, pose.feltPosition);
@@ -1595,6 +1779,7 @@ const POT_PLAQUE_SIZE = [0.22, 0.058] as const;
 function setChipStack(group: Group, count: number, bias: number, resources: TableSceneResources): void {
   let stack = group.getObjectByName("instanced-chip-stack") as InstancedMesh | undefined;
   let spots = group.getObjectByName("instanced-chip-spots") as InstancedMesh | undefined;
+  let faces = group.getObjectByName("instanced-chip-faces") as InstancedMesh | undefined;
   if (!stack || !spots) {
     stack = new InstancedMesh(
       resources.chipGeometry,
@@ -1614,7 +1799,19 @@ function setChipStack(group: Group, count: number, bias: number, resources: Tabl
       MAX_RENDERED_CHIPS,
     );
     spots.name = "instanced-chip-spots";
-    group.add(stack, spots);
+    /*
+      The printed face disc. The edge spots do the work in a stack seen side-on;
+      this does it for the chip lying alone on the felt, which is mostly its top
+      face and was therefore a single flat colour -- a blob, and an invisible one
+      when a green chip sat on green cloth.
+    */
+    faces = new InstancedMesh(
+      resources.chipInlayGeometry,
+      resources.chipEdgeMaterial(),
+      MAX_RENDERED_CHIPS,
+    );
+    faces.name = "instanced-chip-faces";
+    group.add(stack, spots, faces);
   }
   const renderedCount = Math.min(MAX_RENDERED_CHIPS, Math.max(0, count));
   const matrix = new Matrix4();
@@ -1644,6 +1841,7 @@ function setChipStack(group: Group, count: number, bias: number, resources: Tabl
     );
     stack.setMatrixAt(index, matrix);
     spots.setMatrixAt(index, matrix);
+    faces?.setMatrixAt(index, matrix);
     /*
       One denomination per column, descending. A player racks their highest
       chips into the back column and works down, so a deep stack shows blacks
@@ -1657,8 +1855,11 @@ function setChipStack(group: Group, count: number, bias: number, resources: Tabl
     ];
     body.setHex(denomination.color);
     stack.setColorAt(index, body);
-    inlay.copy(body).lerp(cream, 0.78);
+    // 0.78 took every spot to within a few percent of white, so under the key
+    // light each chip wore a ring of blown-out pixels and the stack glowed.
+    inlay.copy(body).lerp(cream, 0.55);
     spots.setColorAt(index, inlay);
+    faces?.setColorAt(index, inlay);
   }
   stack.count = renderedCount;
   stack.instanceMatrix.needsUpdate = true;
@@ -1668,6 +1869,12 @@ function setChipStack(group: Group, count: number, bias: number, resources: Tabl
   spots.instanceMatrix.needsUpdate = true;
   if (spots.instanceColor) spots.instanceColor.needsUpdate = true;
   spots.computeBoundingSphere();
+  if (faces) {
+    faces.count = renderedCount;
+    faces.instanceMatrix.needsUpdate = true;
+    if (faces.instanceColor) faces.instanceColor.needsUpdate = true;
+    faces.computeBoundingSphere();
+  }
   group.userData.publicChipCount = renderedCount;
 }
 

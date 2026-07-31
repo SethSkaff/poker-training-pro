@@ -217,11 +217,22 @@ async function main() {
     })()`);
     const beforeDrag = await cameraLabel();
     await evaluate(cdp, `(() => {
-      const scene = document.querySelector('.poker-scene');
-      if (!(scene instanceof HTMLElement)) return false;
-      const box = scene.getBoundingClientRect();
+      const stage = document.querySelector('.table-stage');
+      if (!(stage instanceof HTMLElement)) return false;
+      const box = stage.getBoundingClientRect();
       const y = box.top + box.height * 0.35;
-      const send = (type, x) => scene.dispatchEvent(new PointerEvent(type, {
+      /*
+        Dispatched on whatever is actually under the cursor, not on the scene
+        element.
+
+        Aiming at '.poker-scene' is what let this probe report a working
+        drag-to-look while the feature was dead for every real user: the DOM
+        table is a sibling that covers the canvas completely, so a hand-aimed
+        event reached a handler that no mouse could. elementFromPoint hits what
+        a mouse would hit, and the event bubbles from there.
+      */
+      const target = document.elementFromPoint(box.left + box.width * 0.5, y) || stage;
+      const send = (type, x) => target.dispatchEvent(new PointerEvent(type, {
         bubbles: true, pointerId: 3, button: 0, buttons: type === 'pointerup' ? 0 : 1,
         clientX: x, clientY: y,
       }));

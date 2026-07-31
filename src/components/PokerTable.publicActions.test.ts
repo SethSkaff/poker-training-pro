@@ -68,13 +68,33 @@ describe("public tournament action presentation", () => {
         },
         "winner",
       ),
-    ).toEqual({ label: "Wins 475", wonPot: true });
+    ).toEqual({ sceneAction: "win", label: "Wins 475", wonPot: true });
     expect(
       seatPresentationUpdate(
         { id: "out", kind: "eliminated", handId, playerId: "loser" },
         "loser",
       ),
     ).toEqual({ label: "Eliminated", eliminated: true });
+  });
+
+  /*
+    The deal was published for years and mapped by nobody, so the renderer's
+    dealing animation was code nothing could reach and every hand began with the
+    cards already on the felt. Nothing failed while it was missing, which is why
+    it needs a test rather than a fix.
+  */
+  it("tells the scene a hand was dealt, to the players who were dealt in", () => {
+    const dealt = {
+      id: "deal",
+      kind: "hole-cards-dealt" as const,
+      handId,
+      playerIds: ["hero", "villain"],
+    };
+    expect(seatPresentationUpdate(dealt, "hero")).toEqual({
+      sceneAction: "deal",
+      label: "Dealt in",
+    });
+    expect(seatPresentationUpdate(dealt, "railbird")).toEqual({});
   });
 
   it("announces public actions without deriving or disclosing opponent cards", () => {

@@ -41,7 +41,17 @@ const reactPlugin = react() as unknown as Plugin;
   The cost is about 20 s of wall time. The benefit is a suite whose result
   depends on the code rather than on what else the machine happens to be doing.
 */
-const testWorkers = Math.max(2, Math.floor(cpus().length / 3));
+/*
+  A quarter of the cores, not a third.
+
+  A third was calibrated when this suite was 844 tests. At 1051 it started
+  raising the same "Timeout calling onTaskUpdate" it was set to avoid -- exit 1
+  with every test reported as passing, which is the specific failure the comment
+  above says nobody can act on. The threshold is about how long the main thread
+  goes without answering a worker, so it moves as the suite grows; giving the
+  main thread another core's worth of slack is the same fix as last time.
+*/
+const testWorkers = Math.max(2, Math.floor(cpus().length / 4));
 
 export default defineConfig({
   plugins: [reactPlugin],

@@ -390,6 +390,15 @@ export function sceneActionForCommand(
 
 export interface SeatPresentationUpdate {
   action?: BettingActionType;
+  /**
+   * A table milestone that is not a betting command.
+   *
+   * Dealing and winning a pot are things that happen *to* a seat rather than
+   * decisions it makes, so they cannot go in `action` -- that field is a
+   * `BettingActionType` and several consumers read it as one. The 3D scene
+   * needs them because the dealer and the cards animate off them.
+   */
+  sceneAction?: "deal" | "win";
   label?: string;
   wonPot?: boolean;
   eliminated?: boolean;
@@ -470,8 +479,23 @@ export function seatPresentationUpdate(
           : "Posts big blind ante";
     return { action: "bet", label: `${label} ${formatChips(post.amount)}` };
   }
+  /*
+    The deal itself, which was the one milestone the scene never heard about.
+
+    `hole-cards-dealt` has always been published -- it drives the deal sound --
+    but it was not mapped here, so no seat ever carried `action: "deal"`. The
+    renderer's whole dealing animation (cards travelling from the dealer's shoe
+    to each seat, and the dealer pitching them) was reachable code that nothing
+    ever reached: every hand simply began with two cards already lying on the
+    felt. The cost of the miss was invisible because nothing failed; the
+    animation just never ran.
+  */
+  if (event.kind === "hole-cards-dealt" && event.playerIds.includes(playerId)) {
+    return { sceneAction: "deal", label: "Dealt in" };
+  }
   if (event.kind === "pot-awarded" && event.playerId === playerId) {
-    return { label: `Wins ${formatChips(event.amount)}`, wonPot: true };
+    // `win` is what turns the dealer round to push the pot to this seat.
+    return { sceneAction: "win", label: `Wins ${formatChips(event.amount)}`, wonPot: true };
   }
   if (event.kind === "eliminated" && event.playerId === playerId) {
     return { label: "Eliminated", eliminated: true };
@@ -1581,7 +1605,7 @@ export function PokerTable({
   const cameraDragRef = useRef<{ pointerId: number; startX: number; startPan: number } | null>(null);
   const CAMERA_DRAG_PIXELS_PER_PAN = 260;
 
-  const beginCameraDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+  const beginCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (cameraFixed || event.button !== 0) return;
     if (
       event.target instanceof Element
@@ -1597,7 +1621,7 @@ export function PokerTable({
     event.currentTarget.setPointerCapture(event.pointerId);
   }, [cameraFixed, cameraPan]);
 
-  const updateCameraDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+  const updateCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = cameraDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     // Drag right, look right: the same direction the "Look right" control and
@@ -1606,7 +1630,7 @@ export function PokerTable({
     setCameraPan(Math.max(-2, Math.min(2, next)));
   }, []);
 
-  const endCameraDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+  const endCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = cameraDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     cameraDragRef.current = null;
@@ -2860,7 +2884,9 @@ export function PokerTable({
     );
     return [player.id, sceneTransition?.action && sceneTransition.playerIds.includes(player.id)
       ? sceneTransition.action
-      : presentation.action ? sceneActionForCommand(presentation.action) : undefined];
+      : presentation.sceneAction
+        ? presentation.sceneAction
+        : presentation.action ? sceneActionForCommand(presentation.action) : undefined];
   }));
   const sceneSnapshot = createTableSceneSnapshot({
     players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status })),
@@ -3253,9 +3279,24 @@ export function PokerTable({
       </header>
 
       <div className="table-layout">
+        {/*
+          Drag-to-look is bound to the whole stage, not to the scene element.
+
+          It was on `.poker-scene`, which is only the canvas -- and the DOM table
+          is a *sibling* that covers it completely. So every drag a player could
+          actually make landed on a seat, a card or the felt overlay and never
+          reached the handler: the feature was wired to the one part of the play
+          area nothing is ever on top of. The stage is the common ancestor of the
+          canvas and the table, so the drag works wherever the view being turned
+          is visible. Controls are still excluded inside `beginCameraDrag`.
+        */}
         <section
           className="table-stage"
           aria-label={formatMessage("table.stageAriaLabel")}
+          onPointerDown={beginCameraDrag}
+          onPointerMove={updateCameraDrag}
+          onPointerUp={endCameraDrag}
+          onPointerCancel={endCameraDrag}
         >
           {/*
             The hero's state lives at the hero's seat, not in a floating panel
@@ -3577,10 +3618,6 @@ export function PokerTable({
             <div
               ref={sceneElementRef}
               className="poker-scene motion-vestibular"
-              onPointerDown={beginCameraDrag}
-              onPointerMove={updateCameraDrag}
-              onPointerUp={endCameraDrag}
-              onPointerCancel={endCameraDrag}
               {...(settings.spatialScene && !sceneRequestChanged && sceneAvailability.status === "ready"
                 ? { "data-spatial-scene": "ready" }
                 : {})}
