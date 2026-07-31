@@ -343,18 +343,29 @@ function createTableSceneResources(): TableSceneResources {
     */
     context.fillStyle = face.red ? "#b83232" : "#1f2933";
     const middle = canvas.height / 2;
-    const drawIndex = () => {
+    const drawIndex = (scale: number) => {
       context.textAlign = "center";
-      context.font = "700 56px Georgia, serif";
-      context.fillText(face.rank, canvas.width * 0.30, middle - 4);
-      context.font = "42px Georgia, serif";
-      context.fillText(face.glyph, canvas.width * 0.30, middle + 42);
+      context.font = `700 ${Math.round(56 * scale)}px Georgia, serif`;
+      context.fillText(face.rank, canvas.width * 0.30, middle - 4 * scale);
+      context.font = `${Math.round(42 * scale)}px Georgia, serif`;
+      context.fillText(face.glyph, canvas.width * 0.30, middle + 42 * scale);
     };
-    drawIndex();
+    drawIndex(1);
+    /*
+      The opposite index is a small echo, not a second full-size one.
+
+      Drawn at matching size the two copies sat side by side across the middle
+      of the card and the inverted one read as a *different rank* -- an
+      upside-down T is a passable serif J, which is exactly the confusion a
+      poker table cannot afford. Shrinking it restores a real card's hierarchy:
+      one index you read, and one that only matters if the card is the other way
+      up. The 180-degree symmetry, and the guarantee that comes with it, is
+      unchanged.
+    */
     context.save();
     context.translate(canvas.width, canvas.height);
     context.rotate(Math.PI);
-    drawIndex();
+    drawIndex(0.52);
     context.restore();
     const texture = track(new CanvasTexture(canvas));
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
@@ -1412,14 +1423,18 @@ function applySeat(
       dropped there.
     */
     /*
-      Outboard of the card it is lifting, not on top of it. A seat's local +X is
-      screen *left* from that seat's own camera -- the station frame is the
-      mirror of the view frame -- so the authored bend, which is at the card's
-      +X/near corner, is the near-left corner on screen. Sitting the hand at the
-      cards' centre covered one of the two faces the squeeze exists to reveal.
+      A right hand comes in from the player's right and its thumb falls on the
+      near-right corner of the nearest card -- which is the corner the peeked
+      mesh lifts. A seat's local +X is screen *left* from that seat's own camera,
+      so "the player's right" is local -X.
+
+      Two earlier placements put the hand flat on top of the pair and covered a
+      face the squeeze exists to reveal. This sits it outboard with the fingers
+      curling over the card's far edge, which is both what the pose is and what
+      leaves the indices readable.
     */
-    view.hand.position.set(local[0] + 0.112, local[1] + 0.004, local[2] - 0.042);
-    view.hand.rotation.y = -0.42;
+    view.hand.position.set(local[0] - 0.150, local[1] + 0.004, local[2] - 0.060);
+    view.hand.rotation.y = 0.30;
   }
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,

@@ -486,8 +486,13 @@ def build_pedestal():
 # --- Table objects -----------------------------------------------------------
 
 
-CARD_PEEK_LIFT = 0.030
-CARD_PEEK_SPAN = 0.55
+CARD_PEEK_LIFT = 0.028
+# Fraction of the card diagonal over which the corner curls.
+#
+# 0.55 lifted two thirds of the card and, because the falloff bottoms out at a
+# fixed radius, put a straight crease across it: the "bent corner" rendered as a
+# folded paper dart. A squeeze only ever lifts the corner itself.
+CARD_PEEK_SPAN = 0.30
 
 
 def _peek_lift(x, y):
@@ -500,12 +505,22 @@ def _peek_lift(x, y):
     the card's diagonal, with a smoothstep so the crease is a curve and not a
     fold: cardboard bends, it does not crack.
     """
-    corner_x = CARD_WIDTH / 2.0
-    corner_y = -CARD_LENGTH / 2.0
+    # The corner nearest the player, on the side their thumb comes from.
+    #
+    # The exporter maps Blender +Y to glTF -Z, so the obvious-looking -Y here
+    # produced a lift on the card's *far* edge -- the one pointing at the middle
+    # of the table, which is both the wrong corner to squeeze and the one the
+    # player cannot see. And +X maps to the seat's own left, away from where a
+    # right hand rests. Both are flipped.
+    corner_x = -CARD_WIDTH / 2.0
+    corner_y = CARD_LENGTH / 2.0
     diagonal = math.hypot(CARD_WIDTH, CARD_LENGTH)
     distance = math.hypot(x - corner_x, y - corner_y) / diagonal
     t = 1.0 - min(1.0, distance / CARD_PEEK_SPAN)
-    return CARD_PEEK_LIFT * t * t * (3.0 - 2.0 * t)
+    # Quartic, not smoothstep: it leaves the flat part of the card genuinely
+    # flat and puts all the curvature in the last third, which is how a card
+    # bends when a thumb presses one corner against the felt.
+    return CARD_PEEK_LIFT * t * t * t * t
 
 
 def build_card(name="card", peeked=False):
@@ -554,82 +569,133 @@ def build_card(name="card", peeked=False):
     return obj
 
 
+def rounded_slab(bm, width, length, thickness, corner, centre):
+    """
+    A pillow: a rounded rectangle lofted through four levels.
+
+    Used for the palm. The first version was a flattened cylinder, which from
+    every angle read as a paddle -- a hand is a slab with rounded edges and a
+    thickness you can see, not a disc.
+    """
+    levels = (
+        (-thickness / 2.0, 0.72),
+        (-thickness * 0.22, 0.97),
+        (thickness * 0.22, 1.0),
+        (thickness / 2.0, 0.74),
+    )
+    rings = []
+    for height, inset in levels:
+        points = rounded_rect_points(
+            width * inset, length * inset, corner * inset, corner_segments=3
+        )
+        rings.append([
+            bm.verts.new((centre[0] + x, centre[1] + y, centre[2] + height))
+            for x, y in points
+        ])
+    bm.verts.ensure_lookup_table()
+    count = len(rings[0])
+    for level in range(len(rings) - 1):
+        lower, upper = rings[level], rings[level + 1]
+        for index in range(count):
+            nxt = (index + 1) % count
+            bm.faces.new((lower[index], lower[nxt], upper[nxt], upper[index]))
+    for ring, sign in ((rings[0], -1), (rings[-1], 1)):
+        hub = bm.verts.new((centre[0], centre[1], centre[2] + sign * thickness / 2.0))
+        bm.verts.ensure_lookup_table()
+        for index in range(count):
+            nxt = (index + 1) % count
+            face = (hub, ring[index], ring[nxt])
+            bm.faces.new(face if sign > 0 else tuple(reversed(face)))
+
+
+def _bone(bm, start, direction, length, radius_start, radius_end, segments=8):
+    """One tapered segment from `start` along `direction`; returns its far end."""
+    import mathutils
+
+    unit = mathutils.Vector(direction).normalized()
+    begin = mathutils.Vector(start)
+    finish_point = begin + unit * length
+    verts = add_cylinder(bm, (0.0, 0.0, 0.0), radius_end, radius_start, length, segments=segments)
+    quaternion = mathutils.Vector((0.0, 0.0, 1.0)).rotation_difference(unit)
+    bmesh.ops.rotate(
+        bm, verts=verts, cent=(0.0, 0.0, 0.0), matrix=quaternion.to_matrix().to_4x4()
+    )
+    bmesh.ops.translate(bm, vec=(begin + finish_point) / 2.0, verts=verts)
+    return finish_point
+
+
+def _digit(bm, base, splay, segments):
+    """
+    A finger as a chain of phalanges, each bending further than the last.
+
+    `segments` is a list of (length, radius, curl), and the curl accumulates,
+    which is what makes a finger curl rather than kink. The first pass gave
+    every finger two segments at two fixed angles and they rendered as toes.
+    """
+    import mathutils
+
+    direction = mathutils.Vector((math.sin(splay), -math.cos(splay), 0.0))
+    axis = mathutils.Vector((math.cos(splay), math.sin(splay), 0.0))
+    point = mathutils.Vector(base)
+    radius = segments[0][1]
+    for length, radius, curl in segments:
+        direction.rotate(mathutils.Quaternion(axis, curl))
+        add_sphere(bm, point, radius * 1.06, segments=8, rings=6)
+        point = _bone(bm, point, direction, length, radius, radius * 0.88)
+    add_sphere(bm, point, radius * 0.90, segments=8, rings=6)
+    return point
+
+
 def build_hand():
     """
-    The player's own right hand, resting on the card it is squeezing.
+    The player own right hand, curled over the card it is lifting.
 
     The hero has no body -- the camera stands where it would be -- so this is
     the only part of themselves a player ever sees, and it appears for exactly
-    as long as they hold their cards up. That makes it worth modelling properly:
-    a palm, four tapered fingers curling forward over the card, and a thumb
-    tucked under the near corner doing the actual lifting.
+    as long as they hold their cards up. That earns it real structure: a slab
+    palm with a thumb mound and visible knuckles, four fingers of correct
+    relative length each curling over three phalanges, and a thumb that comes
+    off the base of the palm rather than the knuckle line.
 
     Authored with the wrist at the origin and the fingers reaching along -Y,
-    which the exporter maps to the hero's +Z -- away from them, across the card.
+    which the exporter maps to the hero +Z -- away from them, across the card.
     """
     obj, bm = new_mesh("hand/peek")
 
-    # Palm: a flattened, slightly tapered slab. Wider at the knuckles.
-    palm = add_cylinder(bm, (0.0, -0.045, 0.0), 0.041, 0.033, 0.090, segments=12)
-    bmesh.ops.rotate(
-        bm, verts=palm, cent=(0.0, -0.045, 0.0), matrix=_rotation_x(math.pi / 2.0)
-    )
-    bmesh.ops.scale(
-        bm, vec=(1.0, 1.0, 0.42), verts=palm, space=_translation(0.0, 0.0, 0.0)
-    )
-    # Wrist, so the hand does not end in a flat disc floating in the air.
-    wrist = add_cylinder(bm, (0.0, 0.020, 0.0), 0.030, 0.032, 0.055, segments=10)
-    bmesh.ops.rotate(
-        bm, verts=wrist, cent=(0.0, 0.020, 0.0), matrix=_rotation_x(math.pi / 2.0)
-    )
-    bmesh.ops.scale(
-        bm, vec=(1.0, 1.0, 0.46), verts=wrist, space=_translation(0.0, 0.0, 0.0)
-    )
+    # Wrist and palm. The palm is thickest across the knuckles and narrows to
+    # the wrist, which is the silhouette that reads as a hand end-on.
+    _bone(bm, (0.0, 0.028, 0.0), (0.0, -1.0, -0.05), 0.048, 0.026, 0.030, segments=10)
+    rounded_slab(bm, 0.086, 0.094, 0.030, 0.016, (0.0, -0.062, 0.0))
+    # Thenar mound: the muscle at the base of the thumb, and the single feature
+    # that most separates a hand from a mitten at this size.
+    add_sphere(bm, (0.028, -0.042, -0.004), 0.021, scale=(1.0, 1.5, 0.62), segments=10, rings=7)
 
-    # Four fingers, splayed slightly and curling down toward the felt. Lengths
-    # follow a real hand: index and ring shorter than the middle, little
-    # shortest, which is most of what stops a set of cylinders reading as a fork.
+    # Four fingers. Middle longest, little shortest and set back, curl deepening
+    # across the three phalanges.
+    knuckle_y = -0.104
     fingers = (
-        (-0.024, 0.058, 0.0120, -0.07),
-        (-0.008, 0.064, 0.0125, -0.03),
-        (0.008, 0.060, 0.0120, 0.02),
-        (0.024, 0.048, 0.0105, 0.07),
+        (-0.030, math.radians(-9.0), 0.0115, (0.034, 0.024, 0.018), (0.30, 0.55, 0.62)),
+        (-0.010, math.radians(-3.0), 0.0122, (0.038, 0.027, 0.019), (0.26, 0.52, 0.60)),
+        (0.010, math.radians(3.0), 0.0116, (0.035, 0.025, 0.018), (0.28, 0.54, 0.60)),
+        (0.029, math.radians(10.0), 0.0100, (0.028, 0.020, 0.015), (0.34, 0.58, 0.64)),
     )
-    for offset_x, length, radius, splay in fingers:
-        for segment, (start, seg_length, tilt) in enumerate((
-            (0.0, length * 0.55, -0.10),
-            (length * 0.55, length * 0.45, -0.55),
-        )):
-            centre_y = -0.090 - start - seg_length / 2.0
-            bone = add_cylinder(
-                bm,
-                (offset_x, centre_y, 0.0),
-                radius * (0.86 if segment else 1.0),
-                radius,
-                seg_length,
-                segments=8,
-            )
-            bmesh.ops.rotate(
-                bm, verts=bone, cent=(offset_x, centre_y, 0.0),
-                matrix=_rotation_x(math.pi / 2.0 + tilt),
-            )
-            bmesh.ops.rotate(
-                bm, verts=bone, cent=(offset_x, -0.090, 0.0),
-                matrix=_rotation_z(splay),
-            )
-        # Knuckle, so the two segments read as one jointed finger.
-        add_sphere(bm, (offset_x, -0.092, 0.0), radius * 1.05, segments=8, rings=6)
+    for offset_x, splay, radius, lengths, curls in fingers:
+        base = (offset_x, knuckle_y + (0.006 if abs(offset_x) > 0.025 else 0.0), 0.002)
+        add_sphere(bm, (offset_x, knuckle_y + 0.004, 0.011), radius * 0.95,
+                   scale=(1.0, 1.2, 0.7), segments=8, rings=6)
+        _digit(bm, base, splay, [
+            (lengths[0], radius, curls[0]),
+            (lengths[1], radius * 0.88, curls[1]),
+            (lengths[2], radius * 0.76, curls[2]),
+        ])
 
-    # Thumb: out to the side and forward, tucked under the lifted corner.
-    thumb = add_cylinder(bm, (0.036, -0.060, -0.004), 0.013, 0.016, 0.056, segments=8)
-    bmesh.ops.rotate(
-        bm, verts=thumb, cent=(0.036, -0.060, -0.004),
-        matrix=_rotation_x(math.pi / 2.0 - 0.35),
-    )
-    bmesh.ops.rotate(
-        bm, verts=thumb, cent=(0.034, -0.034, 0.0), matrix=_rotation_z(-0.55)
-    )
-    add_sphere(bm, (0.034, -0.034, 0.0), 0.018, segments=8, rings=6)
+    # Thumb: off the base of the palm, swung well out and forward, two segments.
+    # Positive splay, like the fingers': at -58 degrees it swung across to the
+    # far side of the palm and rendered as a spur under the wrist.
+    _digit(bm, (0.038, -0.032, -0.004), math.radians(42.0), [
+        (0.036, 0.0150, 0.20),
+        (0.026, 0.0130, 0.46),
+    ])
 
     return finish(obj, bm, smooth=True)
 
@@ -685,42 +751,48 @@ def build_chip_body():
 
 def build_chip_edge():
     """
-    The contrasting edge spots, as a separate mesh so the runtime can tint them
+    The contrasting edge inlays, as a separate mesh so the runtime can tint them
     against the chip body.
 
-    Eight wide blocks standing 1.2 mm proud of the barrelled rim and covering
-    most of its height. The first pass used six thin arcs 0.4 mm proud, which at
-    this scale was under a pixel and invisible: a chip's edge inlay has to be a
-    real block of the contrasting colour to survive the seated distance.
+    They follow the rim barrel rather than cutting across it. The first version
+    extruded a straight block at a fixed radius 1.2 mm proud of a 24 mm chip, so
+    each spot poked out past the curve at top and bottom and a stack rendered as
+    a column with torn tape stuck round it. Sitting them a hair above the body
+    surface and letting them curve with it makes them read as inlays -- which is
+    what they are -- and the colour does the rest of the work.
     """
     obj, bm = new_mesh("chip/edge")
-    radius = CHIP_RADIUS + 0.0012
-    band = CHIP_HEIGHT * 0.30
-    arc = (2.0 * math.pi / CHIP_EDGE_SPOTS) * 0.55
-    seated = CHIP_RADIUS - 0.0004
+    half = CHIP_HEIGHT / 2.0
+    waist = CHIP_RADIUS
+    lip = CHIP_RADIUS - 0.0022
+    proud = 0.00025
+    # The body rim profile, sampled over the band the inlay covers.
+    profile = (
+        (lip + proud, half * 0.86),
+        (waist - 0.0006 + proud, half * 0.55),
+        (waist + proud, 0.0),
+        (waist - 0.0006 + proud, -half * 0.55),
+        (lip + proud, -half * 0.86),
+    )
+    arc = (2.0 * math.pi / CHIP_EDGE_SPOTS) * 0.52
+    steps = 4
     for spot in range(CHIP_EDGE_SPOTS):
-        start = 2.0 * math.pi * spot / CHIP_EDGE_SPOTS - arc / 2.0
-        steps = 3
-        outer_top, outer_bottom, inner_top, inner_bottom = [], [], [], []
-        for index in range(steps + 1):
-            angle = start + arc * index / steps
-            cos, sin = math.cos(angle), math.sin(angle)
-            outer_top.append(bm.verts.new((cos * radius, sin * radius, band)))
-            outer_bottom.append(bm.verts.new((cos * radius, sin * radius, -band)))
-            inner_top.append(bm.verts.new((cos * seated, sin * seated, band)))
-            inner_bottom.append(bm.verts.new((cos * seated, sin * seated, -band)))
+        start_angle = 2.0 * math.pi * spot / CHIP_EDGE_SPOTS - arc / 2.0
+        rings = []
+        for radius, height in profile:
+            ring = []
+            for index in range(steps + 1):
+                angle = start_angle + arc * index / steps
+                ring.append(bm.verts.new(
+                    (math.cos(angle) * radius, math.sin(angle) * radius, height)
+                ))
+            rings.append(ring)
         bm.verts.ensure_lookup_table()
-        for index in range(steps):
-            # Outer face, plus the top and bottom shelves that give the inlay a
-            # lit edge. Without them a spot read as a flat decal and disappeared
-            # entirely whenever the stack was seen from directly beside it.
-            bm.faces.new((outer_top[index], outer_top[index + 1], outer_bottom[index + 1], outer_bottom[index]))
-            bm.faces.new((inner_top[index], outer_top[index], outer_top[index + 1], inner_top[index + 1]))
-            bm.faces.new((inner_bottom[index + 1], outer_bottom[index + 1], outer_bottom[index], inner_bottom[index]))
-        for end, sign in ((0, 1), (steps, -1)):
-            face = (inner_top[end], outer_top[end], outer_bottom[end], inner_bottom[end])
-            bm.faces.new(face if sign > 0 else tuple(reversed(face)))
-    return finish(obj, bm)
+        for level in range(len(rings) - 1):
+            upper, lower = rings[level], rings[level + 1]
+            for index in range(steps):
+                bm.faces.new((upper[index], upper[index + 1], lower[index + 1], lower[index]))
+    return finish(obj, bm, smooth=True)
 
 
 def main():
@@ -768,6 +840,60 @@ def main():
     print("TABLE_LIBRARY_OBJECTS", len(built))
     print("TABLE_LIBRARY_TRIANGLES", triangles)
     print("TABLE_LIBRARY_BYTES", os.path.getsize(out))
+
+
+def preview_subjects():
+    """
+    Named builders for `render_preview.py`.
+
+    Each entry returns the objects to put on an empty scene, so a subject can be
+    a single mesh or a small assembly. Grouping the card with the hand that lifts
+    it, and the chip with a stack of its neighbours, is the point: both of those
+    only read correctly in relation to something else, and both were wrong in
+    exactly that relationship the first time.
+    """
+    def one(builder, *builder_args, **builder_kwargs):
+        return lambda: [builder(*builder_args, **builder_kwargs)]
+
+    def squeeze():
+        # Both cards, at the runtime's own spacing. Rendering the squeezed card
+        # alone made the hand look detached, because in the game it sits
+        # outboard of a *pair* -- the gap it appears to leave is filled by the
+        # card that was missing from the preview.
+        flat = build_card("card/flat")
+        flat.location = (-0.055, 0.0, 0.0)
+        squeezed = build_card("card/peeked", peeked=True)
+        squeezed.location = (0.055, 0.0, 0.0)
+        hand = build_hand()
+        hand.location = (0.112, 0.042, 0.004)
+        hand.rotation_euler = (0.0, 0.0, 0.42)
+        return [flat, squeezed, hand]
+
+    def stack():
+        objects = []
+        for index in range(6):
+            body = build_chip_body()
+            body.name = "chip/body.%d" % index
+            body.location = (0.0, 0.0, index * 0.0037)
+            body.rotation_euler = (0.0, 0.0, math.radians((index * 37) % 360))
+            edge = build_chip_edge()
+            edge.name = "chip/edge.%d" % index
+            edge.location = body.location
+            edge.rotation_euler = body.rotation_euler
+            objects.extend((body, edge))
+        return objects
+
+    def top():
+        return [build_felt(), build_ledge(), build_rail(), build_trim(), build_print()]
+
+    return {
+        "card": one(build_card),
+        "squeeze": squeeze,
+        "hand": one(build_hand),
+        "chip-stack": stack,
+        "table-top": top,
+        "play-zone": one(build_play_zone),
+    }
 
 
 if __name__ == "__main__":

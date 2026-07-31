@@ -149,12 +149,19 @@ function skinGeometry(character: OpponentCharacter): BufferGeometry[] {
     [0.85, 1.15, 1.2],
   ));
   /*
-    No ears. At the seated camera a head is around ninety pixels tall, and ear
-    spheres at that scale did not read as ears -- they joined the nose in a little
-    cluster of balls around the jaw line, because looking down 27 degrees projects
-    anything at head-centre height down toward the chin. Dropping them is a
-    straight gain in readability and costs nothing anyone can see.
+    Ears, reinstated. They were dropped when the nearest opponent was two metres
+    away and an ear was a couple of pixels that joined the nose in a cluster of
+    blobs round the jaw. The seat beside the hero is now about a metre off, which
+    is close enough that a head without them reads as a mannequin. Flattened hard
+    against the skull, so they are a silhouette rather than another sphere.
   */
+  for (const side of [-1, 1]) {
+    parts.push(sphere(
+      HEAD_RADIUS * 0.20,
+      [side * HEAD_RADIUS * face.jaw * 0.94, headY + HEAD_RADIUS * 0.02, -HEAD_RADIUS * 0.06],
+      [0.32, 0.78, 0.52],
+    ));
+  }
   for (const side of [-1, 1]) parts.push(handPart(body, side));
   return parts;
 }
@@ -177,33 +184,55 @@ function featureGeometry(character: OpponentCharacter): BufferGeometry[] {
   const body = bodyProportions(character.gender, character.body);
   const face = faceProportions(character.face);
   const headY = headCentreHeight(body);
-  // Sit the features on the skull's own scaled surface, not on a sphere of
-  // HEAD_RADIUS, or a wide jaw pushes them inside the head.
-  const outward = HEAD_RADIUS * 1.04 * face.cheek * 0.92;
   const wide = HEAD_RADIUS * face.jaw;
+  const tall = HEAD_RADIUS * (1.14 / Math.max(0.85, face.chin));
+  const deep = HEAD_RADIUS * 1.04 * face.cheek * 0.92;
   const parts: BufferGeometry[] = [];
 
+  /*
+    Put each feature on the skull's actual surface.
+
+    Placing them at a fixed fraction of the head's depth buried them: the head
+    is an ellipsoid, so a point at 82% of its depth and any height at all is
+    *inside* it. The eyes only showed because their own radius happened to poke
+    back out; the mouth, being shallower, never appeared on any face at all.
+    This solves the ellipsoid for the depth at a given height, which is what the
+    fixed fraction was standing in for.
+  */
+  const surface = (x: number, y: number): number => {
+    const inside = 1 - (x / wide) ** 2 - (y / tall) ** 2;
+    return deep * Math.sqrt(Math.max(0.05, inside));
+  };
+
   for (const side of [-1, 1]) {
+    const eyeX = side * wide * 0.36;
+    const eyeY = HEAD_RADIUS * 0.10;
     parts.push(sphere(
       HEAD_RADIUS * 0.115,
-      [side * wide * 0.36, headY + HEAD_RADIUS * 0.10, outward * 0.86],
+      [eyeX, headY + eyeY, surface(eyeX, eyeY) * 0.97],
       [1.45, 0.62, 0.34],
     ));
     // Brows sit above and slightly wider than the eye, angled by preset: a low
     // heavy brow and a high thin one are most of the difference between two
     // faces that share a skull.
+    const browX = side * wide * 0.38;
+    // Below the hairline. At 0.27 R the brows sat exactly where the hair caps
+    // floor out, so on most styles they were covered and the face lost the
+    // one feature that carries its expression.
+    const browY = HEAD_RADIUS * (0.19 + 0.04 * face.brow);
     const brow = sphere(
       HEAD_RADIUS * 0.105 * face.brow,
-      [side * wide * 0.38, headY + HEAD_RADIUS * (0.27 + 0.04 * face.brow), outward * 0.82],
+      [browX, headY + browY, surface(browX, browY) * 0.97],
       [1.7, 0.30, 0.30],
     );
     brow.rotateZ(side * 0.14);
     parts.push(brow);
   }
+  const mouthY = -HEAD_RADIUS * 0.34;
   parts.push(sphere(
-    HEAD_RADIUS * 0.10,
-    [0, headY - HEAD_RADIUS * (0.42 / Math.max(0.85, face.chin)), outward * 0.80],
-    [1.9, 0.26, 0.28],
+    HEAD_RADIUS * 0.12,
+    [0, headY + mouthY, surface(0, mouthY) * 0.97],
+    [2.0, 0.24, 0.30],
   ));
   return parts;
 }
@@ -375,19 +404,26 @@ function hairGeometry(character: OpponentCharacter): BufferGeometry[] {
         back of the head and wrapped forward by `arc`, so the fringe and the
         face are never covered however wide the band is set.
       */
-      for (let index = 0; index < part.count; index += 1) {
-        const wobble = lockJitter(part.seed, index);
-        const angle = Math.PI + (index / Math.max(1, part.count - 1) - 0.5) * part.arc;
-        const radius = HEAD_RADIUS * (1 + part.bulge * (0.7 + wobble * 0.6));
-        parts.push(sphere(
-          HEAD_RADIUS * part.radiusScale * (0.78 + wobble * 0.44),
-          [
-            Math.sin(angle) * radius,
-            headY + HEAD_RADIUS * (part.latitude + (wobble - 0.5) * 0.10),
-            Math.cos(angle) * radius,
-          ],
-          [1, 1.25, 1],
-        ));
+      const span = Math.max(1, part.count - 1);
+      const spacing = (part.arc / span) * HEAD_RADIUS;
+      for (let row = 0; row < part.rows; row += 1) {
+        // Half-step stagger between rows, so the band reads as a mass of hair
+        // rather than as stripes of it.
+        const stagger = (row % 2) * 0.5;
+        for (let index = 0; index < part.count; index += 1) {
+          const wobble = lockJitter(part.seed + row * 17, index);
+          const angle = Math.PI + ((index + stagger) / span - 0.5) * part.arc;
+          const surface = HEAD_RADIUS * (1 + part.bulge * (0.7 + wobble * 0.6));
+          parts.push(sphere(
+            spacing * part.thickness * (0.86 + wobble * 0.28),
+            [
+              Math.sin(angle) * surface,
+              headY + HEAD_RADIUS * (part.latitude - row * 0.24 + (wobble - 0.5) * 0.07),
+              Math.cos(angle) * surface,
+            ],
+            [1, 1.15, 1],
+          ));
+        }
       }
     } else {
       const strand = taper(part.radiusTop, part.radiusBottom, part.length, [0, 0, 0]);
