@@ -68,11 +68,13 @@ import {
 } from "./tableSceneModel";
 import {
   playerStations,
+  stationAsPose,
   stationLedgeAnchor,
   TABLE_DEPTH,
   TABLE_WIDTH,
   type Station,
 } from "./tableStations";
+import { dealerGestureFor, dealerWorkFor, type DealerWork } from "./dealerGesture";
 import { tableMeshGeometry, type TableMeshName } from "./tableGeometryLibrary";
 import {
   drawCarpetTexture,
@@ -608,6 +610,11 @@ export function createTableScene(
     hand and never one of the six seats.
   */
   const dealerPose = dealerStation();
+  // The dealer's own station as a pose, so the gesture model can turn a seat's
+  // felt lane into a bearing in the frame the shoulders actually rotate in.
+  // Seat -1: the dealer is not one of the six, and no relative-seat lookup may
+  // ever match them.
+  const dealerPoseModel = stationAsPose(dealerPose, -1);
   const dealer = buildDealer("#d8ab86", resources.ledger);
   dealer.root.position.set(...dealerPose.position);
   dealer.root.rotation.y = dealerPose.facing;
@@ -725,6 +732,7 @@ export function createTableScene(
       advanceCamera(nowMs);
       for (const entry of seatViews.values()) entry.view.root.visible = false;
       const activeIds = new Set(state.seats.map((seat) => seat.id));
+      const dealerWork: DealerWork[] = [];
       for (const seat of state.seats) {
         let entry = seatViews.get(seat.id);
         if (!entry) {
@@ -748,7 +756,7 @@ export function createTableScene(
         }
         if (!entry) continue;
         entry.view.root.visible = true;
-        applySeat(
+        const progress = applySeat(
           entry.view,
           entry.pose,
           seat,
@@ -759,7 +767,27 @@ export function createTableScene(
           resources,
           state.heroPeeked === true,
         );
+        const task = DEALER_TASK_FOR_ACTION[seat.action ?? ""];
+        if (task) dealerWork.push({ task, progress, at: entry.pose.feltPosition });
       }
+      /*
+        The dealer works the table.
+
+        Everything the dealer does is a response to a seat: a card pitched to it,
+        a bet raked off it, a pot pushed to it. So the arms are driven from the
+        same per-seat progress the cards and chips are, and the model picks which
+        of the seats in flight is the one being served.
+      */
+      const gesture = dealerGestureFor(
+        dealerWorkFor(dealerWork),
+        dealerPoseModel,
+        // Reduced motion holds the pose square; the idle breath is motion for
+        // its own sake, which is exactly what the preference asks us to drop.
+        state.reducedMotion ? 0 : nowMs,
+      );
+      dealer.arms.rotation.x = gesture.shoulderPitch;
+      dealer.arms.rotation.y = gesture.shoulderYaw;
+      dealer.body.position.z = gesture.lean;
       placeMarker(buttonMarker, state.buttonPlayerId, seatViews);
       placeMarker(smallBlindMarker, state.smallBlindPlayerId, seatViews);
       placeMarker(bigBlindMarker, state.bigBlindPlayerId, seatViews);
@@ -1334,6 +1362,20 @@ function buildSeat(
   return { root, body, arm, cards, hand, betChips, stackChips };
 }
 
+/**
+ * Which seat actions are the dealer's job.
+ *
+ * Only three of them are: a deal is pitched by the dealer, a wager is raked in
+ * by the dealer, and a pot is pushed by the dealer. A check or a raise is the
+ * player's own motion and the house does not participate, so those seats
+ * contribute no work and the dealer stays idle through them.
+ */
+const DEALER_TASK_FOR_ACTION: Readonly<Record<string, DealerWork["task"] | undefined>> = {
+  deal: "deal",
+  collect: "collect",
+  win: "push",
+};
+
 function applySeat(
   view: SeatView,
   pose: SeatPose,
@@ -1344,7 +1386,7 @@ function applySeat(
   transition: TableSceneState["transition"],
   resources: TableSceneResources,
   peeked: boolean,
-): void {
+): number {
   const started = startedAt.get(seat.seat) ?? nowMs;
   const localProgress = reducedMotion
     ? 1
@@ -1456,6 +1498,11 @@ function applySeat(
     pose.feltPosition[2] * 0.86,
   ] as const);
   view.stackChips.position.set(stackLocal[0] + 0.16, stackLocal[1], stackLocal[2]);
+
+  // Handed back so the dealer runs off the same clock as the seat it is serving.
+  // Deriving it a second time would let the two drift apart, and a dealer whose
+  // hands finish before the chips do is worse than one that never moves.
+  return progress;
 }
 
 function chipPositionForGesture(

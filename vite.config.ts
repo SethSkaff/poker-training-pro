@@ -55,5 +55,17 @@ export default defineConfig({
   test: {
     maxWorkers: testWorkers,
     minWorkers: 1,
+    /*
+      `scripts/*.test.mjs` are `node --test` fixtures, not Vitest suites.
+
+      Vitest's default include matches them, finds no `describe`, and fails the
+      file -- so `npm test` exited 1 with every one of its own tests passing and
+      the two audit suites reported as "No test suite found". They have their own
+      runner (`npm run test:static-budgets`, and the packaged-scene audit beside
+      it) because they assert against build outputs rather than modules, and the
+      release verification stage runs that runner. Excluding them here stops one
+      runner from failing on the other's files; it does not stop them running.
+    */
+    exclude: ["node_modules/**", "dist/**", "outputs/**", "scripts/**"],
   },
 });

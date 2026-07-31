@@ -45,6 +45,29 @@ export interface CharacterView {
   readonly arms: Group;
 }
 
+const DEALER_TORSO_BASE_Y = 0.56;
+const DEALER_TORSO_HEIGHT = 0.54;
+
+/**
+ * The joint the dealer's arms swing from, in the dealer group's own frame.
+ *
+ * Exported because the gesture model reasons in shoulder rotations and the test
+ * for it has to know where the hands start in order to say where a rotation puts
+ * them. Both arms share this one pivot; see `buildDealer`.
+ */
+export const DEALER_SHOULDER_PIVOT = [
+  0,
+  DEALER_TORSO_BASE_Y + DEALER_TORSO_HEIGHT - 0.05,
+  0.02,
+] as const;
+
+/** Where the dealer's hands rest: over the felt, just inside their own edge. */
+export const DEALER_HAND_REST = [
+  0,
+  TABLE_HEIGHT + 0.055,
+  DEALER_CLEARANCE + 0.20,
+] as const;
+
 /** Low segment counts: a character is ~2 m away and a few hundred pixels tall. */
 const SPHERE_SEGMENTS = 10;
 const SPHERE_RINGS = 7;
@@ -509,16 +532,18 @@ export function buildDealer(
   const body = new Group();
   const arms = new Group();
   const shoulder = 0.215;
-  const torsoHeight = 0.54;
+  const torsoHeight = DEALER_TORSO_HEIGHT;
   // A dealer sits higher than the players: their chair is raised so they can
   // reach the middle of the felt.
-  const base = 0.56;
+  const base = DEALER_TORSO_BASE_Y;
   const top = base + torsoHeight;
   const headY = top + 0.06 + HEAD_RADIUS * 1.02;
 
   const shirt: BufferGeometry[] = [];
   const waistcoat: BufferGeometry[] = [];
   const skin: BufferGeometry[] = [];
+  const armShirt: BufferGeometry[] = [];
+  const armSkin: BufferGeometry[] = [];
 
   // White shirt torso, with the waistcoat as a slightly larger shell over its
   // front so both read at once.
@@ -537,16 +562,20 @@ export function buildDealer(
       hands have to travel the rail width plus that clearance to be over the felt
       at all.
     */
-    const shoulderPoint = [side * shoulder * 0.88, top - 0.05, 0.02] as const;
+    const shoulderPoint = [
+      side * shoulder * 0.88,
+      DEALER_SHOULDER_PIVOT[1],
+      DEALER_SHOULDER_PIVOT[2],
+    ] as const;
     const elbowPoint = [side * shoulder * 0.76, top - 0.20, 0.17] as const;
     const handPoint = [
       side * shoulder * 0.52,
-      TABLE_HEIGHT + 0.055,
-      DEALER_CLEARANCE + 0.20,
+      DEALER_HAND_REST[1],
+      DEALER_HAND_REST[2],
     ] as const;
-    shirt.push(limb(shoulderPoint, elbowPoint, 0.044, 0.050));
-    shirt.push(limb(elbowPoint, handPoint, 0.036, 0.048));
-    skin.push(sphere(0.041, handPoint, [1, 0.58, 1.35]));
+    armShirt.push(limb(shoulderPoint, elbowPoint, 0.044, 0.050));
+    armShirt.push(limb(elbowPoint, handPoint, 0.036, 0.048));
+    armSkin.push(sphere(0.041, handPoint, [1, 0.58, 1.35]));
   }
   skin.push(taper(0.05, 0.056, 0.06, [0, top + 0.03, 0]));
   skin.push(sphere(HEAD_RADIUS, [0, headY, 0], [0.98, 1.14, 1.02]));
@@ -578,6 +607,37 @@ export function buildDealer(
   }
   if (visorGeometry) {
     body.add(new Mesh(visorGeometry, ledger.track(new MeshLambertMaterial({ color: 0x1f5e46 }))));
+  }
+
+  /*
+    The arms hang off a shoulder pivot rather than being merged into the torso.
+
+    They were part of the shirt mesh, which made the dealer a statue holding the
+    dealing pose: a figure who deals every hand and sweeps every pot without ever
+    moving is more conspicuous than no dealer at all. Re-centring the arm
+    geometry on the shoulder line and parenting it to `arms` means the whole
+    limb swings from the joint it would really swing from, so a reach is a
+    rotation about a point rather than a group sliding through the torso.
+
+    Both arms share one pivot on the body's centre line. A dealer works with the
+    hands together -- gathering a pot, squaring a deck, pitching from a shoe --
+    so the two arms move as one unit, and one pivot is both cheaper and closer
+    to the pose than two independent shoulders would be.
+  */
+  arms.position.set(...DEALER_SHOULDER_PIVOT);
+  const recentre = (parts: BufferGeometry[]) => {
+    for (const part of parts) {
+      part.translate(-DEALER_SHOULDER_PIVOT[0], -DEALER_SHOULDER_PIVOT[1], -DEALER_SHOULDER_PIVOT[2]);
+    }
+    return merged(parts, ledger);
+  };
+  const armShirtGeometry = recentre(armShirt);
+  const armSkinGeometry = recentre(armSkin);
+  if (armShirtGeometry) {
+    arms.add(new Mesh(armShirtGeometry, ledger.track(new MeshLambertMaterial({ color: 0xe8e4dc }))));
+  }
+  if (armSkinGeometry) {
+    arms.add(new Mesh(armSkinGeometry, ledger.track(new MeshLambertMaterial({ color: skinTone }))));
   }
 
   root.add(body, arms);

@@ -7,6 +7,7 @@ import {
   FACE_SHAPES,
   HAIR_COLORS,
   HAIR_STYLES,
+  OUTFITS,
   POSTURES,
   SKIN_TONES,
   describeOpponentAppearance,
@@ -102,6 +103,53 @@ describe("opponent appearance", () => {
     ]);
     expect(style["--seat-lean"]).toMatch(/^-?\d+(\.\d+)?deg$/);
     expect(style["--seat-skin"]).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  /*
+    Two outfits used to be tans within a few percent of two of the skin tones, so
+    any identity that rolled the pair came out one unbroken colour from collar to
+    knuckles and read as a naked person at the table. Torso and sleeves are the
+    largest areas of a character; this is the one collision the palette cannot be
+    allowed to have, and it is invisible in every other kind of test.
+  */
+  it("never dresses anyone in their own skin", () => {
+    /*
+      A garment has to differ from skin in hue *or* in lightness -- not both.
+
+      Neither half works alone, and trying each in turn is how the rule got
+      written. Raw RGB distance flagged a dark sage tee against pale skin, which
+      nobody could confuse. Hue alone, with lightness divided out, flagged the
+      same pair for the opposite reason: both are low-chroma and warm-ish, and
+      the 110 points of lightness between them are exactly what separates them.
+      Requiring either is the actual perceptual rule. Be honest about the margin
+      though: the worst real offender was 40 apart in hue and the closest colour
+      worth keeping is 45, so the hue threshold has five points of room and no
+      more. A new outfit landing in that gap deserves a look at the frame rather
+      than an argument with the number.
+    */
+    const channels = (hex: string) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+    // The two opponent-colour axes: warm-cool and green-magenta, sans lightness.
+    const hue = (hex: string) => {
+      const [r, g, b] = channels(hex);
+      return [r - g, g - b] as const;
+    };
+    const lightness = (hex: string) => {
+      const [r, g, b] = channels(hex);
+      return (r + g + b) / 3;
+    };
+    for (const outfit of OUTFITS) {
+      for (const skin of SKIN_TONES) {
+        const [ox, oy] = hue(outfit.base);
+        const [sx, sy] = hue(skin);
+        const hueApart = Math.hypot(ox - sx, oy - sy);
+        const lightApart = Math.abs(lightness(outfit.base) - lightness(skin));
+        expect(
+          hueApart > 44 || lightApart > 60,
+          `${outfit.name} (${outfit.base}) reads as bare skin ${skin}: `
+            + `${hueApart.toFixed(0)} apart in hue, ${lightApart.toFixed(0)} in lightness`,
+        ).toBe(true);
+      }
+    }
   });
 
   it("keeps the seated lean small enough that the table stays readable", () => {
