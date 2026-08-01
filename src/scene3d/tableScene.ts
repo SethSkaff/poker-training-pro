@@ -58,7 +58,7 @@ import {
   collectChipPosition,
   CAMERA_PITCH_DEGREES,
   CAMERA_VERTICAL_FOV,
-  chipCountForAmount,
+  chipInventoryForAmount,
   dealtCardPosition,
   muckedCardPosition,
   raiseChipPosition,
@@ -278,11 +278,9 @@ const CHIP_DENOMINATIONS = [
   { value: 100, color: 0x14161c },
   { value: 500, color: 0x4b2569 },
   { value: 1000, color: 0x9a7a2c },
+  { value: 5000, color: 0x8f4b86 },
+  { value: 25000, color: 0x2b6e88 },
 ] as const;
-/* Pot and committed-bet piles keep an identifiable tint so a player can still
-   tell their own bet from the pot at a glance. */
-const CHIP_BET_BIAS = 2;
-const CHIP_POT_BIAS = 4;
 
 /** `#rrggbb` for a palette constant, so canvas drawing shares the same source. */
 function hexCss(color: number): string {
@@ -922,6 +920,14 @@ export function createTableScene(
     houseLight.position.set(x, 2.7, z);
     scene.add(houseLight);
   }
+  // Complete the house-light circuit around the enclosed venue. These lights
+  // are deliberately farther from the felt than the pendant, keeping the main
+  // table as the focus while making every camera direction read as a real room.
+  for (const [x, z] of [[-9.8, 7.6], [9.8, 7.6], [0, 11.2], [0, -11.2]] as const) {
+    const houseLight = new PointLight(0xffc779, 2.5, 9.5, 2);
+    houseLight.position.set(x, 3.3, z);
+    scene.add(houseLight);
+  }
 
   // Keep the six physical chairs stable. A player leaving must hide their
   // chair/body, never cause every surviving identity to slide one chair over.
@@ -1019,6 +1025,37 @@ export function createTableScene(
   // Action timing is per seat, so two seats can act in sequence without one
   // resetting the other's animation.
   const actionTiming = createSceneActionTimingState();
+  // The engine publishes the post-action ledger immediately.  Keep the
+  // preceding public rack only for the duration of that one presentation beat
+  // so the renderer can show the exact chips leaving it instead of spawning a
+  // fresh pile at the betting circle.
+  const chipCommitmentMotions = new Map<string, ChipCommitmentMotion>();
+  let chipCommitmentTransitionId: string | undefined;
+
+  const reconcileChipCommitmentMotions = (previous: TableSceneState, next: TableSceneState) => {
+    const transition = next.transition;
+    if (transition?.id === chipCommitmentTransitionId) return;
+    chipCommitmentTransitionId = transition?.id;
+    chipCommitmentMotions.clear();
+    if (!transition?.action || !["call", "bet", "raise", "all-in"].includes(transition.action)) return;
+    const previousSeats = new Map(previous.seats.map((seat) => [seat.id, seat]));
+    for (const playerId of transition.playerIds) {
+      const before = previousSeats.get(playerId);
+      const after = next.seats.find((seat) => seat.id === playerId);
+      if (!before || !after) continue;
+      // Betting always transfers a non-negative amount from one public ledger
+      // column to the other.  Taking the larger delta tolerates a runner that
+      // has already normalised a prior street's `bet` to zero.
+      const amount = Math.max(0, before.stack - after.stack, after.bet - before.bet);
+      if (amount <= 0) continue;
+      chipCommitmentMotions.set(playerId, {
+        transitionId: transition.id,
+        stackBefore: before.stack,
+        betBefore: before.bet,
+        amount,
+      });
+    }
+  };
 
   let cameraViewportWidth = canvas.clientWidth || 1366;
   let cameraViewportHeight = canvas.clientHeight || 768;
@@ -1114,6 +1151,7 @@ export function createTableScene(
           state.handId,
           resources,
           state.heroPeeked === true,
+          chipCommitmentMotions.get(seat.id),
         );
         const task = DEALER_TASK_FOR_ACTION[seat.action ?? ""];
         if (task) dealerWork.push({ task, progress, at: entry.pose.feltPosition });
@@ -1124,6 +1162,16 @@ export function createTableScene(
       if (state.transition?.kind === "board-card-dealt") {
         dealerWork.push({
           task: "deal",
+          progress: state.transition.progress,
+          at: TABLE_ANCHORS.board,
+        });
+      }
+      // A genuine showdown is the dealer's short collection/presentation beat:
+      // reach to the public cards before the payout pushes the pot away. Fold
+      // results intentionally skip this because there is no revealed hand.
+      if (state.transition?.kind === "showdown") {
+        dealerWork.push({
+          task: "collect",
           progress: state.transition.progress,
           at: TABLE_ANCHORS.board,
         });
@@ -1162,7 +1210,7 @@ export function createTableScene(
       placeMarker(smallBlindMarker, state.smallBlindPlayerId, seatViews);
       placeMarker(bigBlindMarker, state.bigBlindPlayerId, seatViews);
       placeTurnIndicator(turnIndicator, state.seats, seatViews);
-      setPotLanes(potChips, state.pots, state.pot, resources);
+      setPotLanes(potChips, state.pots, state.pot, state.transition, resources);
       for (const lane of potChips.children) {
         const plaque = lane.getObjectByName("pot-amount-plaque");
         if (plaque) plaque.lookAt(camera.position);
@@ -1194,6 +1242,7 @@ export function createTableScene(
       const previous = state;
       if (stateSignature(previous) === stateSignature(next)) return;
       state = next;
+      reconcileChipCommitmentMotions(previous, next);
       reconcileSceneActionTiming(
         actionTiming,
         previous.seats,
@@ -1326,7 +1375,16 @@ interface SeatView {
   /** The hero's two hands, shown only while they shield a private peek. */
   readonly hand: Object3D;
   readonly betChips: Group;
+  /** Chips physically in flight from the owner's rack to their betting circle. */
+  readonly travellingChips: Group;
   readonly stackChips: Group;
+}
+
+interface ChipCommitmentMotion {
+  readonly transitionId: string;
+  readonly stackBefore: number;
+  readonly betBefore: number;
+  readonly amount: number;
 }
 
 
@@ -1368,7 +1426,10 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
     floorMaterial.map = carpetTexture;
     floorMaterial.color.setHex(0xffffff);
   }
-  const floor = new Mesh(resources.track(new PlaneGeometry(26, 26)), floorMaterial);
+  // Free-look is available from every seat, including back toward the hero's
+  // own side of the room. Keep the carpet larger than the visible stage so the
+  // peripheral view never finds a hard edge.
+  const floor = new Mesh(resources.track(new PlaneGeometry(34, 34)), floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
@@ -1394,10 +1455,10 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
     // the edge of the frustum and exposed a black void. The wide continuous
     // architectural wall keeps both room wings present without moving the
     // table, seats, or camera laterally.
-    resources.track(new PlaneGeometry(36, 7.4)),
+    resources.track(new PlaneGeometry(30, 7.4)),
     wallMaterial(bundle, 14, 3),
   );
-  horizon.position.set(0, 3.4, -6.5);
+  horizon.position.set(0, 3.4, -14.2);
   scene.add(horizon);
 
   // The eye-level cove is an intentional architectural horizon, not a HUD
@@ -1405,13 +1466,13 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   // horizon band with the fixed −16° seated gaze, while the physical
   // wall/floor junction remains naturally lower in the room.
   const horizonBand = new Mesh(
-    resources.track(new PlaneGeometry(36, 0.10)),
+    resources.track(new PlaneGeometry(30, 0.10)),
     // Dimmed from full brass. Unlit at 0xc9a227 the cove was a fluorescent
     // stripe across the room and the brightest thing in a frame whose subject
     // is a table 1 m away.
     resources.track(new MeshBasicMaterial({ color: 0x7d6220 })),
   );
-  horizonBand.position.set(0, 1.1, -6.47);
+  horizonBand.position.set(0, 1.1, -14.17);
   scene.add(horizonBand);
 
   /*
@@ -1422,20 +1483,47 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   */
   for (const side of [-1, 1]) {
     const sideWall = new Mesh(
-      resources.track(new PlaneGeometry(13, 7.4)),
-      wallMaterial(bundle, 5, 3),
+      resources.track(new PlaneGeometry(28, 7.4)),
+      wallMaterial(bundle, 11, 3),
     );
-    sideWall.position.set(side * 9.5, 3.4, -1.6);
+    sideWall.position.set(side * 14.2, 3.4, 0);
     sideWall.rotation.y = side * -Math.PI / 2;
     scene.add(sideWall);
     const sideCove = new Mesh(
-      resources.track(new PlaneGeometry(13, 0.10)),
+      resources.track(new PlaneGeometry(28, 0.10)),
       resources.track(new MeshBasicMaterial({ color: 0x7d6220 })),
     );
-    sideCove.position.set(side * 9.47, 1.1, -1.6);
+    sideCove.position.set(side * 14.17, 1.1, 0);
     sideCove.rotation.y = side * -Math.PI / 2;
     scene.add(sideCove);
   }
+
+  // A fourth wall closes the player-facing side of the venue. It stays in world
+  // space rather than following the camera, so it works at all randomized seats.
+  const nearWall = new Mesh(
+    resources.track(new PlaneGeometry(30, 7.4)),
+    wallMaterial(bundle, 14, 3),
+  );
+  nearWall.position.set(0, 3.4, 14.2);
+  nearWall.rotation.y = Math.PI;
+  scene.add(nearWall);
+  const nearCove = new Mesh(
+    resources.track(new PlaneGeometry(30, 0.10)),
+    resources.track(new MeshBasicMaterial({ color: 0x7d6220 })),
+  );
+  nearCove.position.set(0, 1.1, 14.17);
+  nearCove.rotation.y = Math.PI;
+  scene.add(nearCove);
+
+  // Close the volume above the room too. The plane faces downward into the
+  // interior, avoiding double-sided materials while preserving the ceiling.
+  const ceiling = new Mesh(
+    resources.track(new PlaneGeometry(30, 30)),
+    wallMaterial(bundle, 12, 7),
+  );
+  ceiling.position.set(0, 7.05, 0);
+  ceiling.rotation.x = Math.PI / 2;
+  scene.add(ceiling);
 
   /*
     The five flat bay planes are gone. They existed to stop the rear wall reading
@@ -1449,9 +1537,9 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   */
   const sconceGeometry = resources.track(new PlaneGeometry(0.16, 0.30));
   const sconceMaterial = resources.track(new MeshBasicMaterial({ color: 0xa8813f }));
-  for (const x of [-9.5, -5.7, -1.9, 1.9, 5.7, 9.5]) {
+  for (const x of [-10.5, -6.3, -2.1, 2.1, 6.3, 10.5]) {
     const sconce = new Mesh(sconceGeometry, sconceMaterial);
-    sconce.position.set(x, 1.62, -6.44);
+    sconce.position.set(x, 1.62, -14.17);
     scene.add(sconce);
   }
 
@@ -1480,13 +1568,13 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   ] as const;
 
   for (const [tableIndex, [x, z]] of ([
-    [-7.6, -6.4],
-    [7.9, -6.8],
-    [0, -8.6],
+    [-9.7, -9.2], [9.7, -9.2], [0, -11.2],
     // Two more sit inside the ±32° wings specifically, so looking left or right
     // reveals other tables rather than empty floor.
-    [-6.9, -1.9],
-    [7.2, -2.3],
+    [-10.2, -1.8], [10.2, -1.8],
+    // The near side is just as populated as the dealer-facing side. That is
+    // what prevents a free camera look from exposing a sparse stage wing.
+    [-8.7, 7.8], [8.7, 7.8], [0, 10.6],
   ] as const).entries()) {
     const distant = new Group();
     const top = new Mesh(
@@ -1744,10 +1832,13 @@ function buildSeat(
   root.add(hand);
   const betChips = new Group();
   root.add(betChips);
+  const travellingChips = new Group();
+  travellingChips.name = "chips-moving-from-stack";
+  root.add(travellingChips);
   const stackChips = new Group();
   root.add(stackChips);
 
-  return { root, body, arm, cards, hand, betChips, stackChips };
+  return { root, body, arm, cards, hand, betChips, travellingChips, stackChips };
 }
 
 /**
@@ -1862,6 +1953,7 @@ function applySeat(
   handId: string | undefined,
   resources: TableSceneResources,
   peeked: boolean,
+  chipCommitment: ChipCommitmentMotion | undefined,
 ): number {
   const started = startedAt.get(seat.seat) ?? nowMs;
   const localProgress = reducedMotion
@@ -2005,7 +2097,9 @@ function applySeat(
   // rotation, so a check knocks the rail and a wager reaches from stack to bet
   // circle like a person rather than a mannequin on a track.
   view.body.position.z = gesture.bodyLean;
-  view.arm.position.z = 0;
+  // A wager is not a telekinetic chip effect: the articulated arm follows the
+  // same rack-to-circle line as the travelling pile, then settles back.
+  view.arm.position.z = -gesture.armReach;
   const leftShoulder = view.arm.getObjectByName("left-shoulder");
   const rightShoulder = view.arm.getObjectByName("right-shoulder");
   const leftElbow = view.arm.getObjectByName("left-elbow");
@@ -2031,14 +2125,46 @@ function applySeat(
     elbow.position.y = (authoredY ?? elbow.position.y) - gesture.handTap * armWeight;
   }
 
-  const betChips = chipCountForAmount(seat.bet);
-  setChipStack(view.betChips, betChips, CHIP_BET_BIAS, resources);
-  if (betChips > 0) {
-    const local = seatLocalPoint(pose, chipPositionForGesture(pose, gesture.chipMotion, progress));
+  const isCommitting = chipCommitment?.transitionId === transition?.id
+    && transition?.action === seat.action
+    && progress < 1;
+  const settledBet = isCommitting ? (chipCommitment?.betBefore ?? seat.bet) : seat.bet;
+  setChipStack(view.betChips, settledBet, resources);
+  if (settledBet > 0) {
+    const local = seatLocalPoint(pose, isCommitting
+      ? betCirclePosition(pose)
+      : chipPositionForGesture(pose, gesture.chipMotion, progress));
     view.betChips.position.set(local[0], local[1], local[2]);
   }
 
-  setChipStack(view.stackChips, chipCountForAmount(seat.stack), 0, resources);
+  if (isCommitting && chipCommitment) {
+    const t = Math.min(1, Math.max(0, progress));
+    const from = restingChipStackPosition(pose);
+    const to = betCirclePosition(pose);
+    // The chips travel rack -> hand height -> betting circle.  They never use
+    // the pot as an intermediate destination, so the centre stays empty until
+    // the dealer actually rakes a completed street.
+    const lift = Math.sin(Math.PI * t) * 0.075;
+    const world: readonly [number, number, number] = [
+      from[0] + (to[0] - from[0]) * t,
+      from[1] + lift,
+      from[2] + (to[2] - from[2]) * t,
+    ];
+    setChipStack(view.travellingChips, chipCommitment.amount, resources);
+    const local = seatLocalPoint(pose, world);
+    view.travellingChips.visible = true;
+    view.travellingChips.position.set(local[0], local[1], local[2]);
+  } else {
+    setChipStack(view.travellingChips, 0, resources);
+    view.travellingChips.visible = false;
+  }
+
+  // During the visible push, the rack steadily loses exactly the amount in
+  // flight.  At rest the engine's authoritative balance is shown untouched.
+  const displayedStack = isCommitting && chipCommitment
+    ? Math.max(0, Math.round(chipCommitment.stackBefore - chipCommitment.amount * progress))
+    : seat.stack;
+  setChipStack(view.stackChips, displayedStack, resources);
   /*
     Beside the player, in the player's own frame.
 
@@ -2150,7 +2276,7 @@ const POT_HOLOGRAM_FORWARD = 0.02;
  * instanced mesh prevents a safe-frame camera retreat from regressing the
  * approved draw-call budget by bringing more existing stacks into view.
  */
-function setChipStack(group: Group, count: number, bias: number, resources: TableSceneResources): void {
+function setChipStack(group: Group, amount: number, resources: TableSceneResources): void {
   let stack = group.getObjectByName("instanced-chip-stack") as InstancedMesh | undefined;
   let spots = group.getObjectByName("instanced-chip-spots") as InstancedMesh | undefined;
   let faces = group.getObjectByName("instanced-chip-faces") as InstancedMesh | undefined;
@@ -2187,7 +2313,8 @@ function setChipStack(group: Group, count: number, bias: number, resources: Tabl
     faces.name = "instanced-chip-faces";
     group.add(stack, spots, faces);
   }
-  const renderedCount = Math.min(MAX_RENDERED_CHIPS, Math.max(0, count));
+  const inventory = chipInventoryForAmount(amount);
+  const renderedCount = Math.min(MAX_RENDERED_CHIPS, inventory.length);
   const matrix = new Matrix4();
   const body = new Color();
   const inlay = new Color();
@@ -2224,9 +2351,9 @@ function setChipStack(group: Group, count: number, bias: number, resources: Tabl
       counting columns. `bias` shifts the whole run so a committed bet and the
       pot stay distinguishable from a player's own stack.
     */
-    const denomination = CHIP_DENOMINATIONS[
-      Math.min(CHIP_DENOMINATIONS.length - 1, bias + column)
-    ];
+    const value = inventory[index] ?? 1;
+    const denomination = CHIP_DENOMINATIONS.find((candidate) => candidate.value === value)
+      ?? CHIP_DENOMINATIONS[0];
     body.setHex(denomination.color);
     stack.setColorAt(index, body);
     // A restrained inlay contrast keeps the denomination readable without a
@@ -2251,6 +2378,7 @@ function setChipStack(group: Group, count: number, bias: number, resources: Tabl
     faces.computeBoundingSphere();
   }
   group.userData.publicChipCount = renderedCount;
+  group.userData.publicChipAmount = amount;
 }
 
 function chipStackCount(group: Group | undefined): number {
@@ -2262,6 +2390,7 @@ function setPotLanes(
   group: Group,
   pots: TableSceneState["pots"],
   aggregate: number,
+  transition: TableSceneState["transition"],
   resources: TableSceneResources,
 ): void {
   const publicPots = pots && pots.length > 0
@@ -2298,15 +2427,24 @@ function setPotLanes(
     const anchor = pot.kind === "main" ? TABLE_ANCHORS.mainPot : TABLE_ANCHORS.sidePot(index - 1);
     lane.position.set(...anchor);
     lane.userData.publicPotId = pot.id;
-    lane.userData.publicPotAmount = pot.amount;
+    const collectedNow = transition?.action === "collect"
+      ? (transition.collectedBets ?? []).reduce((total, collection) => total + collection.amount, 0)
+      : 0;
+    // At the beginning of a rake, the chips are still visibly at their owners'
+    // betting circles.  Grow the pot only as the dealer sweep crosses the felt
+    // instead of drawing the final pile before a single chip has moved.
+    const amount = collectedNow > 0
+      ? Math.max(0, pot.amount - collectedNow + Math.round(collectedNow * transition!.progress))
+      : pot.amount;
+    lane.userData.publicPotAmount = amount;
     const chips = lane.getObjectByName("pot-chip-stack") as Group | undefined;
     const beam = lane.getObjectByName("pot-hologram-beam") as Mesh | undefined;
     const plaque = lane.getObjectByName("pot-amount-plaque") as Mesh | undefined;
     if (!chips || !beam || !plaque) return;
-    setChipStack(chips, chipCountForAmount(pot.amount), pot.kind === "main" ? CHIP_POT_BIAS : CHIP_POT_BIAS - 1, resources);
-    plaque.visible = pot.amount > 0;
-    beam.visible = pot.amount > 0;
-    plaque.material = resources.potPlaqueMaterial(potHologramLabel(pot.kind, pot.amount), pot.kind);
+    setChipStack(chips, amount, resources);
+    plaque.visible = amount > 0;
+    beam.visible = amount > 0;
+    plaque.material = resources.potPlaqueMaterial(potHologramLabel(pot.kind, amount), pot.kind);
     /*
       The hologram projects straight up from the pile centre. It does not track
       stack height, which prevents the indicator from turning back into a rope.

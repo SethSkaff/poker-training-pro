@@ -535,3 +535,23 @@ export function chipCountForAmount(amount: number): number {
   if (amount <= 0) return 0;
   return Math.max(1, Math.min(18, Math.round(Math.log10(amount + 1) * 4)));
 }
+
+/**
+ * A visible rack is made from real tournament denominations, never a
+ * colour-picked approximation.  The renderer may elect not to draw every
+ * physical chip in a very deep stack, but this list is an exact decomposition
+ * of the displayed amount, so a wager cannot turn a pair of green chips into a
+ * new column of unrelated purple ones.
+ */
+export const TOURNAMENT_CHIP_DENOMINATIONS = [25_000, 5_000, 1_000, 500, 100, 25, 5, 1] as const;
+
+export function chipInventoryForAmount(amount: number): readonly number[] {
+  let remainder = Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0));
+  const inventory: number[] = [];
+  for (const denomination of TOURNAMENT_CHIP_DENOMINATIONS) {
+    const count = Math.floor(remainder / denomination);
+    for (let index = 0; index < count; index += 1) inventory.push(denomination);
+    remainder -= count * denomination;
+  }
+  return inventory;
+}

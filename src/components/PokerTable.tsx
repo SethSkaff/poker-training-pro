@@ -322,6 +322,38 @@ export function winningCardLabelsForAwards(
 }
 
 /**
+ * The public, authoritative cards to place in the short end-of-hand tableau.
+ * This deliberately consumes the runner's showdown award rather than trying to
+ * reconstruct a winner from stacks or from a player's concealed hole cards.
+ */
+export function winningHandsForShowdown(
+  event: Extract<TournamentPresentationEvent, { kind: "showdown" }> | undefined,
+  board: readonly Card[],
+): readonly {
+  potId: string;
+  playerId: string;
+  amount: number;
+  handName: string;
+  cards: readonly { card: Card; source: "board" | "hole" }[];
+}[] {
+  if (!event) return [];
+  const boardLabels = new Set(board.map(cardLabel));
+  return event.awards.flatMap((award) => {
+    if (!award.hand) return [];
+    return [{
+      potId: award.potId,
+      playerId: award.playerId,
+      amount: award.amount,
+      handName: award.hand.displayName,
+      cards: award.hand.cards.map((card) => ({
+        card,
+        source: boardLabels.has(cardLabel(card)) ? "board" as const : "hole" as const,
+      })),
+    }];
+  });
+}
+
+/**
  * Selects only card data that is public at the currently presented moment.
  * A held all-in reveal persists through queued board cards, while a showdown
  * replaces it with the final legally revealed set. No runner snapshot or
@@ -3173,6 +3205,7 @@ export function PokerTable({
   const winningCardLabels = winningCardLabelsForAwards(
     showdownEvent?.awards ?? [],
   );
+  const winningShowdownHands = winningHandsForShowdown(showdownEvent, stagedBoard);
   /*
     Who won this hand, held for as long as the hand is paying out (E27-003).
 
@@ -3561,6 +3594,39 @@ export function PokerTable({
                 );
               })}
             </aside>
+          ) : null}
+          {/*
+            A fold has an award but no public hand.  Only a genuine showdown
+            gets this lifted five-card tableau, and every card in it comes from
+            the engine's already-public award payload.
+          */}
+          {showdownEvent && winningShowdownHands.length > 0 ? (
+            <section className="showdown-tableau" aria-label="Winning poker hands">
+              {winningShowdownHands.map((hand) => {
+                const winner = scenario.players.find((player) => player.id === hand.playerId);
+                const winnerName = winner?.seat === scenario.heroSeat ? "You" : (winner?.name ?? hand.playerId);
+                return (
+                  <div className="showdown-tableau__hand" key={`${hand.potId}:${hand.playerId}`}>
+                    <header>
+                      <strong>{hand.handName}</strong>
+                      <span>{winnerName} wins {formatChips(hand.amount)}</span>
+                    </header>
+                    <div className="showdown-tableau__cards" aria-label={`${hand.handName} winning cards`}>
+                      {hand.cards.map(({ card, source }, index) => (
+                        <span
+                          className={`showdown-tableau__card showdown-tableau__card--${source}`}
+                          style={{ "--showdown-index": index } as CSSProperties}
+                          key={cardLabel(card)}
+                        >
+                          <PlayingCard card={card} className="showdown-card is-winning" />
+                        </span>
+                      ))}
+                    </div>
+                    <small>Dealer presents the winning five</small>
+                  </div>
+                );
+              })}
+            </section>
           ) : null}
           {sidePotEvent ? (
             <aside className="side-pot-strip" role="status" aria-live="polite" aria-atomic="true">

@@ -2755,6 +2755,81 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 10px;
 }
 
+/* The end-of-hand reveal is a compact dealer presentation, not another line
+   of HUD copy.  It appears only for the runner's public showdown event. */
+.showdown-tableau {
+  position: absolute;
+  z-index: 36;
+  top: clamp(72px, 11vh, 122px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.showdown-tableau__hand {
+  display: grid;
+  justify-items: center;
+  min-width: 250px;
+  padding: 9px 16px 7px;
+  border: 1px solid rgba(255, 211, 98, .78);
+  border-radius: 13px;
+  color: #fff4d5;
+  background: linear-gradient(160deg, rgba(41, 31, 12, .96), rgba(16, 26, 18, .94));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .54), 0 0 24px rgba(255, 192, 56, .18);
+}
+
+.showdown-tableau__hand header {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.showdown-tableau__hand header strong {
+  color: #ffe49c;
+  font-size: 16px;
+  letter-spacing: .045em;
+  text-shadow: 0 0 12px rgba(255, 199, 59, .4);
+}
+
+.showdown-tableau__hand header span,
+.showdown-tableau__hand small {
+  color: #d8cfb7;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.showdown-tableau__cards {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  min-height: 69px;
+  margin: 5px 0 2px;
+  padding: 0 15px;
+}
+
+.showdown-tableau__card {
+  display: block;
+  margin-left: -14px;
+  transform: translateY(calc(var(--showdown-index) * -2px)) rotate(calc((var(--showdown-index) - 2) * 2deg));
+  transform-origin: center bottom;
+  animation: showdown-dealer-lift 360ms cubic-bezier(.2, .88, .33, 1) both;
+  animation-delay: calc(var(--showdown-index) * 48ms);
+}
+
+.showdown-tableau__card:first-child { margin-left: 0; }
+.showdown-tableau__card--hole .playing-card { border-color: #ffe197; }
+.showdown-tableau__card--board .playing-card { border-color: #f5d36f; }
+
+@keyframes showdown-dealer-lift {
+  from { opacity: 0; transform: translateY(28px) rotate(calc((var(--showdown-index) - 2) * 2deg)); }
+  to { opacity: 1; transform: translateY(calc(var(--showdown-index) * -2px)) rotate(calc((var(--showdown-index) - 2) * 2deg)); }
+}
+
 .side-pot-strip {
   position: absolute;
   z-index: 35;

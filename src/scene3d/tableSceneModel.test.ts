@@ -13,6 +13,7 @@ import {
   betChipPosition,
   betCirclePosition,
   callChipPosition,
+  chipInventoryForAmount,
   chipCountForAmount,
   collectChipPosition,
   POT_POSITION,
@@ -41,6 +42,23 @@ const distance = (
   a: readonly [number, number, number],
   b: readonly [number, number, number],
 ) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+describe("physical chip inventories", () => {
+  it("decomposes every visible balance into exact tournament denominations", () => {
+    for (const amount of [0, 1, 25, 50, 125, 400, 975, 2_550, 13_425, 84_321]) {
+      const inventory = chipInventoryForAmount(amount);
+      expect(inventory.reduce((total, chip) => total + chip, 0)).toBe(amount);
+    }
+  });
+
+  it("does not invent a coloured stack when a bet leaves a real rack", () => {
+    const before = 1_000;
+    const wager = 150;
+    const after = before - wager;
+    expect(chipInventoryForAmount(after).reduce((total, chip) => total + chip, 0)
+      + chipInventoryForAmount(wager).reduce((total, chip) => total + chip, 0)).toBe(before);
+  });
+});
 
 describe("seat-local placement lands objects on the felt", () => {
   /**

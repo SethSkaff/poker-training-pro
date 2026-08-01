@@ -6,6 +6,7 @@ import {
   describeLiveSidePot,
   publicRevealsForPresentation,
   winningCardLabelsForAwards,
+  winningHandsForShowdown,
 } from "./PokerTable";
 
 const suits: Record<string, Suit> = {
@@ -52,6 +53,37 @@ describe("showdown best-five presentation", () => {
     expect(labels).toEqual(
       new Set([...boardPlaying.cards, ...sidePotWinner.cards].map(cardLabel)),
     );
+  });
+
+  it("builds the lifted tableau from public award cards and labels board cards", () => {
+    const hand = evaluateFive(cards("As", "Ah", "Kd", "Qc", "9s"));
+    const event = {
+      id: "showdown-1",
+      kind: "showdown" as const,
+      handId: "hand-1",
+      playerIds: ["winner"],
+      reveals: [{ playerId: "winner", cards: cards("As", "Ah") }],
+      awards: [{ potId: "main", playerId: "winner", amount: 600, hand }],
+    };
+    const presentation = winningHandsForShowdown(event, cards("Kd", "Qc", "9s", "2c", "3d"));
+
+    expect(presentation).toHaveLength(1);
+    expect(presentation[0]?.handName).toBe(hand.displayName);
+    expect(presentation[0]?.cards.map((entry) => entry.source)).toEqual([
+      "hole", "hole", "board", "board", "board",
+    ]);
+  });
+
+  it("does not create a card tableau for a fold result or a handless award", () => {
+    expect(winningHandsForShowdown(undefined, cards("As", "Kd"))).toEqual([]);
+    expect(winningHandsForShowdown({
+      id: "showdown-2",
+      kind: "showdown",
+      handId: "hand-2",
+      playerIds: ["winner"],
+      reveals: [],
+      awards: [{ potId: "main", playerId: "winner", amount: 300 }],
+    }, cards("As", "Kd"))).toEqual([]);
   });
 });
 
