@@ -8,10 +8,10 @@ const scene = readFileSync(path.join(root, "tableScene.ts"), "utf8");
 const snapshot = readFileSync(path.join(root, "tableSceneSnapshot.ts"), "utf8");
 
 describe("hero card peek presentation", () => {
-  it("uses a two-hand shield and rectangular card-index windows, never the old triangular flap", () => {
+  it("uses a two-hand shield and retires the old floating corner flap", () => {
     expect(scene).toContain("function buildHeroPeekHands");
     expect(scene).toContain("Four curled fingers cross the card's far edge");
-    expect(scene).toContain("A narrow, rectangular window of a private card's printed corner");
+    expect(scene).toContain("The old folded corner is intentionally retired during the full physical");
     expect(scene).not.toContain("The folded-back corner of a card, as a flat triangle");
     expect(scene).not.toContain("const positions = new Float32Array([...creaseA, ...creaseB, ...tip])");
   });
@@ -32,7 +32,14 @@ describe("hero card peek presentation", () => {
       the face material directly.
     */
     expect(scene).toContain("mesh.material = code\n      ? resources.cardFaceMaterial(code)");
-    expect(scene).toContain(": resources.cardBackMaterial;");
+    expect(scene).toContain(": resources.deckBackMaterial(deckColourForHand(handId ?? transition?.handId));");
     expect(scene).not.toContain("mesh.material = code && !squeezing");
+  });
+
+  it("keeps the physical peek upright, shallow, and shielded rather than flipping cards vertical", () => {
+    expect(scene).toContain("card.rotation.x = squeezing ? -0.46 : 0;");
+    expect(scene).toContain("card.rotation.y = squeezing ? (index === 0 ? 0.06 : -0.06) : 0;");
+    expect(scene).toContain("view.hand.position.set(local[0], local[1] + 0.045, local[2] - 0.074);");
+    expect(scene).toContain("fold.visible = false;");
   });
 });

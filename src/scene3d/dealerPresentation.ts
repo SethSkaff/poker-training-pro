@@ -17,6 +17,15 @@ export interface DealerPresentationTransition {
 }
 
 export function deckColourForHand(handId: string | undefined): DeckColour {
+  /*
+    Tournament hand ids end in `hand-N`.  Use that public, monotonic number
+    when it is available so the two physical packs take turns predictably:
+    the opening hand is red, the next is blue, and no event within either hand
+    can ever change the chosen pack.  Some previews use descriptive ids rather
+    than tournament ids; those retain a stable hashed fallback.
+  */
+  const numberedHand = handId?.match(/(?:^|:)hand-(\d+)$/i);
+  if (numberedHand) return Number(numberedHand[1]) % 2 === 1 ? "red" : "blue";
   let hash = 2166136261;
   for (const character of handId ?? "public-table") {
     hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);

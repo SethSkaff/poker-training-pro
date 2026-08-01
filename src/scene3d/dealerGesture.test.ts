@@ -89,6 +89,16 @@ describe("dealer gesture", () => {
       .toBeLessThan(-0.2);
   });
 
+  it("takes the card at the shoe before turning toward the receiving seat", () => {
+    const target = at(4);
+    const pickup = dealerGestureFor({ task: "deal", progress: 0.18, at: target }, pose, 0);
+    const release = dealerGestureFor({ task: "deal", progress: 0.55, at: target }, pose, 0);
+    // The reach is already over the deck before the arm begins to turn out.
+    expect(pickup.shoulderPitch).toBeLessThan(-0.1);
+    expect(Math.abs(pickup.shoulderYaw)).toBeLessThan(0.02);
+    expect(Math.abs(release.shoulderYaw)).toBeGreaterThan(Math.abs(pickup.shoulderYaw));
+  });
+
   /*
     A rake, not a wave: furthest out early, travelling back for the rest of the
     beat, and squared up by the end so the hands finish over the pot rather than

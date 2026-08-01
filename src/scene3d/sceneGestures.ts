@@ -16,6 +16,8 @@ export interface SceneGesture {
   readonly elbowBend: number;
   /** Downward palm travel for the visible rail tap. */
   readonly handTap: number;
+  /** Which articulated arm is deliberately moving for this action. */
+  readonly movingArm: "left" | "right" | "both" | "none";
 }
 
 export function sceneGestureFor(
@@ -39,8 +41,13 @@ export function sceneGestureFor(
     case "deal":
       return gesture(0.015 * pulse, 0.12 * pulse, "deal", "none", 0.28 * pulse, 0, 0.36 * pulse);
     case "check":
-      // A check is a sharp down/up knock, not a forward arm slide.
-      return gesture(0.02 * pulse, 0, "rest", "none", 0.16 * pulse, 0.05 * pulse, 0.24 * pulse, 0.050 * Math.sin(Math.PI * 2 * t) ** 2);
+      /*
+        One clear table knock with the player's right hand.  This ends early
+        in the action beat so it cannot read as the old two-handed bouncing
+        loop: shoulder and elbow reach down, palm lands once, then that one
+        arm returns to its authored resting pose while the other never moves.
+      */
+      return checkGesture(t);
     case "call":
       return gesture(0.025 * pulse, 0.11 * pulse, "rest", "call", 0.43 * pulse, 0.05, 0.60 * pulse);
     case "bet":
@@ -65,8 +72,37 @@ function gesture(
   shoulderYaw = 0,
   elbowBend = 0,
   handTap = 0,
+  movingArm: SceneGesture["movingArm"] = "both",
 ): SceneGesture {
-  return { bodyLean, armReach, cardMotion, chipMotion, shoulderPitch, shoulderYaw, elbowBend, handTap };
+  return {
+    bodyLean,
+    armReach,
+    cardMotion,
+    chipMotion,
+    shoulderPitch,
+    shoulderYaw,
+    elbowBend,
+    handTap,
+    movingArm,
+  };
+}
+
+function checkGesture(progress: number): SceneGesture {
+  // A 0.62-beat knock, followed by an unambiguous rest.  Squaring gives a
+  // brief contact/settle at the felt instead of a rigid full-arm sway.
+  const beat = Math.min(1, progress / 0.62);
+  const knock = Math.sin(Math.PI * beat) ** 2;
+  return gesture(
+    0.014 * knock,
+    0,
+    "rest",
+    "none",
+    0.18 * knock,
+    0.045 * knock,
+    0.30 * knock,
+    0.052 * knock,
+    "right",
+  );
 }
 
 function clamp(progress: number): number {

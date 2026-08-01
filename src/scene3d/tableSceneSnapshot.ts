@@ -12,6 +12,8 @@ export interface PublicScenePlayer {
 }
 
 export interface TableSceneSnapshotInput {
+  /** Stable public identity for the active hand's physical deck. */
+  readonly handId?: string;
   readonly players: readonly PublicScenePlayer[];
   readonly heroId: string;
   readonly actingPlayerId?: string;
@@ -123,6 +125,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
     ? undefined
     : seats.find((seat) => seat.canonicalSeat === canonicalSeat)?.id;
   return {
+    handId: input.handId,
     seats,
     pot: input.pot,
     pots: input.pots,

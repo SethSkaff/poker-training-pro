@@ -19,6 +19,7 @@ import {
   dealtCardPosition,
   muckedCardPosition,
   raiseChipPosition,
+  restingChipStackPosition,
   seatLocalPoint,
   seatPoses,
   seatWorldPoint,
@@ -28,6 +29,10 @@ import {
   TABLE_WIDTH,
   turnIndicatorPosition,
   BET_CIRCLE_FORWARD,
+  CHIP_STACK_SAFE_RADIUS,
+  CARD_ZONE_DEPTH,
+  CARD_ZONE_WIDTH,
+  BET_CIRCLE_RADIUS,
   turnIndicatorPositionForPlayer,
 } from "./tableSceneModel";
 
@@ -161,6 +166,11 @@ describe("objects travel between real places", () => {
     expect(distance(dealtCardPosition(pose, 0), end)).toBeGreaterThan(0.2);
   });
 
+  it("holds a dealt card at the dealer shoe through the visible pickup", () => {
+    expect(dealtCardPosition(pose, 0.15)).toEqual(dealtCardPosition(pose, 0));
+    expect(distance(dealtCardPosition(pose, 0.55), dealtCardPosition(pose, 0))).toBeGreaterThan(0.02);
+  });
+
   it("sends a folded card away from the seat toward the muck", () => {
     const start = muckedCardPosition(pose, 0);
     const end = muckedCardPosition(pose, 1);
@@ -246,6 +256,52 @@ describe("the current-turn indicator", () => {
   });
 });
 
+describe("six-player tournament lanes", () => {
+  it("gives each player one straight card rectangle and a separate inward wager circle", () => {
+    const poses = seatPoses(6);
+    for (const pose of poses) {
+      const circle = betCirclePosition(pose);
+      const toCentre = Math.hypot(pose.feltPosition[0], pose.feltPosition[2]);
+      expect(Math.hypot(circle[0], circle[2]), `seat ${pose.seat} wager direction`)
+        .toBeLessThan(toCentre);
+      // The circular wager mark starts beyond the card rectangle rather than
+      // cutting through it, so the two marks remain legible at every seat.
+      expect(BET_CIRCLE_FORWARD - BET_CIRCLE_RADIUS)
+        .toBeGreaterThan(CARD_ZONE_DEPTH / 2);
+      expect(CARD_ZONE_WIDTH).toBeGreaterThan(0.22);
+    }
+  });
+
+  it("keeps all six printed player lanes physically separated", () => {
+    const poses = seatPoses(6);
+    // A conservative enclosing radius covers both the straight card rectangle
+    // and its separate wager circle. If these discs do not touch, neither can
+    // the actual smaller printed outlines.
+    const laneRadius = Math.max(
+      Math.hypot(CARD_ZONE_WIDTH / 2, CARD_ZONE_DEPTH / 2),
+      BET_CIRCLE_FORWARD + BET_CIRCLE_RADIUS,
+    );
+    for (let i = 0; i < poses.length; i += 1) {
+      for (let j = i + 1; j < poses.length; j += 1) {
+        expect(distance(poses[i].feltPosition, poses[j].feltPosition), `lanes ${i}/${j}`)
+          .toBeGreaterThan(laneRadius * 2 + 0.015);
+      }
+    }
+  });
+
+  it("keeps each seat's card, wager, and turn cue on the same station bearing", () => {
+    for (const pose of seatPoses(6)) {
+      const circle = betCirclePosition(pose);
+      const cue = turnIndicatorPosition(pose);
+      expect(cue[0]).toBeCloseTo(circle[0], 6);
+      expect(cue[2]).toBeCloseTo(circle[2], 6);
+      // The destination from the motion model is the printed wager mark, not
+      // a neighbouring lane or the central pot.
+      expect(betChipPosition(pose, 1)).toEqual(circle);
+    }
+  });
+});
+
 describe("chip stacks read as depth without unbounded geometry", () => {
   it("draws nothing for an empty stack", () => {
     expect(chipCountForAmount(0)).toBe(0);
@@ -261,6 +317,44 @@ describe("chip stacks read as depth without unbounded geometry", () => {
   it("never returns a fractional chip", () => {
     for (const amount of [1, 7, 99, 12_345, 987_654]) {
       expect(Number.isInteger(chipCountForAmount(amount))).toBe(true);
+    }
+  });
+});
+
+describe("resting chip stacks stay in their owner's safe play lane", () => {
+  const insideSafeFelt = (point: readonly [number, number, number]) => {
+    const straightHalfLength = TABLE_WIDTH / 2 - TABLE_DEPTH / 2;
+    const centreX = Math.min(straightHalfLength, Math.max(-straightHalfLength, point[0]));
+    return Math.hypot(point[0] - centreX, point[2]) <= TABLE_DEPTH / 2 - CHIP_STACK_SAFE_RADIUS + 1e-9;
+  };
+
+  it("keeps every full stack footprint clear of the rail at every player seat", () => {
+    for (const pose of seatPoses(6)) {
+      const stack = restingChipStackPosition(pose);
+      expect(insideSafeFelt(stack), `seat ${pose.seat}`).toBe(true);
+      expect(stack[1]).toBe(TABLE_HEIGHT);
+    }
+  });
+
+  it("keeps each stack paired with its own card lane rather than a neighbour's", () => {
+    const poses = seatPoses(6);
+    for (const pose of poses) {
+      const stack = restingChipStackPosition(pose);
+      const ownDistance = distance(stack, pose.feltPosition);
+      for (const other of poses) {
+        if (other.seat === pose.seat) continue;
+        expect(ownDistance, `stack ${pose.seat} and lane ${other.seat}`)
+          .toBeLessThan(distance(stack, other.feltPosition));
+      }
+    }
+  });
+
+  it("leaves the owner's committed chips on their separate betting circle", () => {
+    for (const pose of seatPoses(6)) {
+      const stack = restingChipStackPosition(pose);
+      const bet = betCirclePosition(pose);
+      expect(distance(stack, bet), `seat ${pose.seat}`).toBeGreaterThan(0.07);
+      expect(bet).toEqual(betChipPosition(pose, 1));
     }
   });
 });

@@ -12,7 +12,10 @@
  */
 import {
   BoxGeometry,
+  BufferGeometry,
+  CatmullRomCurve3,
   CylinderGeometry,
+  Float32BufferAttribute,
   Group,
   Mesh,
   MeshLambertMaterial,
@@ -20,8 +23,8 @@ import {
   Quaternion,
   SphereGeometry,
   TorusGeometry,
+  TubeGeometry,
   Vector3,
-  type BufferGeometry,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { OpponentCharacter } from "../lib/opponentAppearance";
@@ -133,6 +136,57 @@ function taper(
   return geometry;
 }
 
+/**
+ * A continuous, low-poly soft-body shell.  The older character used stacked
+ * cones and decorative boxes, which makes a seated person read as a collection
+ * of rigid props.  This ring mesh gives the chest, waist and hem their own
+ * silhouette in a single connected surface, closer to the grounded human
+ * construction of a late-2000s source-engine character while staying light
+ * enough to draw once per seat.
+ */
+function shapedShell(
+  rings: readonly { readonly y: number; readonly x: number; readonly z: number }[],
+  segments = 10,
+): BufferGeometry {
+  const vertices: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (let ringIndex = 0; ringIndex < rings.length; ringIndex += 1) {
+    const ring = rings[ringIndex]!;
+    for (let segment = 0; segment < segments; segment += 1) {
+      const angle = (segment / segments) * Math.PI * 2;
+      // Flatten the back slightly: a seated torso presses into its chair rather
+      // than being a perfect tube.
+      const frontBias = Math.cos(angle) > 0 ? 1 : 0.90;
+      vertices.push(Math.sin(angle) * ring.x, ring.y, Math.cos(angle) * ring.z * frontBias);
+      uvs.push(segment / segments, ringIndex / (rings.length - 1));
+    }
+  }
+  for (let ring = 0; ring < rings.length - 1; ring += 1) {
+    for (let segment = 0; segment < segments; segment += 1) {
+      const next = (segment + 1) % segments;
+      const a = ring * segments + segment;
+      const b = ring * segments + next;
+      const c = (ring + 1) * segments + next;
+      const d = (ring + 1) * segments + segment;
+      indices.push(a, b, d, b, c, d);
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function seam(
+  points: readonly [number, number, number][],
+  radius: number,
+): BufferGeometry {
+  return new TubeGeometry(new CatmullRomCurve3(points.map((point) => new Vector3(...point))), 8, radius, 5, false);
+}
+
 /** Flatten a shell below `floorY` so a hair cap cannot enclose the face. */
 function clampBelow(geometry: BufferGeometry, floorY: number): BufferGeometry {
   const position = geometry.getAttribute("position");
@@ -178,11 +232,19 @@ function skinGeometry(character: OpponentCharacter): BufferGeometry[] {
     sphere large enough to see is large enough to look separate. Only a brow ridge
     and a small nose survive, and both are flattened into the surface.
   */
-  parts.push(sphere(
-    HEAD_RADIUS,
-    [0, headY, 0],
-    [face.jaw, 1.14 / Math.max(0.85, face.chin), 1.04 * face.cheek * 0.92],
-  ));
+  // A face is not a sphere with loose parts glued on.  This continuous skull
+  // shell carries the chin, jaw, cheeks, temples and crown in its silhouette.
+  // It is deliberately faceted at this scale: grounded late-2000s game art,
+  // not a smooth toy head.
+  const headScaleY = 1.14 / Math.max(0.85, face.chin);
+  const headScaleZ = 1.04 * face.cheek * 0.92;
+  parts.push(shapedShell([
+    { y: headY - HEAD_RADIUS * headScaleY * 0.98, x: HEAD_RADIUS * face.jaw * 0.42, z: HEAD_RADIUS * headScaleZ * 0.40 },
+    { y: headY - HEAD_RADIUS * headScaleY * 0.68, x: HEAD_RADIUS * face.jaw * 0.76, z: HEAD_RADIUS * headScaleZ * 0.78 },
+    { y: headY - HEAD_RADIUS * headScaleY * 0.16, x: HEAD_RADIUS * face.jaw, z: HEAD_RADIUS * headScaleZ },
+    { y: headY + HEAD_RADIUS * headScaleY * 0.42, x: HEAD_RADIUS * face.jaw * 0.92, z: HEAD_RADIUS * headScaleZ * 0.94 },
+    { y: headY + HEAD_RADIUS * headScaleY * 0.90, x: HEAD_RADIUS * face.jaw * 0.52, z: HEAD_RADIUS * headScaleZ * 0.55 },
+  ]));
   /*
     The brow sits *in* the forehead, not on it. At 0.15 R scaled 2.1 wide it stood
     proud enough to cast its own terminator line, and on the neighbour a metre
@@ -405,24 +467,19 @@ function sleeveParts(body: BodyProportions, side: number): BufferGeometry[] {
 function clothGeometry(character: OpponentCharacter): BufferGeometry[] {
   const body = bodyProportions(character.gender, character.body);
   const top = TORSO_BASE_Y + body.torsoHeight;
-  const depthRatio = body.chestDepth / body.shoulderHalfWidth;
   const parts: BufferGeometry[] = [];
 
-  parts.push(taper(
-    body.shoulderHalfWidth,
-    body.waistHalfWidth,
-    body.torsoHeight,
-    [0, TORSO_BASE_Y + body.torsoHeight / 2, 0],
-    [1, 1, depthRatio],
-  ));
-  // Shoulder caps: the bare cone rim reads as armour without them.
-  for (const side of [-1, 1]) {
-    parts.push(sphere(
-      body.shoulderHalfWidth * 0.3,
-      [side * body.shoulderHalfWidth * 0.88, top - 0.028, 0],
-      [1, 0.72, depthRatio * 1.05],
-    ));
-  }
+  const hem = body.waistHalfWidth * 1.03;
+  const chest = body.shoulderHalfWidth * 0.94;
+  // These rings make a shoulder slope, chest fullness and narrowed waist part
+  // of one mesh.  There are no rectangular add-ons to read as armour plates.
+  parts.push(shapedShell([
+    { y: TORSO_BASE_Y, x: hem, z: body.chestDepth * 0.78 },
+    { y: TORSO_BASE_Y + body.torsoHeight * 0.18, x: body.waistHalfWidth, z: body.chestDepth * 0.88 },
+    { y: TORSO_BASE_Y + body.torsoHeight * 0.52, x: chest * 0.92, z: body.chestDepth },
+    { y: top - 0.07, x: chest, z: body.chestDepth * 0.94 },
+    { y: top, x: body.shoulderHalfWidth * 0.82, z: body.chestDepth * 0.74 },
+  ]));
   return parts;
 }
 
@@ -440,9 +497,13 @@ function wardrobeDetailGeometry(character: OpponentCharacter): BufferGeometry[] 
   const parts: BufferGeometry[] = [];
   const front = depth + 0.006;
 
-  // Every garment has a yoke. It provides the restrained material break that
-  // makes broad cloth read as sewn fabric under a warm room light.
-  parts.push(new BoxGeometry(body.shoulderHalfWidth * 1.72, 0.028, 0.018).translate(0, top - 0.085, front));
+  // Curved seam work catches light like sewn cloth.  It intentionally avoids
+  // the old rectangular yoke/lapel blocks that made everyone look armoured.
+  parts.push(seam([
+    [-body.shoulderHalfWidth * 0.72, top - 0.075, front],
+    [0, top - 0.095, front + 0.009],
+    [body.shoulderHalfWidth * 0.72, top - 0.075, front],
+  ], 0.006));
 
   switch (character.outfit.name) {
     case "hoodie":
@@ -451,8 +512,8 @@ function wardrobeDetailGeometry(character: OpponentCharacter): BufferGeometry[] 
       break;
     case "track-jacket":
     case "puffer":
-      // Central zip/placket and a shallow collar.
-      parts.push(new BoxGeometry(0.012, body.torsoHeight * 0.72, 0.014).translate(0, TORSO_BASE_Y + body.torsoHeight * 0.48, front + 0.004));
+      // Central zip/placket and a shallow collar, both softly rounded.
+      parts.push(seam([[0, TORSO_BASE_Y + 0.045, front + 0.006], [0, top - 0.10, front + 0.010]], 0.006));
       parts.push(new TorusGeometry(body.neckRadius * 1.42, 0.010, 5, 12).translate(0, top + 0.006, 0));
       break;
     case "blazer":
@@ -460,16 +521,16 @@ function wardrobeDetailGeometry(character: OpponentCharacter): BufferGeometry[] 
       // Two separate lapels retain the formal silhouette even with low-poly
       // geometry and make the dealer-adjacent players less uniform.
       for (const side of [-1, 1]) {
-        const lapel = new BoxGeometry(body.shoulderHalfWidth * 0.42, body.torsoHeight * 0.42, 0.016);
-        lapel.rotateZ(side * 0.34);
-        lapel.translate(side * body.shoulderHalfWidth * 0.28, TORSO_BASE_Y + body.torsoHeight * 0.63, front + 0.008);
-        parts.push(lapel);
+        parts.push(seam([
+          [side * body.neckRadius * 0.8, top - 0.04, front + 0.006],
+          [side * body.shoulderHalfWidth * 0.42, top - body.torsoHeight * 0.25, front + 0.012],
+          [side * body.shoulderHalfWidth * 0.22, TORSO_BASE_Y + body.torsoHeight * 0.35, front + 0.008],
+        ], 0.010));
       }
       break;
     case "flannel":
     case "cardigan":
-      // A placket makes soft layers feel constructed rather than painted on.
-      parts.push(new BoxGeometry(0.016, body.torsoHeight * 0.66, 0.016).translate(0, TORSO_BASE_Y + body.torsoHeight * 0.46, front + 0.005));
+      parts.push(seam([[0, TORSO_BASE_Y + 0.075, front + 0.006], [0, top - 0.10, front + 0.009]], 0.007));
       break;
     case "polo":
       // Compact knitted collar, intentionally flatter than a jacket collar.

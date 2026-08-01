@@ -16,6 +16,7 @@
  * bundle, so the scene still builds synchronously on the first frame.
  */
 import {
+  AdditiveBlending,
   ACESFilmicToneMapping,
   AmbientLight,
   BufferGeometry,
@@ -46,6 +47,7 @@ import {
   TorusGeometry,
   WebGLRenderer,
 } from "three";
+import { POT_HOLOGRAM, potHologramLabel } from "./potHologramPresentation";
 import {
   allInChipPosition,
   betChipPosition,
@@ -59,6 +61,7 @@ import {
   dealtCardPosition,
   muckedCardPosition,
   raiseChipPosition,
+  restingChipStackPosition,
   seatLocalPoint,
   dealerStation,
   seatPoses,
@@ -122,6 +125,8 @@ export interface SceneSeatState {
 }
 
 export interface TableSceneState {
+  /** Stable public identity of the hand currently on the felt. */
+  readonly handId?: string;
   readonly seats: readonly SceneSeatState[];
   readonly pot: number;
   /** Public main/side lanes.  The aggregate remains a DOM-parity guard. */
@@ -319,7 +324,7 @@ interface TableSceneResources {
   /** Tiled surface maps for the felt, the carpet, and the panelled walls. */
   surfaceTexture(kind: "felt" | "carpet" | "wall", repeatX: number, repeatY: number): Texture | null;
   surfaceTextureEstimateMiB(): number;
-  potPlaqueMaterial(label: string, kind: "main" | "side"): MeshLambertMaterial;
+  potPlaqueMaterial(label: string, kind: "main" | "side"): MeshBasicMaterial;
   cardTextureEstimateMiB(): number;
 }
 
@@ -329,7 +334,7 @@ function createTableSceneResources(): TableSceneResources {
   const faceMaterials = new Map<string, MeshLambertMaterial>();
   const deckBackMaterials = new Map<DeckColour, MeshLambertMaterial>();
   const markerMaterials = new Map<string, MeshLambertMaterial>();
-  const potPlaqueMaterials = new Map<string, MeshLambertMaterial>();
+  const potPlaqueMaterials = new Map<string, MeshBasicMaterial>();
   const cardFaceMaterial = (code: string): MeshLambertMaterial => {
     const face = parsePublicCardFace(code);
     if (!face) return cardMaterial;
@@ -576,7 +581,7 @@ function createTableSceneResources(): TableSceneResources {
     markerMaterials.set(label, material);
     return material;
   };
-  const potPlaqueMaterial = (label: string, kind: "main" | "side"): MeshLambertMaterial => {
+  const potPlaqueMaterial = (label: string, kind: "main" | "side"): MeshBasicMaterial => {
     const key = `${kind}:${label}`;
     const cached = potPlaqueMaterials.get(key);
     if (cached) return cached;
@@ -584,13 +589,20 @@ function createTableSceneResources(): TableSceneResources {
     canvas.width = 256;
     canvas.height = 80;
     const context = canvas.getContext("2d");
-    if (!context) return track(new MeshLambertMaterial({ color: kind === "main" ? 0xd8b45a : 0x78a9e8 }));
+    if (!context) return track(new MeshBasicMaterial({
+      color: kind === "main" ? 0xf6d36d : 0x9bc8ff,
+      transparent: true,
+      opacity: 0.82,
+      blending: AdditiveBlending,
+      depthWrite: false,
+    }));
     const accent = kind === "main" ? "#f6d36d" : "#9bc8ff";
-    context.fillStyle = "#0b1512";
-    context.fillRect(2, 8, canvas.width - 4, canvas.height - 16);
+    context.clearRect(0, 0, canvas.width, canvas.height);
     context.strokeStyle = accent;
-    context.lineWidth = 3;
-    context.strokeRect(3.5, 9.5, canvas.width - 7, canvas.height - 19);
+    context.globalAlpha = 0.7;
+    context.lineWidth = 1.5;
+    context.strokeRect(5.5, 12.5, canvas.width - 11, canvas.height - 25);
+    context.globalAlpha = 1;
     context.fillStyle = accent;
     context.textAlign = "center";
     context.textBaseline = "middle";
@@ -599,7 +611,13 @@ function createTableSceneResources(): TableSceneResources {
     const texture = track(new CanvasTexture(canvas));
     texture.generateMipmaps = false;
     texture.minFilter = LinearFilter;
-    const material = track(new MeshLambertMaterial({ map: texture, transparent: true }));
+    const material = track(new MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.86,
+      blending: AdditiveBlending,
+      depthWrite: false,
+    }));
     potPlaqueMaterials.set(key, material);
     return material;
   };
@@ -706,7 +724,10 @@ export function createTableScene(
     walls rendered as flat black. A warm near-white at a low intensity is the
     same warmth and actually lights something.
   */
-  scene.add(new AmbientLight(0xffe8cc, 0.55));
+  // Lift the room as a whole, rather than overdriving the pendant above the
+  // felt.  This keeps the main table readable while the rear tables and timber
+  // panelling retain enough value to describe a busy tournament room.
+  scene.add(new AmbientLight(0xffe8cc, 0.66));
   /*
     The key drops from 15 to 8.5. At 15 with quadratic falloff 1.3 m above the
     cloth the felt's own texture was clipping to near-white in the middle of the
@@ -739,6 +760,14 @@ export function createTableScene(
   const roomLight = new PointLight(0xffcf9a, 8.0, 16, 2);
   roomLight.position.set(0, 3.1, -4.2);
   scene.add(roomLight);
+  // Broad house lights deliberately illuminate the room wings, not the hero
+  // table. They give the background tables a warm, occupied glow without
+  // bleaching cards, chips, or the green baize in the foreground.
+  for (const [x, z] of [[-7.4, -4.8], [7.4, -4.8]] as const) {
+    const houseLight = new PointLight(0xffc779, 3.3, 8.5, 2);
+    houseLight.position.set(x, 2.7, z);
+    scene.add(houseLight);
+  }
 
   // Keep the six physical chairs stable. A player leaving must hide their
   // chair/body, never cause every surviving identity to slide one chair over.
@@ -911,6 +940,7 @@ export function createTableScene(
           actionTiming.startedAt,
           state.reducedMotion,
           state.transition,
+          state.handId,
           resources,
           state.heroPeeked === true,
         );
@@ -945,7 +975,7 @@ export function createTableScene(
         const plaque = lane.getObjectByName("pot-amount-plaque");
         if (plaque) plaque.lookAt(camera.position);
       }
-      setBoardCards(board, state.boardCards, state.publicBoardCardCodes, resources, state.transition);
+      setBoardCards(board, state.boardCards, state.publicBoardCardCodes, resources, state.transition, state.handId);
       const renderStartedAt = performance.now();
       renderer.render(scene, camera);
       frameTelemetry.record(nowMs, performance.now() - renderStartedAt);
@@ -1233,14 +1263,31 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
     scene.add(sconce);
   }
 
-  // A few distant tables so the room has depth beyond this one. Low-poly and
-  // unlit-adjacent: they exist to be seen past, not looked at.
+  // Background tournament tables have small seated silhouettes. Their shared
+  // geometry and muted colours make the floor feel occupied at a negligible
+  // scene cost, while keeping the hero table the only readable game surface.
   //
   // Pushed wide and back off the forward arc. At (-4.4,-5.2)/(4.6,-5.8) they
   // projected directly behind the two near-side opponents, so a background
   // table appeared to grow out of a player's shoulder at recenter. These sit
   // outside the seated frame at recenter and populate the room wings instead.
-  for (const [x, z] of [
+  const backgroundTableTop = resources.track(new CylinderGeometry(0.88, 0.88, 0.09, 18));
+  const backgroundTableBase = resources.track(new CylinderGeometry(0.26, 0.36, TABLE_HEIGHT, 10));
+  const backgroundHead = resources.track(new SphereGeometry(0.105, 10, 8));
+  const backgroundTorso = resources.track(new CylinderGeometry(0.13, 0.17, 0.34, 8));
+  const backgroundFelt = resources.track(new MeshLambertMaterial({ color: FELT_EDGE }));
+  const backgroundRail = resources.track(new MeshLambertMaterial({ color: RAIL }));
+  const backgroundSkin = resources.track(new MeshLambertMaterial({ color: 0x9d755b }));
+  const backgroundClothes = [
+    resources.track(new MeshLambertMaterial({ color: 0x253f50 })),
+    resources.track(new MeshLambertMaterial({ color: 0x573234 })),
+    resources.track(new MeshLambertMaterial({ color: 0x3b4931 })),
+  ];
+  const backgroundSeats = [
+    [-0.96, 0], [0.96, 0], [0, -0.96], [0, 0.96],
+  ] as const;
+
+  for (const [tableIndex, [x, z]] of ([
     [-7.6, -6.4],
     [7.9, -6.8],
     [0, -8.6],
@@ -1248,20 +1295,37 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
     // reveals other tables rather than empty floor.
     [-6.9, -1.9],
     [7.2, -2.3],
-  ] as const) {
+  ] as const).entries()) {
     const distant = new Group();
     const top = new Mesh(
-      resources.track(new CylinderGeometry(0.88, 0.88, 0.09, 18)),
-      resources.track(new MeshLambertMaterial({ color: FELT_EDGE })),
+      backgroundTableTop,
+      backgroundFelt,
     );
     top.position.y = TABLE_HEIGHT;
     distant.add(top);
     const base = new Mesh(
-      resources.track(new CylinderGeometry(0.26, 0.36, TABLE_HEIGHT, 10)),
-      resources.track(new MeshLambertMaterial({ color: RAIL })),
+      backgroundTableBase,
+      backgroundRail,
     );
     base.position.y = TABLE_HEIGHT / 2;
     distant.add(base);
+    // Seated bodies are intentionally simple: a shoulder/torso mass plus head
+    // is enough to read as another live table at this distance.  No face detail
+    // or animation competes with the players at the primary table.
+    for (const [guestIndex, [guestX, guestZ]] of backgroundSeats.entries()) {
+      const guest = new Group();
+      const torso = new Mesh(backgroundTorso, backgroundClothes[(tableIndex + guestIndex) % backgroundClothes.length]);
+      torso.position.y = TABLE_HEIGHT * 0.72;
+      guest.add(torso);
+      const head = new Mesh(backgroundHead, backgroundSkin);
+      head.position.y = TABLE_HEIGHT * 0.72 + 0.25;
+      guest.add(head);
+      guest.position.set(guestX, 0, guestZ);
+      // A small variation prevents a repeated mannequin ring while preserving
+      // the low-detail background read.
+      guest.rotation.y = (guestIndex % 2 === 0 ? 0.15 : -0.15);
+      distant.add(guest);
+    }
     distant.position.set(x, 0, z);
     scene.add(distant);
   }
@@ -1565,16 +1629,6 @@ function cornerFoldGeometry(): BufferGeometry {
 }
 
 /**
- * Where a player's own stack sits, relative to their felt lane.
- *
- * Outboard of the cards and a little toward the player, which is where a rack
- * of chips lives on a real table: to one side of the play zone, behind the
- * betting line, on the owner's side of it.
- */
-const STACK_LOCAL_OFFSET_X = 0.185;
-const STACK_LOCAL_OFFSET_Z = -0.035;
-
-/**
  * Which seat actions are the dealer's job.
  *
  * Only three of them are: a deal is pitched by the dealer, a wager is raked in
@@ -1596,6 +1650,7 @@ function applySeat(
   startedAt: Map<number, number>,
   reducedMotion: boolean,
   transition: TableSceneState["transition"],
+  handId: string | undefined,
   resources: TableSceneResources,
   peeked: boolean,
 ): number {
@@ -1641,27 +1696,16 @@ function applySeat(
     their eyes.
   */
   /*
-    Face down, and face down *while being read*.
-
-    Every hand on the table lies face down, including the hero's -- that is what
-    a poker table looks like, and it is the only arrangement in which a hand is
-    actually private. `peeked` is the squeeze: the pair squares up, rolls back
-    toward its owner, and a hand comes over it for as long as they hold.
-
-    What the squeeze must not do is turn the card over. It used to swap the whole
-    top surface to the printed face, so holding the button laid the hero's hand
-    face-up on the felt in front of five opponents -- the exact thing a hole card
-    exists to prevent, and not what the gesture looks like anyway. A player lifts
-    the near corner a few millimetres and reads one index off the underside. So
-    the card keeps its back, and the flap under the lifted corner carries the
-    index. Release and it is cardboard again.
+    A private squeeze keeps both cards on the hero's felt lane. It rolls their
+    near edges upward toward the camera while the hands cover the lower halves;
+    that leaves the printed indexes readable to the player without becoming a
+    floating, full-card reveal in the middle of the table.
   */
   const squeezing = seat.isHero && peeked && !folded;
   /*
-    A squeeze is one motion: the two cards come together and their near edge
-    lifts off the felt until the printed side -- which is underneath, because
-    the cards are lying face down -- is turned toward the one person entitled
-    to read it.
+    A squeeze is one motion: the two cards come together and their near edges
+    lift toward the owner. The modest roll is deliberately well below vertical,
+    keeping rank text upright rather than flipping or forming a card triangle.
   */
   view.cards.children.forEach((card, index) => {
     const target = folded
@@ -1691,13 +1735,14 @@ function applySeat(
     const toPlayersLeft = index === 0 ? spread : -spread;
     card.position.set(
       local[0] + toPlayersLeft,
-      local[1] + (squeezing ? 0.002 : 0),
-      local[2] + (squeezing ? -0.018 : 0),
+      local[1] + (squeezing ? 0.024 : 0),
+      local[2] + (squeezing ? -0.028 : 0),
     );
-    card.rotation.x = 0;
-    // Flat on the cloth, always. The squeeze only turns them on the diagonal;
-    // a hole card that leaves the felt is a hole card the room can read.
-    card.rotation.y = squeezing ? (index === 0 ? 0.20 : 0.30) : 0;
+    // A real peek is a shallow roll about the card's long edge. It is not a
+    // vertical flip: the face remains upright in the hero camera and the far
+    // half remains behind the shielding hands.
+    card.rotation.x = squeezing ? -0.46 : 0;
+    card.rotation.y = squeezing ? (index === 0 ? 0.06 : -0.06) : 0;
     card.scale.setScalar(1);
     const mesh = card as Mesh;
     const code = seat.publicCardCodes?.[index];
@@ -1708,22 +1753,18 @@ function applySeat(
     // other seat while avoiding the old unreadable card-back regression.
     mesh.material = code
       ? resources.cardFaceMaterial(code)
-      : transition?.handId
-        ? resources.deckBackMaterial(deckColourForHand(transition.handId))
-        : resources.cardBackMaterial;
+      : resources.deckBackMaterial(deckColourForHand(handId ?? transition?.handId));
 
-    /*
-      The fold. A triangle of the card's printed side, lying back over the
-      corner it was turned from, carried as a child of the card so it inherits
-      the diagonal without being positioned twice.
-    */
+    // The old folded corner is intentionally retired during the full physical
+    // peek. The hands and shallow card roll now provide the concealment, not a
+    // floating index flap.
     let fold = card.getObjectByName("card-fold") as Mesh | undefined;
     if (!fold) {
       fold = new Mesh(cornerFoldGeometry(), resources.cardMaterial);
       fold.name = "card-fold";
       card.add(fold);
     }
-    fold.visible = squeezing && Boolean(code);
+    fold.visible = false;
     if (fold.visible && code) fold.material = resources.cardFoldMaterial(code);
   });
 
@@ -1743,8 +1784,8 @@ function applySeat(
       A seat's local +X is screen *left* from that seat's own camera, so "the
       player's right" is local -X.
     */
-    view.hand.position.set(local[0] - 0.112, local[1] + 0.008, local[2] - 0.052);
-    view.hand.rotation.set(-0.10, 0.55, 0);
+    view.hand.position.set(local[0], local[1] + 0.045, local[2] - 0.074);
+    view.hand.rotation.set(-0.16, 0, 0);
   }
 
   // The acting seat leans in; a folded one sits back.  Crucially, the arms do
@@ -1762,15 +1803,20 @@ function applySeat(
     [rightShoulder, rightElbow, 1],
   ] as const) {
     if (!shoulder || !elbow) continue;
-    shoulder.rotation.x = -gesture.shoulderPitch;
-    shoulder.rotation.y = side * gesture.shoulderYaw;
-    elbow.rotation.x = gesture.elbowBend;
+    const armIsMoving =
+      gesture.movingArm === "both" ||
+      (gesture.movingArm === "left" && side === -1) ||
+      (gesture.movingArm === "right" && side === 1);
+    const armWeight = armIsMoving ? 1 : 0;
+    shoulder.rotation.x = -gesture.shoulderPitch * armWeight;
+    shoulder.rotation.y = side * gesture.shoulderYaw * armWeight;
+    elbow.rotation.x = gesture.elbowBend * armWeight;
     // The palms land below the crest at the knock's midpoint, then recover.
     // Store the authored elbow height once; mutating relative to last frame
     // would slowly sink arms through the table.
     const authoredY = elbow.userData.authoredY as number | undefined;
     if (authoredY === undefined) elbow.userData.authoredY = elbow.position.y;
-    elbow.position.y = (authoredY ?? elbow.position.y) - gesture.handTap;
+    elbow.position.y = (authoredY ?? elbow.position.y) - gesture.handTap * armWeight;
   }
 
   const betChips = chipCountForAmount(seat.bet);
@@ -1793,11 +1839,12 @@ function applySeat(
     between two players. A fixed offset in the seat's local frame puts every
     stack in the same place relative to the person it belongs to.
   */
-  const stackLocal = seatLocalPoint(pose, pose.feltPosition);
+  const stackWorld = restingChipStackPosition(pose);
+  const stackLocal = seatLocalPoint(pose, stackWorld);
   view.stackChips.position.set(
-    stackLocal[0] + STACK_LOCAL_OFFSET_X,
+    stackLocal[0],
     TABLE_HEIGHT,
-    stackLocal[2] + STACK_LOCAL_OFFSET_Z,
+    stackLocal[2],
   );
 
   // Handed back so the dealer runs off the same clock as the seat it is serving.
@@ -1882,21 +1929,8 @@ const MAX_RENDERED_CHIPS = 18;
 const CHIPS_PER_COLUMN = 8;
 /** Slightly wider than the 0.035 chip radius so columns read as separate. */
 const CHIP_COLUMN_PITCH = 0.052;
-/*
-  Pot plaque offsets from its lane origin; see `setPotLanes`. Solved against the
-  projected far-rail band at all six native targets: this clears the centre
-  seat's nameplate by 3.3% of viewport height centre-to-centre while staying
-  behind the hero cards at z=0.50 and clear of an 18-chip pile.
-*/
-/*
-  The pot label is a physical hanging callout, not a HUD plate laid across the
-  felt.  Keeping it above the board frees the playing surface; the tether makes
-  its owner unambiguous even when the camera pans to either side of the table.
-*/
-const POT_PLAQUE_HEIGHT = 0.34;
-const POT_PLAQUE_FORWARD = 0.02;
-const POT_TETHER_RADIUS = 0.006;
-const POT_PLAQUE_SIZE = [0.22, 0.058] as const;
+/* Projected light, not a rope: the readout stays anchored to its chip pile. */
+const POT_HOLOGRAM_FORWARD = 0.02;
 
 /**
  * Repeated casino chips are one physical stack, not one draw call per chip.
@@ -2025,22 +2059,25 @@ function setPotLanes(
     const lane = new Group();
     const chips = new Group();
     chips.name = "pot-chip-stack";
-    const tether = new Mesh(
-      resources.ledger.track(new CylinderGeometry(POT_TETHER_RADIUS, POT_TETHER_RADIUS, 1, 8)),
-      resources.ledger.track(new MeshLambertMaterial({ color: 0x9b7b42 })),
+    const beam = new Mesh(
+      resources.ledger.track(new CylinderGeometry(POT_HOLOGRAM.beamRadius, POT_HOLOGRAM.beamRadius, 1, 8)),
+      resources.ledger.track(new MeshBasicMaterial({
+        color: 0xf6d36d,
+        transparent: true,
+        opacity: 0.82,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      })),
     );
-    tether.name = "pot-amount-tether";
+    beam.name = "pot-hologram-beam";
     const plaque = new Mesh(
-      resources.ledger.track(new PlaneGeometry(...POT_PLAQUE_SIZE)),
+      resources.ledger.track(new PlaneGeometry(...POT_HOLOGRAM.labelSize)),
       resources.potPlaqueMaterial("POT 0", "main"),
     );
     plaque.name = "pot-amount-plaque";
-    /*
-      It lives above the table and is tethered to the pile, rather than covering
-      cards, betting circles, or the board like the former felt-level plaque.
-    */
-    plaque.position.set(0, POT_PLAQUE_HEIGHT, POT_PLAQUE_FORWARD);
-    lane.add(chips, tether, plaque);
+    /* It projects above the pile rather than covering cards or betting circles. */
+    plaque.position.set(0, POT_HOLOGRAM.labelHeight, POT_HOLOGRAM_FORWARD);
+    lane.add(chips, beam, plaque);
     group.add(lane);
   }
   while (group.children.length > publicPots.length) group.remove(group.children[group.children.length - 1]);
@@ -2051,31 +2088,22 @@ function setPotLanes(
     lane.userData.publicPotId = pot.id;
     lane.userData.publicPotAmount = pot.amount;
     const chips = lane.getObjectByName("pot-chip-stack") as Group | undefined;
-    const tether = lane.getObjectByName("pot-amount-tether") as Mesh | undefined;
+    const beam = lane.getObjectByName("pot-hologram-beam") as Mesh | undefined;
     const plaque = lane.getObjectByName("pot-amount-plaque") as Mesh | undefined;
-    if (!chips || !tether || !plaque) return;
+    if (!chips || !beam || !plaque) return;
     setChipStack(chips, chipCountForAmount(pot.amount), pot.kind === "main" ? CHIP_POT_BIAS : CHIP_POT_BIAS - 1, resources);
     plaque.visible = pot.amount > 0;
-    tether.visible = pot.amount > 0;
-    plaque.material = resources.potPlaqueMaterial(potPlaqueLabel(pot.kind, pot.amount), pot.kind);
+    beam.visible = pot.amount > 0;
+    plaque.material = resources.potPlaqueMaterial(potHologramLabel(pot.kind, pot.amount), pot.kind);
     /*
-      The string starts at the top of the real chip stack and ends directly below
-      the sign.  A short stack and an 18-chip pot therefore remain connected
-      without ever allowing the sign to drift down into the playing area.
+      The hologram projects straight up from the pile centre. It does not track
+      stack height, which prevents the indicator from turning back into a rope.
     */
-    const pileTop = 0.022 + Math.min(0.12, chipStackCount(chips) * 0.006);
-    const tetherLength = Math.max(0.04, POT_PLAQUE_HEIGHT - pileTop - 0.035);
-    tether.position.set(0, pileTop + tetherLength / 2, POT_PLAQUE_FORWARD);
-    tether.scale.set(1, tetherLength, 1);
-    plaque.position.set(0, POT_PLAQUE_HEIGHT, POT_PLAQUE_FORWARD);
+    const beamLength = POT_HOLOGRAM.labelHeight - POT_HOLOGRAM.beamStartHeight;
+    beam.position.set(0, POT_HOLOGRAM.beamStartHeight + beamLength / 2, POT_HOLOGRAM_FORWARD);
+    beam.scale.set(1, beamLength, 1);
+    plaque.position.set(0, POT_HOLOGRAM.labelHeight, POT_HOLOGRAM_FORWARD);
   });
-}
-
-function potPlaqueLabel(kind: "main" | "side", amount: number): string {
-  const prefix = kind === "main" ? "POT" : "SIDE";
-  if (amount >= 10_000) return `${prefix} ${(amount / 1_000).toFixed(amount % 1_000 === 0 ? 0 : 1)}K`;
-  if (amount >= 1_000) return `${prefix} ${(amount / 1_000).toFixed(1)}K`;
-  return `${prefix} ${Math.max(0, Math.round(amount))}`;
 }
 
 function buildDealerDeck(resources: TableSceneResources, name: string): Group {
@@ -2102,7 +2130,9 @@ function setDealerCardEquipment(
   resources: TableSceneResources,
 ): void {
   const transition = state.transition;
-  const handId = transition?.handId;
+  // The public transition is transient.  Once an event settles it disappears,
+  // but the physical pack must remain the same colour until the next hand.
+  const handId = state.handId ?? transition?.handId;
   const active = deckColourForHand(handId);
   const inactive = inactiveDeckColour(handId);
   for (const card of liveDeck.children) (card as Mesh).material = resources.deckBackMaterial(active);
@@ -2137,6 +2167,7 @@ function setBoardCards(
   codes: readonly string[] = [],
   resources: TableSceneResources,
   transition?: SceneTransition,
+  handId?: string,
 ): void {
   while (group.children.length < count) {
     const card = new Mesh(resources.cardGeometry, resources.cardMaterial);
@@ -2163,7 +2194,7 @@ function setBoardCards(
       // Face content is held until the flip completes, avoiding an exposed
       // face travelling through the room before its public reveal.
       mesh.material = transition.progress < 0.68
-        ? resources.deckBackMaterial(deckColourForHand(transition.handId))
+        ? resources.deckBackMaterial(deckColourForHand(handId ?? transition.handId))
         : resources.cardFaceMaterial(codes[index] ?? "");
     } else {
       mesh.position.set((index - 2) * 0.105 * BOARD_CARD_SCALE, 0, 0);

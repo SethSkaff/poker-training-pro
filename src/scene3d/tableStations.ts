@@ -60,7 +60,15 @@ export const DEALER_ANGLE_DEGREES = 180;
   loom over a third of the frame. 72 degrees of clearance reads as sitting next to
   the dealer rather than inside them, and still leaves 0.8 m between neighbours.
 */
-export const PLAYER_ANGLES_DEGREES = [-108, -66, -22, 22, 66, 108] as const;
+/*
+  Six stations are intentionally spaced on a regular 48 degree pitch.  The
+  previous end lanes stopped at 108 degrees, leaving only 306 mm between their
+  printed play areas at the capsule's narrow ends.  It read as overlapping,
+  skewed boxes even though the chairs themselves cleared.  Moving the end lanes
+  to 120 degrees gives every tournament lane a real gap while keeping a clear
+  dealer working bay across the far rail.
+*/
+export const PLAYER_ANGLES_DEGREES = [-120, -72, -24, 24, 72, 120] as const;
 export const PLAYER_STATION_COUNT = PLAYER_ANGLES_DEGREES.length;
 
 export interface Station {

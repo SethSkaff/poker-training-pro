@@ -44,6 +44,19 @@ describe("scene gesture grammar", () => {
     expect(fold.elbowBend).toBeGreaterThan(0);
   });
 
+  it("uses one hand for a single check knock, then returns to rest", () => {
+    const approach = sceneGestureFor("check", 0.30, false, false);
+    const settled = sceneGestureFor("check", 0.80, false, false);
+
+    expect(approach.movingArm).toBe("right");
+    expect(approach.handTap).toBeGreaterThan(0);
+    expect(approach.shoulderPitch).toBeGreaterThan(0);
+    expect(approach.elbowBend).toBeGreaterThan(0);
+    expect(settled.handTap).toBeCloseTo(0, 8);
+    expect(settled.shoulderPitch).toBeCloseTo(0, 8);
+    expect(settled.elbowBend).toBeCloseTo(0, 8);
+  });
+
   it("preserves the stable acting and folded terminal treatments", () => {
     expect(sceneGestureFor(undefined, 0, true, false).bodyLean).toBe(0.06);
     expect(sceneGestureFor(undefined, 0, false, true)).toMatchObject({

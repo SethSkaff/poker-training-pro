@@ -17,6 +17,26 @@ describe("table scene snapshot", () => {
     expect(first.seats.at(-1)).toMatchObject({ acting: true, action: "bet" });
   });
 
+  it("carries a stable hand identity independently of transient presentation events", () => {
+    const settled = createTableSceneSnapshot({ ...input, handId: "tournament:hand-9" });
+    const dealing = createTableSceneSnapshot({
+      ...input,
+      handId: "tournament:hand-9",
+      transition: createSceneTransition({
+        id: "tournament:hand-9:flop",
+        kind: "board-card-dealt",
+        handId: "tournament:hand-9",
+        street: "flop",
+        cardIndex: 0,
+        card: { rank: "A", suit: "spades" },
+      }, 0.4, false),
+    });
+    const nextHand = createTableSceneSnapshot({ ...input, handId: "tournament:hand-10" });
+    expect(settled.handId).toBe("tournament:hand-9");
+    expect(dealing.handId).toBe(settled.handId);
+    expect(nextHand.handId).toBe("tournament:hand-10");
+  });
+
   it("does not accept private cards and omits eliminated seats", () => {
     const snapshot = createTableSceneSnapshot({ ...input, players: [...input.players, { id: "out", canonicalSeat: 7, stack: 0, bet: 0, status: "out" }] });
     expect(snapshot.seats.map((seat) => seat.id)).not.toContain("out");

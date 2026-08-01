@@ -60,6 +60,18 @@ describe("scene character presentation", () => {
     ledger.dispose();
   });
 
+  it("uses a continuous textured human shell rather than a missing or flat torso", () => {
+    const ledger = createSceneResourceLedger();
+    const view = buildCharacter(describeOpponentCharacter("sculpted-card-room-player"), ledger);
+    const [garment] = meshesNamed(view.root, "garment-base");
+    expect(garment).toBeTruthy();
+    expect(garment.geometry.getAttribute("position").count).toBeGreaterThan(30);
+    // The surface has UVs even though the present material is procedural. This
+    // keeps the model ready for a fabric texture without a geometry rewrite.
+    expect(garment.geometry.getAttribute("uv").count).toBeGreaterThan(30);
+    ledger.dispose();
+  });
+
   it("gives the dealer readable facial features and a neutral uniform cap", () => {
     const ledger = createSceneResourceLedger();
     const dealer = buildDealer("#d8ab86", ledger);

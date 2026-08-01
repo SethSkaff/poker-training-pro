@@ -61,6 +61,7 @@ import { gameAudio, type SoundName } from "../lib/audio";
 import { describeCallAction } from "../lib/actionLabels";
 import { isShortStack, seatChipStackCount } from "../lib/chipStackDepth";
 import { describeTrainingContext } from "../lib/trainingScenarioContext";
+import { cameraPanFromHorizontalDrag } from "../lib/tableCameraControls";
 import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
 /*
   Lazy so three.js stays out of the initial bundle entirely, which is what keeps
@@ -1603,11 +1604,14 @@ export function PokerTable({
     interaction surface and it sits on top of the canvas, so the guard is what
     keeps "press Fold" from also swinging the view when the pointer wobbles.
   */
-  const cameraDragRef = useRef<{ pointerId: number; startX: number; startPan: number } | null>(null);
-  const CAMERA_DRAG_PIXELS_PER_PAN = 260;
+  const cameraDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startPan: number;
+  } | null>(null);
 
   const beginCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (cameraFixed || event.button !== 0) return;
+    if (cameraFixed || event.button !== 0 || !event.isPrimary) return;
     if (
       event.target instanceof Element
       && event.target.closest('button, a, input, select, textarea, [role="button"], [role="slider"]')
@@ -1619,6 +1623,9 @@ export function PokerTable({
       startX: event.clientX,
       startPan: cameraPan,
     };
+    // The visual table has multiple DOM layers. Capture on their shared stage
+    // so a look begun on open felt keeps updating even after the cursor crosses
+    // a plaque or leaves the canvas bounds.
     event.currentTarget.setPointerCapture(event.pointerId);
   }, [cameraFixed, cameraPan]);
 
@@ -1626,9 +1633,17 @@ export function PokerTable({
     const drag = cameraDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     // Drag right, look right: the same direction the "Look right" control and
-    // the right arrow key move the view.
-    const next = drag.startPan + (event.clientX - drag.startX) / CAMERA_DRAG_PIXELS_PER_PAN;
-    setCameraPan(Math.max(-2, Math.min(2, next)));
+    // the right arrow key move the view.  This remains a continuous float,
+    // rather than resolving the pointer to one of the old seat-view steps.
+    const next = cameraPanFromHorizontalDrag(
+      drag.startPan,
+      drag.startX,
+      event.clientX,
+    );
+    setCameraPan((current) => (current === next ? current : next));
+    // Avoid selecting felt labels while panning, without consuming the initial
+    // press that cards and action controls need for their own gestures.
+    event.preventDefault();
   }, []);
 
   const endCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
@@ -1638,6 +1653,10 @@ export function PokerTable({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+  }, []);
+
+  const clearCameraDrag = useCallback(() => {
+    cameraDragRef.current = null;
   }, []);
   const [sceneAvailability, setSceneAvailability] =
     useState<SceneAvailability>({ status: "idle" });
@@ -2611,22 +2630,14 @@ export function PokerTable({
   ]);
 
   /*
-    Press and hold to look at your own hand, release to put it back down.
-
-    It used to be a toggle: one click turned the hole cards face up and they
-    stayed that way. That is not how anyone holds a poker hand, and with the
-    cards now lying physically on the felt it meant the hero's hand sat face up
-    on the table for the rest of the deal. Holding is also the honest gesture --
-    the cards are exposed for exactly as long as you are looking at them.
-
-    The keyboard binding stays a toggle. Requiring a held key to read your own
-    cards is a hostile thing to ask of anyone who cannot hold one.
+    A short click toggles the same private peek as the Space shortcut. Dragging
+    toward the dealer remains reserved for folding, so a player never has to
+    keep a mouse button depressed just to read their own two cards.
   */
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!canStartHeroGesture(heroFoldState)) return;
     dragStart.current = { x: event.clientX, y: event.clientY };
     didDrag.current = false;
-    setPeeked(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -2654,9 +2665,16 @@ export function PokerTable({
     const shouldFold = !cancelled && didDrag.current && foldProgress >= 82;
     dragStart.current = null;
     setDragging(false);
-    setPeeked(false);
-    if (shouldFold) handleAction("fold");
-    else if (didDrag.current || cancelled) setFoldProgress(0);
+    if (shouldFold) {
+      setPeeked(false);
+      handleAction("fold");
+    } else if (didDrag.current || cancelled) {
+      setPeeked(false);
+      setFoldProgress(0);
+    } else {
+      // Pointer release without a drag is a normal click: mirror Space.
+      setPeeked((value) => !value);
+    }
     didDrag.current = false;
   };
 
@@ -2892,6 +2910,10 @@ export function PokerTable({
         : presentation.action ? sceneActionForCommand(presentation.action) : undefined];
   }));
   const sceneSnapshot = createTableSceneSnapshot({
+    // The presentation event is intentionally short-lived; handNumber is the
+    // stable identity that keeps both physical packs and every dealt back in
+    // lockstep for the entire round.
+    handId: tournament ? `tournament:hand-${tournament.handNumber}` : scenario.id,
     players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status })),
     heroId: scenario.players.find((player) => player.seat === scenario.heroSeat)?.id ?? "",
     actingPlayerId: scenario.actingPlayerId,
@@ -3329,6 +3351,7 @@ export function PokerTable({
           onPointerMove={updateCameraDrag}
           onPointerUp={endCameraDrag}
           onPointerCancel={endCameraDrag}
+          onLostPointerCapture={clearCameraDrag}
         >
           {/*
             The hero's state lives at the hero's seat, not in a floating panel

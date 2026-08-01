@@ -32,6 +32,7 @@ import { trainingScenarios } from "./data/trainingScenarios";
 import { gameAudio } from "./lib/audio";
 import { tournamentResultAudioCue } from "./lib/tournamentResultAudio";
 import { productionMusicManifest } from "./data/musicPlaylistManifest";
+import { createBrowserMusicSink } from "./lib/browserMusicSink";
 import {
   createMusicPlaylist,
   musicVolumeFromSettings,
@@ -640,7 +641,7 @@ export default function App() {
   const playlistRef = useRef<MusicPlaylistController | null>(null);
   useEffect(() => {
     const playlist = createMusicPlaylist(productionMusicManifest, {
-      sink: { createVoice: () => null },
+      sink: createBrowserMusicSink(),
       random: { next: () => Math.random() },
       now: () =>
         typeof performance !== "undefined" ? performance.now() : Date.now(),

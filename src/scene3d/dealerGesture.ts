@@ -51,6 +51,9 @@ export interface DealerGesture {
  * three, because the pot has to travel all the way to a seat.
  */
 const DEAL_PITCH = 0.26;
+/** The dealer first takes the card at the shoe, then follows through to a seat. */
+const DEAL_PICKUP_FRACTION = 0.22;
+const DEAL_RELEASE_FRACTION = 0.38;
 const SWEEP_PITCH = 0.44;
 const PUSH_PITCH = 0.40;
 
@@ -110,14 +113,29 @@ export function dealerGestureFor(
 
   switch (work.task) {
     case "deal": {
-      // Out and back inside one beat: the arm extends, the card leaves, the arm
-      // returns. The yaw leads the pitch, because a dealer is already looking
-      // where they are about to pitch.
-      const envelope = Math.sin(Math.PI * t);
+      /*
+        A pitch has a readable cause-and-effect order:
+
+        1. reach down over the shoe and take the top card,
+        2. turn and follow through toward the recipient,
+        3. recover after the card has left the hand.
+
+        The previous single sine wave began the hand and the card at the same
+        instant. That reads as a card flying off a deck while a nearby prop
+        happens to wave, rather than a dealer dealing it.
+      */
+      const pickup = Math.min(1, t / DEAL_PICKUP_FRACTION);
+      const release = Math.max(0, Math.min(1, (t - DEAL_RELEASE_FRACTION) / (1 - DEAL_RELEASE_FRACTION)));
+      const pickupReach = Math.sin(Math.PI * pickup * 0.5)
+        * (t <= 0.33 ? 1 : Math.max(0, 1 - (t - 0.33) / 0.25));
+      const followThrough = Math.sin(Math.PI * Math.max(0, Math.min(1, (t - 0.14) / 0.72)));
+      const envelope = Math.max(pickupReach * 0.70, followThrough);
       return {
         task: "deal",
-        shoulderPitch: -DEAL_PITCH * envelope,
-        shoulderYaw: bearing * Math.sin(Math.PI * Math.min(1, t * 1.4)),
+        shoulderPitch: -DEAL_PITCH * 1.30 * envelope,
+        // Keep both hands square at the shoe until the pickup is complete;
+        // the target turn occurs only while the card is leaving the dealer.
+        shoulderYaw: bearing * Math.sin(Math.PI * Math.min(1, release * 0.84)),
         lean: 0.016 * envelope,
       };
     }

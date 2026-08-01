@@ -164,9 +164,74 @@ export function turnIndicatorPosition(pose: SeatPose): readonly [number, number,
   ];
 }
 
-/** Distance from a seat's felt lane to its printed bet circle; see build_table.py. */
-export const BET_CIRCLE_FORWARD = 0.082;
+/**
+ * Tournament-style player lane dimensions.  The card rectangle and wager
+ * circle are deliberately separate marks: cards remain square to their owner,
+ * resting chips can sit beside them, and a committed wager has one unambiguous
+ * landing spot toward the middle of the felt.
+ */
+export const CARD_ZONE_WIDTH = 0.25;
+export const CARD_ZONE_DEPTH = 0.16;
+/** Distance from a seat's card lane to its printed bet circle; see build_table.py. */
+export const BET_CIRCLE_FORWARD = 0.125;
 export const BET_CIRCLE_RADIUS = 0.040;
+
+/**
+ * Conservative footprint for the deepest rendered chip rack.
+ *
+ * Eighteen chips can resolve into three short columns.  Reserving 130 mm from
+ * the felt edge covers those columns, their edge spots, and the small visual
+ * gap a stack needs before the padded rail.  It is intentionally a scene
+ * placement value rather than a table-layout value: changing it cannot move a
+ * card lane or a betting circle.
+ */
+export const CHIP_STACK_SAFE_RADIUS = 0.13;
+
+/** Chip racks sit beside the cards, slightly toward their owner. */
+export const CHIP_STACK_LOCAL_SIDE_OFFSET = 0.145;
+export const CHIP_STACK_LOCAL_OWNER_OFFSET = -0.018;
+
+/**
+ * Project a point into the inset capsule that remains after reserving room for
+ * a full chip rack.  The playing surface is a capsule rather than a rectangle;
+ * checking only X/Z bounds let corner-seat stacks clip through the curved rail.
+ */
+function clampToSafeFelt(
+  point: readonly [number, number, number],
+): readonly [number, number, number] {
+  const straightHalfLength = TABLE_WIDTH / 2 - TABLE_DEPTH / 2;
+  const safeRadius = TABLE_DEPTH / 2 - CHIP_STACK_SAFE_RADIUS;
+  const centreX = Math.min(straightHalfLength, Math.max(-straightHalfLength, point[0]));
+  const offsetX = point[0] - centreX;
+  const offsetZ = point[2];
+  const distance = Math.hypot(offsetX, offsetZ);
+  if (distance <= safeRadius || distance === 0) return point;
+  const scale = safeRadius / distance;
+  return [
+    centreX + offsetX * scale,
+    point[1],
+    offsetZ * scale,
+  ] as const;
+}
+
+/**
+ * Resting stack for one seat, safely inside that same seat's play lane.
+ *
+ * This uses the owner's local frame so every player has their chips on the
+ * same side of their cards. The final capsule clamp protects corner stations
+ * from rail overlap without changing any card, bet-circle, or seat-zone anchor.
+ */
+export function restingChipStackPosition(
+  pose: SeatPose,
+): readonly [number, number, number] {
+  const cardLocal = seatLocalPoint(pose, pose.feltPosition);
+  const desired = seatWorldPoint(pose, [
+    cardLocal[0] + CHIP_STACK_LOCAL_SIDE_OFFSET,
+    TABLE_HEIGHT,
+    cardLocal[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
+  ]);
+  return clampToSafeFelt(desired);
+}
 
 /** Resolve the actor cue by stable player identity, never an array slot. */
 export function turnIndicatorPositionForPlayer(
@@ -405,7 +470,14 @@ export function dealtCardPosition(
   pose: SeatPose,
   progress: number,
 ): readonly [number, number, number] {
-  const t = actionEase(progress);
+  const action = actionEase(progress);
+  /*
+    Leave the card on the dealer's shoe during the pickup.  Its outward travel
+    starts after the dealer's hand has reached the pack, which makes each deal
+    read as a throw/slide rather than a card spawning into a long arc.
+  */
+  const pickup = 0.18;
+  const t = action <= pickup ? 0 : actionEase((action - pickup) / (1 - pickup));
   // Cards come off the dealer's shoe, so a deal visibly originates with them.
   const from = TABLE_ANCHORS.dealerShoe;
   const [tx, ty, tz] = pose.feltPosition;

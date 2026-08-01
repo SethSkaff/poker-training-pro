@@ -71,16 +71,17 @@ RACETRACK_INSET = 0.275
 PRINT_LIFT = 0.0012
 
 # Per-seat printed play zone, authored facing -Y (three.js +Z, toward its owner).
-PLAY_ZONE_WIDTH = 0.300
-# 0.25 deep, not 0.17. At 0.17 the bet circle had nowhere to go: two hole cards
-# span 0.123 m of the zone's depth on their own, so a 0.09 m circle placed
-# anywhere inside it landed on top of them -- and so did the actor cue drawn on
-# that circle. A deeper zone puts the cards and the betting spot side by side,
-# which is the layout a printed play zone exists to provide.
-PLAY_ZONE_DEPTH = 0.250
+PLAY_ZONE_WIDTH = 0.250
+# The card rectangle is its own straight, compact mark. The wager circle sits
+# just beyond it toward the table centre, instead of being squeezed inside one
+# oversized rounded square. This gives six evenly spaced tournament lanes with
+# no overlapping outlines at the capsule ends.
+PLAY_ZONE_DEPTH = 0.160
 PLAY_ZONE_CORNER = 0.035
 BET_CIRCLE_RADIUS = 0.040
-BET_CIRCLE_FORWARD = -0.082
+# Blender +Y exports as three.js -Z, so the negative authored value becomes the
+# runtime's positive (toward-centre) station-forward offset.
+BET_CIRCLE_FORWARD = -0.125
 
 # 1.25x a real playing card, at the true 0.714 card ratio.
 CARD_WIDTH = 0.088

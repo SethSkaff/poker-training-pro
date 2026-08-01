@@ -18,6 +18,15 @@ describe("table camera controls", () => {
     expect(cameraPanFromHorizontalDrag(0, 400, 140)).toBe(-1);
   });
 
+  it("preserves fine-grained free-look positions instead of snapping to seats", () => {
+    const first = cameraPanFromHorizontalDrag(0, 120, 254);
+    const second = cameraPanFromHorizontalDrag(0, 120, 255);
+
+    expect(first).toBeCloseTo(134 / 260, 8);
+    expect(second).toBeCloseTo(135 / 260, 8);
+    expect(second - first).toBeCloseTo(1 / 260, 8);
+  });
+
   it("clamps a drag at either end of the view", () => {
     expect(cameraPanFromHorizontalDrag(1.9, 0, 1_000)).toBe(TABLE_CAMERA_MAX_PAN);
     expect(cameraPanFromHorizontalDrag(-1.9, 1_000, 0)).toBe(TABLE_CAMERA_MIN_PAN);

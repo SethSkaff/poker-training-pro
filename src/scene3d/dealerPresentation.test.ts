@@ -10,6 +10,16 @@ describe("dealer public deck presentation", () => {
     expect(deckColourForHand("hand-4")).toBe(deckColourForHand("hand-4"));
   });
 
+  it("holds one pack colour for every event in a hand and changes only at the next hand", () => {
+    const activeHand = "tournament:hand-41";
+    const eventsInHand = ["hole-cards-dealt", "flop", "turn", "river", "showdown"];
+    expect(eventsInHand.map(() => deckColourForHand(activeHand))).toEqual([
+      "red", "red", "red", "red", "red",
+    ]);
+    expect(deckColourForHand("tournament:hand-42")).toBe("blue");
+    expect(inactiveDeckColour(activeHand)).toBe("blue");
+  });
+
   it("pitches each board card from the dealer shoe and ends it face-up on its board slot", () => {
     const start = boardDealPose(0, 0);
     const end = boardDealPose(2, 1);
