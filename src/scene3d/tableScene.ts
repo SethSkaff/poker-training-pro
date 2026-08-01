@@ -348,9 +348,16 @@ interface TableSceneResources {
  */
 function flexedHeroPeekGeometry(): BufferGeometry {
   const strips = 8;
-  const width = 0.176;
-  const hiddenEdge = -0.020;
-  const revealedEdge = 0.122;
+  /*
+    This must retain the authored card's 88 mm width.  The former 176 mm
+    value silently doubled a card only while peeking, which is why a squeeze
+    filled the foreground like a billboard despite `card.scale` staying one.
+    Only the *length* is cropped: this is the printed half lifted off the
+    near edge, not a scaled-up replacement card.
+  */
+  const width = 0.088;
+  const hiddenEdge = -0.010;
+  const revealedEdge = 0.058;
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
@@ -360,8 +367,10 @@ function flexedHeroPeekGeometry(): BufferGeometry {
     const z = hiddenEdge + (revealedEdge - hiddenEdge) * progress;
     // The first few millimetres stay on the felt under the fingers; the rank
     // edge rises smoothly.  A sine curve avoids the old hard triangular kink.
-    const y = 0.002 + Math.sin(progress * Math.PI * 0.5) * 0.062;
-    const textureV = 0.46 + progress * 0.54;
+    const y = 0.002 + Math.sin(progress * Math.PI * 0.5) * 0.032;
+    /* CanvasTexture is flipped vertically.  This samples the real printed
+       corner/rank band, rather than the oversized centre pip. */
+    const textureV = 0.74 + progress * 0.24;
     for (const x of [-width / 2, width / 2]) {
       positions.push(x, y, z);
       uvs.push(x < 0 ? 0 : 1, textureV);
@@ -415,28 +424,44 @@ function createTableSceneResources(): TableSceneResources {
     */
     // Ivory card stock, not a self-lit white panel.  It stays visibly white
     // against the felt while leaving enough headroom for the warm pendant.
-    context.fillStyle = "#e7e1d5";
+    context.fillStyle = "#e9e3d7";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = "#b9ad99";
-    context.lineWidth = 3;
+    // Bring back the printed personality of the earlier deck. A quiet paper
+    // grain and double rule make the face read as actual card stock at a
+    // distance, without turning the card into an emissive white rectangle.
+    context.strokeStyle = "#a99c87";
+    context.lineWidth = 2;
     context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+    context.strokeStyle = "rgba(106, 91, 70, 0.28)";
+    context.lineWidth = 1;
+    context.strokeRect(7, 7, canvas.width - 14, canvas.height - 14);
+    context.fillStyle = "rgba(117, 98, 74, 0.055)";
+    for (let y = 14; y < canvas.height - 10; y += 9) {
+      for (let x = (y / 9) % 2 ? 12 : 16; x < canvas.width - 8; x += 13) {
+        context.fillRect(x, y, 1, 1);
+      }
+    }
     const ink = face.red ? "#c02531" : "#16202b";
 
     // The centre pip, big enough to name the suit across the table.
     context.fillStyle = ink;
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.globalAlpha = 0.16;
-    context.font = `${Math.round(canvas.height * 0.62)}px Georgia, serif`;
+    context.globalAlpha = 0.12;
+    context.font = `${Math.round(canvas.height * 0.58)}px Georgia, serif`;
     context.fillText(face.glyph, canvas.width / 2, canvas.height * 0.5);
     context.globalAlpha = 1;
 
     // Corner index, and its point reflection: rank over pip, as printed.
     const index = () => {
-      context.font = `700 ${Math.round(canvas.height * 0.19)}px Georgia, serif`;
-      context.fillText(face.rank, canvas.width * 0.155, canvas.height * 0.13);
-      context.font = `${Math.round(canvas.height * 0.14)}px Georgia, serif`;
-      context.fillText(face.glyph, canvas.width * 0.155, canvas.height * 0.27);
+      // A properly anchored, heavier printed index. The former midline baseline
+      // clipped the rank at the top of the canvas and left it soft at table
+      // distance; these remain corner indices, just readable ones.
+      context.textBaseline = "alphabetic";
+      context.font = `800 ${Math.round(canvas.height * 0.245)}px Georgia, serif`;
+      context.fillText(face.rank, canvas.width * 0.135, canvas.height * 0.205);
+      context.font = `700 ${Math.round(canvas.height * 0.175)}px Georgia, serif`;
+      context.fillText(face.glyph, canvas.width * 0.145, canvas.height * 0.345);
     };
     index();
     context.save();
@@ -451,7 +476,10 @@ function createTableSceneResources(): TableSceneResources {
     texture.minFilter = LinearFilter;
     const material = track(new MeshStandardMaterial({
       map: texture,
-      color: 0xe6e0d4,
+      // Preserve the ivory ink values painted into the texture. This is still
+      // a rough, fully light-reactive material (not a glow), but it avoids a
+      // second grey multiplier making ranks disappear in the dimmer seats.
+      color: 0xf4efe4,
       roughness: 0.94,
       metalness: 0,
     }));
@@ -511,7 +539,7 @@ function createTableSceneResources(): TableSceneResources {
     */
     const material = track(new MeshStandardMaterial({
       map: texture,
-      color: 0xe4ddd0,
+      color: 0xf1eadf,
       roughness: 0.96,
       metalness: 0,
       side: DoubleSide,
@@ -542,8 +570,9 @@ function createTableSceneResources(): TableSceneResources {
     if (!context) return new MeshStandardMaterial({ color: 0x6f202a, roughness: 0.94, metalness: 0 });
     context.fillStyle = colour;
     context.fillRect(0, 0, canvas.width, canvas.height);
-    // The white border a real back leaves round its printed panel.
-    context.fillStyle = "#d9d0c1";
+    // The warm ivory border and inner rule preserve the older deck's printed
+    // character while remaining physically shaded by the room lights.
+    context.fillStyle = "#e7ded0";
     context.fillRect(0, 0, canvas.width, 4);
     context.fillRect(0, canvas.height - 4, canvas.width, 4);
     context.fillRect(0, 0, 4, canvas.height);
@@ -552,7 +581,7 @@ function createTableSceneResources(): TableSceneResources {
     context.beginPath();
     context.rect(5, 5, canvas.width - 10, canvas.height - 10);
     context.clip();
-    context.strokeStyle = "rgba(240,231,213,0.18)";
+    context.strokeStyle = "rgba(248,239,219,0.30)";
     context.lineWidth = 1;
     for (let offset = -canvas.height; offset < canvas.width * 2; offset += 7) {
       context.beginPath();
@@ -564,6 +593,16 @@ function createTableSceneResources(): TableSceneResources {
       context.lineTo(offset + canvas.height, 0);
       context.stroke();
     }
+    // A small guilloche medallion gives the back an identifiable deck design
+    // instead of a generic flat colour when it is seen close to the hero.
+    context.strokeStyle = "rgba(248,239,219,0.42)";
+    context.lineWidth = 1;
+    context.beginPath();
+    context.ellipse(canvas.width / 2, canvas.height / 2, 13, 19, 0, 0, Math.PI * 2);
+    context.stroke();
+    context.beginPath();
+    context.ellipse(canvas.width / 2, canvas.height / 2, 8, 13, 0, 0, Math.PI * 2);
+    context.stroke();
     context.restore();
     const texture = track(new CanvasTexture(canvas));
     texture.colorSpace = SRGBColorSpace;
@@ -571,7 +610,9 @@ function createTableSceneResources(): TableSceneResources {
     texture.minFilter = LinearFilter;
     return new MeshStandardMaterial({
       map: texture,
-      color: 0xdfd8cc,
+      // Let the drawn red/blue ink through exactly; roughness and the room
+      // lighting, rather than a grey material multiplier, keep it matte.
+      color: 0xffffff,
       roughness: 0.94,
       metalness: 0,
     });
@@ -1699,30 +1740,36 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
   const skin = resources.ledger.track(new MeshLambertMaterial({ color: 0xd2a07b }));
   const palmGeometry = resources.ledger.track(new SphereGeometry(1, 12, 8));
   const fingerGeometry = resources.ledger.track(new CylinderGeometry(0.010, 0.012, 0.074, 8));
-  const addHand = (x: number, z: number, yaw: number, mirror: number) => {
+  const addHand = (name: string, x: number, z: number, yaw: number, mirror: number) => {
     const hand = new Group();
+    hand.name = name;
     hand.position.set(x, 0, z);
     hand.rotation.y = yaw;
     const palm = new Mesh(palmGeometry, skin);
     // Keep the palms below the raised lip.  The first version was large enough
     // to hide both ranks, which defeated the entire private-peek gesture.
-    palm.scale.set(0.042, 0.014, 0.050);
+    palm.scale.set(0.036, 0.012, 0.040);
     palm.position.set(0, 0, 0);
     hand.add(palm);
     // Four curled fingers cross the card's far edge. Their stagger is what
     // prevents the silhouette from becoming the old single triangular flap.
     for (let finger = 0; finger < 4; finger += 1) {
       const segment = new Mesh(fingerGeometry, skin);
-      segment.position.set((finger - 1.5) * 0.016, 0.007, mirror * 0.040);
-      segment.rotation.set(Math.PI / 2.65, 0, (finger - 1.5) * 0.06);
+      segment.position.set((finger - 1.5) * 0.014, 0.006, mirror * 0.030);
+      segment.rotation.set(Math.PI / 2.8, 0, (finger - 1.5) * 0.05);
       hand.add(segment);
     }
     hands.add(hand);
   };
-  // One hand is closest to the player and supports the packet; the other
-  // reaches over from the right, matching a normal two-card squeeze.
-  addHand(-0.084, -0.100, -0.18, 1);
-  addHand(0.084, -0.064, 0.30, -1);
+  /*
+    These are deliberately named roles instead of a mirrored pair.  The left
+    hand braces and bends the near edges upward; the right hand crosses the
+    packet lightly, with its thumb/fingers shielding the unexposed half.  The
+    roles are asymmetric on purpose: mirror-imaged palms looked like one hand
+    faced backward in first person.
+  */
+  addHand("peek-lift-hand", -0.046, -0.052, -0.10, 1);
+  addHand("peek-shield-hand", 0.050, 0.016, 0.12, -1);
   return hands;
 }
 
@@ -1853,8 +1900,8 @@ function applySeat(
     const toPlayersLeft = index === 0 ? spread : -spread;
     card.position.set(
       local[0] + toPlayersLeft,
-      local[1] + (squeezing ? 0.004 : 0),
-      local[2] + (squeezing ? -0.012 : 0),
+      local[1] + (squeezing ? 0.003 : 0),
+      local[2] + (squeezing ? -0.006 : 0),
     );
     // The card's *geometry* now flexes, rather than rotating an entire rigid
     // rectangle. Keeping the packet level preserves the printed orientation
@@ -1902,8 +1949,8 @@ function applySeat(
       A seat's local +X is screen *left* from that seat's own camera, so "the
       player's right" is local -X.
     */
-    view.hand.position.set(local[0], local[1] + 0.030, local[2] - 0.108);
-    view.hand.rotation.set(-0.10, 0, 0);
+    view.hand.position.set(local[0], local[1] + 0.018, local[2] - 0.060);
+    view.hand.rotation.set(-0.04, 0, 0);
   }
 
   // The acting seat leans in; a folded one sits back.  Crucially, the arms do

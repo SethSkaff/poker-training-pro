@@ -43,7 +43,7 @@ describe("seated camera controls", () => {
     // It doubles as the readout of where the camera is pointing.
     expect(table).toContain("table.camera.centered");
     expect(table).toContain("table.camera.offset");
-    expect(table).toContain("disabled={cameraFixed || effectiveCameraPan === 0}");
+    expect(table).toContain("disabled={effectiveCameraPan === 0}");
   });
 
   it("bounds the pan on every path, so normal play has no free camera", () => {
@@ -54,11 +54,12 @@ describe("seated camera controls", () => {
     }
   });
 
-  it("keeps reduced and off camera settings at the exact recenter pose", () => {
-    expect(table).toContain('const cameraFixed = settings.reducedMotion || settings.cameraMotion === "off"');
-    expect(table).toContain("const effectiveCameraPan = cameraFixed ? 0 : cameraPan");
+  it("keeps direct player look available when automatic camera motion is disabled", () => {
+    expect(table).toContain('const cameraMotionSuppressed =');
+    expect(table).toContain("const effectiveCameraPan = cameraPan");
     expect(table).toContain("cameraPan: effectiveCameraPan");
-    expect(table).toContain("if (!cameraFixed) setCameraPan");
+    expect(table).toContain('cameraMotion: cameraMotionSuppressed ? "off" : settings.cameraMotion');
+    expect(table).not.toContain("if (cameraFixed && cameraPan !== 0)");
   });
 
   it("exposes sensitivity, zoom, and an automatic-camera-motion switch", () => {
@@ -68,9 +69,8 @@ describe("seated camera controls", () => {
     // The pan step is what sensitivity actually changes.
     expect(table).toContain('settings.cameraSensitivity === "low"');
     expect(table).toContain('settings.cameraView === "close"');
-    expect(table).toContain("cameraMotion: settings.cameraMotion");
-    // Camera-off fixes only the seated view; it must not silently turn
-    // independent table-action motion into reduced motion.
+    expect(table).toContain('cameraMotion: cameraMotionSuppressed ? "off" : settings.cameraMotion');
+    // Automatic camera motion remains independent from table-action motion.
     expect(table).toContain('reducedMotion: settings.reducedMotion || settings.transitionMotion === "off"');
   });
 });

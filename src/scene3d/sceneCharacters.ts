@@ -109,6 +109,16 @@ const SPHERE_SEGMENTS = 10;
 const SPHERE_RINGS = 7;
 const CYLINDER_SEGMENTS = 9;
 
+/*
+ * The first procedural roster deliberately had very few facial draw calls.  In
+ * practice that made the close seats read as coloured eggs with three black
+ * marks.  These slightly denser limits are still comfortably below a scanned
+ * character, but let the face keep a human jaw, eye sockets and hands at the
+ * distance used by the table camera.
+ */
+const FACE_SPHERE_SEGMENTS = 16;
+const FACE_SPHERE_RINGS = 12;
+
 /**
  * A tiny authored weave texture for the original roster.  It is deliberately
  * generated in code rather than taken from a game or a photograph: every pixel
@@ -411,6 +421,64 @@ function featureGeometry(character: OpponentCharacter): BufferGeometry[] {
 }
 
 /**
+ * Layered facial parts for the near seats.  These are separate from the dark
+ * feature inlay above so whites, pupils and lips retain their own believable
+ * material response under the room key light.  The roster remains wholly
+ * original/procedural; no game character or photographic likeness is used.
+ */
+function facialDetailGroup(
+  character: OpponentCharacter,
+  ledger: SceneResourceLedger,
+): Group {
+  const body = bodyProportions(character.gender, character.body);
+  const face = faceProportions(character.face);
+  const headY = headCentreHeight(body);
+  const wide = HEAD_RADIUS * face.jaw;
+  const tall = HEAD_RADIUS * (1.14 / Math.max(0.85, face.chin));
+  const deep = HEAD_RADIUS * 1.04 * face.cheek * 0.92;
+  const surface = (x: number, y: number) => {
+    const inside = 1 - (x / wide) ** 2 - (y / tall) ** 2;
+    return deep * Math.sqrt(Math.max(0.05, inside));
+  };
+  const group = new Group();
+  group.name = "facial-detail-layer";
+  const white = ledger.track(new MeshStandardMaterial({ color: 0xe9e5dc, roughness: 0.92, metalness: 0 }));
+  const iris = ledger.track(new MeshStandardMaterial({ color: 0x2a211c, roughness: 0.72, metalness: 0 }));
+  const lip = ledger.track(new MeshStandardMaterial({ color: character.gender === "female" ? 0x8f4b49 : 0x6b3936, roughness: 0.86, metalness: 0 }));
+  const skinShadow = ledger.track(new MeshStandardMaterial({ color: 0x9f6750, roughness: 0.96, metalness: 0 }));
+
+  for (const side of [-1, 1]) {
+    const x = side * wide * 0.35;
+    const y = HEAD_RADIUS * 0.095;
+    const z = surface(x, y) * 1.012;
+    const eye = new Mesh(ledger.track(new SphereGeometry(HEAD_RADIUS * 0.098, FACE_SPHERE_SEGMENTS, FACE_SPHERE_RINGS)), white);
+    eye.name = "face-eye-sclera";
+    eye.scale.set(1.22, 0.58, 0.15);
+    eye.position.set(x, headY + y, z);
+    group.add(eye);
+    const pupil = new Mesh(ledger.track(new SphereGeometry(HEAD_RADIUS * 0.044, 10, 7)), iris);
+    pupil.name = "face-eye-pupil";
+    pupil.scale.set(0.85, 0.92, 0.16);
+    pupil.position.set(x + side * HEAD_RADIUS * 0.005, headY + y, z + HEAD_RADIUS * 0.014);
+    group.add(pupil);
+  }
+
+  // A shallow philtrum/nasolabial shadow makes the nose and mouth read as part
+  // of an actual face instead of a single dark horizontal bar.
+  const noseShadow = new Mesh(ledger.track(new SphereGeometry(HEAD_RADIUS * 0.07, 10, 7)), skinShadow);
+  noseShadow.name = "face-nose-shadow";
+  noseShadow.scale.set(0.58, 1.16, 0.13);
+  noseShadow.position.set(0, headY - HEAD_RADIUS * 0.09, surface(0, -HEAD_RADIUS * 0.09) * 1.012);
+  group.add(noseShadow);
+  const lips = new Mesh(ledger.track(new SphereGeometry(HEAD_RADIUS * 0.09, FACE_SPHERE_SEGMENTS, 8)), lip);
+  lips.name = "face-lips";
+  lips.scale.set(1.52, 0.34, 0.16);
+  lips.position.set(0, headY - HEAD_RADIUS * 0.33, surface(0, -HEAD_RADIUS * 0.33) * 1.014);
+  group.add(lips);
+  return group;
+}
+
+/**
  * Where a seated player's arms go.
  *
  * The hero's two neighbours sit about a metre from their eyes and roughly 45
@@ -627,7 +695,7 @@ function buildArticulatedArm(
     ledger.track(limb([0, 0, 0], [
       elbowPoint[0] - shoulderPoint[0], elbowPoint[1] - shoulderPoint[1], elbowPoint[2] - shoulderPoint[2],
     ], body.neckRadius * 0.80, body.neckRadius * 0.92)),
-    ledger.track(new MeshLambertMaterial({ color: outfitColour })),
+    ledger.track(new MeshStandardMaterial({ color: outfitColour, roughness: 0.78, metalness: 0 })),
   );
   shoulder.add(upper);
   elbow.position.set(
@@ -638,24 +706,54 @@ function buildArticulatedArm(
   ];
   const forearm = new Mesh(
     ledger.track(limb([0, 0, 0], forearmVector, body.neckRadius * 0.52, body.neckRadius * 0.78)),
-    ledger.track(new MeshLambertMaterial({ color: outfitColour })),
+    ledger.track(new MeshStandardMaterial({ color: outfitColour, roughness: 0.78, metalness: 0 })),
   );
   elbow.add(forearm);
   const cuff = new Mesh(
     ledger.track(new TorusGeometry(body.neckRadius * 0.61, body.neckRadius * 0.07, 5, 9)),
-    ledger.track(new MeshLambertMaterial({ color: skinColour })),
+    ledger.track(new MeshStandardMaterial({ color: skinColour, roughness: 0.78, metalness: 0 })),
   );
   cuff.position.set(...forearmVector);
   cuff.rotation.x = Math.PI / 2;
   elbow.add(cuff);
   const palm = new Mesh(
     ledger.track(new SphereGeometry(body.neckRadius * 0.60, SPHERE_SEGMENTS, SPHERE_RINGS)),
-    ledger.track(new MeshLambertMaterial({ color: skinColour })),
+    ledger.track(new MeshStandardMaterial({ color: skinColour, roughness: 0.78, metalness: 0 })),
   );
   palm.name = side < 0 ? "left-hand" : "right-hand";
   palm.scale.set(1.05, 0.50, 1.5);
   palm.position.set(forearmVector[0], forearmVector[1] + 0.004, forearmVector[2] + 0.020);
   elbow.add(palm);
+  // Four separate tapered digits and an opposable thumb give the close-side
+  // hands a recognisable human silhouette.  They are attached to the palm, so
+  // action pivots continue to move the whole hand as one articulated unit.
+  const handMaterial = ledger.track(new MeshStandardMaterial({ color: skinColour, roughness: 0.80, metalness: 0 }));
+  for (let finger = 0; finger < 4; finger += 1) {
+    const offset = (finger - 1.5) * body.neckRadius * 0.24;
+    const length = body.neckRadius * (finger === 3 ? 0.70 : 0.82);
+    const digit = new Mesh(
+      ledger.track(limb(
+        [forearmVector[0] + offset, forearmVector[1] + body.neckRadius * 0.08, forearmVector[2] + body.neckRadius * 0.20],
+        [forearmVector[0] + offset, forearmVector[1] + body.neckRadius * 0.08, forearmVector[2] + body.neckRadius * 0.20 + length],
+        body.neckRadius * 0.145,
+        body.neckRadius * 0.105,
+      )),
+      handMaterial,
+    );
+    digit.name = "hand-finger";
+    elbow.add(digit);
+  }
+  const thumb = new Mesh(
+    ledger.track(limb(
+      [forearmVector[0] + side * body.neckRadius * 0.47, forearmVector[1] + body.neckRadius * 0.015, forearmVector[2] + body.neckRadius * 0.08],
+      [forearmVector[0] + side * body.neckRadius * 0.72, forearmVector[1] + body.neckRadius * 0.02, forearmVector[2] + body.neckRadius * 0.43],
+      body.neckRadius * 0.16,
+      body.neckRadius * 0.11,
+    )),
+    handMaterial,
+  );
+  thumb.name = "hand-thumb";
+  elbow.add(thumb);
   shoulder.add(elbow);
   return { shoulder, elbow };
 }
@@ -791,6 +889,7 @@ export function buildCharacter(
       color: 0x2b211c,
     }))));
   }
+  body.add(facialDetailGroup(character, ledger));
 
   const bodyShape = bodyProportions(character.gender, character.body);
   const left = buildArticulatedArm(bodyShape, -1, character.outfit.base, character.skinTone, ledger);

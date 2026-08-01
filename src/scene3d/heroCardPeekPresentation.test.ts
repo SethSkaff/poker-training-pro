@@ -39,11 +39,17 @@ describe("hero card peek presentation", () => {
   it("uses an actual curved exposed half-card instead of rotating a full card", () => {
     expect(scene).toContain("function flexedHeroPeekGeometry(): BufferGeometry");
     expect(scene).toContain("const strips = 8;");
-    expect(scene).toContain("Math.sin(progress * Math.PI * 0.5) * 0.062");
+    expect(scene).toContain("const width = 0.088;");
+    expect(scene).toContain("const revealedEdge = 0.058;");
+    expect(scene).toContain("Math.sin(progress * Math.PI * 0.5) * 0.032");
+    expect(scene).toContain("const textureV = 0.74 + progress * 0.24;");
     expect(scene).toContain("mesh.geometry = squeezing ? resources.heroPeekGeometry : resources.cardGeometry;");
+    expect(scene).toContain("card.scale.setScalar(1);");
     expect(scene).toContain("card.rotation.x = 0;");
     expect(scene).toContain("card.rotation.y = squeezing ? (index === 0 ? 0.025 : -0.025) : 0;");
-    expect(scene).toContain("view.hand.position.set(local[0], local[1] + 0.030, local[2] - 0.108);");
+    expect(scene).toContain('addHand("peek-lift-hand", -0.046, -0.052, -0.10, 1);');
+    expect(scene).toContain('addHand("peek-shield-hand", 0.050, 0.016, 0.12, -1);');
+    expect(scene).toContain("view.hand.position.set(local[0], local[1] + 0.018, local[2] - 0.060);");
     expect(scene).toContain("fold.visible = false;");
   });
 });

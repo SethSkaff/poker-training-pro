@@ -128,9 +128,11 @@ export function dealerStation(): Station {
 /**
  * Which player station the hero occupies.
  *
- * Deterministic in the table's identity so a player keeps their seat for the
- * whole event rather than teleporting between hands, and so a replay of the same
- * table reproduces the same view. FNV-1a, same as the appearance model.
+ * Deterministic in the table round's identity so a player keeps their seat for
+ * every hand in that round rather than teleporting between deals, and so a
+ * replay of the same round reproduces the same view.  A fresh/retried round has
+ * a new identity and therefore makes a new seat draw. FNV-1a, same as the
+ * appearance model.
  */
 export function heroStationIndex(tableId: string): number {
   let hash = 2166136261;

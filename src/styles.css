@@ -3067,7 +3067,10 @@ input[type="range"]::-webkit-slider-thumb {
   bottom: 150px;
   left: 0;
   transform: translateX(var(--camera-pan));
-  transition: transform 320ms ease;
+  /* Free-look is driven continuously by held-pointer movement.  A long eased
+     transition made that motion feel like delayed, discrete seat jumps even
+     though the camera value was a float. */
+  transition: transform 55ms linear;
 }
 
 /*

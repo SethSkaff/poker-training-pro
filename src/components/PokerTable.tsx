@@ -177,6 +177,11 @@ interface TournamentTableControls {
   onPresentationEventComplete?: () => void;
   onSkipPresentation?: () => void;
   kind: "career" | "timed";
+  /**
+   * Stable identity for this tournament run.  It deliberately survives every
+   * hand in the run, but is new when the player starts or retries a new round.
+   */
+  roundId?: string;
   /** Monotonic authoritative state revision; never a React subtree key. */
   sceneStateVersion: number;
   handNumber: number;
@@ -1585,10 +1590,14 @@ export function PokerTable({
   const [cameraPan, setCameraPan] = useState(
     initialTrainingPresentation?.cameraPan ?? 0,
   );
-  // Direction A's reduced and camera-off equivalents are a true seated
-  // recenter pose. They do not merely make a player-selected pan snap faster.
-  const cameraFixed = settings.reducedMotion || settings.cameraMotion === "off";
-  const effectiveCameraPan = cameraFixed ? 0 : cameraPan;
+  // Motion preferences govern *automatic* movement only.  A player turning
+  // their view with the mouse is direct manipulation, so it must stay usable
+  // even if an older saved profile has camera motion disabled.  That was the
+  // source of the packaged regression: the stage received the drag but every
+  // result was projected back to zero by `effectiveCameraPan`.
+  const cameraMotionSuppressed =
+    settings.reducedMotion || settings.cameraMotion === "off";
+  const effectiveCameraPan = cameraPan;
 
   /*
     Drag anywhere on the felt to look around.
@@ -1610,7 +1619,7 @@ export function PokerTable({
   } | null>(null);
 
   const beginCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (cameraFixed || event.button !== 0 || !event.isPrimary) return;
+    if (event.button !== 0 || !event.isPrimary) return;
     if (
       event.target instanceof Element
       && event.target.closest('button, a, input, select, textarea, [role="button"], [role="slider"]')
@@ -1630,7 +1639,7 @@ export function PokerTable({
     // so a look begun on open felt keeps updating even after the cursor crosses
     // a plaque or leaves the canvas bounds.
     event.currentTarget.setPointerCapture(event.pointerId);
-  }, [cameraFixed, cameraPan]);
+  }, [cameraPan]);
 
   const updateCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = cameraDragRef.current;
@@ -1705,7 +1714,17 @@ export function PokerTable({
   const heroPlayerId = scenario.players.find(
     (player) => player.seat === scenario.heroSeat,
   )?.id ?? "hero";
-  const heroStationIndexForTable = heroStationIndex(heroPlayerId);
+  /*
+    A seat belongs to a tournament round, not to the permanent player profile
+    and not to an individual hand.  `roundId` comes from the persisted runner
+    session, so reload/replay keeps the same chair through a round while a
+    freshly started or retried round gets its own deterministic draw.
+  */
+  const heroStationIndexForTable = heroStationIndex(
+    tournament
+      ? `${tournament.roundId ?? scenario.id}:${heroPlayerId}`
+      : heroPlayerId,
+  );
   const sceneReadyForPlaques = settings.spatialScene
     && !sceneRequestChanged
     && sceneAvailability.status === "ready";
@@ -1860,10 +1879,6 @@ export function PokerTable({
     progress.decisionElo,
     progress.mathElo,
   ]);
-
-  useEffect(() => {
-    if (cameraFixed && cameraPan !== 0) setCameraPan(0);
-  }, [cameraFixed, cameraPan]);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -2541,10 +2556,10 @@ export function PokerTable({
           submitPresetRaise("all-in");
           break;
         case "camera.left":
-          if (!cameraFixed) setCameraPan((value) => Math.max(-2, value - cameraStep));
+          setCameraPan((value) => Math.max(-2, value - cameraStep));
           break;
         case "camera.right":
-          if (!cameraFixed) setCameraPan((value) => Math.min(2, value + cameraStep));
+          setCameraPan((value) => Math.min(2, value + cameraStep));
           break;
         case "camera.center":
           setCameraPan(0);
@@ -2948,7 +2963,10 @@ export function PokerTable({
        seat including this one. */
     heroPeeked: peeked,
     cameraView: settings.cameraView,
-    cameraMotion: settings.cameraMotion,
+    // A disabled automatic camera still accepts the player's own free-look;
+    // keep renderer interpolation immediate in that mode instead of discarding
+    // the manual yaw in the DOM layer.
+    cameraMotion: cameraMotionSuppressed ? "off" : settings.cameraMotion,
     reducedMotion: settings.reducedMotion || settings.transitionMotion === "off",
     buttonCanonicalSeat: scenario.buttonSeat,
     smallBlindCanonicalSeat: scenario.smallBlindSeat,
@@ -3648,8 +3666,7 @@ export function PokerTable({
           {false && <div className="camera-controls-removed">
             <button
               type="button"
-              onClick={() => !cameraFixed && setCameraPan((value) => Math.max(-2, value - cameraStep))}
-              disabled={cameraFixed}
+              onClick={() => setCameraPan((value) => Math.max(-2, value - cameraStep))}
               aria-label={formatMessage("table.camera.left")}
             >
               <ChevronLeft size={17} />
@@ -3664,7 +3681,7 @@ export function PokerTable({
               type="button"
               className="camera-controls__center"
               onClick={() => setCameraPan(0)}
-              disabled={cameraFixed || effectiveCameraPan === 0}
+              disabled={effectiveCameraPan === 0}
               aria-label={formatMessage("table.camera.center")}
             >
               <span>{formatMessage(`table.camera.view${"Label"}`)}</span>
@@ -3682,8 +3699,7 @@ export function PokerTable({
             </button>
             <button
               type="button"
-              onClick={() => !cameraFixed && setCameraPan((value) => Math.min(2, value + cameraStep))}
-              disabled={cameraFixed}
+              onClick={() => setCameraPan((value) => Math.min(2, value + cameraStep))}
               aria-label={formatMessage("table.camera.right")}
             >
               <ChevronRight size={17} />

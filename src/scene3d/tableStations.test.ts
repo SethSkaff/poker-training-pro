@@ -123,6 +123,22 @@ describe("seated-ring-v3 puts the hero in a player seat, not the dealer's spot",
     expect(seen.size).toBe(PLAYER_STATION_COUNT);
   });
 
+  it("keeps one seat through every hand of a round and redraws per new round", () => {
+    const roundOneHero = "local-qualifier:seed-a:hero";
+    // Hand identity must never enter the seat key: the view stays put between
+    // hand 1 and hand 2 of this exact tournament run.
+    expect(heroStationIndex(roundOneHero)).toBe(heroStationIndex(roundOneHero));
+
+    const nextRoundSeats = new Set(
+      Array.from({ length: 48 }, (_, index) =>
+        heroStationIndex(`local-qualifier:retry-${index}:hero`),
+      ),
+    );
+    // New round identities are independently drawn and exercise all valid
+    // chairs; saving/replaying one identity remains deterministic above.
+    expect(nextRoundSeats.size).toBe(PLAYER_STATION_COUNT);
+  });
+
   it("maps hero-relative seats onto stations without collision", () => {
     for (const heroIndex of [0, 1, 2, 3, 4, 5]) {
       expect(stationIndexForRelativeSeat(0, heroIndex)).toBe(heroIndex);

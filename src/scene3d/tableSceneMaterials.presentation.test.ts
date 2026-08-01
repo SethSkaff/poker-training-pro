@@ -16,10 +16,18 @@ describe("table card and chip material presentation", () => {
   });
 
   it("keeps card texture colour in the display colour space and below paper white", () => {
-    expect(scene).toContain('context.fillStyle = "#e7e1d5";');
+    expect(scene).toContain('context.fillStyle = "#e9e3d7";');
     expect(scene).toContain('context.fillStyle = "#e5ded1";');
     expect(scene).toContain("texture.colorSpace = SRGBColorSpace;");
     expect(scene).not.toContain('context.fillStyle = "#fbf7ef";');
+  });
+
+  it("restores printed deck detail and gives ranks a readable, bold corner index", () => {
+    expect(scene).toContain("A quiet paper");
+    expect(scene).toContain("guilloche medallion");
+    expect(scene).toContain("800 ${Math.round(canvas.height * 0.245)}px Georgia, serif");
+    expect(scene).toContain("color: 0xf4efe4");
+    expect(scene).toContain("color: 0xffffff");
   });
 
   it("uses rough clay chip bodies and muted inlays instead of luminous white plastic", () => {

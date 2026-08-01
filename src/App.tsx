@@ -1777,6 +1777,7 @@ export default function App() {
           onPresentationEventComplete: completeTournamentPresentationEvent,
           onSkipPresentation: skipTournamentPresentation,
           kind: runner.kind,
+          roundId: runner.session.id,
           sceneStateVersion: runner.sequence,
           handNumber,
           fieldSize: runner.session.entrants.length,
