@@ -277,28 +277,41 @@ export function actionEase(progress: number): number {
 }
 
 /**
- * Where a bet's chips are at `progress` through the push, from the seat's felt
- * spot toward the pot at the centre.
+ * The printed bet circle a wager rests on, in table space.
+ *
+ * A wager belongs in front of the player who made it until the street closes
+ * and the dealer sweeps it. Everything here used to push straight to the middle
+ * of the felt, and an idle seat with a live bet drew its chips at `progress` 1
+ * -- so every wager teleported into a heap at the centre the moment it was
+ * made, and the six bet circles printed on the felt were never once used.
+ */
+export function betCirclePosition(pose: SeatPose): readonly [number, number, number] {
+  return [
+    pose.feltPosition[0] + Math.sin(pose.facing) * BET_CIRCLE_FORWARD,
+    TABLE_HEIGHT,
+    pose.feltPosition[2] + Math.cos(pose.facing) * BET_CIRCLE_FORWARD,
+  ];
+}
+
+/** The pot: the middle of the felt, a little toward the hero. */
+export const POT_POSITION: readonly [number, number, number] = [0, TABLE_HEIGHT, 0.18];
+
+/**
+ * Where a bet's chips are at `progress`, travelling from the seat's felt spot
+ * out to its own bet circle.
  */
 export function betChipPosition(
   pose: SeatPose,
   progress: number,
 ): readonly [number, number, number] {
-  const t = actionEase(progress);
-  const [x, y, z] = pose.feltPosition;
-  // The pot sits at the middle of the felt, slightly toward the hero so it is
-  // not hidden behind the community cards.
-  const potX = 0;
-  const potZ = 0.18;
-  const lift = Math.sin(Math.PI * t) * 0.06;
-  return [x + (potX - x) * t, y + lift, z + (potZ - z) * t];
+  return chipPositionAlongPush(pose, progress, 0.06);
 }
 
 /**
- * A call is an economical direct placement: the required chips travel from a
- * seat to the pot on a lower arc than an opening bet.  It still shares the
- * same terminal position, so reduced motion and the next authoritative
- * snapshot agree exactly.
+ * A call is the same push with a flatter arc: a smaller, more routine motion
+ * than an opening bet. The two must stay tellable apart while sharing a
+ * terminal position, so reduced motion and the next authoritative snapshot
+ * agree exactly.
  */
 export function callChipPosition(
   pose: SeatPose,
@@ -308,9 +321,9 @@ export function callChipPosition(
 }
 
 /**
- * A raise first gathers chips nearer the player's betting line, then pushes
- * the larger pile into the pot.  This deliberately has a different midpoint
- * from both a call and an opening bet while preserving the same end state.
+ * A raise gathers chips back toward the player first, then pushes the larger
+ * pile out to the betting line -- a different midpoint from both a call and an
+ * opening bet, with the same end state.
  */
 export function raiseChipPosition(
   pose: SeatPose,
@@ -318,12 +331,26 @@ export function raiseChipPosition(
 ): readonly [number, number, number] {
   const t = actionEase(progress);
   const [x, y, z] = pose.feltPosition;
-  if (t === 1) return [0, y, 0.18];
-  const gather: readonly [number, number, number] = [x * 0.82, y, z * 0.82];
-  const pot: readonly [number, number, number] = [0, y, 0.18];
+  const circle = betCirclePosition(pose);
+  if (t === 1) return circle;
+  /*
+    Gathered back toward the player, not scaled toward the table centre.
+
+    Scaling the felt anchor was fine when a wager travelled half a metre to the
+    pot -- there was room for two trajectories to differ. The push is now the
+    82 mm from the lane to the betting line, and over that distance a scaled
+    gather is a rounding error: the raise and the call became the same motion.
+    Pulling the chips back behind the lane first is what a raise looks like
+    anyway, and it stays legible however short the push is.
+  */
+  const gather: readonly [number, number, number] = [
+    x - Math.sin(pose.facing) * 0.045,
+    y,
+    z - Math.cos(pose.facing) * 0.045,
+  ];
   const segment = t < 0.34 ? t / 0.34 : (t - 0.34) / 0.66;
   const from = t < 0.34 ? pose.feltPosition : gather;
-  const to = t < 0.34 ? gather : pot;
+  const to = t < 0.34 ? gather : circle;
   const lift = Math.sin(Math.PI * t) * 0.085;
   return [
     from[0] + (to[0] - from[0]) * segment,
@@ -340,6 +367,24 @@ export function allInChipPosition(
   return chipPositionAlongPush(pose, progress, 0.11);
 }
 
+/**
+ * The dealer's sweep: bet circle to pot. The only motion that puts a player's
+ * chips in the middle of the table, and it is the dealer doing it.
+ */
+export function collectChipPosition(
+  pose: SeatPose,
+  progress: number,
+): readonly [number, number, number] {
+  const t = actionEase(progress);
+  const from = betCirclePosition(pose);
+  const lift = Math.sin(Math.PI * t) * 0.05;
+  return [
+    from[0] + (POT_POSITION[0] - from[0]) * t,
+    from[1] + lift,
+    from[2] + (POT_POSITION[2] - from[2]) * t,
+  ];
+}
+
 function chipPositionAlongPush(
   pose: SeatPose,
   progress: number,
@@ -347,11 +392,11 @@ function chipPositionAlongPush(
 ): readonly [number, number, number] {
   const t = actionEase(progress);
   const [x, y, z] = pose.feltPosition;
-  if (t === 1) return [0, y, 0.18];
+  const circle = betCirclePosition(pose);
+  if (t === 1) return circle;
   const lift = Math.sin(Math.PI * t) * maxLift;
-  return [x * (1 - t), y + lift, z + (0.18 - z) * t];
+  return [x + (circle[0] - x) * t, y + lift, z + (circle[2] - z) * t];
 }
-
 /**
  * Where a dealt card is at `progress`, travelling from the dealer's hands to a
  * seat's felt spot.

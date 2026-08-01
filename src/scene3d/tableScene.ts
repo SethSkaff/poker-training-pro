@@ -19,6 +19,8 @@ import {
   ACESFilmicToneMapping,
   AmbientLight,
   BufferGeometry,
+  DoubleSide,
+  Float32BufferAttribute,
   CanvasTexture,
   CircleGeometry,
   CylinderGeometry,
@@ -46,8 +48,10 @@ import {
 import {
   allInChipPosition,
   betChipPosition,
+  betCirclePosition,
   cameraPose,
   callChipPosition,
+  collectChipPosition,
   CAMERA_PITCH_DEGREES,
   CAMERA_VERTICAL_FOV,
   chipCountForAmount,
@@ -272,13 +276,6 @@ function hexCss(color: number): string {
   return `#${color.toString(16).padStart(6, "0")}`;
 }
 
-/**
- * How far a squeezed card rolls back, in radians.
- *
- * Past a right angle by design: see `applySeat`. Below 90 degrees the card
- * shows the seated camera its back, whatever else is done to it.
- */
-const CARD_PEEK_TILT = 1.95;
 
 /** One action's visible duration, in milliseconds. */
 const ACTION_MS = 620;
@@ -311,8 +308,8 @@ interface TableSceneResources {
   chipEdgeMaterial(): MeshLambertMaterial;
   chipMaterial(): MeshLambertMaterial;
   cardFaceMaterial(code: string): MeshLambertMaterial;
-  /** The printed side, drawn to be read from underneath a tilted card. */
-  cardUnderMaterial(code: string): MeshLambertMaterial;
+  /** The index revealed by folding a card's top corner back. */
+  cardFoldMaterial(code: string): MeshLambertMaterial;
   markerMaterial(label: "D" | "SB" | "BB", color: number): MeshLambertMaterial;
   /** Tiled surface maps for the felt, the carpet, and the panelled walls. */
   surfaceTexture(kind: "felt" | "carpet" | "wall", repeatX: number, repeatY: number): Texture | null;
@@ -338,54 +335,48 @@ function createTableSceneResources(): TableSceneResources {
     canvas.height = PROCEDURAL_CARD_FACE_SIZE.height;
     const context = canvas.getContext("2d");
     if (!context) return cardMaterial;
-    context.fillStyle = "#f8f1df";
+    /*
+      An ordinary playing card: white stock, a corner index, and a large centre
+      pip in the suit colour.
+
+      The previous face was a pair of indices floating on the horizontal midline
+      with nothing else on the card, which is not a layout any deck has ever
+      used -- it was solving for legibility at a steep angle and produced
+      something that read as a token. A real card is legible because the corner
+      index is small and the body of the card carries a big, unmistakable block
+      of suit colour. Two indices in opposite corners, as printed, so the card
+      reads the same either way up on the felt.
+    */
+    context.fillStyle = "#fbf7ef";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = "#c7af83";
+    context.strokeStyle = "#cfc4ad";
     context.lineWidth = 3;
     context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
-    /*
-      The index pair sits on the card's midline, not in its corners.
+    const ink = face.red ? "#c02531" : "#16202b";
 
-      A real card puts the index in two opposite corners, and the card stays
-      readable because you hold it up. This board lies flat and is read at as
-      little as 18 degrees off the felt from the seats at the ends of the oval,
-      and that projection crushes the card's far edge hardest -- which is
-      precisely where a corner index lives. Moving the pair inboard to the
-      horizontal midline puts both copies in the least compressed band of the
-      card.
+    // The centre pip, big enough to name the suit across the table.
+    context.fillStyle = ink;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.globalAlpha = 0.16;
+    context.font = `${Math.round(canvas.height * 0.62)}px Georgia, serif`;
+    context.fillText(face.glyph, canvas.width / 2, canvas.height * 0.5);
+    context.globalAlpha = 1;
 
-      It is still drawn twice, 180 degrees apart, and a point reflection through
-      the card's centre maps one onto the other. That is the property that
-      matters: it is why a card lying on a table has no wrong way up, and it is
-      what stopped two earlier attempts at a single large centre index from
-      rendering upside down.
-    */
-    context.fillStyle = face.red ? "#b83232" : "#1f2933";
-    const middle = canvas.height / 2;
-    const drawIndex = (scale: number) => {
-      context.textAlign = "center";
-      context.font = `700 ${Math.round(56 * scale)}px Georgia, serif`;
-      context.fillText(face.rank, canvas.width * 0.30, middle - 4 * scale);
-      context.font = `${Math.round(42 * scale)}px Georgia, serif`;
-      context.fillText(face.glyph, canvas.width * 0.30, middle + 42 * scale);
+    // Corner index, and its point reflection: rank over pip, as printed.
+    const index = () => {
+      context.font = `700 ${Math.round(canvas.height * 0.19)}px Georgia, serif`;
+      context.fillText(face.rank, canvas.width * 0.155, canvas.height * 0.13);
+      context.font = `${Math.round(canvas.height * 0.14)}px Georgia, serif`;
+      context.fillText(face.glyph, canvas.width * 0.155, canvas.height * 0.27);
     };
-    drawIndex(1);
-    /*
-      The opposite index is a small echo, not a second full-size one.
-
-      Drawn at matching size the two copies sat side by side across the middle
-      of the card and the inverted one read as a *different rank* -- an
-      upside-down T is a passable serif J, which is exactly the confusion a
-      poker table cannot afford. Shrinking it restores a real card's hierarchy:
-      one index you read, and one that only matters if the card is the other way
-      up. The 180-degree symmetry, and the guarantee that comes with it, is
-      unchanged.
-    */
+    index();
     context.save();
     context.translate(canvas.width, canvas.height);
     context.rotate(Math.PI);
-    drawIndex(0.52);
+    index();
     context.restore();
+    context.textBaseline = "alphabetic";
     const texture = track(new CanvasTexture(canvas));
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
     texture.minFilter = LinearFilter;
@@ -394,81 +385,74 @@ function createTableSceneResources(): TableSceneResources {
     return material;
   };
   /*
-    The card's printed side, drawn for reading off a card rolled back toward you.
+    What a squeeze actually shows: one corner's index, read off the fold.
 
-    Both axes are flipped relative to how this reads as source: the canvas is
-    mirrored left-to-right here, and drawn bottom-up in `corner` below. The
-    underside of a card is a mirror of its face, and the roll that brings it
-    into view turns it end over end, so the two compose.
-
-    Worth saying plainly: this was settled by drawing a large blue "R" on the
-    card and looking at it, not by reasoning about it. Four attempts at deriving
-    the composition of the UV convention, the Blender-to-glTF axis swap, the
-    texture's flipY and a rotation past vertical each produced a confident
-    answer, and three of them were wrong -- and the usual check does not
-    discriminate, because every suit pip is symmetric left-to-right and half the
-    ranks survive a 180-degree turn (a rotated 9 is a passable 6). An asymmetric
-    glyph answered it in one frame. If this ever needs revisiting, do that again
-    rather than reasoning from the chain.
+    A player bends the top corner back over the card and reads the rank and suit
+    printed under it. That is the whole of it -- not the card turned over, not a
+    panel floating above the felt, and not the pair stood on edge. The card stays
+    face down on the cloth and one small triangle of its printed side comes into
+    view, which is why the gesture is safe to make in front of five opponents.
   */
-  const underMaterials = new Map<string, MeshLambertMaterial>();
-  const cardUnderMaterial = (code: string): MeshLambertMaterial => {
+  const foldMaterials = new Map<string, MeshLambertMaterial>();
+  const cardFoldMaterial = (code: string): MeshLambertMaterial => {
     const face = parsePublicCardFace(code);
     if (!face) return cardMaterial;
     const key = `${face.rank}${face.glyph}`;
-    const cached = underMaterials.get(key);
+    const cached = foldMaterials.get(key);
     if (cached) return cached;
     const canvas = document.createElement("canvas");
-    canvas.width = PROCEDURAL_CARD_FACE_SIZE.width;
-    canvas.height = PROCEDURAL_CARD_FACE_SIZE.height;
+    canvas.width = 128;
+    canvas.height = 128;
     const context = canvas.getContext("2d");
     if (!context) return cardMaterial;
-    context.fillStyle = "#efe6d2";
+    context.fillStyle = "#f7f0de";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.translate(canvas.width, 0);
-    context.scale(-1, 1);
-    context.strokeStyle = "#c7af83";
-    context.lineWidth = 3;
-    context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
-    context.fillStyle = face.red ? "#b02c2c" : "#1a222b";
+    /*
+      A crease down the hypotenuse. The flap is a flat triangle lying on a flat
+      card, so without a darker edge along the fold the two planes merge and it
+      reads as a sticker rather than as a folded corner.
+    */
+    const shade = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+    shade.addColorStop(0, "rgba(60,40,25,0.22)");
+    shade.addColorStop(0.35, "rgba(60,40,25,0)");
+    context.fillStyle = shade;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    /*
+      Kept in the corner opposite the crease, because only half of this canvas
+      is ever drawn.
+
+      The flap is a triangle and the texture is a square, so everything past the
+      anti-diagonal is cut away. Placed at what looked like the middle of the
+      card, the rank sat astride that diagonal and all that reached the screen
+      was a sliver of its lower edge -- the fold rendered as a blank cream
+      wedge. The right-angle corner is the only part of the square with room
+      for a glyph on both axes at once.
+    */
+    context.fillStyle = face.red ? "#c8102e" : "#10161d";
     context.textAlign = "center";
     /*
-      Both indices upright along one edge, and no 180-degree copies.
-
-      A real card repeats its index in opposite corners so it reads either way
-      up, and the copy is upside down. That is exactly wrong here: this card is
-      always presented the same way round, so the inverted pair was never the
-      one being read -- and a 9 rotated through 180 degrees is a 6. The squeeze
-      was showing a player "9" at the top of the card and "6" at the bottom of
-      the same card. Two upright indices on the edge that ends up uppermost is
-      unambiguous, and the far one is behind the neighbouring card anyway.
+      Sized and placed against the triangle's inscribed circle, which is what
+      really bounds a block of text here: centre (0.71, 0.71) of the canvas,
+      radius 0.29. Everything past the anti-diagonal is cut away, and text laid
+      out for the whole square lands mostly in the half that is not drawn -- the
+      fold then renders as a blank cream wedge, which is exactly what it did.
     */
-    /*
-      Drawn against the bottom of the canvas, rank below glyph.
-
-      Both look backwards written down and both are right on screen: the card's
-      near edge -- the one that ends up uppermost once it is rolled back -- maps
-      to v=1, and three.js puts v=1 at the *top* of the image, so the canvas is
-      read bottom-up here. Drawing this the way it reads on paper put the index
-      pair along the card's lower edge with the suit sitting above its own rank.
-    */
-    const corner = (x: number) => {
-      context.save();
-      context.translate(x, canvas.height * 0.86);
-      context.font = "700 54px Georgia, serif";
-      context.fillText(face.rank, 0, 0);
-      context.font = "44px Georgia, serif";
-      context.fillText(face.glyph, 0, -46);
-      context.restore();
-    };
-    const inset = canvas.width * 0.21;
-    corner(inset);
-    corner(canvas.width - inset);
+    context.font = "700 40px Georgia, serif";
+    context.fillText(face.rank, canvas.width * 0.30, canvas.height * 0.76);
+    context.font = "32px Georgia, serif";
+    context.fillText(face.glyph, canvas.width * 0.30, canvas.height * 0.97);
     const texture = track(new CanvasTexture(canvas));
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
     texture.minFilter = LinearFilter;
-    const material = track(new MeshLambertMaterial({ map: texture }));
-    underMaterials.set(key, material);
+    /*
+      Double sided, because a lifted flap is a physical piece of card and which
+      way its single triangle happens to be wound should not decide whether the
+      player can read their own hand. Wound one way it rendered; wound the
+      other, and after the tip was raised, it vanished -- a blank corner with no
+      error anywhere. One triangle costs nothing to draw twice.
+    */
+    const material = track(new MeshLambertMaterial({ map: texture, side: DoubleSide }));
+    foldMaterials.set(key, material);
     return material;
   };
   const cardMaterial = track(new MeshLambertMaterial({ color: 0xf3ede0 }));
@@ -500,7 +484,7 @@ function createTableSceneResources(): TableSceneResources {
     context.beginPath();
     context.rect(5, 5, canvas.width - 10, canvas.height - 10);
     context.clip();
-    context.strokeStyle = "rgba(240,231,213,0.26)";
+    context.strokeStyle = "rgba(240,231,213,0.18)";
     context.lineWidth = 1;
     for (let offset = -canvas.height; offset < canvas.width * 2; offset += 7) {
       context.beginPath();
@@ -636,7 +620,7 @@ function createTableSceneResources(): TableSceneResources {
     chipMaterial: () => track(new MeshLambertMaterial({ color: 0xffffff })),
     chipEdgeMaterial: () => track(new MeshLambertMaterial({ color: 0xffffff })),
     cardFaceMaterial,
-    cardUnderMaterial,
+    cardFoldMaterial,
     markerMaterial,
     potPlaqueMaterial,
     surfaceTexture,
@@ -1521,6 +1505,92 @@ function buildSeat(
 }
 
 /**
+ * The folded-back corner of a card, as a flat triangle in the card's own plane.
+ *
+ * Fold a card's corner over the diagonal and the corner tip lands *inside* the
+ * card, on the far side of the crease -- so the flap is the reflection of the
+ * corner triangle, and its printed side now faces up. That is what makes the
+ * index readable from above without the card leaving the felt, and it is the
+ * only reading position a player can take that shows nobody else anything.
+ *
+ * The player's top-left corner is the seat's local +X, +Z: +X is screen left
+ * from the seat's own camera, and +Z is away from the player, which is the top
+ * of the frame when looking down at the felt.
+ */
+let foldGeometry: BufferGeometry | null = null;
+function cornerFoldGeometry(): BufferGeometry {
+  if (foldGeometry) return foldGeometry;
+  const halfWidth = 0.044;
+  const halfLength = 0.0615;
+  const leg = 0.045;
+  /*
+    54 degrees off the cloth. Enough that the print turns toward a camera
+    sitting 24 degrees above the felt, shallow enough that the flap still faces
+    the pendant and reads as cream card rather than as a shadowed grey wedge,
+    and short of standing the corner up like a sail for the whole table.
+  */
+  const lift = 0.95;
+
+  // The crease: a diagonal across the player's top-left corner, both ends still
+  // on the card. The corner itself swings up about this line.
+  const creaseA: [number, number, number] = [halfWidth - leg, 0.0008, halfLength];
+  const creaseB: [number, number, number] = [halfWidth, 0.0008, halfLength - leg];
+  const midX = (creaseA[0] + creaseB[0]) / 2;
+  const midZ = (creaseA[2] + creaseB[2]) / 2;
+  /*
+    The corner tip, lifted about the crease.
+
+    It has to rise on the *outboard* side -- the corner it actually belongs to
+    -- and not be folded inboard over the card. A flap that rises going inboard
+    is a ramp sloping up away from the player, and a ramp's face turns away from
+    the up-slope: its printed side would aim at the far rail. Raising the corner
+    itself slopes the flap up toward the corner, so the underside it exposes --
+    the printed one -- turns back and down toward the seat that lifted it, which
+    is the only place it can be read from. That is also just what the gesture is.
+
+    The crease is horizontal and the tip's offset from it is perpendicular and
+    horizontal too, so this is a plain rotation in that vertical plane: the
+    offset shortens by cos and the tip gains sin worth of height.
+  */
+  const offsetX = halfWidth - midX;
+  const offsetZ = halfLength - midZ;
+  const perpendicular = Math.hypot(offsetX, offsetZ);
+  const tip: [number, number, number] = [
+    midX + Math.cos(lift) * offsetX,
+    0.0008 + Math.sin(lift) * perpendicular,
+    midZ + Math.cos(lift) * offsetZ,
+  ];
+
+  const positions = new Float32Array([...creaseA, ...creaseB, ...tip]);
+  /*
+    Only half of the canvas is ever drawn -- everything past the anti-diagonal
+    is cut away -- so `cardFoldMaterial` keeps its glyphs in the corner that
+    survives. The u axis is the one that ends up mirrored here: the flap is seen
+    from its far side once the corner is raised, on top of a seat's local +X
+    already being screen left. Both of those were established by looking at the
+    frame rather than by deriving them; see the note in `cardUnderMaterial`'s
+    successor about why that is the reliable method for this.
+  */
+  const uvs = new Float32Array([0, 1, 1, 0, 0, 0]);
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  geometry.computeVertexNormals();
+  foldGeometry = geometry;
+  return geometry;
+}
+
+/**
+ * Where a player's own stack sits, relative to their felt lane.
+ *
+ * Outboard of the cards and a little toward the player, which is where a rack
+ * of chips lives on a real table: to one side of the play zone, behind the
+ * betting line, on the owner's side of it.
+ */
+const STACK_LOCAL_OFFSET_X = 0.185;
+const STACK_LOCAL_OFFSET_Z = -0.035;
+
+/**
  * Which seat actions are the dealer's job.
  *
  * Only three of them are: a deal is pitched by the dealer, a wager is raked in
@@ -1533,71 +1603,6 @@ const DEALER_TASK_FOR_ACTION: Readonly<Record<string, DealerWork["task"] | undef
   collect: "collect",
   win: "push",
 };
-
-/**
- * The same card, split into three material groups by which way each face turns.
- *
- * A playing card is not one surface: it is a printed side, a patterned side, and
- * a white edge between them. The authored mesh is a single group, so a card
- * could only ever be *entirely* its back or *entirely* its face -- which is why
- * showing the hero their hand used to mean turning the card over and showing it
- * to the whole table too.
- *
- * Groups have to be contiguous runs of the index buffer, so this reorders the
- * indices into up-facing, down-facing and rim, then records the three spans.
- * Derived from the geometry's own normals rather than from face counts, so it
- * survives any change to the mesh. Cached: the answer cannot change while the
- * buffer lives.
- */
-/**
- * Half a card's length along its own long axis, read from the mesh.
- *
- * The peek hinge needs it, and taking it from the geometry rather than
- * restating the Blender constant means a resized card cannot leave the hinge
- * pinned to a point the card no longer reaches.
- */
-const cardHalfLengths = new WeakMap<BufferGeometry, number>();
-function cardHalfLength(geometry: BufferGeometry): number {
-  const cached = cardHalfLengths.get(geometry);
-  if (cached !== undefined) return cached;
-  geometry.computeBoundingBox();
-  const box = geometry.boundingBox;
-  const half = box ? (box.max.z - box.min.z) / 2 : 0.0615;
-  cardHalfLengths.set(geometry, half);
-  return half;
-}
-
-const cardFaceGeometries = new WeakMap<BufferGeometry, BufferGeometry>();
-export function cardWithFaces(source: BufferGeometry): BufferGeometry {
-  const cached = cardFaceGeometries.get(source);
-  if (cached) return cached;
-  const index = source.getIndex();
-  const normal = source.getAttribute("normal");
-  if (!index || !normal) return source;
-
-  const up: number[] = [];
-  const down: number[] = [];
-  const rim: number[] = [];
-  for (let triangle = 0; triangle < index.count; triangle += 3) {
-    const a = index.getX(triangle);
-    const b = index.getX(triangle + 1);
-    const c = index.getX(triangle + 2);
-    // The triangle's own facing, averaged over its corners. A card is flat
-    // enough that this is unambiguous everywhere except the rounded rim.
-    const y = (normal.getY(a) + normal.getY(b) + normal.getY(c)) / 3;
-    const bucket = y > 0.5 ? up : y < -0.5 ? down : rim;
-    bucket.push(a, b, c);
-  }
-
-  const geometry = source.clone();
-  geometry.setIndex([...up, ...down, ...rim]);
-  geometry.clearGroups();
-  geometry.addGroup(0, up.length, 0);
-  geometry.addGroup(up.length, down.length, 1);
-  geometry.addGroup(up.length + down.length, rim.length, 2);
-  cardFaceGeometries.set(source, geometry);
-  return geometry;
-}
 
 function applySeat(
   view: SeatView,
@@ -1682,69 +1687,54 @@ function applySeat(
         : pose.feltPosition;
     const local = seatLocalPoint(pose, target);
     /*
-      Squared up into a pair, not left spread.
+      Squared into a packet and set on the diagonal.
 
-      Two cards 110 mm apart is how they are dealt and how they sit while a
-      hand plays out, but nobody reads them like that: you square them into one
-      packet behind a hand so that a single small area has to be shielded. Left
-      spread, the "peek" was two separate cards being tilted at the ceiling.
+      Two cards 110 mm apart is how they are dealt and how they lie while a hand
+      plays out, but nobody reads them like that: you draw them together and
+      turn them off-square so one thumb can lift both corners behind one hand.
     */
-    const spread = squeezing ? 0.027 : 0.055;
-    card.position.set(
-      local[0] + (index === 0 ? -spread : spread),
-      local[1] + (squeezing ? 0.004 : 0),
-      local[2] + (squeezing ? -0.026 : 0),
-    );
+    const spread = squeezing ? 0.026 : 0.055;
     /*
-      Rolled up and back over its own far edge, until the printed side faces the
-      one player entitled to read it.
+      Card 0 goes to the player's left.
 
-      The angle is past vertical on purpose, and the reason is the camera rather
-      than the gesture. The print is on the underside, because the cards are
-      lying face down; the seated eye is about 24 degrees *above* the felt. A
-      card tilted anywhere short of upright therefore still presents its back to
-      that eye, however far the near edge is lifted -- which is what the first
-      attempt did, and why it needed a floating index panel hovering over the
-      table to show anything at all. That panel was the "hologram": a thing no
-      poker room contains, added to work around a card that was never actually
-      turned toward anybody.
-
-      A real player solves this by lowering their head to the felt. This camera
-      cannot, so the card comes to the eye instead. The far edge stays pinned to
-      the cloth and the card hinges off it, so it reads as lifting a card that is
-      still on the table rather than picking one up. Opponents keep seeing the
-      back, which is the point of doing it this way instead of turning it over.
+      A seat group is rotated to face the table, so the seat's local +X is
+      screen *left* from that seat's own camera -- the sign that reads as
+      "leftward" in a table-space diagram is the one that puts a card on the
+      right of the frame. Card 0 was getting the negative offset and landing on
+      the right, so the hero's two cards were in the opposite order to every
+      list, label and announcement describing them.
     */
-    const tilt = squeezing ? CARD_PEEK_TILT : 0;
-    card.rotation.x = tilt;
-    if (squeezing) {
-      // Rotating the mesh turns it about its own centre, which would sink the
-      // far edge through the felt and lift the whole card off it. Translating by
-      // the arc that centre travels pins the hinge back onto the cloth.
-      const halfLength = cardHalfLength(resources.cardGeometry);
-      card.position.y += halfLength * Math.sin(tilt);
-      card.position.z += halfLength * (1 - Math.cos(tilt));
-    }
+    const toPlayersLeft = index === 0 ? spread : -spread;
+    card.position.set(
+      local[0] + toPlayersLeft,
+      local[1] + (squeezing ? 0.002 : 0),
+      local[2] + (squeezing ? -0.018 : 0),
+    );
+    card.rotation.x = 0;
+    // Flat on the cloth, always. The squeeze only turns them on the diagonal;
+    // a hole card that leaves the felt is a hole card the room can read.
+    card.rotation.y = squeezing ? (index === 0 ? 0.20 : 0.30) : 0;
     card.scale.setScalar(1);
     const mesh = card as Mesh;
     const code = seat.publicCardCodes?.[index];
-    if (squeezing && code) {
-      /*
-        Three materials on one card, split by which way each triangle faces:
-        back on top, print underneath, card stock on the edge. That is what a
-        card is, and it is the only arrangement in which tilting one toward the
-        player reveals the face to them and to nobody else.
-      */
-      mesh.geometry = cardWithFaces(resources.cardGeometry);
-      mesh.material = [
-        resources.cardBackMaterial,
-        resources.cardUnderMaterial(code),
-        resources.cardMaterial,
-      ];
-    } else {
-      mesh.geometry = resources.cardGeometry;
-      mesh.material = code ? resources.cardFaceMaterial(code) : resources.cardBackMaterial;
+    mesh.geometry = resources.cardGeometry;
+    mesh.material = code && !squeezing
+      ? resources.cardFaceMaterial(code)
+      : resources.cardBackMaterial;
+
+    /*
+      The fold. A triangle of the card's printed side, lying back over the
+      corner it was turned from, carried as a child of the card so it inherits
+      the diagonal without being positioned twice.
+    */
+    let fold = card.getObjectByName("card-fold") as Mesh | undefined;
+    if (!fold) {
+      fold = new Mesh(cornerFoldGeometry(), resources.cardMaterial);
+      fold.name = "card-fold";
+      card.add(fold);
     }
+    fold.visible = squeezing && Boolean(code);
+    if (fold.visible && code) fold.material = resources.cardFoldMaterial(code);
   });
 
   view.hand.visible = squeezing;
@@ -1763,8 +1753,8 @@ function applySeat(
       A seat's local +X is screen *left* from that seat's own camera, so "the
       player's right" is local -X.
     */
-    view.hand.position.set(local[0] - 0.088, local[1] + 0.010, local[2] - 0.040);
-    view.hand.rotation.set(-0.22, 0.42, 0);
+    view.hand.position.set(local[0] - 0.112, local[1] + 0.008, local[2] - 0.052);
+    view.hand.rotation.set(-0.10, 0.55, 0);
   }
 
   // The acting seat leans in; a folded one sits back. This is the turn signal,
@@ -1780,12 +1770,24 @@ function applySeat(
   }
 
   setChipStack(view.stackChips, chipCountForAmount(seat.stack), 0, resources);
-  const stackLocal = seatLocalPoint(pose, [
-    pose.feltPosition[0] * 0.86,
+  /*
+    Beside the player, in the player's own frame.
+
+    This used to scale the seat's felt anchor toward the middle of the table
+    (`feltPosition * 0.86`) and then shove it 0.16 m sideways. Scaling a point
+    toward the centre moves it by an amount proportional to how far out it
+    already is, so a seat at the end of the oval had its stack dragged a long
+    way inboard while a seat on the long side barely moved -- the six stacks
+    ended up at six different offsets from their owners, some of them adrift
+    between two players. A fixed offset in the seat's local frame puts every
+    stack in the same place relative to the person it belongs to.
+  */
+  const stackLocal = seatLocalPoint(pose, pose.feltPosition);
+  view.stackChips.position.set(
+    stackLocal[0] + STACK_LOCAL_OFFSET_X,
     TABLE_HEIGHT,
-    pose.feltPosition[2] * 0.86,
-  ] as const);
-  view.stackChips.position.set(stackLocal[0] + 0.16, stackLocal[1], stackLocal[2]);
+    stackLocal[2] + STACK_LOCAL_OFFSET_Z,
+  );
 
   // Handed back so the dealer runs off the same clock as the seat it is serving.
   // Deriving it a second time would let the two drift apart, and a dealer whose
@@ -1802,9 +1804,14 @@ function chipPositionForGesture(
     case "call": return callChipPosition(pose, progress);
     case "raise": return raiseChipPosition(pose, progress);
     case "all-in": return allInChipPosition(pose, progress);
-    case "bet":
-    case "collect": return betChipPosition(pose, progress);
-    default: return betChipPosition(pose, 1);
+    case "bet": return betChipPosition(pose, progress);
+    // The dealer raking the street in is the one motion that ends at the pot.
+    case "collect": return collectChipPosition(pose, progress);
+    // At rest a wager sits on its owner's betting line, not in the middle of
+    // the table. `betChipPosition(pose, 1)` used to be this default, and its
+    // terminal position was the pot -- so every idle bet on the table drew
+    // itself in one heap at the centre.
+    default: return betCirclePosition(pose);
   }
 }
 

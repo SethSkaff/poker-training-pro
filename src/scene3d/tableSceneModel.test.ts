@@ -11,8 +11,11 @@ import {
   actionEase,
   allInChipPosition,
   betChipPosition,
+  betCirclePosition,
   callChipPosition,
   chipCountForAmount,
+  collectChipPosition,
+  POT_POSITION,
   dealtCardPosition,
   muckedCardPosition,
   raiseChipPosition,
@@ -107,16 +110,32 @@ describe("objects travel between real places", () => {
     expect(actionEase(5)).toBe(1);
   });
 
-  it("pushes a bet from the seat to the pot", () => {
+  /*
+    A wager stops on its owner's betting line. It used to run all the way to the
+    middle of the felt, and the renderer drew an idle bet at progress 1 -- so
+    every live wager on the table sat in one heap at the centre and the six
+    printed bet circles the felt carries were never used. Only the dealer's
+    sweep reaches the pot.
+  */
+  it("pushes a bet from the seat out to its own betting line", () => {
     const start = betChipPosition(pose, 0);
     const end = betChipPosition(pose, 1);
     expect(start[0]).toBeCloseTo(pose.feltPosition[0], 6);
     expect(start[2]).toBeCloseTo(pose.feltPosition[2], 6);
-    // Ends near the middle of the felt.
-    expect(Math.hypot(end[0], end[2])).toBeLessThan(0.3);
+    expect(end).toEqual(betCirclePosition(pose));
+    // Still in front of its owner, nowhere near the middle of the table.
+    expect(Math.hypot(end[0], end[2])).toBeGreaterThan(0.3);
     // Lifts off the felt on the way and lands back on it.
     expect(betChipPosition(pose, 0.5)[1]).toBeGreaterThan(pose.feltPosition[1]);
     expect(end[1]).toBeCloseTo(pose.feltPosition[1], 6);
+  });
+
+  it("sweeps a collected bet from the betting line into the pot", () => {
+    const start = collectChipPosition(pose, 0);
+    const end = collectChipPosition(pose, 1);
+    expect(start).toEqual(betCirclePosition(pose));
+    expect(end[0]).toBeCloseTo(POT_POSITION[0], 6);
+    expect(end[2]).toBeCloseTo(POT_POSITION[2], 6);
   });
 
   it("gives calls, bets, raises, and all-ins distinct public chip trajectories", () => {
