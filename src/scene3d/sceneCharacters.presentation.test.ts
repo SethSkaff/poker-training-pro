@@ -69,6 +69,12 @@ describe("scene character presentation", () => {
     // The surface has UVs even though the present material is procedural. This
     // keeps the model ready for a fabric texture without a geometry rewrite.
     expect(garment.geometry.getAttribute("uv").count).toBeGreaterThan(30);
+    const material = garment.material as MeshStandardMaterial;
+    // The roster must be visibly remodelled at runtime: the garment carries a
+    // woven/plaid/padded texture, not just a new flat hex colour.
+    expect(material.map).toBeTruthy();
+    expect(material.map?.repeat.y).toBeGreaterThan(1);
+    expect(material.metalness).toBe(0);
     ledger.dispose();
   });
 

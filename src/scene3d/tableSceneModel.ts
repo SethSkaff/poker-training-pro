@@ -191,6 +191,9 @@ export const CHIP_STACK_SAFE_RADIUS = 0.13;
 export const CHIP_STACK_LOCAL_SIDE_OFFSET = 0.145;
 export const CHIP_STACK_LOCAL_OWNER_OFFSET = -0.018;
 
+/** Dealer/blind pucks sit in the clear strip on the player side of a stack. */
+export const TABLE_MARKER_OWNER_OFFSET = -0.092;
+
 /**
  * Project a point into the inset capsule that remains after reserving room for
  * a full chip rack.  The playing surface is a capsule rather than a rectangle;
@@ -231,6 +234,18 @@ export function restingChipStackPosition(
     cardLocal[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
   ]);
   return clampToSafeFelt(desired);
+}
+
+/** Place a dealer/blind marker in front of, rather than on top of, its stack. */
+export function tableMarkerPosition(
+  pose: SeatPose,
+): readonly [number, number, number] {
+  const cardLocal = seatLocalPoint(pose, pose.feltPosition);
+  return seatWorldPoint(pose, [
+    cardLocal[0] + CHIP_STACK_LOCAL_SIDE_OFFSET,
+    TABLE_HEIGHT + 0.012,
+    cardLocal[2] + TABLE_MARKER_OWNER_OFFSET,
+  ]);
 }
 
 /** Resolve the actor cue by stable player identity, never an array slot. */
@@ -478,8 +493,10 @@ export function dealtCardPosition(
   */
   const pickup = 0.18;
   const t = action <= pickup ? 0 : actionEase((action - pickup) / (1 - pickup));
-  // Cards come off the dealer's shoe, so a deal visibly originates with them.
-  const from = TABLE_ANCHORS.dealerShoe;
+  // The first beat is at the shoe; once the dealer has visibly picked it up,
+  // the flight starts at their throwing hand.  This preserves the physical
+  // cause-and-effect chain: shoe -> hand -> receiving lane.
+  const from = TABLE_ANCHORS.dealerThrow;
   const [tx, ty, tz] = pose.feltPosition;
   const lift = Math.sin(Math.PI * t) * 0.1;
   return [

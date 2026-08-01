@@ -14,7 +14,9 @@ import {
   BoxGeometry,
   BufferGeometry,
   CatmullRomCurve3,
+  Color,
   CylinderGeometry,
+  DataTexture,
   Float32BufferAttribute,
   Group,
   Mesh,
@@ -22,9 +24,11 @@ import {
   MeshStandardMaterial,
   Quaternion,
   SphereGeometry,
+  SRGBColorSpace,
   TorusGeometry,
   TubeGeometry,
   Vector3,
+  RepeatWrapping,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { OpponentCharacter } from "../lib/opponentAppearance";
@@ -104,6 +108,62 @@ export const DEALER_HAND_REST = [
 const SPHERE_SEGMENTS = 10;
 const SPHERE_RINGS = 7;
 const CYLINDER_SEGMENTS = 9;
+
+/**
+ * A tiny authored weave texture for the original roster.  It is deliberately
+ * generated in code rather than taken from a game or a photograph: every pixel
+ * is ours, it adds no third-party redistribution obligation, and the repeat is
+ * small enough to read as cloth (not a printed logo) at table distance.
+ *
+ * The earlier pass only changed a material's flat colour.  Under the warm room
+ * light that left a hoodie, polo and blazer looking like the same smooth plastic
+ * torso.  This gives each garment a visible fibre/stripe/plaid construction.
+ */
+function fabricMaterial(
+  outfit: OpponentCharacter["outfit"],
+  ledger: SceneResourceLedger,
+): MeshStandardMaterial {
+  const size = 16;
+  const base = new Color(outfit.base);
+  const trim = new Color(outfit.trim);
+  const pixels = new Uint8Array(size * size * 4);
+  const kind = outfit.name;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const index = (y * size + x) * 4;
+      const diagonal = (x + y) % 5 === 0;
+      const vertical = x % 5 === 0;
+      const horizontal = y % 5 === 0;
+      const stripe = kind === "track-jacket" || kind === "polo"
+        ? vertical
+        : kind === "flannel"
+          ? vertical || horizontal
+          : kind === "puffer"
+            ? y % 4 === 0
+            : diagonal;
+      const thread = stripe ? 0.34 : ((x * 17 + y * 31) % 7) * 0.012;
+      // Keep the texture low contrast: fabric texture, not emissive UI paint.
+      const colour = stripe ? trim : base;
+      const shade = 0.80 + thread;
+      pixels[index] = Math.round(colour.r * 255 * shade);
+      pixels[index + 1] = Math.round(colour.g * 255 * shade);
+      pixels[index + 2] = Math.round(colour.b * 255 * shade);
+      pixels[index + 3] = 255;
+    }
+  }
+  const texture = ledger.track(new DataTexture(pixels, size, size));
+  texture.colorSpace = SRGBColorSpace;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.repeat.set(kind === "puffer" ? 2 : 4, kind === "puffer" ? 8 : 5);
+  texture.needsUpdate = true;
+  return ledger.track(new MeshStandardMaterial({
+    color: 0xffffff,
+    map: texture,
+    roughness: kind === "blazer" || kind === "waistcoat" ? 0.62 : 0.84,
+    metalness: 0,
+  }));
+}
 
 function sphere(
   radius: number,
@@ -683,11 +743,7 @@ export function buildCharacter(
   const features = merged(featureGeometry(character), ledger);
 
   if (cloth) {
-    const garment = new Mesh(cloth, ledger.track(new MeshStandardMaterial({
-      color: character.outfit.base,
-      roughness: 0.84,
-      metalness: 0,
-    })));
+    const garment = new Mesh(cloth, fabricMaterial(character.outfit, ledger));
     garment.name = "garment-base";
     body.add(garment);
     // A restrained collar/hem layer gives each low-poly outfit a readable

@@ -73,7 +73,6 @@ const TableScene3D = lazy(() =>
 );
 import {
   areHeroCardsMucked,
-  canStartHeroGesture,
   foldOffsetProgress,
   isFoldReleaseArmed,
   shouldShowFoldRelease,
@@ -1623,6 +1622,10 @@ export function PokerTable({
       startX: event.clientX,
       startPan: cameraPan,
     };
+    // Cancel the browser's native text-selection gesture at its source.  The
+    // HUD is deliberately not an editable document, and selection can steal a
+    // lower-felt drag before React receives its first move event.
+    event.preventDefault();
     // The visual table has multiple DOM layers. Capture on their shared stage
     // so a look begun on open felt keeps updating even after the cursor crosses
     // a plaque or leaves the canvas bounds.
@@ -2635,7 +2638,10 @@ export function PokerTable({
     keep a mouse button depressed just to read their own two cards.
   */
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!canStartHeroGesture(heroFoldState)) return;
+    // Reading a live hand is always allowed.  Only a folded hand must reject
+    // the pointer; an in-flight action may disable betting but must not make a
+    // normal card click silently fail.
+    if (heroFolded) return;
     dragStart.current = { x: event.clientX, y: event.clientY };
     didDrag.current = false;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -3347,11 +3353,11 @@ export function PokerTable({
         <section
           className="table-stage"
           aria-label={formatMessage("table.stageAriaLabel")}
-          onPointerDown={beginCameraDrag}
-          onPointerMove={updateCameraDrag}
-          onPointerUp={endCameraDrag}
-          onPointerCancel={endCameraDrag}
-          onLostPointerCapture={clearCameraDrag}
+          onPointerDownCapture={beginCameraDrag}
+          onPointerMoveCapture={updateCameraDrag}
+          onPointerUpCapture={endCameraDrag}
+          onPointerCancelCapture={endCameraDrag}
+          onLostPointerCaptureCapture={clearCameraDrag}
         >
           {/*
             The hero's state lives at the hero's seat, not in a floating panel
@@ -4027,7 +4033,7 @@ export function PokerTable({
               })}
               // A mucked hand is not interactive: no peeking, no dragging it
               // back onto the table for the rest of the hand.
-              disabled={Boolean(action) || !cardsDealt || heroFolded}
+              disabled={!cardsDealt || heroFolded}
             >
               <span className="hero-hole-cards__cards">
                 {scenario.heroCards.map((card, index) => (

@@ -35,6 +35,7 @@ import {
   Mesh,
   MeshLambertMaterial,
   MeshBasicMaterial,
+  MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
   PlaneGeometry,
@@ -62,6 +63,7 @@ import {
   muckedCardPosition,
   raiseChipPosition,
   restingChipStackPosition,
+  tableMarkerPosition,
   seatLocalPoint,
   dealerStation,
   seatPoses,
@@ -307,19 +309,21 @@ const BOARD_CARD_SCALE = 1.5;
 interface TableSceneResources {
   readonly ledger: SceneResourceLedger;
   readonly cardGeometry: BufferGeometry;
-  readonly cardMaterial: MeshLambertMaterial;
-  readonly cardBackMaterial: MeshLambertMaterial;
-  deckBackMaterial(colour: DeckColour): MeshLambertMaterial;
+  /** The exposed, flexed half of a hero card during a private squeeze. */
+  readonly heroPeekGeometry: BufferGeometry;
+  readonly cardMaterial: MeshStandardMaterial;
+  readonly cardBackMaterial: MeshStandardMaterial;
+  deckBackMaterial(colour: DeckColour): MeshStandardMaterial;
   readonly chipGeometry: BufferGeometry;
   /** The chip's contrasting edge spots, instanced alongside the body. */
   readonly chipEdgeGeometry: BufferGeometry;
   /** The printed disc on the chip's face; see `build_chip_inlay`. */
   readonly chipInlayGeometry: BufferGeometry;
-  chipEdgeMaterial(): MeshLambertMaterial;
-  chipMaterial(): MeshLambertMaterial;
-  cardFaceMaterial(code: string): MeshLambertMaterial;
+  chipEdgeMaterial(): MeshStandardMaterial;
+  chipMaterial(): MeshStandardMaterial;
+  cardFaceMaterial(code: string): MeshStandardMaterial;
   /** The index revealed by folding a card's top corner back. */
-  cardFoldMaterial(code: string): MeshLambertMaterial;
+  cardFoldMaterial(code: string): MeshStandardMaterial;
   markerMaterial(label: "D" | "SB" | "BB", color: number): MeshLambertMaterial;
   /** Tiled surface maps for the felt, the carpet, and the panelled walls. */
   surfaceTexture(kind: "felt" | "carpet" | "wall", repeatX: number, repeatY: number): Texture | null;
@@ -328,14 +332,65 @@ interface TableSceneResources {
   cardTextureEstimateMiB(): number;
 }
 
+/**
+ * The visible half of a squeezed card, modelled as a shallow physical flex.
+ *
+ * A real player does not rotate an entire card through the air to read it.
+ * They leave the concealed half flat beneath their thumbs and bow the far half
+ * up enough to read the two printed indexes.  This mesh is deliberately just
+ * that exposed half: its curved strips make the bend visible at runtime while
+ * preventing the renderer from displaying a full, face-up card to the room.
+ *
+ * Coordinates follow the table card convention: X is across the card, Y is up
+ * from the felt, and Z runs from the player-facing hidden edge toward the rank
+ * edge.  The texture starts at its middle and ends at its printed top, so the
+ * raised lip contains the card's rank rather than a full-card billboard.
+ */
+function flexedHeroPeekGeometry(): BufferGeometry {
+  const strips = 8;
+  const width = 0.176;
+  const hiddenEdge = -0.020;
+  const revealedEdge = 0.122;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let row = 0; row <= strips; row += 1) {
+    const progress = row / strips;
+    const z = hiddenEdge + (revealedEdge - hiddenEdge) * progress;
+    // The first few millimetres stay on the felt under the fingers; the rank
+    // edge rises smoothly.  A sine curve avoids the old hard triangular kink.
+    const y = 0.002 + Math.sin(progress * Math.PI * 0.5) * 0.062;
+    const textureV = 0.46 + progress * 0.54;
+    for (const x of [-width / 2, width / 2]) {
+      positions.push(x, y, z);
+      uvs.push(x < 0 ? 0 : 1, textureV);
+    }
+  }
+  for (let row = 0; row < strips; row += 1) {
+    const left = row * 2;
+    indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);
+  }
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function createTableSceneResources(): TableSceneResources {
   const ledger = createSceneResourceLedger();
   const track = <T extends { dispose(): void }>(resource: T): T => ledger.track(resource);
-  const faceMaterials = new Map<string, MeshLambertMaterial>();
-  const deckBackMaterials = new Map<DeckColour, MeshLambertMaterial>();
+  const faceMaterials = new Map<string, MeshStandardMaterial>();
+  const deckBackMaterials = new Map<DeckColour, MeshStandardMaterial>();
   const markerMaterials = new Map<string, MeshLambertMaterial>();
   const potPlaqueMaterials = new Map<string, MeshBasicMaterial>();
-  const cardFaceMaterial = (code: string): MeshLambertMaterial => {
+  const potPlaqueCanvases = new Map<"main" | "side", HTMLCanvasElement>();
+  const potPlaqueTextures = new Map<"main" | "side", CanvasTexture>();
+  const potPlaqueLabels = new Map<"main" | "side", string>();
+  const cardFaceMaterial = (code: string): MeshStandardMaterial => {
     const face = parsePublicCardFace(code);
     if (!face) return cardMaterial;
     const key = `${face.rank}${face.glyph}`;
@@ -358,9 +413,11 @@ function createTableSceneResources(): TableSceneResources {
       of suit colour. Two indices in opposite corners, as printed, so the card
       reads the same either way up on the felt.
     */
-    context.fillStyle = "#fbf7ef";
+    // Ivory card stock, not a self-lit white panel.  It stays visibly white
+    // against the felt while leaving enough headroom for the warm pendant.
+    context.fillStyle = "#e7e1d5";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = "#cfc4ad";
+    context.strokeStyle = "#b9ad99";
     context.lineWidth = 3;
     context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
     const ink = face.red ? "#c02531" : "#16202b";
@@ -389,9 +446,15 @@ function createTableSceneResources(): TableSceneResources {
     context.restore();
     context.textBaseline = "alphabetic";
     const texture = track(new CanvasTexture(canvas));
+    texture.colorSpace = SRGBColorSpace;
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
     texture.minFilter = LinearFilter;
-    const material = track(new MeshLambertMaterial({ map: texture }));
+    const material = track(new MeshStandardMaterial({
+      map: texture,
+      color: 0xe6e0d4,
+      roughness: 0.94,
+      metalness: 0,
+    }));
     faceMaterials.set(key, material);
     return material;
   };
@@ -404,8 +467,8 @@ function createTableSceneResources(): TableSceneResources {
     face down on the cloth and one small triangle of its printed side comes into
     view, which is why the gesture is safe to make in front of five opponents.
   */
-  const foldMaterials = new Map<string, MeshLambertMaterial>();
-  const cardFoldMaterial = (code: string): MeshLambertMaterial => {
+  const foldMaterials = new Map<string, MeshStandardMaterial>();
+  const cardFoldMaterial = (code: string): MeshStandardMaterial => {
     const face = parsePublicCardFace(code);
     if (!face) return cardMaterial;
     const key = `${face.rank}${face.glyph}`;
@@ -416,9 +479,9 @@ function createTableSceneResources(): TableSceneResources {
     canvas.height = 128;
     const context = canvas.getContext("2d");
     if (!context) return cardMaterial;
-    context.fillStyle = "#f7f0de";
+    context.fillStyle = "#e5ded1";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = "#cfc4ad";
+    context.strokeStyle = "#b9ad99";
     context.lineWidth = 3;
     context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
     // The compact rectangle is fully visible between the shielding fingers.
@@ -436,6 +499,7 @@ function createTableSceneResources(): TableSceneResources {
     context.font = "32px Georgia, serif";
     context.fillText(face.glyph, canvas.width * 0.50, canvas.height * 0.83);
     const texture = track(new CanvasTexture(canvas));
+    texture.colorSpace = SRGBColorSpace;
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
     texture.minFilter = LinearFilter;
     /*
@@ -445,11 +509,21 @@ function createTableSceneResources(): TableSceneResources {
       other, and after the tip was raised, it vanished -- a blank corner with no
       error anywhere. One triangle costs nothing to draw twice.
     */
-    const material = track(new MeshLambertMaterial({ map: texture, side: DoubleSide }));
+    const material = track(new MeshStandardMaterial({
+      map: texture,
+      color: 0xe4ddd0,
+      roughness: 0.96,
+      metalness: 0,
+      side: DoubleSide,
+    }));
     foldMaterials.set(key, material);
     return material;
   };
-  const cardMaterial = track(new MeshLambertMaterial({ color: 0xf3ede0 }));
+  const cardMaterial = track(new MeshStandardMaterial({
+    color: 0xe1dacd,
+    roughness: 0.96,
+    metalness: 0,
+  }));
   /*
     A patterned back, because a flat one is not a card.
 
@@ -460,16 +534,16 @@ function createTableSceneResources(): TableSceneResources {
     diagonal guilloche a card back has had for two centuries, drawn once and
     shared by every card, so it costs one texture for the whole table.
   */
-  function cardBackMaterial(colour = "#8d2733"): MeshLambertMaterial {
+  function cardBackMaterial(colour = "#8d2733"): MeshStandardMaterial {
     const canvas = document.createElement("canvas");
     canvas.width = 64;
     canvas.height = 90;
     const context = canvas.getContext("2d");
-    if (!context) return new MeshLambertMaterial({ color: 0x8d2733 });
+    if (!context) return new MeshStandardMaterial({ color: 0x6f202a, roughness: 0.94, metalness: 0 });
     context.fillStyle = colour;
     context.fillRect(0, 0, canvas.width, canvas.height);
     // The white border a real back leaves round its printed panel.
-    context.fillStyle = "#f0e7d5";
+    context.fillStyle = "#d9d0c1";
     context.fillRect(0, 0, canvas.width, 4);
     context.fillRect(0, canvas.height - 4, canvas.width, 4);
     context.fillRect(0, 0, 4, canvas.height);
@@ -492,11 +566,17 @@ function createTableSceneResources(): TableSceneResources {
     }
     context.restore();
     const texture = track(new CanvasTexture(canvas));
+    texture.colorSpace = SRGBColorSpace;
     texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
     texture.minFilter = LinearFilter;
-    return new MeshLambertMaterial({ map: texture });
+    return new MeshStandardMaterial({
+      map: texture,
+      color: 0xdfd8cc,
+      roughness: 0.94,
+      metalness: 0,
+    });
   }
-  const deckBackMaterial = (colour: DeckColour): MeshLambertMaterial => {
+  const deckBackMaterial = (colour: DeckColour): MeshStandardMaterial => {
     const cached = deckBackMaterials.get(colour);
     if (cached) return cached;
     const material = track(cardBackMaterial(colour === "red" ? "#8d2733" : "#294f83"));
@@ -582,22 +662,50 @@ function createTableSceneResources(): TableSceneResources {
     return material;
   };
   const potPlaqueMaterial = (label: string, kind: "main" | "side"): MeshBasicMaterial => {
-    const key = `${kind}:${label}`;
-    const cached = potPlaqueMaterials.get(key);
-    if (cached) return cached;
-    const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 80;
-    const context = canvas.getContext("2d");
-    if (!context) return track(new MeshBasicMaterial({
+    /*
+      A pot total changes every action, but it is not a new GPU asset every
+      action.  The former `${kind}:${label}` cache held one CanvasTexture and
+      material for every amount ever seen.  During a long tournament that made
+      renderer.info.memory.textures climb without a bound until the GPU process
+      could be killed.  Each physical pot lane instead owns one mutable label
+      surface; repainting its canvas changes the text without allocating more
+      GPU resources.
+    */
+    const cached = potPlaqueMaterials.get(kind);
+    const previousLabel = potPlaqueLabels.get(kind);
+    if (cached && previousLabel === label) return cached;
+
+    let canvas = potPlaqueCanvases.get(kind);
+    let texture = potPlaqueTextures.get(kind);
+    if (!canvas || !texture) {
+      canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 80;
+      const context = canvas.getContext("2d");
+      if (!context) return track(new MeshBasicMaterial({
       color: kind === "main" ? 0xf6d36d : 0x9bc8ff,
       transparent: true,
       opacity: 0.82,
       blending: AdditiveBlending,
       depthWrite: false,
-    }));
+      }));
+      texture = track(new CanvasTexture(canvas));
+      texture.generateMipmaps = false;
+      texture.minFilter = LinearFilter;
+      potPlaqueCanvases.set(kind, canvas);
+      potPlaqueTextures.set(kind, texture);
+    }
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return cached ?? track(new MeshBasicMaterial({ color: kind === "main" ? 0xf6d36d : 0x9bc8ff }));
+    }
     const accent = kind === "main" ? "#f6d36d" : "#9bc8ff";
     context.clearRect(0, 0, canvas.width, canvas.height);
+    // The readout is projected, but its compact panel must be opaque enough to
+    // hide the carpet and beam behind the amount.
+    context.fillStyle = "#111714";
+    context.globalAlpha = 0.96;
+    context.fillRect(4, 11, canvas.width - 8, canvas.height - 22);
     context.strokeStyle = accent;
     context.globalAlpha = 0.7;
     context.lineWidth = 1.5;
@@ -608,22 +716,17 @@ function createTableSceneResources(): TableSceneResources {
     context.textBaseline = "middle";
     context.font = "700 30px Inter, Arial, sans-serif";
     context.fillText(label, canvas.width / 2, canvas.height / 2 + 1);
-    const texture = track(new CanvasTexture(canvas));
-    texture.generateMipmaps = false;
-    texture.minFilter = LinearFilter;
-    const material = track(new MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      opacity: 0.86,
-      blending: AdditiveBlending,
-      depthWrite: false,
-    }));
-    potPlaqueMaterials.set(key, material);
+    texture.needsUpdate = true;
+    potPlaqueLabels.set(kind, label);
+    if (cached) return cached;
+    const material = track(new MeshBasicMaterial({ map: texture, transparent: true, opacity: 1, depthWrite: true }));
+    potPlaqueMaterials.set(kind, material);
     return material;
   };
   return {
     ledger,
     cardGeometry: track(tableMeshGeometry("card")),
+    heroPeekGeometry: track(flexedHeroPeekGeometry()),
     cardMaterial,
     cardBackMaterial: track(cardBackMaterial()),
     deckBackMaterial,
@@ -632,8 +735,10 @@ function createTableSceneResources(): TableSceneResources {
     chipInlayGeometry: track(tableMeshGeometry("chip/inlay")),
     /* White materials tinted per instance: `setChipStack` writes a real
        denomination colour per chip, so the material must not impose one. */
-    chipMaterial: () => track(new MeshLambertMaterial({ color: 0xffffff })),
-    chipEdgeMaterial: () => track(new MeshLambertMaterial({ color: 0xffffff })),
+    // Clay composite: all colour comes from the per-instance denomination,
+    // while a very rough dielectric surface keeps the highlights soft.
+    chipMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0 })),
+    chipEdgeMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 })),
     cardFaceMaterial,
     cardFoldMaterial,
     markerMaterial,
@@ -796,6 +901,17 @@ export function createTableScene(
   // muck make every public card's physical origin and destination visible.
   const liveDeck = buildDealerDeck(resources, "live-deck");
   const prepDeck = buildDealerDeck(resources, "prep-deck");
+  /*
+   * The top card the dealer is currently holding.  It belongs to the arm rig
+   * through pickup, rather than being another free-flight card from the shoe.
+   * At release the recipient card takes over from `dealerThrow`.
+   */
+  const dealerHeldCard = new Mesh(resources.cardGeometry, resources.deckBackMaterial("red"));
+  dealerHeldCard.name = "dealer-held-card";
+  dealerHeldCard.position.set(0.105, -0.015, 0.38);
+  dealerHeldCard.rotation.set(Math.PI / 2, 0.05, 0);
+  dealerHeldCard.visible = false;
+  dealer.arms.add(dealerHeldCard);
   const muckPile = new Group();
   muckPile.name = "dealer-muck-pile";
   liveDeck.position.set(...TABLE_ANCHORS.dealerShoe);
@@ -955,8 +1071,9 @@ export function createTableScene(
         same per-seat progress the cards and chips are, and the model picks which
         of the seats in flight is the one being served.
       */
+      const activeDealerWork = dealerWorkFor(dealerWork);
       const gesture = dealerGestureFor(
-        dealerWorkFor(dealerWork),
+        activeDealerWork,
         dealerPoseModel,
         // Reduced motion holds the pose square; the idle breath is motion for
         // its own sake, which is exactly what the preference asks us to drop.
@@ -965,7 +1082,16 @@ export function createTableScene(
       dealer.arms.rotation.x = gesture.shoulderPitch;
       dealer.arms.rotation.y = gesture.shoulderYaw;
       dealer.body.position.z = gesture.lean;
-      setDealerCardEquipment(liveDeck, prepDeck, muckPile, state, nowMs, resources);
+      setDealerCardEquipment(
+        liveDeck,
+        prepDeck,
+        muckPile,
+        dealerHeldCard,
+        activeDealerWork,
+        state,
+        nowMs,
+        resources,
+      );
       placeMarker(buttonMarker, state.buttonPlayerId, seatViews);
       placeMarker(smallBlindMarker, state.smallBlindPlayerId, seatViews);
       placeMarker(bigBlindMarker, state.bigBlindPlayerId, seatViews);
@@ -1441,21 +1567,8 @@ function placeMarker(
   marker.visible = Boolean(pose);
   marker.userData.publicPlayerId = pose ? playerId : null;
   if (!pose) return;
-  /*
-    Beside the owner's cards, in the owner's own frame.
-
-    Offsetting by the sign of the world x put the marker on the *table's* left
-    or right rather than the seat's, so for seats on the far side it landed
-    between the cards and, for the seats nearest the middle, on top of them.
-    0.135 m along the seat's local right is inside their printed play zone and
-    clear of both hole cards, whichever way the seat faces.
-  */
-  const right = [Math.cos(pose.facing), -Math.sin(pose.facing)] as const;
-  marker.position.set(
-    pose.feltPosition[0] + right[0] * 0.135,
-    TABLE_HEIGHT + 0.012,
-    pose.feltPosition[2] + right[1] * 0.135,
-  );
+  // Share the stack's lateral column, but leave a clear foreground gap.
+  marker.position.set(...tableMarkerPosition(pose));
 }
 
 /**
@@ -1591,14 +1704,16 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
     hand.position.set(x, 0, z);
     hand.rotation.y = yaw;
     const palm = new Mesh(palmGeometry, skin);
-    palm.scale.set(0.052, 0.015, 0.074);
+    // Keep the palms below the raised lip.  The first version was large enough
+    // to hide both ranks, which defeated the entire private-peek gesture.
+    palm.scale.set(0.042, 0.014, 0.050);
     palm.position.set(0, 0, 0);
     hand.add(palm);
     // Four curled fingers cross the card's far edge. Their stagger is what
     // prevents the silhouette from becoming the old single triangular flap.
     for (let finger = 0; finger < 4; finger += 1) {
       const segment = new Mesh(fingerGeometry, skin);
-      segment.position.set((finger - 1.5) * 0.018, 0.008, mirror * 0.052);
+      segment.position.set((finger - 1.5) * 0.016, 0.007, mirror * 0.040);
       segment.rotation.set(Math.PI / 2.65, 0, (finger - 1.5) * 0.06);
       hand.add(segment);
     }
@@ -1606,8 +1721,8 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
   };
   // One hand is closest to the player and supports the packet; the other
   // reaches over from the right, matching a normal two-card squeeze.
-  addHand(-0.070, -0.070, -0.18, 1);
-  addHand(0.070, -0.010, 0.30, -1);
+  addHand(-0.084, -0.100, -0.18, 1);
+  addHand(0.084, -0.064, 0.30, -1);
   return hands;
 }
 
@@ -1721,7 +1836,10 @@ function applySeat(
       plays out, but nobody reads them like that: you draw them together and
       turn them off-square so one thumb can lift both corners behind one hand.
     */
-    const spread = squeezing ? 0.026 : 0.055;
+    // A real squeeze leaves a narrow gap between the two readable corners.
+    // Packing them more tightly made one card occlude the other in the hero
+    // camera, even though both face textures were correct.
+    const spread = squeezing ? 0.052 : 0.055;
     /*
       Card 0 goes to the player's left.
 
@@ -1735,18 +1853,18 @@ function applySeat(
     const toPlayersLeft = index === 0 ? spread : -spread;
     card.position.set(
       local[0] + toPlayersLeft,
-      local[1] + (squeezing ? 0.024 : 0),
-      local[2] + (squeezing ? -0.028 : 0),
+      local[1] + (squeezing ? 0.004 : 0),
+      local[2] + (squeezing ? -0.012 : 0),
     );
-    // A real peek is a shallow roll about the card's long edge. It is not a
-    // vertical flip: the face remains upright in the hero camera and the far
-    // half remains behind the shielding hands.
-    card.rotation.x = squeezing ? -0.46 : 0;
-    card.rotation.y = squeezing ? (index === 0 ? 0.06 : -0.06) : 0;
+    // The card's *geometry* now flexes, rather than rotating an entire rigid
+    // rectangle. Keeping the packet level preserves the printed orientation
+    // and prevents the upside-down full-card reveal reported in playtests.
+    card.rotation.x = 0;
+    card.rotation.y = squeezing ? (index === 0 ? 0.025 : -0.025) : 0;
     card.scale.setScalar(1);
     const mesh = card as Mesh;
     const code = seat.publicCardCodes?.[index];
-    mesh.geometry = resources.cardGeometry;
+    mesh.geometry = squeezing ? resources.heroPeekGeometry : resources.cardGeometry;
     // A private peek is the one moment the hero must be able to read both
     // cards. The snapshot only supplies `code` for the hero while peeking (or
     // at public showdown), so using the face here cannot expose a hand to any
@@ -1784,8 +1902,8 @@ function applySeat(
       A seat's local +X is screen *left* from that seat's own camera, so "the
       player's right" is local -X.
     */
-    view.hand.position.set(local[0], local[1] + 0.045, local[2] - 0.074);
-    view.hand.rotation.set(-0.16, 0, 0);
+    view.hand.position.set(local[0], local[1] + 0.030, local[2] - 0.108);
+    view.hand.rotation.set(-0.10, 0, 0);
   }
 
   // The acting seat leans in; a folded one sits back.  Crucially, the arms do
@@ -2125,6 +2243,8 @@ function setDealerCardEquipment(
   liveDeck: Group,
   prepDeck: Group,
   muck: Group,
+  heldCard: Mesh,
+  activeWork: DealerWork | undefined,
   state: TableSceneState,
   nowMs: number,
   resources: TableSceneResources,
@@ -2137,6 +2257,16 @@ function setDealerCardEquipment(
   const inactive = inactiveDeckColour(handId);
   for (const card of liveDeck.children) (card as Mesh).material = resources.deckBackMaterial(active);
   for (const card of prepDeck.children) (card as Mesh).material = resources.deckBackMaterial(inactive);
+  heldCard.material = resources.deckBackMaterial(active);
+  /*
+   * The hand owns the card during its reach and turn.  The destination card
+   * remains parked at the shoe through this same pickup beat, then begins at
+   * `dealerThrow` just after this mesh leaves the hand.  The slight overlap at
+   * release makes the handoff continuous at normal table-camera speed.
+   */
+  heldCard.visible = activeWork?.task === "deal"
+    && activeWork.progress >= 0.04
+    && activeWork.progress < 0.40;
 
   // While a hand is live, the other pack is squared and gently prepared by the
   // dealer. Motion preferences snap this same object to its settled position.

@@ -24,7 +24,9 @@ describe("table UI restraint and card peek", () => {
     expect(table).toContain('className={`hero-hole-cards ${peeked ? "is-peeked" : ""}');
     expect(table).toContain("setPeeked((value) => !value)");
     expect(table).toContain("const shouldFold = !cancelled && didDrag.current && foldProgress >= 82");
-    expect(table).toContain("disabled={Boolean(action) || !cardsDealt || heroFolded}");
+    // A table action can be in flight while the player is still entitled to
+    // read their own cards. Only undealt or mucked cards reject a normal tap.
+    expect(table).toContain("disabled={!cardsDealt || heroFolded}");
     // Opponent cards remain hidden until a legal public showdown reveal.
     expect(table).toContain("hidden={!peeked && !showdownHeroRevealed}");
   });

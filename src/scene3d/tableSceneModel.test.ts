@@ -20,6 +20,7 @@ import {
   muckedCardPosition,
   raiseChipPosition,
   restingChipStackPosition,
+  tableMarkerPosition,
   seatLocalPoint,
   seatPoses,
   seatWorldPoint,
@@ -166,9 +167,22 @@ describe("objects travel between real places", () => {
     expect(distance(dealtCardPosition(pose, 0), end)).toBeGreaterThan(0.2);
   });
 
-  it("holds a dealt card at the dealer shoe through the visible pickup", () => {
+  it("holds the recipient card at the dealer's hand through the visible pickup", () => {
     expect(dealtCardPosition(pose, 0.15)).toEqual(dealtCardPosition(pose, 0));
+    expect(dealtCardPosition(pose, 0)).toEqual(TABLE_ANCHORS.dealerThrow);
     expect(distance(dealtCardPosition(pose, 0.55), dealtCardPosition(pose, 0))).toBeGreaterThan(0.02);
+  });
+
+  it("releases the flight from the dealer's hand rather than keeping a shoe-origin arc", () => {
+    const held = dealtCardPosition(pose, 0.15);
+    const released = dealtCardPosition(pose, 0.23);
+    const shoe = TABLE_ANCHORS.dealerShoe;
+    // The in-hand beat is parked at the throwing hand while the separate held
+    // mesh is still visibly attached to the dealer's arm.
+    expect(held).toEqual(TABLE_ANCHORS.dealerThrow);
+    // Once it leaves, its source has moved inward with the dealer's hand.
+    expect(released[0]).toBeLessThan(shoe[0] - 0.05);
+    expect(released[1]).toBeGreaterThan(shoe[1]);
   });
 
   it("sends a folded card away from the seat toward the muck", () => {
@@ -355,6 +369,19 @@ describe("resting chip stacks stay in their owner's safe play lane", () => {
       const bet = betCirclePosition(pose);
       expect(distance(stack, bet), `seat ${pose.seat}`).toBeGreaterThan(0.07);
       expect(bet).toEqual(betChipPosition(pose, 1));
+    }
+  });
+});
+
+describe("dealer and blind markers", () => {
+  it("sit in the clear foreground strip in front of each owner's stack", () => {
+    for (const pose of seatPoses(6)) {
+      const stack = restingChipStackPosition(pose);
+      const marker = tableMarkerPosition(pose);
+      // Pucks remain in the same seat lane but leave enough air not to read as
+      // sitting on the chip stack.
+      expect(distance(marker, stack), `seat ${pose.seat}`).toBeGreaterThan(0.06);
+      expect(Math.hypot(marker[0], marker[2])).toBeGreaterThan(Math.hypot(stack[0], stack[2]));
     }
   });
 });

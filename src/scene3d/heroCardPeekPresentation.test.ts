@@ -36,10 +36,14 @@ describe("hero card peek presentation", () => {
     expect(scene).not.toContain("mesh.material = code && !squeezing");
   });
 
-  it("keeps the physical peek upright, shallow, and shielded rather than flipping cards vertical", () => {
-    expect(scene).toContain("card.rotation.x = squeezing ? -0.46 : 0;");
-    expect(scene).toContain("card.rotation.y = squeezing ? (index === 0 ? 0.06 : -0.06) : 0;");
-    expect(scene).toContain("view.hand.position.set(local[0], local[1] + 0.045, local[2] - 0.074);");
+  it("uses an actual curved exposed half-card instead of rotating a full card", () => {
+    expect(scene).toContain("function flexedHeroPeekGeometry(): BufferGeometry");
+    expect(scene).toContain("const strips = 8;");
+    expect(scene).toContain("Math.sin(progress * Math.PI * 0.5) * 0.062");
+    expect(scene).toContain("mesh.geometry = squeezing ? resources.heroPeekGeometry : resources.cardGeometry;");
+    expect(scene).toContain("card.rotation.x = 0;");
+    expect(scene).toContain("card.rotation.y = squeezing ? (index === 0 ? 0.025 : -0.025) : 0;");
+    expect(scene).toContain("view.hand.position.set(local[0], local[1] + 0.030, local[2] - 0.108);");
     expect(scene).toContain("fold.visible = false;");
   });
 });

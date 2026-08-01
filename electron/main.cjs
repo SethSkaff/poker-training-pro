@@ -823,6 +823,13 @@ async function showProcessRecovery(window, failureKind) {
     const buttons = unresponsive
       ? ["Wait", "Reload app", "Quit"]
       : ["Reload app", "Quit"];
+    // A renderer failure can leave a hidden/minimized native window behind.
+    // Bring that existing window forward before asking for recovery; otherwise
+    // the application appears to have simply disappeared even though its main
+    // process is alive and holding the player's autosave.
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
     const selection = await dialog.showMessageBox(window, {
       type: "error",
       title: "Poker Training Pro needs attention",
@@ -833,7 +840,10 @@ async function showProcessRecovery(window, failureKind) {
         "Your last acknowledged autosave is kept separately. Reload the app to recover it, or quit without deleting progress.",
       buttons,
       defaultId: unresponsive ? 0 : 0,
-      cancelId: unresponsive ? 0 : 1,
+      // Closing the recovery prompt (Escape/Alt+F4) must never silently choose
+      // Quit after a crash.  Reload is the safe default and retains the
+      // separately committed autosave.
+      cancelId: 0,
       noLink: true,
     });
     if (window.isDestroyed()) return;

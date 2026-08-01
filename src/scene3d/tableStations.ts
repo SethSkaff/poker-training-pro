@@ -315,6 +315,14 @@ export const TABLE_ANCHORS = {
     ] as const,
   /** Where the dealer's shoe sits, and where dealt cards originate. */
   dealerShoe: [0.36, TABLE_HEIGHT + 0.02, -(TABLE_DEPTH / 2 - 0.2)] as const,
+  /**
+   * The point a card visibly leaves the dealer's throwing hand.
+   *
+   * This is deliberately in front of the shoe.  A card that starts from the
+   * shoe while the dealer merely waves reads as a floating animation; the shoe
+   * is where it is picked up, this is where it is released.
+   */
+  dealerThrow: [0.12, TABLE_HEIGHT + 0.105, -(TABLE_DEPTH / 2 - 0.16)] as const,
   /** The muck, in front of the dealer. */
   muck: [-0.42, TABLE_HEIGHT + 0.01, -(TABLE_DEPTH / 2 - 0.2)] as const,
 } as const;

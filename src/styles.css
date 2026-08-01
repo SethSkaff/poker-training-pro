@@ -42,6 +42,11 @@ body,
 body {
   min-height: 100vh;
   overflow-x: hidden;
+  /* This is a game surface, not a document: a drag anywhere in the room must
+     never turn HUD copy or tournament status into a blue text-selection
+     highlight.  Actual text-entry controls opt back in below. */
+  -webkit-user-select: none;
+  user-select: none;
   background:
     radial-gradient(circle at 50% -20%, rgba(46, 199, 174, 0.12), transparent 42%),
     var(--bg);
@@ -52,6 +57,12 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 button {
@@ -1743,9 +1754,30 @@ input[type="range"]::-webkit-slider-thumb {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
+  /* A poker table is a direct-manipulation game surface, not a document.
+     Prevent browser selection from taking over a held felt drag. */
+  -webkit-user-select: none;
+  user-select: none;
   background:
     radial-gradient(ellipse at 48% 15%, rgba(43, 112, 90, 0.2), transparent 38%),
     linear-gradient(#08130f, #030907 72%);
+}
+
+/* Preserve normal editing behaviour for the few genuine form controls. */
+.table-screen input:not([type="range"]),
+.table-screen textarea,
+.table-screen [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.table-stage {
+  cursor: grab;
+  touch-action: none;
+}
+
+.table-stage:has(*:active) {
+  cursor: grabbing;
 }
 
 .table-screen::before {
