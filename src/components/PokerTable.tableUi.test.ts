@@ -39,6 +39,8 @@ describe("table UI restraint and card peek", () => {
   it("makes a non-drag card click toggle the same private peek as the keyboard shortcut", () => {
     expect(table).toContain("Pointer release without a drag is a normal click: mirror Space.");
     expect(table).toContain("setPeeked((value) => !value);");
+    expect(table).toContain("event.stopPropagation();");
+    expect(table).toContain("event.currentTarget.setPointerCapture(event.pointerId);");
     expect(table).toContain("if (shouldFold) {");
   });
 });

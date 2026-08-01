@@ -102,7 +102,7 @@ import { createSceneActionTimingState, reconcileSceneActionTiming } from "./scen
 import { createSceneRenderLifecycle } from "./sceneLifecycle";
 import { createSceneResourceLedger, type SceneResourceLedger } from "./sceneResources";
 import { createSceneFrameTelemetry } from "./sceneDiagnostics";
-import { boardDealPose, deckColourForHand, inactiveDeckColour, muckCardCount, type DeckColour } from "./dealerPresentation";
+import { boardDealPose, burnCardPose, deckColourForHand, inactiveDeckColour, muckCardCount, type DeckColour } from "./dealerPresentation";
 import {
   parsePublicCardFace,
   PROCEDURAL_CARD_FACE_SIZE,
@@ -136,6 +136,8 @@ export interface TableSceneState {
   readonly boardCards: number;
   /** The table's discrete camera control, -2..2. */
   readonly cameraPan: number;
+  /** Ephemeral player wheel zoom, normalized -1 (far) to 1 (near). */
+  readonly cameraZoom?: number;
   /** Real WebGL composition preference, mirrored from Settings. */
   readonly cameraView?: SceneCameraView;
   /** Camera-only motion policy; never changes table-action motion. */
@@ -368,9 +370,15 @@ function flexedHeroPeekGeometry(): BufferGeometry {
     // The first few millimetres stay on the felt under the fingers; the rank
     // edge rises smoothly.  A sine curve avoids the old hard triangular kink.
     const y = 0.002 + Math.sin(progress * Math.PI * 0.5) * 0.032;
-    /* CanvasTexture is flipped vertically.  This samples the real printed
-       corner/rank band, rather than the oversized centre pip. */
-    const textureV = 0.74 + progress * 0.24;
+    /*
+      CanvasTexture is flipped vertically.  The exposed lip must include both
+      parts of a normal corner index: the rank sits at roughly 80% V and the
+      suit directly under it at roughly 65% V.  The old 0.74..0.98 range
+      clipped the suit away, so a player could only guess at a red or black
+      card.  This is still only the printed upper half, not the centre pip or
+      opposite corner of a full card.
+    */
+    const textureV = 0.58 + progress * 0.40;
     for (const x of [-width / 2, width / 2]) {
       positions.push(x, y, z);
       uvs.push(x < 0 ? 0 : 1, textureV);
@@ -953,6 +961,12 @@ export function createTableScene(
   dealerHeldCard.rotation.set(Math.PI / 2, 0.05, 0);
   dealerHeldCard.visible = false;
   dealer.arms.add(dealerHeldCard);
+  // This card is separate from the folded-hand muck: it is the face-down burn
+  // the dealer places before each public board card.
+  const dealerBurnCard = new Mesh(resources.cardGeometry, resources.deckBackMaterial("red"));
+  dealerBurnCard.name = "dealer-burn-card";
+  dealerBurnCard.visible = false;
+  scene.add(dealerBurnCard);
   const muckPile = new Group();
   muckPile.name = "dealer-muck-pile";
   liveDeck.position.set(...TABLE_ANCHORS.dealerShoe);
@@ -1008,7 +1022,7 @@ export function createTableScene(
 
   let cameraViewportWidth = canvas.clientWidth || 1366;
   let cameraViewportHeight = canvas.clientHeight || 768;
-  let cameraCurrent = cameraPose(initial.cameraPan, initial.heroStationIndex ?? 0, camera.aspect);
+  let cameraCurrent = cameraPose(initial.cameraPan, initial.heroStationIndex ?? 0, camera.aspect, initial.cameraZoom ?? 0);
   let cameraTarget = cameraCurrent;
   let cameraLastFrameMs = mountedAt;
   let cameraMoving = false;
@@ -1023,7 +1037,7 @@ export function createTableScene(
   };
 
   const setCameraTarget = (next: TableSceneState, snap: boolean) => {
-    cameraTarget = cameraPose(next.cameraPan, next.heroStationIndex ?? 0, camera.aspect);
+    cameraTarget = cameraPose(next.cameraPan, next.heroStationIndex ?? 0, camera.aspect, next.cameraZoom ?? 0);
     if (snap) {
       cameraCurrent = cameraTarget;
       cameraMoving = false;
@@ -1104,6 +1118,16 @@ export function createTableScene(
         const task = DEALER_TASK_FOR_ACTION[seat.action ?? ""];
         if (task) dealerWork.push({ task, progress, at: entry.pose.feltPosition });
       }
+      // A board street is dealer work too: burn first, then pitch the next
+      // card from the live shoe toward the board.  Without this entry the
+      // card could animate while the dealer remained in an idle pose.
+      if (state.transition?.kind === "board-card-dealt") {
+        dealerWork.push({
+          task: "deal",
+          progress: state.transition.progress,
+          at: TABLE_ANCHORS.board,
+        });
+      }
       /*
         The dealer works the table.
 
@@ -1128,6 +1152,7 @@ export function createTableScene(
         prepDeck,
         muckPile,
         dealerHeldCard,
+        dealerBurnCard,
         activeDealerWork,
         state,
         nowMs,
@@ -1740,7 +1765,14 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
   const skin = resources.ledger.track(new MeshLambertMaterial({ color: 0xd2a07b }));
   const palmGeometry = resources.ledger.track(new SphereGeometry(1, 12, 8));
   const fingerGeometry = resources.ledger.track(new CylinderGeometry(0.010, 0.012, 0.074, 8));
-  const addHand = (name: string, x: number, z: number, yaw: number, mirror: number) => {
+  const addHand = (
+    name: string,
+    x: number,
+    z: number,
+    yaw: number,
+    mirror: number,
+    role: "side-lift" | "rear-brace",
+  ) => {
     const hand = new Group();
     hand.name = name;
     hand.position.set(x, 0, z);
@@ -1748,15 +1780,27 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
     const palm = new Mesh(palmGeometry, skin);
     // Keep the palms below the raised lip.  The first version was large enough
     // to hide both ranks, which defeated the entire private-peek gesture.
-    palm.scale.set(0.036, 0.012, 0.040);
+    // Neither hand crosses the raised far edge where the two rank/suit
+    // windows are printed.  One sits alongside the packet; the other braces
+    // it from the player-facing lower edge, as in a real two-card squeeze.
+    palm.scale.set(
+      role === "side-lift" ? 0.022 : 0.030,
+      0.010,
+      role === "side-lift" ? 0.030 : 0.024,
+    );
     palm.position.set(0, 0, 0);
     hand.add(palm);
     // Four curled fingers cross the card's far edge. Their stagger is what
     // prevents the silhouette from becoming the old single triangular flap.
     for (let finger = 0; finger < 4; finger += 1) {
       const segment = new Mesh(fingerGeometry, skin);
-      segment.position.set((finger - 1.5) * 0.014, 0.006, mirror * 0.030);
-      segment.rotation.set(Math.PI / 2.8, 0, (finger - 1.5) * 0.05);
+      segment.scale.y = role === "side-lift" ? 0.70 : 0.58;
+      segment.position.set(
+        (finger - 1.5) * 0.010,
+        0.004,
+        mirror * (role === "side-lift" ? 0.020 : 0.018),
+      );
+      segment.rotation.set(Math.PI / 2.8, 0, (finger - 1.5) * 0.035);
       hand.add(segment);
     }
     hands.add(hand);
@@ -1768,8 +1812,11 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
     roles are asymmetric on purpose: mirror-imaged palms looked like one hand
     faced backward in first person.
   */
-  addHand("peek-lift-hand", -0.046, -0.052, -0.10, 1);
-  addHand("peek-shield-hand", 0.050, 0.016, 0.12, -1);
+  // The side hand lightly lifts the outside corner. The rear hand remains
+  // below the player-facing edge, behind the cards from the camera's view.
+  // They intentionally cannot cover either rank/suit window at the far edge.
+  addHand("peek-side-lift-hand", -0.074, -0.004, -0.10, 1, "side-lift");
+  addHand("peek-rear-brace-hand", 0.018, -0.068, 0.08, -1, "rear-brace");
   return hands;
 }
 
@@ -1883,10 +1930,10 @@ function applySeat(
       plays out, but nobody reads them like that: you draw them together and
       turn them off-square so one thumb can lift both corners behind one hand.
     */
-    // A real squeeze leaves a narrow gap between the two readable corners.
-    // Packing them more tightly made one card occlude the other in the hero
-    // camera, even though both face textures were correct.
-    const spread = squeezing ? 0.052 : 0.055;
+    // A real squeeze becomes one small packet. The 80 mm centres leave a tiny
+    // natural overlap across 88 mm cards: both printed corners stay exposed,
+    // but the cards no longer read as two widely separated billboards.
+    const spread = squeezing ? 0.040 : 0.055;
     /*
       Card 0 goes to the player's left.
 
@@ -1949,7 +1996,7 @@ function applySeat(
       A seat's local +X is screen *left* from that seat's own camera, so "the
       player's right" is local -X.
     */
-    view.hand.position.set(local[0], local[1] + 0.018, local[2] - 0.060);
+    view.hand.position.set(local[0], local[1] + 0.012, local[2] - 0.038);
     view.hand.rotation.set(-0.04, 0, 0);
   }
 
@@ -2291,6 +2338,7 @@ function setDealerCardEquipment(
   prepDeck: Group,
   muck: Group,
   heldCard: Mesh,
+  burnCard: Mesh,
   activeWork: DealerWork | undefined,
   state: TableSceneState,
   nowMs: number,
@@ -2314,6 +2362,17 @@ function setDealerCardEquipment(
   heldCard.visible = activeWork?.task === "deal"
     && activeWork.progress >= 0.04
     && activeWork.progress < 0.40;
+
+  const isBoardDeal = transition?.kind === "board-card-dealt";
+  if (isBoardDeal) {
+    const burn = burnCardPose(transition.progress);
+    burnCard.position.set(...burn.position);
+    burnCard.rotation.set(Math.PI, 0.06, 0);
+    burnCard.material = resources.deckBackMaterial(active);
+    burnCard.visible = burn.visible;
+  } else {
+    burnCard.visible = false;
+  }
 
   // While a hand is live, the other pack is squared and gently prepared by the
   // dealer. Motion preferences snap this same object to its settled position.

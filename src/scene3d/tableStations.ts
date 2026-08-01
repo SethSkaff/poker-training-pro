@@ -215,6 +215,7 @@ export function cameraPose(
   pan: number,
   heroIndex: number,
   aspect = 16 / 9,
+  zoom = 0,
 ): {
   readonly position: readonly [number, number, number];
   readonly yaw: number;
@@ -244,7 +245,12 @@ export function cameraPose(
     position[2] + Math.cos(lookYaw) * lookDistance,
   ] as const;
 
-  return { position, yaw, target, fov: CAMERA_VERTICAL_FOV };
+  // Wheel zoom changes only the lens, preserving the seated eye position and
+  // sight line. This avoids clipping through the rail or moving the camera
+  // into another player's seat.
+  const clampedZoom = Math.min(1, Math.max(-1, zoom));
+  const fov = Math.min(66, Math.max(36, CAMERA_VERTICAL_FOV - clampedZoom * 16));
+  return { position, yaw, target, fov };
 }
 
 /**

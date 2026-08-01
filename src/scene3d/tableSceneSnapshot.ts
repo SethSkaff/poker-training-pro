@@ -35,6 +35,7 @@ export interface TableSceneSnapshotInput {
   readonly heroPeeked?: boolean;
   readonly revealedCardCodesByPlayer?: Readonly<Record<string, readonly string[]>>;
   readonly cameraPan: number;
+  readonly cameraZoom?: number;
   /** Which player station the hero occupies; the seated camera sits there. */
   readonly heroStationIndex?: number;
   readonly cameraView?: SceneCameraView;
@@ -132,6 +133,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
     boardCards: input.boardCards,
     publicBoardCardCodes: input.publicBoardCardCodes ?? [],
     cameraPan: input.cameraPan,
+    cameraZoom: input.cameraZoom ?? 0,
     heroStationIndex: input.heroStationIndex,
     heroPeeked: input.heroPeeked ?? false,
     cameraView: input.cameraView ?? "standard",

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   cameraPanFromHorizontalDrag,
+  cameraZoomFromWheel,
   clampTableCameraPan,
+  clampTableCameraZoom,
   TABLE_CAMERA_MAX_PAN,
   TABLE_CAMERA_MIN_PAN,
+  TABLE_CAMERA_MIN_ZOOM,
+  TABLE_CAMERA_MAX_ZOOM,
 } from "./tableCameraControls";
 
 describe("table camera controls", () => {
@@ -30,5 +34,13 @@ describe("table camera controls", () => {
   it("clamps a drag at either end of the view", () => {
     expect(cameraPanFromHorizontalDrag(1.9, 0, 1_000)).toBe(TABLE_CAMERA_MAX_PAN);
     expect(cameraPanFromHorizontalDrag(-1.9, 1_000, 0)).toBe(TABLE_CAMERA_MIN_PAN);
+  });
+
+  it("maps wheel input to smooth, bounded lens zoom", () => {
+    expect(cameraZoomFromWheel(0, -25)).toBeCloseTo(0.05, 8);
+    expect(cameraZoomFromWheel(0.05, 1)).toBeCloseTo(0.048, 8);
+    expect(cameraZoomFromWheel(0, -2, 1)).toBeCloseTo(0.064, 8);
+    expect(clampTableCameraZoom(-99)).toBe(TABLE_CAMERA_MIN_ZOOM);
+    expect(clampTableCameraZoom(99)).toBe(TABLE_CAMERA_MAX_ZOOM);
   });
 });

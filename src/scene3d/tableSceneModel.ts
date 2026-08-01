@@ -97,8 +97,9 @@ export function cameraPose(
   pan: number,
   heroIndex = 0,
   aspect = 16 / 9,
+  zoom = 0,
 ): ReturnType<typeof ringCameraPose> {
-  return ringCameraPose(pan, heroIndex, aspect);
+  return ringCameraPose(pan, heroIndex, aspect, zoom);
 }
 
 /** The rail plaque anchor for a station, kept for the projected-DOM helpers. */

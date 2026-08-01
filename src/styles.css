@@ -3385,6 +3385,8 @@ input[type="range"]::-webkit-slider-thumb {
 .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .hero-hole-cards {
   bottom: 14%;
   z-index: 44;
+  min-width: 180px;
+  min-height: 126px;
   background: transparent;
 }
 .poker-scene[data-spatial-scene="ready"] .hero-hole-cards .playing-card,

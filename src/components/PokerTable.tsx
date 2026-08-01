@@ -61,7 +61,7 @@ import { gameAudio, type SoundName } from "../lib/audio";
 import { describeCallAction } from "../lib/actionLabels";
 import { isShortStack, seatChipStackCount } from "../lib/chipStackDepth";
 import { describeTrainingContext } from "../lib/trainingScenarioContext";
-import { cameraPanFromHorizontalDrag } from "../lib/tableCameraControls";
+import { cameraPanFromHorizontalDrag, cameraZoomFromWheel } from "../lib/tableCameraControls";
 import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
 /*
   Lazy so three.js stays out of the initial bundle entirely, which is what keeps
@@ -1590,6 +1590,9 @@ export function PokerTable({
   const [cameraPan, setCameraPan] = useState(
     initialTrainingPresentation?.cameraPan ?? 0,
   );
+  // A temporary, player-controlled lens adjustment. Unlike the saved framing
+  // preference, this follows the player through every hand in the round.
+  const [cameraZoom, setCameraZoom] = useState(0);
   // Motion preferences govern *automatic* movement only.  A player turning
   // their view with the mouse is direct manipulation, so it must stay usable
   // even if an older saved profile has camera motion disabled.  That was the
@@ -1669,6 +1672,23 @@ export function PokerTable({
 
   const clearCameraDrag = useCallback(() => {
     cameraDragRef.current = null;
+  }, []);
+
+  const handleCameraWheel = useCallback((event: React.WheelEvent<HTMLElement>) => {
+    // Never let the table surface scroll the document or invoke browser zoom.
+    // Controls retain their native wheel behaviour but still stop the page from
+    // moving behind the game.
+    event.preventDefault();
+    if (
+      event.target instanceof Element
+      && event.target.closest('button, a, input, select, textarea, [role="button"], [role="slider"]')
+    ) {
+      return;
+    }
+    setCameraZoom((current) => {
+      const next = cameraZoomFromWheel(current, event.deltaY, event.deltaMode);
+      return current === next ? current : next;
+    });
   }, []);
   const [sceneAvailability, setSceneAvailability] =
     useState<SceneAvailability>({ status: "idle" });
@@ -2657,12 +2677,17 @@ export function PokerTable({
     // the pointer; an in-flight action may disable betting but must not make a
     // normal card click silently fail.
     if (heroFolded) return;
+    // The semantic card target sits above the canvas. Stop this private-card
+    // gesture from becoming a table-look drag after the stage has already
+    // rejected button targets in its capture handler.
+    event.stopPropagation();
     dragStart.current = { x: event.clientX, y: event.clientY };
     didDrag.current = false;
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     if (!dragStart.current || action) return;
     const deltaX = event.clientX - dragStart.current.x;
     const deltaY = event.clientY - dragStart.current.y;
@@ -2680,6 +2705,7 @@ export function PokerTable({
     event: ReactPointerEvent<HTMLButtonElement>,
     cancelled = false,
   ) => {
+    event.stopPropagation();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -2957,6 +2983,7 @@ export function PokerTable({
         ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
         : {},
     cameraPan: effectiveCameraPan,
+    cameraZoom,
     heroStationIndex: heroStationIndexForTable,
     /* Only the squeeze. A showdown reveal turns the hand over through
        `revealedCardCodesByPlayer`, which the snapshot already honours for every
@@ -3376,6 +3403,7 @@ export function PokerTable({
           onPointerUpCapture={endCameraDrag}
           onPointerCancelCapture={endCameraDrag}
           onLostPointerCaptureCapture={clearCameraDrag}
+          onWheelCapture={handleCameraWheel}
         >
           {/*
             The hero's state lives at the hero's seat, not in a floating panel

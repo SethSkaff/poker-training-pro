@@ -10,7 +10,10 @@ const snapshot = readFileSync(path.join(root, "tableSceneSnapshot.ts"), "utf8");
 describe("hero card peek presentation", () => {
   it("uses a two-hand shield and retires the old floating corner flap", () => {
     expect(scene).toContain("function buildHeroPeekHands");
-    expect(scene).toContain("Four curled fingers cross the card's far edge");
+    expect(scene).toContain('role: "side-lift" | "rear-brace"');
+    expect(scene).toContain('addHand("peek-side-lift-hand", -0.074, -0.004, -0.10, 1, "side-lift");');
+    expect(scene).toContain('addHand("peek-rear-brace-hand", 0.018, -0.068, 0.08, -1, "rear-brace");');
+    expect(scene).toContain("They intentionally cannot cover either rank/suit window");
     expect(scene).toContain("The old folded corner is intentionally retired during the full physical");
     expect(scene).not.toContain("The folded-back corner of a card, as a flat triangle");
     expect(scene).not.toContain("const positions = new Float32Array([...creaseA, ...creaseB, ...tip])");
@@ -42,14 +45,13 @@ describe("hero card peek presentation", () => {
     expect(scene).toContain("const width = 0.088;");
     expect(scene).toContain("const revealedEdge = 0.058;");
     expect(scene).toContain("Math.sin(progress * Math.PI * 0.5) * 0.032");
-    expect(scene).toContain("const textureV = 0.74 + progress * 0.24;");
+    expect(scene).toContain("const textureV = 0.58 + progress * 0.40;");
     expect(scene).toContain("mesh.geometry = squeezing ? resources.heroPeekGeometry : resources.cardGeometry;");
     expect(scene).toContain("card.scale.setScalar(1);");
     expect(scene).toContain("card.rotation.x = 0;");
     expect(scene).toContain("card.rotation.y = squeezing ? (index === 0 ? 0.025 : -0.025) : 0;");
-    expect(scene).toContain('addHand("peek-lift-hand", -0.046, -0.052, -0.10, 1);');
-    expect(scene).toContain('addHand("peek-shield-hand", 0.050, 0.016, 0.12, -1);');
-    expect(scene).toContain("view.hand.position.set(local[0], local[1] + 0.018, local[2] - 0.060);");
+    expect(scene).toContain("const spread = squeezing ? 0.040 : 0.055;");
+    expect(scene).toContain("view.hand.position.set(local[0], local[1] + 0.012, local[2] - 0.038);");
     expect(scene).toContain("fold.visible = false;");
   });
 });

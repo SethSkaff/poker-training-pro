@@ -15,6 +15,13 @@ describe("table camera input contract", () => {
     expect(source).toContain("event.preventDefault();");
   });
 
+  it("captures wheel zoom on the whole scene and suppresses native page behaviour", () => {
+    const source = tableSource();
+    expect(source).toContain("onWheelCapture={handleCameraWheel}");
+    expect(source).toContain("cameraZoomFromWheel(current, event.deltaY, event.deltaMode)");
+    expect(source).toContain("event.preventDefault();");
+  });
+
   it("prevents HUD selection while retaining editable text controls", () => {
     const styles = css();
     expect(styles).toMatch(/\.table-screen\s*\{[\s\S]*?user-select:\s*none/);
