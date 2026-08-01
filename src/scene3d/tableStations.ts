@@ -136,15 +136,26 @@ export function heroStationIndex(tableId: string): number {
 /**
  * Map a hero-relative seat index onto a station index.
  *
- * The engine and the DOM both order seats hero-first. The ring does not care
- * where the hero is, so relative seat `n` is `n` stations clockwise from the
- * hero's own station, wrapping. This is the single place that mapping lives.
+ * The engine and the DOM both order seats hero-first, with increasing seat
+ * numbers advancing clockwise through the hand. The authored station angles
+ * increase counter-clockwise when viewed from above the table (near rail at
+ * the bottom of the screen, dealer at the far rail), so directly adding the
+ * relative seat mirrored the live game: SB and BB appeared on the dealer's
+ * right and action visibly travelled counter-clockwise.
+ *
+ * The ring does not care where the hero is, so relative seat `n` is `n`
+ * stations clockwise from the hero's own station. Subtracting here is the
+ * sole engine-to-physical conversion: engine seat order remains authoritative
+ * while the rendered button, blinds, deal, and turn indicator follow the same
+ * clockwise direction a player sees at the table.
  */
 export function stationIndexForRelativeSeat(
   relativeSeat: number,
   heroIndex: number,
 ): number {
-  return (heroIndex + relativeSeat) % PLAYER_STATION_COUNT;
+  return (
+    (heroIndex - relativeSeat) % PLAYER_STATION_COUNT + PLAYER_STATION_COUNT
+  ) % PLAYER_STATION_COUNT;
 }
 
 /** Seated eye height above the floor. */

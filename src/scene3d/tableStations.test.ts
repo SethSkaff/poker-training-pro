@@ -134,6 +134,23 @@ describe("seated-ring-v3 puts the hero in a player seat, not the dealer's spot",
       expect(mapped.size).toBe(PLAYER_STATION_COUNT);
     }
   });
+
+  it("maps engine-clockwise seats to a clockwise physical table order", () => {
+    /*
+      Official hold'em convention: the player immediately to the dealer's
+      left is SB, the next is BB, and dealing/action continue clockwise. The
+      engine represents that as increasing relative seats. Our authored angle
+      list itself winds counter-clockwise in the player's top-down view, so
+      engine-relative 1/2/3 must occupy decreasing station indices.
+    */
+    const heroIndex = 3;
+    expect([
+      stationIndexForRelativeSeat(0, heroIndex), // dealer button
+      stationIndexForRelativeSeat(1, heroIndex), // small blind
+      stationIndexForRelativeSeat(2, heroIndex), // big blind
+      stationIndexForRelativeSeat(3, heroIndex), // next pre-flop actor
+    ]).toEqual([3, 2, 1, 0]);
+  });
 });
 
 describe("the hero's camera is a seated player's eyes", () => {

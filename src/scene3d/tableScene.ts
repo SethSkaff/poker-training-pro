@@ -1700,7 +1700,11 @@ function applySeat(
     const mesh = card as Mesh;
     const code = seat.publicCardCodes?.[index];
     mesh.geometry = resources.cardGeometry;
-    mesh.material = code && !squeezing
+    // A private peek is the one moment the hero must be able to read both
+    // cards. The snapshot only supplies `code` for the hero while peeking (or
+    // at public showdown), so using the face here cannot expose a hand to any
+    // other seat while avoiding the old unreadable card-back regression.
+    mesh.material = code
       ? resources.cardFaceMaterial(code)
       : transition?.handId
         ? resources.deckBackMaterial(deckColourForHand(transition.handId))

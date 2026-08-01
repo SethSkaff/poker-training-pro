@@ -171,6 +171,28 @@ describe("six-seat tournament session", () => {
     );
   });
 
+  it("assigns dealer, blinds, and pre-flop action in one clockwise engine sequence", () => {
+    const session = beginTournamentSessionHand(createSession("normal", "clockwise-blinds"));
+    const hand = session.activeHand;
+    if (!hand) throw new Error("Expected a hand");
+
+    const active = session.tournament.players
+      .filter((player) => player.status === "active")
+      .sort((left, right) => (left.seat as number) - (right.seat as number));
+    const canonicalSeatFor = (id: string) => active.find((player) => player.id === id)?.seat;
+    const advance = (seat: number, distance: number) => ((seat - 1 + distance) % SESSION_TABLE_SIZE) + 1;
+
+    expect(canonicalSeatFor(hand.smallBlindPlayerId)).toBe(
+      advance(hand.buttonSeat, 1),
+    );
+    expect(canonicalSeatFor(hand.bigBlindPlayerId)).toBe(
+      advance(hand.buttonSeat, 2),
+    );
+    expect(canonicalSeatFor(hand.betting.actionOrder[0] as string)).toBe(
+      advance(hand.buttonSeat, 3),
+    );
+  });
+
   it("surfaces the engine's acting player through each betting transition", () => {
     const dealt = beginTournamentSessionHand(createSession("normal", "acting-seat"));
     const firstHand = dealt.activeHand;

@@ -21,4 +21,18 @@ describe("hero card peek presentation", () => {
     expect(snapshot).toContain("input.heroPeeked || revealed.has(player.id) ? input.heroCardCodes ?? [] : []");
     expect(scene).toContain("const squeezing = seat.isHero && peeked && !folded");
   });
+
+  it("paints the hero's card faces while peeking, and retains card backs when no face code is authorised", () => {
+    /*
+      `publicCardCodes` is intentionally empty for a closed hero hand.  The
+      renderer must not add a second `!squeezing` condition here: that was the
+      regression which made the active private peek continue to show only two
+      card backs.  A code can only enter the snapshot for an active hero peek
+      or an engine-authorised public reveal, so it is safe and required to use
+      the face material directly.
+    */
+    expect(scene).toContain("mesh.material = code\n      ? resources.cardFaceMaterial(code)");
+    expect(scene).toContain(": resources.cardBackMaterial;");
+    expect(scene).not.toContain("mesh.material = code && !squeezing");
+  });
 });
