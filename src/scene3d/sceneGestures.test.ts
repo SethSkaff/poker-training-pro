@@ -30,6 +30,20 @@ describe("scene gesture grammar", () => {
     }
   });
 
+  it("drives articulated shoulders, elbows, and a distinct table tap", () => {
+    const rest = sceneGestureFor(undefined, 0, false, false);
+    const tap = sceneGestureFor("check", 0.25, false, false);
+    const wager = sceneGestureFor("raise", 0.5, false, false);
+    const fold = sceneGestureFor("fold", 0.5, false, false);
+
+    expect(tap.handTap).toBeGreaterThan(0);
+    expect(tap.shoulderPitch).not.toBe(rest.shoulderPitch);
+    expect(wager.elbowBend).toBeGreaterThan(tap.elbowBend);
+    expect(wager.shoulderPitch).toBeGreaterThan(tap.shoulderPitch);
+    expect(fold.cardMotion).toBe("muck");
+    expect(fold.elbowBend).toBeGreaterThan(0);
+  });
+
   it("preserves the stable acting and folded terminal treatments", () => {
     expect(sceneGestureFor(undefined, 0, true, false).bodyLean).toBe(0.06);
     expect(sceneGestureFor(undefined, 0, false, true)).toMatchObject({

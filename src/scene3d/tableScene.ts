@@ -259,7 +259,9 @@ const CHAIR_FRAME = 0x3a2318;
   holding shows high denominations and a short one does not.
 */
 const CHIP_DENOMINATIONS = [
-  { value: 1, color: 0xd8d2c2 },
+  /* Ivory stock, deliberately below paper-white so a chip never becomes a
+     bloom-like white light under the pendant. */
+  { value: 1, color: 0xb8ad98 },
   { value: 5, color: 0x8e1f28 },
   /* Lifted well clear of the felt: a $25 chip is green and so is the table,
      so the separation has to come from value rather than hue. */
@@ -1745,10 +1747,31 @@ function applySeat(
     view.hand.rotation.set(-0.10, 0.55, 0);
   }
 
-  // The acting seat leans in; a folded one sits back. This is the turn signal,
-  // and it is a body doing something rather than a rectangle oscillating.
+  // The acting seat leans in; a folded one sits back.  Crucially, the arms do
+  // not translate as a rigid pair: each shoulder and elbow has its own joint
+  // rotation, so a check knocks the rail and a wager reaches from stack to bet
+  // circle like a person rather than a mannequin on a track.
   view.body.position.z = gesture.bodyLean;
-  view.arm.position.z = 0.22 + gesture.armReach;
+  view.arm.position.z = 0;
+  const leftShoulder = view.arm.getObjectByName("left-shoulder");
+  const rightShoulder = view.arm.getObjectByName("right-shoulder");
+  const leftElbow = view.arm.getObjectByName("left-elbow");
+  const rightElbow = view.arm.getObjectByName("right-elbow");
+  for (const [shoulder, elbow, side] of [
+    [leftShoulder, leftElbow, -1],
+    [rightShoulder, rightElbow, 1],
+  ] as const) {
+    if (!shoulder || !elbow) continue;
+    shoulder.rotation.x = -gesture.shoulderPitch;
+    shoulder.rotation.y = side * gesture.shoulderYaw;
+    elbow.rotation.x = gesture.elbowBend;
+    // The palms land below the crest at the knock's midpoint, then recover.
+    // Store the authored elbow height once; mutating relative to last frame
+    // would slowly sink arms through the table.
+    const authoredY = elbow.userData.authoredY as number | undefined;
+    if (authoredY === undefined) elbow.userData.authoredY = elbow.position.y;
+    elbow.position.y = (authoredY ?? elbow.position.y) - gesture.handTap;
+  }
 
   const betChips = chipCountForAmount(seat.bet);
   setChipStack(view.betChips, betChips, CHIP_BET_BIAS, resources);
@@ -1865,8 +1888,14 @@ const CHIP_COLUMN_PITCH = 0.052;
   seat's nameplate by 3.3% of viewport height centre-to-centre while staying
   behind the hero cards at z=0.50 and clear of an 18-chip pile.
 */
-const POT_PLAQUE_HEIGHT = 0.03;
-const POT_PLAQUE_FORWARD = 0.20;
+/*
+  The pot label is a physical hanging callout, not a HUD plate laid across the
+  felt.  Keeping it above the board frees the playing surface; the tether makes
+  its owner unambiguous even when the camera pans to either side of the table.
+*/
+const POT_PLAQUE_HEIGHT = 0.34;
+const POT_PLAQUE_FORWARD = 0.02;
+const POT_TETHER_RADIUS = 0.006;
 const POT_PLAQUE_SIZE = [0.22, 0.058] as const;
 
 /**
@@ -1954,9 +1983,10 @@ function setChipStack(group: Group, count: number, bias: number, resources: Tabl
     ];
     body.setHex(denomination.color);
     stack.setColorAt(index, body);
-    // 0.78 took every spot to within a few percent of white, so under the key
-    // light each chip wore a ring of blown-out pixels and the stack glowed.
-    inlay.copy(body).lerp(cream, 0.55);
+    // A restrained inlay contrast keeps the denomination readable without a
+    // white luminous ring.  The older 0.55 mix still clipped under the pendant
+    // on red, black, and ivory chips; real clay edge inserts are muted paint.
+    inlay.copy(body).lerp(cream, 0.28);
     spots.setColorAt(index, inlay);
     faces?.setColorAt(index, inlay);
   }
@@ -1995,20 +2025,22 @@ function setPotLanes(
     const lane = new Group();
     const chips = new Group();
     chips.name = "pot-chip-stack";
+    const tether = new Mesh(
+      resources.ledger.track(new CylinderGeometry(POT_TETHER_RADIUS, POT_TETHER_RADIUS, 1, 8)),
+      resources.ledger.track(new MeshLambertMaterial({ color: 0x9b7b42 })),
+    );
+    tether.name = "pot-amount-tether";
     const plaque = new Mesh(
       resources.ledger.track(new PlaneGeometry(...POT_PLAQUE_SIZE)),
       resources.potPlaqueMaterial("POT 0", "main"),
     );
     plaque.name = "pot-amount-plaque";
     /*
-      In front of the pile and low, not floating above it. Raised to y=0.16 the
-      billboard projected into the same screen band as the far rail -- the
-      centre opponent's nameplate sat directly behind "POT 200" at every target.
-      Sitting it toward the hero puts it clearly below the far seats and keeps it
-      clear of the pile itself, which can be 18 chips (0.22 m) tall.
+      It lives above the table and is tethered to the pile, rather than covering
+      cards, betting circles, or the board like the former felt-level plaque.
     */
     plaque.position.set(0, POT_PLAQUE_HEIGHT, POT_PLAQUE_FORWARD);
-    lane.add(chips, plaque);
+    lane.add(chips, tether, plaque);
     group.add(lane);
   }
   while (group.children.length > publicPots.length) group.remove(group.children[group.children.length - 1]);
@@ -2019,20 +2051,23 @@ function setPotLanes(
     lane.userData.publicPotId = pot.id;
     lane.userData.publicPotAmount = pot.amount;
     const chips = lane.getObjectByName("pot-chip-stack") as Group | undefined;
+    const tether = lane.getObjectByName("pot-amount-tether") as Mesh | undefined;
     const plaque = lane.getObjectByName("pot-amount-plaque") as Mesh | undefined;
-    if (!chips || !plaque) return;
+    if (!chips || !tether || !plaque) return;
     setChipStack(chips, chipCountForAmount(pot.amount), pot.kind === "main" ? CHIP_POT_BIAS : CHIP_POT_BIAS - 1, resources);
     plaque.visible = pot.amount > 0;
+    tether.visible = pot.amount > 0;
     plaque.material = resources.potPlaqueMaterial(potPlaqueLabel(pot.kind, pot.amount), pot.kind);
     /*
-      Just clear of the top of its own pile, not floating above the table.
-
-      At 0.16 + 12 mm a chip the label hung in mid-air over the far felt with
-      daylight under it, which is what made it read as a HUD overlay pasted into
-      the scene rather than a marker sitting on the table. Riding the pile keeps
-      it attached to the thing it labels while still never being buried by it.
+      The string starts at the top of the real chip stack and ends directly below
+      the sign.  A short stack and an 18-chip pot therefore remain connected
+      without ever allowing the sign to drift down into the playing area.
     */
-    plaque.position.y = 0.055 + Math.min(0.06, chipStackCount(chips) * 0.006);
+    const pileTop = 0.022 + Math.min(0.12, chipStackCount(chips) * 0.006);
+    const tetherLength = Math.max(0.04, POT_PLAQUE_HEIGHT - pileTop - 0.035);
+    tether.position.set(0, pileTop + tetherLength / 2, POT_PLAQUE_FORWARD);
+    tether.scale.set(1, tetherLength, 1);
+    plaque.position.set(0, POT_PLAQUE_HEIGHT, POT_PLAQUE_FORWARD);
   });
 }
 

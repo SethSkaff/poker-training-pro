@@ -43,10 +43,38 @@ export interface CharacterView {
   readonly body: Group;
   /** Forearm group that reaches toward the felt during an action. */
   readonly arms: Group;
+  /** Separate shoulder pivots: action poses must bend elbows, never slide a rigid arm. */
+  readonly leftShoulder: Group;
+  readonly rightShoulder: Group;
+  readonly leftElbow: Group;
+  readonly rightElbow: Group;
 }
 
 const DEALER_TORSO_BASE_Y = 0.56;
 const DEALER_TORSO_HEIGHT = 0.54;
+
+/*
+  The dealer is much closer to the camera than the far seats.  Keep these
+  proportions explicit rather than letting a couple of scaled spheres drift
+  until they read as a cartoon mask.  They are exported so the presentation
+  test can enforce the screen-facing silhouette, not merely that a face mesh
+  happens to exist.
+*/
+export const DEALER_FACE_FEATURE_LIMITS = Object.freeze({
+  /** A single eye must remain well below one fifth of the head width. */
+  maxEyeWidth: HEAD_RADIUS * 0.42,
+  /** A neutral mouth is narrower than half the head, never a face-wide bar. */
+  maxMouthWidth: HEAD_RADIUS * 0.48,
+  /** Both eyes and the mouth together occupy a compact central facial band. */
+  maxFeatureBandWidth: HEAD_RADIUS * 1.55,
+});
+
+export const DEALER_CAP_COVERAGE = Object.freeze({
+  /** The cap begins above the eye line, leaving the whole face unobstructed. */
+  lowerEdgeFromHeadCentre: HEAD_RADIUS * 0.18,
+  /** Crown extends past the skin sphere's vertically stretched top. */
+  crownTopFromHeadCentre: HEAD_RADIUS * 1.18,
+});
 
 /**
  * The joint the dealer's arms swing from, in the dealer group's own frame.
@@ -185,7 +213,6 @@ function skinGeometry(character: OpponentCharacter): BufferGeometry[] {
       [0.32, 0.78, 0.52],
     ));
   }
-  for (const side of [-1, 1]) parts.push(handPart(body, side));
   return parts;
 }
 
@@ -394,9 +421,64 @@ function clothGeometry(character: OpponentCharacter): BufferGeometry[] {
       [side * body.shoulderHalfWidth * 0.88, top - 0.028, 0],
       [1, 0.72, depthRatio * 1.05],
     ));
-    parts.push(...sleeveParts(body, side));
   }
   return parts;
+}
+
+/**
+ * Build a genuinely articulated arm: upper arm is parented at the shoulder and
+ * the forearm (and palm) is parented at the elbow.  Keeping these as separate
+ * meshes is intentional.  A merged limb can only translate as one rigid bar,
+ * which was the source of the visible "sway" regression.
+ */
+function buildArticulatedArm(
+  body: BodyProportions,
+  side: number,
+  outfitColour: string,
+  skinColour: string,
+  ledger: SceneResourceLedger,
+): { shoulder: Group; elbow: Group } {
+  const { shoulder: shoulderPoint, elbow: elbowPoint, hand: handPoint } = armJoints(body, side);
+  const shoulder = new Group();
+  shoulder.name = side < 0 ? "left-shoulder" : "right-shoulder";
+  shoulder.position.set(...shoulderPoint);
+  const elbow = new Group();
+  elbow.name = side < 0 ? "left-elbow" : "right-elbow";
+  const upper = new Mesh(
+    ledger.track(limb([0, 0, 0], [
+      elbowPoint[0] - shoulderPoint[0], elbowPoint[1] - shoulderPoint[1], elbowPoint[2] - shoulderPoint[2],
+    ], body.neckRadius * 0.80, body.neckRadius * 0.92)),
+    ledger.track(new MeshLambertMaterial({ color: outfitColour })),
+  );
+  shoulder.add(upper);
+  elbow.position.set(
+    elbowPoint[0] - shoulderPoint[0], elbowPoint[1] - shoulderPoint[1], elbowPoint[2] - shoulderPoint[2],
+  );
+  const forearmVector: [number, number, number] = [
+    handPoint[0] - elbowPoint[0], handPoint[1] - elbowPoint[1], handPoint[2] - elbowPoint[2],
+  ];
+  const forearm = new Mesh(
+    ledger.track(limb([0, 0, 0], forearmVector, body.neckRadius * 0.52, body.neckRadius * 0.78)),
+    ledger.track(new MeshLambertMaterial({ color: outfitColour })),
+  );
+  elbow.add(forearm);
+  const cuff = new Mesh(
+    ledger.track(new TorusGeometry(body.neckRadius * 0.61, body.neckRadius * 0.07, 5, 9)),
+    ledger.track(new MeshLambertMaterial({ color: skinColour })),
+  );
+  cuff.position.set(...forearmVector);
+  cuff.rotation.x = Math.PI / 2;
+  elbow.add(cuff);
+  const palm = new Mesh(
+    ledger.track(new SphereGeometry(body.neckRadius * 0.60, SPHERE_SEGMENTS, SPHERE_RINGS)),
+    ledger.track(new MeshLambertMaterial({ color: skinColour })),
+  );
+  palm.name = side < 0 ? "left-hand" : "right-hand";
+  palm.scale.set(1.05, 0.50, 1.5);
+  palm.position.set(forearmVector[0], forearmVector[1] + 0.004, forearmVector[2] + 0.020);
+  elbow.add(palm);
+  shoulder.add(elbow);
+  return { shoulder, elbow };
 }
 
 function hairGeometry(character: OpponentCharacter): BufferGeometry[] {
@@ -516,23 +598,27 @@ export function buildCharacter(
     }))));
   }
 
+  const bodyShape = bodyProportions(character.gender, character.body);
+  const left = buildArticulatedArm(bodyShape, -1, character.outfit.base, character.skinTone, ledger);
+  const right = buildArticulatedArm(bodyShape, 1, character.outfit.base, character.skinTone, ledger);
+  // The lower sleeve is intentionally short for polos and tees.  The named
+  // meshes preserve the presentation contract while the actual arm remains
+  // jointed instead of being a decorative forearm bolted to the torso.
   if (character.outfit.name === "polo" || character.outfit.name === "tee") {
-    const bodyShape = bodyProportions(character.gender, character.body);
-    for (const side of [-1, 1]) {
-      const forearm = new Mesh(
-        ledger.track(new CylinderGeometry(bodyShape.neckRadius * 0.42, bodyShape.neckRadius * 0.48, 0.16, 8)),
-        ledger.track(new MeshLambertMaterial({ color: character.skinTone })),
-      );
-      forearm.name = "exposed-forearm";
-      forearm.position.set(side * bodyShape.shoulderHalfWidth * 0.88, TORSO_BASE_Y + bodyShape.torsoHeight - 0.16, 0.13);
-      forearm.rotation.x = Math.PI / 2.8;
-      body.add(forearm);
-    }
+    left.elbow.children[0]!.name = "exposed-forearm";
+    right.elbow.children[0]!.name = "exposed-forearm";
   }
+  arms.add(left.shoulder, right.shoulder);
 
   root.add(body, arms);
   root.scale.setScalar(character.heightScale);
-  return { root, body, arms };
+  return {
+    root, body, arms,
+    leftShoulder: left.shoulder,
+    rightShoulder: right.shoulder,
+    leftElbow: left.elbow,
+    rightElbow: right.elbow,
+  };
 }
 
 /**
@@ -610,7 +696,11 @@ export function buildDealer(
   // The visor: a dark band and a translucent-looking brim, the clearest single
   // "this one is the dealer" cue at a glance.
   const visor: BufferGeometry[] = [];
-  const band = sphere(HEAD_RADIUS * 1.03, [0, headY + 0.004, 0], [1, 1.02, 1.02]);
+  const band = sphere(
+    HEAD_RADIUS * 1.045,
+    [0, headY + 0.006, 0],
+    [1, 1.15, 1.04],
+  );
   /*
     Clamped in world Y, which is the space `sphere` has already translated into.
 
@@ -621,7 +711,7 @@ export function buildDealer(
     The hair code above gets this right by clamping at the origin and translating
     afterwards; this one translates first, so the floor has to be offset too.
   */
-  clampBelow(band, headY + HEAD_RADIUS * 0.42);
+  clampBelow(band, headY + DEALER_CAP_COVERAGE.lowerEdgeFromHeadCentre);
   visor.push(band);
   const brim = taper(HEAD_RADIUS * 0.95, HEAD_RADIUS * 0.95, 0.012, [0, headY + HEAD_RADIUS * 0.34, HEAD_RADIUS * 0.5], [1.15, 1, 0.7]);
   brim.rotateX(-0.22);
@@ -642,13 +732,17 @@ export function buildDealer(
     body.add(new Mesh(skinGeometryMerged, ledger.track(new MeshLambertMaterial({ color: skinTone }))));
   }
   if (visorGeometry) {
-    body.add(new Mesh(visorGeometry, ledger.track(new MeshLambertMaterial({ color: 0x26324a }))));
+    const cap = new Mesh(visorGeometry, ledger.track(new MeshLambertMaterial({ color: 0x26324a })));
+    cap.name = "dealer-cap";
+    body.add(cap);
   }
   const dealerFeatures = new Mesh(
     merged([
-      sphere(0.025, [-0.055, headY + 0.018, HEAD_RADIUS * 0.89], [1.6, 0.45, 0.18]),
-      sphere(0.025, [0.055, headY + 0.018, HEAD_RADIUS * 0.89], [1.6, 0.45, 0.18]),
-      sphere(0.022, [0, headY - 0.065, HEAD_RADIUS * 0.93], [2.1, 0.28, 0.16]),
+      // At the table camera's distance, flatter almond eyes and a compact
+      // mouth read clearly without becoming dark bars wider than the face.
+      sphere(0.014, [-0.052, headY + 0.018, HEAD_RADIUS * 0.89], [1.2, 0.36, 0.15]),
+      sphere(0.014, [0.052, headY + 0.018, HEAD_RADIUS * 0.89], [1.2, 0.36, 0.15]),
+      sphere(0.012, [0, headY - 0.06, HEAD_RADIUS * 0.93], [1.55, 0.24, 0.14]),
     ], ledger)!,
     ledger.track(new MeshLambertMaterial({ color: 0x30241f })),
   );
@@ -687,7 +781,18 @@ export function buildDealer(
   }
 
   root.add(body, arms);
-  return { root, body, arms };
+  // Dealer gestures currently rotate the shared `arms` assembly.  Keep the
+  // same joint contract as player views so callers never receive a malformed
+  // CharacterView while the dealer rig is upgraded independently.
+  const leftShoulder = new Group();
+  const rightShoulder = new Group();
+  const leftElbow = new Group();
+  const rightElbow = new Group();
+  leftShoulder.name = "dealer-left-shoulder";
+  rightShoulder.name = "dealer-right-shoulder";
+  leftElbow.name = "dealer-left-elbow";
+  rightElbow.name = "dealer-right-elbow";
+  return { root, body, arms, leftShoulder, rightShoulder, leftElbow, rightElbow };
 }
 
 /** A simple upholstered chair, tinted from the room rather than the character. */

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Mesh } from "three";
+import { Box3, Mesh } from "three";
 import { describeOpponentCharacter, OUTFITS } from "../lib/opponentAppearance";
-import { buildCharacter, buildDealer } from "./sceneCharacters";
+import {
+  DEALER_CAP_COVERAGE,
+  DEALER_FACE_FEATURE_LIMITS,
+  buildCharacter,
+  buildDealer,
+} from "./sceneCharacters";
 import { createSceneResourceLedger } from "./sceneResources";
 
 function meshesNamed(root: { traverse(callback: (node: unknown) => void): void }, name: string): Mesh[] {
@@ -37,12 +42,42 @@ describe("scene character presentation", () => {
     }
   });
 
+  it("builds independent shoulder and elbow pivots instead of a rigid arm bar", () => {
+    const ledger = createSceneResourceLedger();
+    const view = buildCharacter(describeOpponentCharacter("articulated-opponent"), ledger);
+    expect(view.leftShoulder.parent).toBe(view.arms);
+    expect(view.rightShoulder.parent).toBe(view.arms);
+    expect(view.leftElbow.parent).toBe(view.leftShoulder);
+    expect(view.rightElbow.parent).toBe(view.rightShoulder);
+    expect(view.leftShoulder.position.equals(view.leftElbow.position)).toBe(false);
+    ledger.dispose();
+  });
+
   it("gives the dealer readable facial features and a neutral uniform cap", () => {
     const ledger = createSceneResourceLedger();
     const dealer = buildDealer("#d8ab86", ledger);
-    expect(meshesNamed(dealer.root, "dealer-face-features")).toHaveLength(1);
-    const visor = dealer.body.children.find((child) => child instanceof Mesh && child.material instanceof Object && (child.material as { color?: { getHex(): number } }).color?.getHex() === 0x26324a);
-    expect(visor).toBeTruthy();
+    const [features] = meshesNamed(dealer.root, "dealer-face-features");
+    const [cap] = meshesNamed(dealer.root, "dealer-cap");
+    expect(features).toBeTruthy();
+    expect(cap).toBeTruthy();
+
+    // A face at this scale needs features that read as features, not a visor-
+    // sized pair of eyes and a mouth spanning the skull.
+    const featureBox = new Box3().setFromObject(features);
+    expect(featureBox.max.x - featureBox.min.x).toBeLessThanOrEqual(DEALER_FACE_FEATURE_LIMITS.maxFeatureBandWidth);
+    expect(featureBox.max.y - featureBox.min.y).toBeLessThan(0.12);
+
+    const skin = dealer.body.children.find(
+      (child) => child instanceof Mesh
+        && (child.material as { color?: { getHex(): number } }).color?.getHex() === 0xd8ab86,
+    );
+    expect(skin).toBeTruthy();
+    const headBox = new Box3().setFromObject(skin!);
+    const capBox = new Box3().setFromObject(cap);
+    // The cap crown must cover the top of the vertically stretched head. This
+    // catches the old green-ring silhouette that left a bald dome above it.
+    expect(capBox.max.y).toBeGreaterThanOrEqual(headBox.max.y);
+    expect(capBox.max.y - headBox.min.y).toBeGreaterThan(DEALER_CAP_COVERAGE.crownTopFromHeadCentre);
     ledger.dispose();
   });
 });
