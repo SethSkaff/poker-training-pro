@@ -508,50 +508,12 @@ def build_pedestal():
 # --- Table objects -----------------------------------------------------------
 
 
-CARD_PEEK_LIFT = 0.028
-# Fraction of the card diagonal over which the corner curls.
-#
-# 0.55 lifted two thirds of the card and, because the falloff bottoms out at a
-# fixed radius, put a straight crease across it: the "bent corner" rendered as a
-# folded paper dart. A squeeze only ever lifts the corner itself.
-CARD_PEEK_SPAN = 0.30
-
-
-def _peek_lift(x, y):
-    """
-    How far a point on the card rises when its near corner is squeezed up.
-
-    A player lifts the corner nearest them -- here +X/-Y, which the exporter
-    maps to the hero's near right -- and the card bends over a diagonal crease
-    rather than hinging on a line. Distance from that corner, normalised across
-    the card's diagonal, with a smoothstep so the crease is a curve and not a
-    fold: cardboard bends, it does not crack.
-    """
-    # The corner nearest the player, on the side their thumb comes from.
-    #
-    # The exporter maps Blender +Y to glTF -Z, so the obvious-looking -Y here
-    # produced a lift on the card's *far* edge -- the one pointing at the middle
-    # of the table, which is both the wrong corner to squeeze and the one the
-    # player cannot see. And +X maps to the seat's own left, away from where a
-    # right hand rests. Both are flipped.
-    corner_x = -CARD_WIDTH / 2.0
-    corner_y = CARD_LENGTH / 2.0
-    diagonal = math.hypot(CARD_WIDTH, CARD_LENGTH)
-    distance = math.hypot(x - corner_x, y - corner_y) / diagonal
-    t = 1.0 - min(1.0, distance / CARD_PEEK_SPAN)
-    # Quartic, not smoothstep: it leaves the flat part of the card genuinely
-    # flat and puts all the curvature in the last third, which is how a card
-    # bends when a thumb presses one corner against the felt.
-    return CARD_PEEK_LIFT * t * t * t * t
-
-
-def build_card(name="card", peeked=False):
+def build_card(name="card"):
     """
     A playing card with rounded corners, lying in the X/Y plane with its face
     up. UVs are a planar projection from above, so the runtime's generated face
     texture maps to the top face exactly and the thin sides sample its border.
 
-    With `peeked`, the near corner is bent up the way a player squeezes a hand
     to read it without showing it to the table. It is a separate mesh rather
     than a runtime deformation so the bend is authored once, shares the card's
     UVs exactly, and costs the renderer a geometry swap instead of per-frame
@@ -571,9 +533,6 @@ def build_card(name="card", peeked=False):
         bm.faces.new((top_hub, top[index], top[nxt]))
         bm.faces.new((bottom_hub, bottom[nxt], bottom[index]))
         bm.faces.new((top[nxt], bottom[nxt], bottom[index], top[index]))
-    if peeked:
-        for vert in bm.verts:
-            vert.co.z += _peek_lift(vert.co.x, vert.co.y)
     finish(obj, bm)
 
     # u runs from +x to -x, not the other way about. The exporter maps Blender
@@ -856,7 +815,6 @@ def main():
         build_seat_inlay(),
         build_pedestal(),
         build_card(),
-        build_card("card/peeked", peeked=True),
         build_hand(),
         build_chip_body(),
         build_chip_inlay(),
@@ -904,14 +862,16 @@ def preview_subjects():
         # alone made the hand look detached, because in the game it sits
         # outboard of a *pair* -- the gap it appears to leave is filled by the
         # card that was missing from the preview.
-        flat = build_card("card/flat")
-        flat.location = (-0.055, 0.0, 0.0)
-        squeezed = build_card("card/peeked", peeked=True)
-        squeezed.location = (0.055, 0.0, 0.0)
+        left = build_card("card/left")
+        left.location = (-0.027, 0.0, 0.0)
+        left.rotation_euler = (1.95, 0.0, 0.0)
+        right = build_card("card/right")
+        right.location = (0.027, 0.0, 0.0)
+        right.rotation_euler = (1.95, 0.0, 0.0)
         hand = build_hand()
-        hand.location = (0.112, 0.042, 0.004)
-        hand.rotation_euler = (0.0, 0.0, 0.42)
-        return [flat, squeezed, hand]
+        hand.location = (0.088, 0.040, 0.010)
+        hand.rotation_euler = (0.22, 0.0, 0.42)
+        return [left, right, hand]
 
     def stack():
         objects = []

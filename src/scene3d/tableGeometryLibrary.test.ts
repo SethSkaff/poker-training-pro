@@ -33,7 +33,6 @@ describe("authored table geometry", () => {
   it("ships every mesh the renderer builds the table from", () => {
     expect(TABLE_MESH_NAMES.sort()).toEqual([
       "card",
-      "card/peeked",
       "chip/body",
       "chip/edge",
       "chip/inlay",
@@ -177,21 +176,6 @@ describe("authored table geometry", () => {
       expect(distance).toBeGreaterThan(TABLE_DEPTH / 2);
       expect(distance).toBeLessThan(TABLE_DEPTH / 2 + (ledge.max[2] - felt.max[2]));
     }
-  });
-
-  /*
-    The squeezed card must be the same card, only bent: same outline, same
-    thickness, same UVs. If it drifted in size the faces would jump when a
-    player pressed to look at their hand.
-  */
-  it("bends the peeked card up at one corner without resizing it", () => {
-    const flat = bounds("card");
-    const peeked = bounds("card/peeked");
-    expect(peeked.max[0] - peeked.min[0]).toBeCloseTo(flat.max[0] - flat.min[0], 4);
-    expect(peeked.max[2] - peeked.min[2]).toBeCloseTo(flat.max[2] - flat.min[2], 4);
-    // Lifted, and lifted at exactly one corner rather than tilted as a whole.
-    expect(peeked.max[1]).toBeGreaterThan(flat.max[1] + 0.02);
-    expect(peeked.min[1]).toBeCloseTo(flat.min[1], 4);
   });
 
   it("models a hand at human scale", () => {
