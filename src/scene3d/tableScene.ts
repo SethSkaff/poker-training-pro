@@ -453,13 +453,13 @@ function createTableSceneResources(): TableSceneResources {
     diagonal guilloche a card back has had for two centuries, drawn once and
     shared by every card, so it costs one texture for the whole table.
   */
-  function cardBackMaterial(): MeshLambertMaterial {
+  function cardBackMaterial(colour = "#8d2733"): MeshLambertMaterial {
     const canvas = document.createElement("canvas");
     canvas.width = 64;
     canvas.height = 90;
     const context = canvas.getContext("2d");
     if (!context) return new MeshLambertMaterial({ color: 0x8d2733 });
-    context.fillStyle = "#8d2733";
+    context.fillStyle = colour;
     context.fillRect(0, 0, canvas.width, canvas.height);
     // The white border a real back leaves round its printed panel.
     context.fillStyle = "#f0e7d5";
@@ -492,7 +492,7 @@ function createTableSceneResources(): TableSceneResources {
   const deckBackMaterial = (colour: DeckColour): MeshLambertMaterial => {
     const cached = deckBackMaterials.get(colour);
     if (cached) return cached;
-    const material = track(new MeshLambertMaterial({ color: colour === "red" ? 0x8e2834 : 0x294f83 }));
+    const material = track(cardBackMaterial(colour === "red" ? "#8d2733" : "#294f83"));
     deckBackMaterials.set(colour, material);
     return material;
   };
@@ -1702,7 +1702,9 @@ function applySeat(
     mesh.geometry = resources.cardGeometry;
     mesh.material = code && !squeezing
       ? resources.cardFaceMaterial(code)
-      : resources.cardBackMaterial;
+      : transition?.handId
+        ? resources.deckBackMaterial(deckColourForHand(transition.handId))
+        : resources.cardBackMaterial;
 
     /*
       The fold. A triangle of the card's printed side, lying back over the
