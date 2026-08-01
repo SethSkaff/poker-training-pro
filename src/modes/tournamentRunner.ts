@@ -25,6 +25,7 @@ import {
   type TimedBlindDecision,
 } from "./timedBlindDirector";
 import type { HandValue } from "../engine/evaluator";
+import { isUncontestedAllInRunout } from "../lib/allInPresentation";
 
 export type TournamentRunnerKind = "career" | "timed";
 
@@ -453,9 +454,7 @@ function progressHandPresentationEvents(
     const revealAllInHands =
       newlyDealt >= 2 &&
       allInPlayerIds.length >= 2 &&
-      previousHand.betting.players
-        .filter((player) => player.status !== "folded")
-        .every((player) => player.status === "all-in");
+      isUncontestedAllInRunout(previousHand.betting.players);
     return [
       ...(revealAllInHands
         ? [{

@@ -30,6 +30,14 @@ describe("scene transition", () => {
     expect(createSceneTransition(result, 0, false).action).toBeUndefined();
   });
 
+  it("forwards only the public hand and board destination required by deck choreography", () => {
+    const board: TournamentPresentationEvent = {
+      id: "h9:flop:2", kind: "board-card-dealt", handId: "h9", street: "flop", cardIndex: 2,
+      card: { rank: "A", suit: "spades" },
+    };
+    expect(createSceneTransition(board, 0.5, false)).toMatchObject({ handId: "h9", cardIndex: 2 });
+  });
+
   it("maps every public action command without exposing a private action detail", () => {
     const cases = [
       ["check", "check"],

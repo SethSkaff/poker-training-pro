@@ -147,6 +147,7 @@ import {
   planTableSceneUpdate,
 } from "../lib/tableSceneLifecycle";
 import { createPresentationEventDelay, presentationEventDelayMs } from "../lib/tournamentPresentationClock";
+import { ALL_IN_EQUITY_TRANSITION_MS, interpolateAllInEquities } from "../lib/allInPresentation";
 import type {
   Card,
   GameMode,
@@ -1713,6 +1714,8 @@ export function PokerTable({
   );
   const [allInEquity, setAllInEquity] =
     useState<PublicAllInEquityEstimate>();
+  const [displayedAllInEquity, setDisplayedAllInEquity] = useState<ReadonlyMap<string, number>>(new Map());
+  const displayedAllInEquityRef = useRef<ReadonlyMap<string, number>>(new Map());
   const [sceneEventProgress, setSceneEventProgress] = useState(1);
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
@@ -3059,6 +3062,35 @@ export function PokerTable({
     });
     return () => { controller.abort(); };
   }, [allInRevealEvent, stagedBoard]);
+  useEffect(() => {
+    if (!allInEquity) {
+      const empty = new Map<string, number>();
+      displayedAllInEquityRef.current = empty;
+      setDisplayedAllInEquity(empty);
+      return;
+    }
+    const target = allInEquity.players.map((player) => ({ playerId: player.playerId, equity: player.equity }));
+    if (settings.reducedMotion || settings.transitionMotion === "off") {
+      const instant = new Map(target.map((entry) => [entry.playerId, entry.equity]));
+      displayedAllInEquityRef.current = instant;
+      setDisplayedAllInEquity(instant);
+      return;
+    }
+    let frame = 0;
+    const startedAt = performance.now();
+    const initial = displayedAllInEquityRef.current.size > 0
+      ? displayedAllInEquityRef.current
+      : new Map(target.map((entry) => [entry.playerId, 0]));
+    const tick = (now: number) => {
+      const elapsed = now - startedAt;
+      const next = interpolateAllInEquities(initial, target, elapsed);
+      displayedAllInEquityRef.current = next;
+      setDisplayedAllInEquity(next);
+      if (elapsed < ALL_IN_EQUITY_TRANSITION_MS) frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [allInEquity, settings.reducedMotion, settings.transitionMotion]);
   const revealedCardsByPlayer = new Map(
     publicRevealsForPresentation(
       tournament?.presentationEvent,
@@ -3497,6 +3529,18 @@ export function PokerTable({
             </aside>
           ) : null}
           {allInRevealEvent ? (
+            <>
+            <section className="all-in-showdown-stage" aria-label="All-in hands revealed">
+              {allInRevealEvent.reveals.map((reveal) => {
+                const player = scenario.players.find((seat) => seat.id === reveal.playerId);
+                return (
+                  <div key={reveal.playerId} className="all-in-showdown-hand">
+                    <b>{player?.seat === scenario.heroSeat ? "You" : (player?.name ?? reveal.playerId)}</b>
+                    <span>{reveal.cards.map((card) => <PlayingCard key={cardLabel(card)} card={card} small />)}</span>
+                  </div>
+                );
+              })}
+            </section>
             <aside className="all-in-equity-strip" role="status" aria-live="polite" aria-atomic="true">
               <span>All-in showdown odds</span>
               {allInEquity ? allInEquity.players.map((player) => {
@@ -3506,7 +3550,7 @@ export function PokerTable({
                 const lose = formatFixedDecimal((player.losses / allInEquity.simulations) * 100, 1);
                 return (
                   <p key={player.playerId}>
-                    <b>{name}</b> <strong>{formatFixedDecimal(player.equity * 100, 1)}%</strong>
+                    <b>{name}</b> <strong>{formatFixedDecimal((displayedAllInEquity.get(player.playerId) ?? 0) * 100, 1)}%</strong>
                     <small> win {win}% · tie {tie}% · lose {lose}%</small>
                   </p>
                 );
@@ -3517,6 +3561,7 @@ export function PokerTable({
                   : "From the remaining unseen cards"}
               </small>
             </aside>
+            </>
           ) : null}
           {actionError ? (
             <p className="table-action-alert" role="alert">

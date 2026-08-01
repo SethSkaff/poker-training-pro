@@ -5,6 +5,9 @@ import type { SeatActionKind } from "./tableSceneModel";
 export interface SceneTransition {
   readonly id: string;
   readonly kind: TournamentPresentationEvent["kind"];
+  /** Optional for legacy scene-test fixtures; production events always supply it. */
+  readonly handId?: string;
+  readonly cardIndex?: number;
   /** Public seats affected by this transition. */
   readonly playerIds: readonly string[];
   /** Public temporary piles kept while the next authoritative street has no bets. */
@@ -29,6 +32,8 @@ export function createSceneTransition(
   return {
     id: event.id,
     kind: event.kind,
+    handId: event.handId,
+    cardIndex: event.kind === "board-card-dealt" ? event.cardIndex : undefined,
     playerIds: playerIdsForEvent(event),
     collectedBets: event.kind === "bets-collected" ? event.collections : undefined,
     foldedPlayerIds: event.kind === "action" && event.command.type === "fold"
