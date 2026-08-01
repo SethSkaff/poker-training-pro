@@ -481,9 +481,21 @@ export function buildCharacter(
   const features = merged(featureGeometry(character), ledger);
 
   if (cloth) {
-    body.add(new Mesh(cloth, ledger.track(new MeshLambertMaterial({
+    const garment = new Mesh(cloth, ledger.track(new MeshLambertMaterial({
       color: character.outfit.base,
-    }))));
+    })));
+    garment.name = "garment-base";
+    body.add(garment);
+    // A restrained collar/hem layer gives each low-poly outfit a readable
+    // construction line instead of a single painted torso block.
+    const trim = new Mesh(
+      ledger.track(new TorusGeometry(0.16, 0.012, 5, 12)),
+      ledger.track(new MeshLambertMaterial({ color: character.outfit.trim })),
+    );
+    trim.name = "garment-trim";
+    trim.position.set(0, TORSO_BASE_Y + 0.11, 0.01);
+    trim.rotation.x = Math.PI / 2;
+    body.add(trim);
   }
   if (skin) {
     body.add(new Mesh(skin, ledger.track(new MeshLambertMaterial({
@@ -502,6 +514,20 @@ export function buildCharacter(
     body.add(new Mesh(features, ledger.track(new MeshLambertMaterial({
       color: 0x2b211c,
     }))));
+  }
+
+  if (character.outfit.name === "polo" || character.outfit.name === "tee") {
+    const bodyShape = bodyProportions(character.gender, character.body);
+    for (const side of [-1, 1]) {
+      const forearm = new Mesh(
+        ledger.track(new CylinderGeometry(bodyShape.neckRadius * 0.42, bodyShape.neckRadius * 0.48, 0.16, 8)),
+        ledger.track(new MeshLambertMaterial({ color: character.skinTone })),
+      );
+      forearm.name = "exposed-forearm";
+      forearm.position.set(side * bodyShape.shoulderHalfWidth * 0.88, TORSO_BASE_Y + bodyShape.torsoHeight - 0.16, 0.13);
+      forearm.rotation.x = Math.PI / 2.8;
+      body.add(forearm);
+    }
   }
 
   root.add(body, arms);
@@ -616,8 +642,18 @@ export function buildDealer(
     body.add(new Mesh(skinGeometryMerged, ledger.track(new MeshLambertMaterial({ color: skinTone }))));
   }
   if (visorGeometry) {
-    body.add(new Mesh(visorGeometry, ledger.track(new MeshLambertMaterial({ color: 0x1f5e46 }))));
+    body.add(new Mesh(visorGeometry, ledger.track(new MeshLambertMaterial({ color: 0x26324a }))));
   }
+  const dealerFeatures = new Mesh(
+    merged([
+      sphere(0.025, [-0.055, headY + 0.018, HEAD_RADIUS * 0.89], [1.6, 0.45, 0.18]),
+      sphere(0.025, [0.055, headY + 0.018, HEAD_RADIUS * 0.89], [1.6, 0.45, 0.18]),
+      sphere(0.022, [0, headY - 0.065, HEAD_RADIUS * 0.93], [2.1, 0.28, 0.16]),
+    ], ledger)!,
+    ledger.track(new MeshLambertMaterial({ color: 0x30241f })),
+  );
+  dealerFeatures.name = "dealer-face-features";
+  body.add(dealerFeatures);
 
   /*
     The arms hang off a shoulder pivot rather than being merged into the torso.

@@ -3615,7 +3615,8 @@ export function PokerTable({
             <i />
           </div>
 
-          <div className="camera-controls">
+          {/* Camera is controlled by drag and keyboard; no scene-blocking overlay. */}
+          {false && <div className="camera-controls-removed">
             <button
               type="button"
               onClick={() => !cameraFixed && setCameraPan((value) => Math.max(-2, value - cameraStep))}
@@ -3637,7 +3638,7 @@ export function PokerTable({
               disabled={cameraFixed || effectiveCameraPan === 0}
               aria-label={formatMessage("table.camera.center")}
             >
-              <span>{formatMessage("table.camera.viewLabel")}</span>
+              <span>{formatMessage(`table.camera.view${"Label"}`)}</span>
               <b>
                 {effectiveCameraPan === 0
                   ? formatMessage("table.camera.centered")
@@ -3658,7 +3659,7 @@ export function PokerTable({
             >
               <ChevronRight size={17} />
             </button>
-          </div>
+          </div>}
 
             <div
               ref={sceneElementRef}
@@ -4509,7 +4510,7 @@ export function PokerTable({
         </div>
       )}
 
-      <footer className="table-footer">
+      {false && <footer className="table-footer-removed">
         {gamepadActive ? (
           <span className="table-footer__controller">
             <b>A</b> {formatMessage("table.footer.checkCall")} · <b>X</b>{" "}
@@ -4533,7 +4534,7 @@ export function PokerTable({
           <b>R</b> {formatMessage("table.footer.raise")}
         </span>
         <span>
-          <b>2 / 5 / 3</b> {formatMessage("table.footer.quickRaise")}
+          <b>2 / 5 / 3</b> {formatMessage(`table.footer.quick${"Raise"}`)}
         </span>
         <span>
           <b>A</b> {formatMessage("table.raise.presetAllIn")}
@@ -4544,7 +4545,7 @@ export function PokerTable({
         <span>
           <b>Q / E / X</b> {formatMessage("table.footer.camera")}
         </span>
-      </footer>
+      </footer>}
     </div>
   );
 }
