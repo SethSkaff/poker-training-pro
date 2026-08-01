@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Box3, Mesh } from "three";
+import { Box3, Mesh, MeshStandardMaterial } from "three";
 import { describeOpponentCharacter, OUTFITS } from "../lib/opponentAppearance";
 import {
   DEALER_CAP_COVERAGE,
@@ -27,6 +27,13 @@ describe("scene character presentation", () => {
       const view = buildCharacter(describeOpponentCharacter(id!), ledger);
       expect(meshesNamed(view.root, "garment-base")).toHaveLength(1);
       expect(meshesNamed(view.root, "garment-trim")).toHaveLength(1);
+      const [construction] = meshesNamed(view.root, "garment-construction");
+      expect(construction, `${outfit.name} must have a visible layered construction detail`).toBeTruthy();
+      const material = construction.material as MeshStandardMaterial;
+      expect(material).toBeInstanceOf(MeshStandardMaterial);
+      // Casino lighting should read as cloth, not plastic or glowing vinyl.
+      expect(material.roughness).toBeGreaterThanOrEqual(0.6);
+      expect(material.metalness).toBe(0);
       ledger.dispose();
     }
   });
@@ -60,6 +67,7 @@ describe("scene character presentation", () => {
     const [cap] = meshesNamed(dealer.root, "dealer-cap");
     expect(features).toBeTruthy();
     expect(cap).toBeTruthy();
+    expect(meshesNamed(dealer.root, "dealer-tie")).toHaveLength(1);
 
     // A face at this scale needs features that read as features, not a visor-
     // sized pair of eyes and a mouth spanning the skull.

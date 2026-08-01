@@ -16,6 +16,7 @@ import {
   Group,
   Mesh,
   MeshLambertMaterial,
+  MeshStandardMaterial,
   Quaternion,
   SphereGeometry,
   TorusGeometry,
@@ -426,6 +427,63 @@ function clothGeometry(character: OpponentCharacter): BufferGeometry[] {
 }
 
 /**
+ * Small, costume-specific construction pieces.  These are deliberately real
+ * geometry rather than a bright painted decal: at poker-table distance a
+ * shoulder yoke, lapel, zip or hood catches the room key light and breaks the
+ * "single coloured mannequin" silhouette without increasing the character
+ * texture budget.
+ */
+function wardrobeDetailGeometry(character: OpponentCharacter): BufferGeometry[] {
+  const body = bodyProportions(character.gender, character.body);
+  const top = TORSO_BASE_Y + body.torsoHeight;
+  const depth = body.chestDepth * 0.98;
+  const parts: BufferGeometry[] = [];
+  const front = depth + 0.006;
+
+  // Every garment has a yoke. It provides the restrained material break that
+  // makes broad cloth read as sewn fabric under a warm room light.
+  parts.push(new BoxGeometry(body.shoulderHalfWidth * 1.72, 0.028, 0.018).translate(0, top - 0.085, front));
+
+  switch (character.outfit.name) {
+    case "hoodie":
+      // Folded hood resting behind the neck, never a helmet around the head.
+      parts.push(new TorusGeometry(body.neckRadius * 1.62, body.neckRadius * 0.28, 6, 12, Math.PI * 1.18).translate(0, top - 0.015, -depth * 0.70));
+      break;
+    case "track-jacket":
+    case "puffer":
+      // Central zip/placket and a shallow collar.
+      parts.push(new BoxGeometry(0.012, body.torsoHeight * 0.72, 0.014).translate(0, TORSO_BASE_Y + body.torsoHeight * 0.48, front + 0.004));
+      parts.push(new TorusGeometry(body.neckRadius * 1.42, 0.010, 5, 12).translate(0, top + 0.006, 0));
+      break;
+    case "blazer":
+    case "waistcoat":
+      // Two separate lapels retain the formal silhouette even with low-poly
+      // geometry and make the dealer-adjacent players less uniform.
+      for (const side of [-1, 1]) {
+        const lapel = new BoxGeometry(body.shoulderHalfWidth * 0.42, body.torsoHeight * 0.42, 0.016);
+        lapel.rotateZ(side * 0.34);
+        lapel.translate(side * body.shoulderHalfWidth * 0.28, TORSO_BASE_Y + body.torsoHeight * 0.63, front + 0.008);
+        parts.push(lapel);
+      }
+      break;
+    case "flannel":
+    case "cardigan":
+      // A placket makes soft layers feel constructed rather than painted on.
+      parts.push(new BoxGeometry(0.016, body.torsoHeight * 0.66, 0.016).translate(0, TORSO_BASE_Y + body.torsoHeight * 0.46, front + 0.005));
+      break;
+    case "polo":
+      // Compact knitted collar, intentionally flatter than a jacket collar.
+      parts.push(new TorusGeometry(body.neckRadius * 1.30, 0.010, 5, 12).translate(0, top + 0.003, 0));
+      break;
+    case "tee":
+    case "turtleneck":
+      parts.push(new TorusGeometry(body.neckRadius * 1.22, 0.008, 5, 12).translate(0, top + 0.002, 0));
+      break;
+  }
+  return parts;
+}
+
+/**
  * Build a genuinely articulated arm: upper arm is parented at the shoulder and
  * the forearm (and palm) is parented at the elbow.  Keeping these as separate
  * meshes is intentional.  A merged limb can only translate as one rigid bar,
@@ -559,12 +617,15 @@ export function buildCharacter(
 
   const skin = merged(skinGeometry(character), ledger);
   const cloth = merged(clothGeometry(character), ledger);
+  const wardrobeDetails = merged(wardrobeDetailGeometry(character), ledger);
   const hair = merged(hairGeometry(character), ledger);
   const features = merged(featureGeometry(character), ledger);
 
   if (cloth) {
-    const garment = new Mesh(cloth, ledger.track(new MeshLambertMaterial({
+    const garment = new Mesh(cloth, ledger.track(new MeshStandardMaterial({
       color: character.outfit.base,
+      roughness: 0.84,
+      metalness: 0,
     })));
     garment.name = "garment-base";
     body.add(garment);
@@ -572,21 +633,37 @@ export function buildCharacter(
     // construction line instead of a single painted torso block.
     const trim = new Mesh(
       ledger.track(new TorusGeometry(0.16, 0.012, 5, 12)),
-      ledger.track(new MeshLambertMaterial({ color: character.outfit.trim })),
+      ledger.track(new MeshStandardMaterial({ color: character.outfit.trim, roughness: 0.72, metalness: 0 })),
     );
     trim.name = "garment-trim";
     trim.position.set(0, TORSO_BASE_Y + 0.11, 0.01);
     trim.rotation.x = Math.PI / 2;
     body.add(trim);
   }
+  if (wardrobeDetails) {
+    const details = new Mesh(
+      wardrobeDetails,
+      ledger.track(new MeshStandardMaterial({
+        color: character.outfit.trim,
+        roughness: 0.68,
+        metalness: 0,
+      })),
+    );
+    details.name = "garment-construction";
+    body.add(details);
+  }
   if (skin) {
-    body.add(new Mesh(skin, ledger.track(new MeshLambertMaterial({
+    body.add(new Mesh(skin, ledger.track(new MeshStandardMaterial({
       color: character.skinTone,
+      roughness: 0.82,
+      metalness: 0,
     }))));
   }
   if (hair) {
-    body.add(new Mesh(hair, ledger.track(new MeshLambertMaterial({
+    body.add(new Mesh(hair, ledger.track(new MeshStandardMaterial({
       color: character.hairColor,
+      roughness: 0.9,
+      metalness: 0,
     }))));
   }
   if (features) {
@@ -723,16 +800,16 @@ export function buildDealer(
   const visorGeometry = merged(visor, ledger);
 
   if (shirtGeometry) {
-    body.add(new Mesh(shirtGeometry, ledger.track(new MeshLambertMaterial({ color: 0xe8e4dc }))));
+    body.add(new Mesh(shirtGeometry, ledger.track(new MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.8, metalness: 0 }))));
   }
   if (waistcoatGeometry) {
-    body.add(new Mesh(waistcoatGeometry, ledger.track(new MeshLambertMaterial({ color: 0x1d1f26 }))));
+    body.add(new Mesh(waistcoatGeometry, ledger.track(new MeshStandardMaterial({ color: 0x1d1f26, roughness: 0.76, metalness: 0 }))));
   }
   if (skinGeometryMerged) {
-    body.add(new Mesh(skinGeometryMerged, ledger.track(new MeshLambertMaterial({ color: skinTone }))));
+    body.add(new Mesh(skinGeometryMerged, ledger.track(new MeshStandardMaterial({ color: skinTone, roughness: 0.82, metalness: 0 }))));
   }
   if (visorGeometry) {
-    const cap = new Mesh(visorGeometry, ledger.track(new MeshLambertMaterial({ color: 0x26324a })));
+    const cap = new Mesh(visorGeometry, ledger.track(new MeshStandardMaterial({ color: 0x26324a, roughness: 0.86, metalness: 0 })));
     cap.name = "dealer-cap";
     body.add(cap);
   }
@@ -748,6 +825,16 @@ export function buildDealer(
   );
   dealerFeatures.name = "dealer-face-features";
   body.add(dealerFeatures);
+  // A narrow tie is a useful card-room uniform cue and gives the dealer's
+  // otherwise dark waistcoat a grounded, readable centre line.
+  const tie = new Mesh(
+    ledger.track(new BoxGeometry(0.030, 0.155, 0.014)),
+    ledger.track(new MeshStandardMaterial({ color: 0x4b1f2a, roughness: 0.72, metalness: 0 })),
+  );
+  tie.name = "dealer-tie";
+  tie.position.set(0, base + torsoHeight * 0.63, shoulder * 0.62 + 0.014);
+  tie.rotation.z = Math.PI;
+  body.add(tie);
 
   /*
     The arms hang off a shoulder pivot rather than being merged into the torso.
