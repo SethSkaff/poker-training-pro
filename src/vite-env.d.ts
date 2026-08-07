@@ -15,6 +15,8 @@ interface DesktopPrepareCloseRequest {
 }
 
 interface Window {
+  /** Read-only local renderer metrics for the isolated packaged scene audit. */
+  __ptpSceneDiagnostics?: import("./scene3d/sceneDiagnostics").SceneDiagnosticsBridge;
   desktop?: import("./lib/durablePersistence").DesktopPersistenceBridge & {
     getVersion: () => Promise<string>;
     getAppInfo: () => Promise<import("./lib/creditsData").DesktopAppInfo>;
@@ -32,6 +34,12 @@ interface Window {
     testLifecycleWindow?: (
       action: "minimize" | "restore",
     ) => Promise<{ ok: boolean }>;
+    /** Present only in the isolated packaged lifecycle/scene audit. */
+    sceneDiagnosticsEnabled?: true;
+    /** Fixed runner seed exposed only to the isolated packaged scene audit. */
+    sceneAuditSeed?: "runner-showdown-3" | "scene-side-pot-0";
+    /** Present only in the packaged WebGL fallback audit. */
+    forceWebGl2Failure?: true;
     setFullscreen: (fullscreen: boolean) => Promise<boolean>;
     getSafeModeState: () => Promise<{
       readonly available: boolean;

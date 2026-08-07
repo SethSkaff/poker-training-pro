@@ -18,6 +18,12 @@ export interface PlaylistSource {
   readonly title: string;
   /** Playable master length in seconds. */
   readonly durationSec: number;
+  /**
+   * Packaged, same-origin audio master. Remote URLs are deliberately not
+   * supported: a game soundtrack must remain available offline and its
+   * redistribution rights must be auditable with the shipped build.
+   */
+  readonly assetPath?: string;
 }
 
 export interface PlaylistManifest {

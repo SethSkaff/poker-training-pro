@@ -68,11 +68,11 @@ describe("deriveTableAnnouncements (pure transition logic)", () => {
     expect(deriveTableAnnouncements(higher, lower)).toEqual([]);
   });
 
-  it("announces a single-winner hand result exactly once when the hand number advances", () => {
+  it("announces a single-winner hand result exactly once when showdown arrives", () => {
     const finishing = baseSnapshot({ handNumber: 4 });
     const nextHand = baseSnapshot({
       handNumber: 5,
-      potResult: { winnerNames: ["Maya"], amount: 640, hadSidePot: false },
+      potResult: { id: "hand-4", winnerNames: ["Maya"], amount: 640, hadSidePot: false },
     });
 
     const announcements = deriveTableAnnouncements(finishing, nextHand);
@@ -89,6 +89,7 @@ describe("deriveTableAnnouncements (pure transition logic)", () => {
     const nextHand = baseSnapshot({
       handNumber: 8,
       potResult: {
+        id: "hand-7",
         winnerNames: ["You", "Jules"],
         amount: 900,
         hadSidePot: true,
@@ -101,10 +102,10 @@ describe("deriveTableAnnouncements (pure transition logic)", () => {
     );
   });
 
-  it("never announces a result without a hand-number transition (avoids re-narrating a stale result on unrelated renders)", () => {
+  it("never re-announces a result with the same public hand id", () => {
     const snapshot = baseSnapshot({
       handNumber: 3,
-      potResult: { winnerNames: ["Maya"], amount: 500, hadSidePot: false },
+      potResult: { id: "hand-3", winnerNames: ["Maya"], amount: 500, hadSidePot: false },
     });
     expect(deriveTableAnnouncements(snapshot, snapshot)).toEqual([]);
   });
@@ -158,7 +159,7 @@ describe("deriveTableAnnouncements (pure transition logic)", () => {
       handNumber: 2,
       bigBlind: 80,
       smallBlind: 40,
-      potResult: { winnerNames: ["Maya"], amount: 300, hadSidePot: false },
+      potResult: { id: "hand-1", winnerNames: ["Maya"], amount: 300, hadSidePot: false },
     });
     const combined = deriveTableAnnouncements(before, after)
       .map((entry) => entry.text)
@@ -199,7 +200,7 @@ describe("TableAnnouncerController (stateful coalescing)", () => {
         handNumber: 6,
         bigBlind: 80,
         smallBlind: 40,
-        potResult: { winnerNames: ["Maya"], amount: 480, hadSidePot: false },
+        potResult: { id: "hand-5", winnerNames: ["Maya"], amount: 480, hadSidePot: false },
       }),
     );
     expect(result.polite).toBe(

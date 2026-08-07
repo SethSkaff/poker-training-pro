@@ -23,23 +23,72 @@ import {
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+import type { SceneAvailability } from "../scene3d/sceneAvailability";
+import {
+  createSceneTransition,
+  retainSceneTerminalFoldedPlayers,
+} from "../scene3d/sceneTransition";
+import { sampleScenePresentationProgress } from "../scene3d/scenePresentationProgress";
+import {
+  createTableSceneSnapshot,
+  type SceneSnapshotSeat,
+} from "../scene3d/tableSceneSnapshot";
+import {
+  heroStationIndex,
+  chipInventoryForAmount,
+  seatBetViewportAnchor,
+  seatBetViewportAnchorFromCamera,
+  seatStackAmountViewportAnchor,
+  seatStackAmountViewportAnchorFromCamera,
+  seatPlaqueViewportAnchor,
+} from "../scene3d/tableSceneModel";
 import {
   trainingScenarios,
   type RatedTrainingScenario,
 } from "../data/trainingScenarios";
 import type { BettingActionType, LegalActionSet } from "../engine";
+import type { CareerTier } from "../engine/tournament";
 import {
   cardAriaLabel,
   cardLabel,
   formatChips,
+  formatClock,
   formatFixedDecimal,
 } from "../lib/format";
-import { gameAudio } from "../lib/audio";
+import { gameAudio, type SoundName } from "../lib/audio";
+import { describeCallAction } from "../lib/actionLabels";
+import { isShortStack } from "../lib/chipStackDepth";
+import { describeTrainingContext } from "../lib/trainingScenarioContext";
+import { cameraPanFromHorizontalDrag, cameraZoomFromWheel } from "../lib/tableCameraControls";
+import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
+/*
+  Lazy so three.js stays out of the initial bundle entirely, which is what keeps
+  `initialJavaScriptGzipMiB: 0.3` intact -- see docs/desktop-3d-architecture.md.
+  The chunk is only fetched when a player has actually turned the scene on.
+*/
+const TableScene3D = lazy(() =>
+  import("./TableScene3D").then((module) => ({ default: module.TableScene3D })),
+);
+import {
+  areHeroCardsMucked,
+  foldOffsetProgress,
+  isFoldReleaseArmed,
+  shouldShowFoldRelease,
+  type HeroFoldState,
+} from "../lib/heroFoldPresentation";
+import { PlayingCard } from "./PlayingCard";
+import { PokerReferenceContent } from "./PokerReference";
+import {
+  describeOpponentAppearance,
+  opponentAppearanceStyle,
+} from "../lib/opponentAppearance";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import {
   useTableAnnouncer,
@@ -57,13 +106,21 @@ import {
   type ContextualPromptState,
 } from "../lib/contextualPrompts";
 import {
+  estimateTrainingEquity,
   evaluateMathAnswer,
   gradeTrainingAttempt,
   parseMathAnswer,
   type GradedTrainingAttempt,
   type MathEvaluation,
 } from "../lib/trainingEngine";
-import type { HeroTournamentAction } from "../modes/tournamentRunner";
+import type {
+  HeroTournamentAction,
+  TournamentPresentationEvent,
+} from "../modes/tournamentRunner";
+import {
+  estimatePublicAllInEquitySliced,
+  type PublicAllInEquityEstimate,
+} from "../modes/rational";
 import { calculateAiDecisionTiming } from "../modes/decisionTiming";
 import {
   keyEventToken,
@@ -90,6 +147,12 @@ import {
   type LifecyclePauseReason,
   type ResumeRecap,
 } from "../lib/lifecyclePause";
+import {
+  createTableActionGate,
+  planTableSceneUpdate,
+} from "../lib/tableSceneLifecycle";
+import { createPresentationEventDelay, presentationEventDelayMs } from "../lib/tournamentPresentationClock";
+import { ALL_IN_EQUITY_TRANSITION_MS, interpolateAllInEquities } from "../lib/allInPresentation";
 import type {
   Card,
   GameMode,
@@ -99,19 +162,50 @@ import type {
   SeatPlayer,
   TrainingScenario,
 } from "../types/poker";
+import type { HandValue } from "../engine/evaluator";
 import type { TrainingPresentationCheckpoint } from "../lib/trainingCheckpoint";
 
 interface TournamentTableControls {
   legalActions: LegalActionSet;
   onAction: (request: HeroTournamentAction) => void;
+  /** True only while the engine is waiting for a legal hero action. */
+  heroDecision?: boolean;
+  /** The one public event currently being presented, if the table is busy. */
+  presentationEvent?: TournamentPresentationEvent;
+  /** Public folds retained while Skip holds its readable result beat. */
+  skipTerminalFoldedPlayerIds?: readonly string[];
+  /**
+   * A legal all-in reveal held by the presentation coordinator for this hand.
+   * It is intentionally ephemeral: never part of a snapshot, save, or replay.
+   */
+  allInReveal?: Extract<TournamentPresentationEvent, { kind: "all-in-reveal" }>;
+  onPresentationEventComplete?: () => void;
+  onSkipPresentation?: () => void;
   kind: "career" | "timed";
+  /**
+   * Stable identity for this tournament run.  It deliberately survives every
+   * hand in the run, but is new when the player starts or retries a new round.
+   */
+  roundId?: string;
+  /** Monotonic authoritative state revision; never a React subtree key. */
+  sceneStateVersion: number;
   handNumber: number;
   fieldSize: number;
   playersRemaining: number;
+  /** Current blind level, 1-based, for the tournament HUD (E27-004/E27-008). */
+  blindLevel?: number;
+  /** Milliseconds until the blinds next rise, so the schedule is inspectable. */
+  nextLevelInMs?: number;
   elapsedMs: number;
   durationMs?: number;
   actionHistory: string[];
   showArrival: boolean;
+  /**
+   * Career tier of the event being played. Drives room scale, crowd density,
+   * and lighting at the seated table, so a world championship does not look
+   * like the local qualifier with different signage.
+   */
+  tier?: CareerTier;
   /** Big blind of the opening level, used to detect a blind increase. */
   openingBigBlind?: number;
   /** Finishing places that qualify or cash in this event. */
@@ -124,18 +218,332 @@ interface TournamentTableControls {
    * result once the next hand begins. Never inferred from a stack-size
    * delta.
    */
-  lastPotAwards?: readonly { playerId: string; amount: number }[];
+  lastPotAwards?: readonly {
+    potId: string;
+    playerId: string;
+    amount: number;
+    hand?: HandValue;
+  }[];
   /**
    * True when the most recently finished hand's award set spanned more than
    * one contestable pot (a genuine side pot), sourced from the engine's own
    * pot-building result.
    */
   lastHandHadSidePot?: boolean;
-  /** The latest public table action, for a brief, truthful character gesture. */
-  lastPublicAction?: {
-    playerId: string;
-    type: BettingActionType;
-  };
+}
+
+/** Human-readable, public-only event copy shared by the HUD and live region. */
+export function presentationEventLabel(event: TournamentPresentationEvent): string {
+  switch (event.kind) {
+    case "button-moved":
+      return "Dealer button moves";
+    case "blinds-posted":
+      return "Blinds posted";
+    case "hole-cards-dealt":
+      return "Cards dealt";
+    case "action":
+      return `${publicActionLabel(event.command.type)} in progress`;
+    case "board-card-dealt":
+      return `${event.street} card dealt`;
+    case "bets-collected":
+      return "Bets collected";
+    case "showdown":
+      return "Showdown";
+    case "all-in-reveal":
+      return "All-in hands revealed";
+    case "hand-result":
+      return "Hand result";
+    case "side-pot-formed":
+      return `Side pot formed: ${formatChips(event.amount)}`;
+    case "pot-awarded":
+      return `Pot awarded: ${formatChips(event.amount)}`;
+    case "eliminated":
+      return "Player eliminated";
+  }
+}
+
+/**
+ * Maps only public presentation milestones to supplementary audio. Keeping
+ * this pure and event-scoped prevents hidden hole cards, simulated equity, or
+ * bot decision internals from ever selecting a cue or changing its timing.
+ */
+export function publicPresentationSound(
+  event: TournamentPresentationEvent,
+): SoundName | undefined {
+  switch (event.kind) {
+    case "hole-cards-dealt":
+    case "board-card-dealt":
+    case "all-in-reveal":
+      return "deal";
+    case "blinds-posted":
+    case "bets-collected":
+    case "side-pot-formed":
+      return "chip";
+    case "action":
+      if (event.command.type === "fold") return "fold";
+      if (event.command.type === "all-in") return "all-in";
+      return ["bet", "raise", "call"].includes(event.command.type)
+        ? "chip"
+        : undefined;
+    case "pot-awarded":
+      return "win";
+    case "eliminated":
+      return "eliminated";
+    default:
+      return undefined;
+  }
+}
+
+/** Labels for every public voluntary action; never contains card information. */
+export function publicActionLabel(action: BettingActionType): string {
+  switch (action) {
+    case "fold":
+      return "Folds";
+    case "check":
+      return "Checks";
+    case "call":
+      return "Calls";
+    case "bet":
+      return "Bets";
+    case "raise":
+      return "Raises";
+    case "all-in":
+      return "All in";
+  }
+}
+
+/**
+ * Derives the exact public cards that form any awarded best-five hand. This is
+ * deliberately driven by the engine's award payload instead of recalculating
+ * a hand in the UI, so board-playing hands, ties, and separate side-pot
+ * winners remain faithful to the authoritative result.
+ */
+export function winningCardLabelsForAwards(
+  awards: readonly { hand?: HandValue }[],
+): ReadonlySet<string> {
+  return new Set(
+    awards.flatMap((award) => award.hand?.cards.map(cardLabel) ?? []),
+  );
+}
+
+/**
+ * The public, authoritative cards to place in the short end-of-hand tableau.
+ * This deliberately consumes the runner's showdown award rather than trying to
+ * reconstruct a winner from stacks or from a player's concealed hole cards.
+ */
+export function winningHandsForShowdown(
+  event: Extract<TournamentPresentationEvent, { kind: "showdown" }> | undefined,
+  board: readonly Card[],
+): readonly {
+  potId: string;
+  playerId: string;
+  amount: number;
+  handName: string;
+  cards: readonly { card: Card; source: "board" | "hole" }[];
+}[] {
+  if (!event) return [];
+  const boardLabels = new Set(board.map(cardLabel));
+  return event.awards.flatMap((award) => {
+    if (!award.hand) return [];
+    return [{
+      potId: award.potId,
+      playerId: award.playerId,
+      amount: award.amount,
+      handName: award.hand.displayName,
+      cards: award.hand.cards.map((card) => ({
+        card,
+        source: boardLabels.has(cardLabel(card)) ? "board" as const : "hole" as const,
+      })),
+    }];
+  });
+}
+
+/**
+ * Selects only card data that is public at the currently presented moment.
+ * A held all-in reveal persists through queued board cards, while a showdown
+ * replaces it with the final legally revealed set. No runner snapshot or
+ * replay is consulted here.
+ */
+export function publicRevealsForPresentation(
+  event: TournamentPresentationEvent | undefined,
+  heldAllInReveal: Extract<
+    TournamentPresentationEvent,
+    { kind: "all-in-reveal" }
+  > | undefined,
+): readonly { playerId: string; cards: readonly Card[] }[] {
+  if (event?.kind === "showdown") return event.reveals;
+  if (heldAllInReveal) return heldAllInReveal.reveals;
+  if (event?.kind === "all-in-reveal") return event.reveals;
+  return [];
+}
+
+/**
+ * Explains a live side pot exclusively from public table information. A side
+ * pot is never an excuse to infer an opponent's hand: the only inputs are
+ * committed chips, public all-in status, and the contenders that the engine
+ * has already declared eligible for that pot.
+ */
+export function describeLiveSidePot(
+  pot: NonNullable<TrainingScenario["potBreakdown"]>[number],
+  players: readonly SeatPlayer[],
+): string {
+  const eligible = new Set(pot.eligiblePlayerIds);
+  const cappedPlayers = players
+    .filter((player) => player.status === "all-in" && !eligible.has(player.id))
+    .sort((left, right) => (left.totalCommitted ?? 0) - (right.totalCommitted ?? 0));
+  const contenders = pot.eligiblePlayerIds
+    .map((playerId) => players.find((player) => player.id === playerId)?.name ?? playerId)
+    .join(", ");
+
+  if (cappedPlayers.length > 0) {
+    const cap = cappedPlayers[0];
+    return `${cap.name} is all-in for ${formatChips(cap.totalCommitted ?? 0)}. Chips committed above that cap form this side pot; only ${contenders} can win it.`;
+  }
+
+  return `This side pot contains chips outside the main-pot cap. Only ${contenders} can win it.`;
+}
+
+/**
+ * Map a public betting action onto the body movement the 3D scene plays.
+ *
+ * Public actions only -- the same rule the DOM gesture layer follows. A body's
+ * movement must never be derived from cards or policy output, or the animation
+ * becomes a hand-strength tell that the redaction tests cannot see.
+ */
+export function sceneActionForCommand(
+  action: BettingActionType,
+): "check" | "call" | "bet" | "raise" | "fold" | "all-in" {
+  switch (action) {
+    case "fold":
+      return "fold";
+    case "check":
+      return "check";
+    case "all-in":
+      return "all-in";
+    case "bet":
+      return "bet";
+    case "raise":
+      return "raise";
+    case "call":
+      return "call";
+    default:
+      return "check";
+  }
+}
+
+export interface SeatPresentationUpdate {
+  action?: BettingActionType;
+  /**
+   * A table milestone that is not a betting command.
+   *
+   * Dealing and winning a pot are things that happen *to* a seat rather than
+   * decisions it makes, so they cannot go in `action` -- that field is a
+   * `BettingActionType` and several consumers read it as one. The 3D scene
+   * needs them because the dealer and the cards animate off them.
+   */
+  sceneAction?: "deal" | "win";
+  label?: string;
+  wonPot?: boolean;
+  eliminated?: boolean;
+}
+
+/** Public-only character gesture selection. Deliberately accepts no cards or
+ * policy output, so appearance and movement cannot become a hand-strength tell. */
+export type SeatGesture =
+  | "win"
+  | "out"
+  | "all-in"
+  | "raise"
+  | "fold"
+  | "bet"
+  | "check"
+  | "call"
+  | "receive"
+  | "hold";
+
+/**
+ * The physical gesture a seat should be showing.
+ *
+ * **Every input is public.** There is no card, rank, equity, or evaluated-hand
+ * parameter in this signature, which is what makes "animation never reflects
+ * hidden-card strength" a structural property rather than a promise — an
+ * opponent holding the nuts and one holding 7-2 produce byte-identical
+ * gestures. `PokerTable.characterGesture.test.ts` asserts it.
+ */
+export function seatGestureForPublicState(input: {
+  wonPot?: boolean;
+  status: SeatPlayer["status"];
+  bet: number;
+  recentAction?: BettingActionType;
+  showingFaceDownCards: boolean;
+  hasPublicReveal: boolean;
+  /** True on the beat the seat is dealt in. */
+  justDealt?: boolean;
+  /** Skip is retaining a public terminal fold across a result beat. */
+  terminalFolded?: boolean;
+}): SeatGesture | undefined {
+  if (input.terminalFolded) return undefined;
+  if (input.wonPot) return "win";
+  if (input.status === "out") return "out";
+  if (input.status === "all-in" || input.recentAction === "all-in") return "all-in";
+  if (input.status === "folded" || input.recentAction === "fold") return "fold";
+  // A raise is a distinct physical act from an opening bet -- chips are
+  // gathered and pushed rather than simply placed.
+  if (input.recentAction === "raise") return "raise";
+  if (input.bet > 0 || input.recentAction === "bet") return "bet";
+  if (input.recentAction === "check") return "check";
+  if (input.recentAction === "call") return "call";
+  if (input.justDealt && input.status === "active") return "receive";
+  if (input.showingFaceDownCards && !input.hasPublicReveal && input.status === "active") return "hold";
+  return undefined;
+}
+
+/**
+ * Projects one renderer-safe tournament event onto an individual seat. The
+ * projection deliberately reads no scenario cards, so it is safe for every
+ * opponent as well as the hero.
+ */
+export function seatPresentationUpdate(
+  event: TournamentPresentationEvent | undefined,
+  playerId: string,
+): SeatPresentationUpdate {
+  if (!event) return {};
+  if (event.kind === "action" && event.playerId === playerId) {
+    return { action: event.command.type, label: publicActionLabel(event.command.type) };
+  }
+  if (event.kind === "blinds-posted") {
+    const post = event.posts.find((entry) => entry.playerId === playerId);
+    if (!post) return {};
+    const label =
+      post.type === "small-blind"
+        ? "Posts small blind"
+        : post.type === "big-blind"
+          ? "Posts big blind"
+          : "Posts big blind ante";
+    return { action: "bet", label: `${label} ${formatChips(post.amount)}` };
+  }
+  /*
+    The deal itself, which was the one milestone the scene never heard about.
+
+    `hole-cards-dealt` has always been published -- it drives the deal sound --
+    but it was not mapped here, so no seat ever carried `action: "deal"`. The
+    renderer's whole dealing animation (cards travelling from the dealer's shoe
+    to each seat, and the dealer pitching them) was reachable code that nothing
+    ever reached: every hand simply began with two cards already lying on the
+    felt. The cost of the miss was invisible because nothing failed; the
+    animation just never ran.
+  */
+  if (event.kind === "hole-cards-dealt" && event.playerIds.includes(playerId)) {
+    return { sceneAction: "deal", label: "Dealt in" };
+  }
+  if (event.kind === "pot-awarded" && event.playerId === playerId) {
+    // `win` is what turns the dealer round to push the pot to this seat.
+    return { sceneAction: "win", label: `Wins ${formatChips(event.amount)}`, wonPot: true };
+  }
+  if (event.kind === "eliminated" && event.playerId === playerId) {
+    return { label: "Eliminated", eliminated: true };
+  }
+  return {};
 }
 
 interface PokerTableProps {
@@ -161,13 +569,6 @@ const seatPositions = [
   "upper-right",
   "lower-right",
 ] as const;
-
-const suitGlyph: Record<Card["suit"], string> = {
-  clubs: "♣",
-  diamonds: "♦",
-  hearts: "♥",
-  spades: "♠",
-};
 
 /**
  * A concise, player-relevant live announcement. It deliberately omits the
@@ -223,53 +624,131 @@ export function decisionClockAriaLabel(elapsedMs: number): string {
   });
 }
 
-function PlayingCard({
-  card,
-  hidden = false,
-  small = false,
-}: {
-  card: Card;
-  hidden?: boolean;
-  small?: boolean;
-}) {
-  if (hidden) {
-    return (
-      <span
-        className={`playing-card playing-card--back ${small ? "playing-card--small" : ""}`}
-        role="img"
-        aria-label={formatMessage("cards.faceDown")}
-      >
-        <i />
-      </span>
-    );
-  }
+export interface HeroStackAccessibleState {
+  stack: number;
+  streetCommitted: number;
+  totalCommitted: number;
+  position?: string;
+}
 
-  return (
-    <span
-      className={`playing-card playing-card--${card.suit} ${
-        small ? "playing-card--small" : ""
-      }`}
-      role="img"
-      aria-label={cardAriaLabel(card)}
-    >
-      <b>{card.rank}</b>
-      <i>{suitGlyph[card.suit]}</i>
-    </span>
-  );
+/** Accessible copy for the persistent stack HUD, announced when it changes. */
+export function heroStackAriaLabel({
+  stack,
+  streetCommitted,
+  totalCommitted,
+  position,
+}: HeroStackAccessibleState): string {
+  const positionSummary = position ? ` Position: ${position}.` : "";
+  return [
+    `Your remaining stack: ${formatChips(stack)} chips.`,
+    `Committed this round: ${formatChips(streetCommitted)} chips.`,
+    `Total committed this hand: ${formatChips(totalCommitted)} chips.`,
+  ].join(" ") + positionSummary;
+}
+
+/**
+ * Public table-position label derived only from the visible button/blind
+ * seats. Keeping it pure makes each rotation testable and ensures the HUD,
+ * seat marker, and assistive label always agree on the same position.
+ */
+export function tablePositionLabelForSeat({
+  seat,
+  buttonSeat,
+  smallBlindSeat,
+  bigBlindSeat,
+  playerCount,
+}: {
+  seat: number;
+  buttonSeat?: number;
+  smallBlindSeat?: number;
+  bigBlindSeat?: number;
+  playerCount: number;
+}): string {
+  if (seat === buttonSeat) return formatMessage("table.position.button");
+  if (seat === smallBlindSeat) return formatMessage("table.position.smallBlind");
+  if (seat === bigBlindSeat) return formatMessage("table.position.bigBlind");
+  if (bigBlindSeat === undefined || playerCount <= 0) return "";
+  const distance = (seat - bigBlindSeat + playerCount) % playerCount;
+  if (distance === 1) return formatMessage("table.position.utg");
+  if (distance === playerCount - 1) return formatMessage("table.position.cutoff");
+  return distance === 2
+    ? formatMessage("table.position.hijack")
+    : formatMessage("table.position.middle");
 }
 
 function ChipStack({ bet = false }: { bet?: boolean }) {
   return (
-    <span className={`chip-stack ${bet ? "chip-stack--bet" : ""}`} aria-hidden>
-      <i />
-      <i />
-      <i />
-      {!bet && <i />}
+    <span className={`chip-stack ${bet ? "chip-stack--bet" : ""}`} aria-hidden="true">
+      <i data-denomination="25" />
+      <i data-denomination="100" />
+      <i data-denomination="500" />
+      {!bet && <i data-denomination="1000" />}
     </span>
   );
 }
 
+/**
+ * A seat's resting pile, as tall as the stack is deep in big blinds (E27-009).
+ *
+ * The fixed three-chip glyph above says only "chips exist here". This says how
+ * many, in the unit that decides how the hand is played -- and it shrinks as
+ * the level climbs even when nobody has lost a chip, which is the pressure a
+ * tournament is supposed to apply.
+ */
+function SeatChipStack({
+  stack,
+  bigBlind,
+}: {
+  stack: number;
+  bigBlind: number;
+}) {
+  const inventory = chipInventoryForAmount(stack);
+  if (inventory.length === 0) return null;
+  const visible = inventory;
+  const groups = Array.from(new Set(visible));
+  return (
+    <span
+      className={`seat-chip-stack ${
+        isShortStack(stack, bigBlind) ? "seat-chip-stack--short" : ""
+      }`}
+      data-chips={inventory.length}
+      data-denominations={groups.join(",")}
+      aria-hidden="true"
+    >
+      {groups.map((denomination) => (
+        <span className="seat-chip-denomination" data-denomination={denomination} key={denomination}>
+          {visible.filter((chip) => chip === denomination).map((chip, index) => (
+            <i data-denomination={chip} key={`${chip}-${index}`} />
+          ))}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Stable visual identity, intentionally unrelated to policy/personality. */
+export function avatarVariantForPlayerId(playerId: string): number {
+  let hash = 2166136261;
+  for (const character of playerId) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 6;
+}
+
+/**
+ * Compact visual scale for the central pot; the numeric pot remains exact.
+ * See docs/table-presentation-contract.md for the inclusive-pot convention
+ * shared by seat wagers, central chips, and transient travel tokens.
+ */
+export function potChipStackCount(pot: number): number {
+  if (!Number.isFinite(pot) || pot <= 0) return 0;
+  return Math.min(8, Math.max(1, Math.ceil(Math.log10(pot + 1))));
+}
+
 interface PlayerSeatProps {
+  /** Current big blind, so a seat's pile can be drawn in blinds (E27-009). */
+  bigBlind: number;
   dealer: boolean;
   isHero: boolean;
   player: SeatPlayer;
@@ -277,6 +756,48 @@ interface PlayerSeatProps {
   wonPot?: boolean;
   /** Only a public action can drive a character gesture; no card data is read. */
   recentAction?: BettingActionType;
+  recentActionLabel?: string;
+  cardsDealt: boolean;
+  /** True while this hand's deal beat is the presented event. */
+  justDealt?: boolean;
+  isActing: boolean;
+  eliminated?: boolean;
+  /** Public fold retained while Skip holds a readable result beat. */
+  terminalFolded?: boolean;
+  positionLabel?: string;
+  revealedCards?: readonly Card[];
+  winningCardLabels?: ReadonlySet<string>;
+  /** Adapter-owned public projection used for DOM/scene parity diagnostics. */
+  sceneSeat?: SceneSnapshotSeat;
+  /**
+   * Ready-mode viewport anchor of this seat's physical rail, so the plaque hangs
+   * off the actual chair instead of a fixed viewport percentage. Absent in
+   * fallback, where the CSS ellipse remains the layout owner.
+   */
+  railAnchor?: { readonly xPercent: number; readonly yPercent: number };
+  stackAnchor?: { readonly xPercent: number; readonly yPercent: number };
+  betAnchor?: { readonly xPercent: number; readonly yPercent: number };
+}
+
+/**
+ * Expose the adapter's stable public identity on the accessible DOM seat.
+ * These attributes are deliberately diagnostic only: labels and controls stay
+ * owned by the DOM, while the canvas can be audited against the same public
+ * projection without reaching into renderer state.
+ */
+export function sceneSeatDomAttributes(
+  sceneSeat: SceneSnapshotSeat | undefined,
+): Readonly<Record<string, string>> {
+  if (!sceneSeat) return {};
+  return {
+    "data-scene-player-id": sceneSeat.id,
+    "data-scene-canonical-seat": String(sceneSeat.canonicalSeat),
+    "data-scene-relative-seat": String(sceneSeat.relativeSeat),
+    "data-scene-card-visibility": sceneSeat.cardVisibility,
+    "data-scene-stack": String(sceneSeat.stack),
+    "data-scene-bet": String(sceneSeat.bet),
+    "data-scene-acting": String(sceneSeat.acting),
+  };
 }
 
 const SEAT_STATUS_FRAGMENT_KEYS: Record<SeatPlayer["status"], string> = {
@@ -298,6 +819,7 @@ export function playerSeatAriaLabel({
   status,
   showingCards,
   bet,
+  totalCommitted,
   dealer,
 }: {
   isHero: boolean;
@@ -306,6 +828,7 @@ export function playerSeatAriaLabel({
   status: SeatPlayer["status"];
   showingCards: boolean;
   bet: number;
+  totalCommitted?: number;
   dealer: boolean;
 }): string {
   return [
@@ -318,38 +841,77 @@ export function playerSeatAriaLabel({
     bet > 0
       ? formatMessage("table.seat.betFragment", { amount: formatChips(bet) })
       : "",
+    totalCommitted !== undefined
+      ? `, total invested ${formatChips(totalCommitted)}`
+      : "",
     dealer ? formatMessage("table.seat.dealerFragment") : "",
   ].join("");
 }
 
+/** Public terminal-state projection shared by DOM and scene during Skip. */
+export function isSeatFoldedForPresentation(
+  status: SeatPlayer["status"],
+  recentAction: BettingActionType | undefined,
+  terminalFolded = false,
+): boolean {
+  return terminalFolded || status === "folded" || recentAction === "fold";
+}
+
 function PlayerSeat({
+  bigBlind,
   dealer,
   isHero,
   player,
   position,
   wonPot = false,
   recentAction,
+  recentActionLabel,
+  cardsDealt,
+  justDealt = false,
+  isActing,
+  eliminated = false,
+  terminalFolded = false,
+  positionLabel,
+  revealedCards,
+  winningCardLabels,
+  sceneSeat,
+  railAnchor,
+  stackAnchor,
+  betAnchor,
 }: PlayerSeatProps) {
-  const isFolded = player.status === "folded";
-  const isAllIn = player.status === "all-in";
-  const isOut = player.status === "out";
-  const isShowingCards = !isHero && !isOut;
-  const shouldHoldCards = isShowingCards && player.status === "active";
-  const gesture = wonPot
-    ? "win"
+  const appearance = describeOpponentAppearance(player.id);
+  const isMucking = isSeatFoldedForPresentation(
+    player.status,
+    recentAction,
+    terminalFolded,
+  );
+  const isFolded = isMucking;
+  const isAllIn = player.status === "all-in" || recentAction === "all-in";
+  const isOut = player.status === "out" || eliminated;
+  const seatStatus = isOut
+    ? "out"
     : isAllIn
       ? "all-in"
       : isFolded
-        ? "fold"
-        : player.bet > 0
-          ? "bet"
-          : recentAction === "check"
-            ? "check"
-            : recentAction === "call"
-              ? "call"
-              : shouldHoldCards
-                ? "hold"
-                : undefined;
+        ? "folded"
+        : player.status;
+  // A folded hand is mucked, not a still-visible two-card hand. The public
+  // fold gesture/state cue supplies the animation beat; retaining card DOM
+  // through a queued event caused folded placeholder corners to overlap.
+  const isShowingCards = !isHero && !isOut && cardsDealt && !isFolded;
+  const hasRevealedCards = revealedCards?.length === 2;
+  const shouldHoldCards =
+    isShowingCards && !hasRevealedCards && player.status === "active" && !isMucking;
+  const gesture = seatGestureForPublicState({
+    wonPot,
+    status: player.status,
+    bet: player.bet,
+    recentAction,
+    showingFaceDownCards: isShowingCards,
+    hasPublicReveal: hasRevealedCards,
+    justDealt,
+    terminalFolded,
+  });
 
   return (
     <div
@@ -357,75 +919,149 @@ function PlayerSeat({
         isHero ? "player-seat--hero" : ""
       } ${isFolded ? "is-folded" : ""} ${isAllIn ? "is-all-in" : ""} ${
         isOut ? "is-out" : ""
-      } ${wonPot ? "is-winner" : ""}`}
+      } ${wonPot ? "is-winner" : ""} ${hasRevealedCards ? "is-revealed" : ""}`}
       role="group"
+      {...(
+        // Stable public action kind for packaged still-frame evidence. The
+        // visible plaque text is localized, so an audit matching on it would be
+        // asserting a translation rather than a terminal action state.
+        recentAction && !isHero ? { "data-seat-action": recentAction } : {}
+      )}
+      {...(railAnchor
+        ? {
+            style: {
+              "--seat-rail-x": `${railAnchor.xPercent}%`,
+              "--seat-rail-y": `${railAnchor.yPercent}%`,
+              ...(stackAnchor
+                ? {
+                    "--seat-stack-x": `${stackAnchor.xPercent}%`,
+                    "--seat-stack-y": `${stackAnchor.yPercent}%`,
+                  }
+                : {}),
+              ...(betAnchor
+                ? {
+                    "--seat-bet-x": `${betAnchor.xPercent}%`,
+                    "--seat-bet-y": `${betAnchor.yPercent}%`,
+                  }
+                : {}),
+            } as CSSProperties,
+          }
+        : {})}
+      {...sceneSeatDomAttributes(sceneSeat)}
       aria-label={playerSeatAriaLabel({
         isHero,
         name: player.name,
         stack: player.stack,
-        status: player.status,
+        status: seatStatus,
         showingCards: isShowingCards,
         bet: player.bet,
+        totalCommitted: player.totalCommitted,
         dealer,
       })}
     >
       {dealer && <span className="dealer-button" aria-hidden="true">D</span>}
+      {positionLabel && <span className="seat-position-marker" aria-hidden="true">{positionLabel}</span>}
+      {recentActionLabel && (
+        <span className="seat-action-label" aria-live="polite">
+          {recentActionLabel}
+        </span>
+      )}
       {isShowingCards && (
-        <div className="opponent-cards" aria-hidden="true">
+        <div className="opponent-cards" aria-hidden={!hasRevealedCards}>
           {shouldHoldCards && <i className="opponent-card-hand" aria-hidden="true" />}
-          <PlayingCard
-            card={{ rank: "A", suit: "spades" }}
-            hidden
-            small
-          />
-          <PlayingCard
-            card={{ rank: "K", suit: "hearts" }}
-            hidden
-            small
-          />
+          {hasRevealedCards
+            ? revealedCards.map((card) => (
+                <PlayingCard
+                  key={cardLabel(card)}
+                  card={card}
+                  small
+                  className={
+                    winningCardLabels?.has(cardLabel(card))
+                      ? "showdown-card is-winning"
+                      : "showdown-card is-unused"
+                  }
+                />
+              ))
+            : [0, 1].map((index) => (
+                <PlayingCard
+                  key={index}
+                  card={{ rank: "A", suit: "spades" }}
+                  hidden
+                  small
+                />
+              ))}
         </div>
       )}
-      <div className="seat-avatar" aria-hidden="true">
-        <span>{player.name.slice(0, 1)}</span>
-        {player.status === "active" && player.id === "maya" && (
-          <i className="thinking-ring" />
-        )}
-        {!isHero && gesture && (
-          <i
-            className={`seat-action-hand seat-action-hand--${gesture}`}
-            aria-hidden="true"
-          />
-        )}
+      {/* A seated figure rather than a floating portrait: chair, torso, and a
+          ground shadow anchor the opponent to the felt. Every dimension is
+          derived from the player id alone (see lib/opponentAppearance), so the
+          same person keeps the same look as the button rotates them around the
+          table, and no visual detail can encode how they play. */}
+      <div
+        className={`seat-figure seat-figure--body-${appearance.bodyType} seat-figure--posture-${appearance.posture} seat-figure--age-${appearance.agePresentation}`}
+        style={opponentAppearanceStyle(appearance)}
+        aria-hidden="true"
+      >
+        <i className="seat-figure-shadow" />
+        <i className="seat-figure-chair" />
+        <i className="seat-figure-torso" />
+        <div
+          className={`seat-avatar seat-avatar--variant-${appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
+        >
+          <span>{player.name.slice(0, 1)}</span>
+          <i className={`seat-figure-hair seat-figure-hair--${appearance.hairStyle}`} />
+          {appearance.accessory !== "none" && (
+            <i
+              className={`seat-figure-accessory seat-figure-accessory--${appearance.accessory}`}
+            />
+          )}
+          {isActing && (
+            <i className="thinking-ring" />
+          )}
+          {!isHero && gesture && (
+            <i
+              className={`seat-action-hand seat-action-hand--${gesture}`}
+              aria-hidden="true"
+            />
+          )}
+        </div>
       </div>
+      {/*
+        The seat's own pile, sized in big blinds (E27-009). It sits with the
+        name and number rather than replacing them: chips answer "how deep is
+        this player" at a glance, the numeral answers "exactly how much".
+      */}
+      <SeatChipStack stack={player.stack} bigBlind={bigBlind} />
       <div className="seat-label" aria-hidden="true">
-        <strong>{isHero ? formatMessage("table.seat.you") : player.name}</strong>
-        <span>
-          <ChipStack /> {formatChips(player.stack)}
-        </span>
+        <strong>{formatChips(player.stack)}</strong>
       </div>
+      {/*
+        The hero's committed wager sits at the hero's seat, exactly as every
+        opponent's does (E27-008). It used to be excluded here and duplicated in
+        a floating panel instead.
+      */}
       {player.bet > 0 && (
         <div className="seat-bet" aria-hidden="true">
-          <ChipStack bet />
           <b>{formatChips(player.bet)}</b>
         </div>
       )}
       {isFolded && (
-        <span className="seat-state" aria-hidden="true">
+        <span className="seat-semantic-status visually-hidden">
           {formatMessage("table.seat.folded")}
         </span>
       )}
       {player.status === "all-in" && !wonPot && (
-        <span className="seat-state seat-state--all-in" aria-hidden="true">
+        <span className="seat-semantic-status visually-hidden">
           {formatMessage("table.seat.allIn")}
         </span>
       )}
       {isOut && (
-        <span className="seat-state seat-state--out" aria-hidden="true">
+        <span className="seat-semantic-status visually-hidden">
           {formatMessage("table.seat.out")}
         </span>
       )}
       {wonPot && (
-        <span className="seat-state seat-state--winner" aria-hidden="true">
+        <span className="seat-semantic-status visually-hidden">
           {formatMessage("table.seat.wonPot")}
         </span>
       )}
@@ -577,6 +1213,45 @@ export interface FeedbackPanelProps {
   onReview: () => void;
 }
 
+export interface TrainingFeedbackMath {
+  potBefore: number;
+  costToCall: number;
+  potAfterCall: number;
+  /** Cost to call as a share of the pot it would create. */
+  potOdds?: number;
+  requiredEquity?: number;
+  /**
+   * Hero equity against a uniformly random opponent hand. Training scenarios
+   * author no villain range, so this is the stated assumption rather than an
+   * invented one — see `estimateTrainingEquity`.
+   */
+  estimatedEquity: number;
+  equitySimulations: number;
+  actionEvs: readonly [PokerAction, number][];
+}
+
+/** The public arithmetic behind the recommendation; no hidden-card data is used. */
+export function trainingFeedbackMath(
+  scenario: RatedTrainingScenario,
+): TrainingFeedbackMath {
+  const costToCall = scenario.amountToCall;
+  const potAfterCall = scenario.pot + costToCall;
+  const equity = estimateTrainingEquity(scenario);
+  return {
+    potBefore: scenario.pot,
+    costToCall,
+    potAfterCall,
+    potOdds: costToCall > 0 ? (costToCall / potAfterCall) * 100 : undefined,
+    requiredEquity:
+      costToCall > 0 ? (costToCall / potAfterCall) * 100 : undefined,
+    estimatedEquity: equity.equity * 100,
+    equitySimulations: equity.simulations,
+    actionEvs: Object.entries(scenario.training.actionEvs)
+      .filter((entry): entry is [PokerAction, number] => Number.isFinite(entry[1]))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  };
+}
+
 /** Exported so its rendered markup (not raw source copy) can be asserted directly. */
 export function FeedbackPanel({
   action,
@@ -601,6 +1276,57 @@ export function FeedbackPanel({
       : graded.math.close
         ? formatMessage("table.feedback.math.nearMiss")
         : formatMessage("table.feedback.math.incorrect");
+  const math = trainingFeedbackMath(scenario);
+  const actionGap = Number.isFinite(graded.action.regret)
+    ? `${formatFixedDecimal(graded.action.regret, 2)} bb`
+    : formatMessage("table.feedback.notAvailable");
+  const closeDecision =
+    graded.action.close ||
+    (graded.action.regret > Number.EPSILON &&
+      graded.action.regret <= scenario.training.partialCreditRegret);
+  const assumptionCopy = math.requiredEquity !== undefined
+    ? formatMessage("table.feedback.assumptionCall", {
+        requiredEquity: formatFixedDecimal(math.requiredEquity, 1),
+      })
+    : formatMessage("table.feedback.assumptionAggression");
+
+  // Why the recommended line wins, stated from the numbers rather than only
+  // from the authored prose -- and shown whether or not the answer was right.
+  const bestEv = math.actionEvs.find(
+    ([candidate]) => candidate === graded.action.bestAction,
+  )?.[1];
+  const runnerUp = math.actionEvs
+    .filter(([candidate]) => candidate !== graded.action.bestAction)
+    .sort(([, left], [, right]) => right - left)[0];
+  const whyCopy =
+    bestEv !== undefined && runnerUp
+      ? formatMessage("table.feedback.whyBest", {
+          bestAction: graded.action.bestAction,
+          bestEv: formatFixedDecimal(bestEv, 2),
+          runnerUpAction: runnerUp[0],
+          runnerUpEv: formatFixedDecimal(runnerUp[1], 2),
+          margin: formatFixedDecimal(bestEv - runnerUp[1], 2),
+        })
+      : undefined;
+
+  // How the conclusion moves if the assumption moves. A learner needs to know
+  // whether a decision was marginal or comfortable, not just its verdict.
+  const equityMargin =
+    math.requiredEquity === undefined || math.equitySimulations === 0
+      ? undefined
+      : math.estimatedEquity - math.requiredEquity;
+  const sensitivityCopy =
+    equityMargin === undefined
+      ? formatMessage("table.feedback.sensitivityNoCall")
+      : formatMessage("table.feedback.sensitivityCall", {
+          margin: formatFixedDecimal(Math.abs(equityMargin), 1),
+          direction: formatMessage(
+            equityMargin >= 0
+              ? "table.feedback.sensitivityAbove"
+              : "table.feedback.sensitivityBelow",
+          ),
+          swing: formatFixedDecimal(Math.abs(equityMargin) / 2 + 2.5, 1),
+        });
 
   return (
     <aside className="feedback-panel" aria-live="polite">
@@ -653,6 +1379,86 @@ export function FeedbackPanel({
         </span>
         <p>{scenario.mathQuestion.explanation}</p>
       </div>
+
+      <section
+        className="feedback-analysis"
+        aria-label={formatMessage("table.feedback.analysisAriaLabel")}
+      >
+        <h3>{formatMessage("table.feedback.analysisHeading")}</h3>
+        <dl>
+          <div>
+            <dt>{formatMessage("table.feedback.potBefore")}</dt>
+            <dd>{formatChips(math.potBefore)}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.costToCall")}</dt>
+            <dd>{formatChips(math.costToCall)}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.potAfter")}</dt>
+            <dd>{formatChips(math.potAfterCall)}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.potOdds")}</dt>
+            <dd>
+              {math.potOdds === undefined
+                ? formatMessage("table.feedback.notApplicable")
+                : `${formatFixedDecimal(math.potOdds, 1)}%`}
+            </dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.requiredEquity")}</dt>
+            <dd>
+              {math.requiredEquity === undefined
+                ? formatMessage("table.feedback.notApplicable")
+                : `${formatFixedDecimal(math.requiredEquity, 1)}%`}
+            </dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.estimatedEquity")}</dt>
+            <dd>
+              {math.equitySimulations === 0
+                ? formatMessage("table.feedback.notAvailable")
+                : `${formatFixedDecimal(math.estimatedEquity, 1)}%`}
+            </dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.chosenAction")}</dt>
+            <dd>{action}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.recommendedAction")}</dt>
+            <dd>{graded.action.bestAction}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.evRegret")}</dt>
+            <dd>{actionGap}</dd>
+          </div>
+          <div>
+            <dt>{formatMessage("table.feedback.closeDecisionLabel")}</dt>
+            <dd>{closeDecision ? formatMessage("table.feedback.yes") : formatMessage("table.feedback.no")}</dd>
+          </div>
+        </dl>
+        <h4>{formatMessage("table.feedback.actionEvs")}</h4>
+        <ul className="feedback-analysis__evs">
+          {math.actionEvs.map(([candidateAction, ev]) => (
+            <li key={candidateAction}>
+              <span>{candidateAction}</span>
+              <b>{formatFixedDecimal(ev, 2)} bb</b>
+            </li>
+          ))}
+        </ul>
+        {whyCopy ? (
+          <p className="feedback-analysis__why">{whyCopy}</p>
+        ) : null}
+        <p className="feedback-analysis__assumption">{assumptionCopy}</p>
+        <p className="feedback-analysis__assumption">{sensitivityCopy}</p>
+        <p className="feedback-analysis__assumption">
+          {formatMessage("table.feedback.equityBasis", {
+            simulations: math.equitySimulations,
+          })}
+        </p>
+      </section>
 
       <div className="feedback-tags">
         <span>
@@ -812,6 +1618,12 @@ export function PokerTable({
   onExit,
   tournament,
 }: PokerTableProps) {
+  type ActiveCameraFrame = {
+    readonly position: readonly [number, number, number];
+    readonly target: readonly [number, number, number];
+    readonly yaw: number;
+    readonly fov: number;
+  };
   const [peeked, setPeeked] = useState(false);
   const [foldProgress, setFoldProgress] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -827,6 +1639,174 @@ export function PokerTable({
   const [cameraPan, setCameraPan] = useState(
     initialTrainingPresentation?.cameraPan ?? 0,
   );
+  // A temporary, player-controlled lens adjustment. Unlike the saved framing
+  // preference, this follows the player through every hand in the round.
+  const [cameraZoom, setCameraZoom] = useState(0);
+  const [activeCameraFrame, setActiveCameraFrame] = useState<ActiveCameraFrame | null>(null);
+  const onCameraFrame = useCallback((frame: ActiveCameraFrame) => {
+    setActiveCameraFrame((current) => {
+      if (current
+        && current.position.every((value, index) => Math.abs(value - frame.position[index]) < 0.0005)
+        && current.target.every((value, index) => Math.abs(value - frame.target[index]) < 0.0005)
+        && Math.abs(current.fov - frame.fov) < 0.01) return current;
+      return frame;
+    });
+  }, []);
+  // Motion preferences govern *automatic* movement only.  A player turning
+  // their view with the mouse is direct manipulation, so it must stay usable
+  // even if an older saved profile has camera motion disabled.  That was the
+  // source of the packaged regression: the stage received the drag but every
+  // result was projected back to zero by `effectiveCameraPan`.
+  const cameraMotionSuppressed =
+    settings.reducedMotion || settings.cameraMotion === "off";
+  const effectiveCameraPan = cameraPan;
+
+  /*
+    Drag anywhere on the felt to look around.
+
+    The camera controls were three buttons and two arrow keys, which is a fine
+    accessible path and a poor primary one -- turning your head is a continuous
+    motion and the discrete controls made it feel like the view was on rails.
+    `cameraPan` was already a float clamped to +/-2, so a drag needs no new
+    camera model: it writes the same value the buttons step.
+
+    A drag that starts on a control is not a camera drag. The DOM table is the
+    interaction surface and it sits on top of the canvas, so the guard is what
+    keeps "press Fold" from also swinging the view when the pointer wobbles.
+  */
+  const cameraDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startPan: number;
+  } | null>(null);
+
+  const beginCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    if (
+      event.target instanceof Element
+      && event.target.closest('button, a, input, select, textarea, [role="button"], [role="slider"]')
+    ) {
+      return;
+    }
+    cameraDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startPan: cameraPan,
+    };
+    // Cancel the browser's native text-selection gesture at its source.  The
+    // HUD is deliberately not an editable document, and selection can steal a
+    // lower-felt drag before React receives its first move event.
+    event.preventDefault();
+    // The visual table has multiple DOM layers. Capture on their shared stage
+    // so a look begun on open felt keeps updating even after the cursor crosses
+    // a plaque or leaves the canvas bounds.
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, [cameraPan]);
+
+  const updateCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const drag = cameraDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    // Drag right, look right: the same direction the "Look right" control and
+    // the right arrow key move the view.  This remains a continuous float,
+    // rather than resolving the pointer to one of the old seat-view steps.
+    const next = cameraPanFromHorizontalDrag(
+      drag.startPan,
+      drag.startX,
+      event.clientX,
+    );
+    setCameraPan((current) => (current === next ? current : next));
+    // Avoid selecting felt labels while panning, without consuming the initial
+    // press that cards and action controls need for their own gestures.
+    event.preventDefault();
+  }, []);
+
+  const endCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const drag = cameraDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    cameraDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
+  const clearCameraDrag = useCallback(() => {
+    cameraDragRef.current = null;
+  }, []);
+
+  const handleCameraWheel = useCallback((event: React.WheelEvent<HTMLElement>) => {
+    // The stage CSS owns scroll chaining and native gesture suppression. React's
+    // delegated wheel listener may be passive in Chromium, so calling
+    // preventDefault here produces a renderer warning and does not suppress the
+    // browser gesture reliably.
+    if (
+      event.target instanceof Element
+      && event.target.closest('button, a, input, select, textarea, [role="button"], [role="slider"]')
+    ) {
+      return;
+    }
+    setCameraZoom((current) => {
+      const next = cameraZoomFromWheel(current, event.deltaY, event.deltaMode);
+      return current === next ? current : next;
+    });
+  }, []);
+  const [sceneAvailability, setSceneAvailability] =
+    useState<SceneAvailability>({ status: "idle" });
+  /*
+    Ready-mode seat plaques hang off the projected physical rail, so they need
+    the scene's real pixel box. Observing the element rather than the window
+    keeps the projection correct under the compact-height HUD bands, which
+    reserve different amounts of height at different native sizes.
+  */
+  const sceneElementRef = useRef<HTMLDivElement | null>(null);
+  const [sceneViewport, setSceneViewport] = useState<{ width: number; height: number }>(
+    { width: 0, height: 0 },
+  );
+  useEffect(() => {
+    const element = sceneElementRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const box = element.getBoundingClientRect();
+      setSceneViewport((current) =>
+        current.width === box.width && current.height === box.height
+          ? current
+          : { width: box.width, height: box.height },
+      );
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  /* A prior renderer must not make a replacement request fade DOM for a frame. */
+  const sceneRequestRef = useRef(settings.spatialScene);
+  const sceneRequestChanged = sceneRequestRef.current !== settings.spatialScene;
+  sceneRequestRef.current = settings.spatialScene;
+  /* Exactly the condition that puts `data-spatial-scene="ready"` on the scene,
+     so DOM plaques never project against a camera that is not on screen. */
+  /*
+    Which seat the hero occupies.
+
+    Keyed on the hero's own player identity, which is constant for a whole event
+    and reproduces exactly on replay. It was keyed on `scenario.id` -- but that
+    is the *hand* id, not the table's, so the seat was re-drawn every hand and
+    the player's whole view teleported around the table between deals. Nothing in
+    the seating model was wrong; it was being asked the wrong question.
+  */
+  const heroPlayerId = scenario.players.find(
+    (player) => player.seat === scenario.heroSeat,
+  )?.id ?? "hero";
+  /*
+    A seat belongs to a tournament round, not to the permanent player profile
+    and not to an individual hand.  `roundId` comes from the persisted runner
+    session, so reload/replay keeps the same chair through a round while a
+    freshly started or retried round gets its own deterministic draw.
+  */
+  const heroStationIndexForTable = heroStationIndex(
+    tournament
+      ? `${tournament.roundId ?? scenario.id}:${heroPlayerId}`
+      : heroPlayerId,
+  );
+  const sceneReadyForPlaques = settings.spatialScene
+    && !sceneRequestChanged
+    && sceneAvailability.status === "ready";
   const [elapsedMs, setElapsedMs] = useState(
     initialTrainingPresentation?.elapsedMs ?? 0,
   );
@@ -846,7 +1826,22 @@ export function PokerTable({
   const [pausePage, setPausePage] = useState<
     "menu" | "controls" | "reference" | "settings" | "remap"
   >("menu");
+  const [cardsDealtHandId, setCardsDealtHandId] = useState<string | null>(
+    mode === "training" || !tournament ? scenario.id : null,
+  );
+  const [stagedBoard, setStagedBoard] = useState<Card[]>(() =>
+    scenario.board.map((card) => ({ ...card })),
+  );
+  const [allInEquity, setAllInEquity] =
+    useState<PublicAllInEquityEstimate>();
+  const [displayedAllInEquity, setDisplayedAllInEquity] = useState<ReadonlyMap<string, number>>(new Map());
+  const displayedAllInEquityRef = useRef<ReadonlyMap<string, number>>(new Map());
+  const [sceneEventProgress, setSceneEventProgress] = useState(1);
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
+  const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
+  const actionGateRef = useRef(createTableActionGate());
+  const previousSceneVersionRef = useRef(tournament?.sceneStateVersion);
+  const previousHandIdRef = useRef(scenario.id);
   const arrivalDelayRef = useRef<FreezableDelay | null>(null);
   const freezeGroupRef = useRef<DelayFreezeGroup>(new DelayFreezeGroup());
   const pauseCoordinatorRef = useRef<LifecyclePauseCoordinator>(
@@ -858,10 +1853,22 @@ export function PokerTable({
   const pauseDialogRef = useRef<HTMLElement | null>(null);
   const raiseComposerRef = useRef<HTMLDivElement | null>(null);
   const historyRef = useRef<HTMLElement | null>(null);
+  const soundedPresentationEvents = useRef<Set<string>>(new Set());
   const gamepadActive = useIsGamepadActive();
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
   const elapsedStartedAt = useRef<number | null>(null);
+  /*
+    The authoritative feed for the blind schedule (E27-004), deliberately
+    separate from `elapsedMs`. `elapsedMs` is the *display* and Training grading
+    timer: it starts at the hand and is meant to show how long this decision is
+    taking. Using it to advance the blind clock meant re-submitting the whole
+    running total on every hero action. This clock is drained instead, so each
+    millisecond of real, unpaused table time reaches the blind schedule once.
+  */
+  const blindClock = useRef(
+    createTournamentDecisionClock({ now: () => performance.now() }),
+  );
   const mathStartedAt = useRef<number | null>(null);
   const mathElapsedMs = useRef(0);
   const pauseStartedAt = useRef<number | null>(null);
@@ -888,11 +1895,25 @@ export function PokerTable({
     [],
   );
 
+  // Situational prompts re-arm between sessions but must not repeat within
+  // one, so this sitting's shown-set lives in a ref rather than the save.
+  const promptsShownThisSession = useRef<ContextualPromptId[]>([]);
+
   const offerPrompt = useCallback(
     (id: ContextualPromptId) => {
       if (activePrompt) return;
-      const prompt = nextContextualPrompt(coachState, [id]);
-      if (prompt) setActivePrompt(prompt);
+      const prompt = nextContextualPrompt(
+        coachState,
+        [id],
+        promptsShownThisSession.current,
+      );
+      if (prompt) {
+        promptsShownThisSession.current = [
+          ...promptsShownThisSession.current,
+          prompt.id,
+        ];
+        setActivePrompt(prompt);
+      }
     },
     [activePrompt, coachState],
   );
@@ -915,8 +1936,15 @@ export function PokerTable({
         eloBaseline: eloBaseline.current,
         eloCurrent: progress.decisionElo + progress.mathElo,
       }),
+      promptsShownThisSession.current,
     );
-    if (prompt) setActivePrompt(prompt);
+    if (prompt) {
+      promptsShownThisSession.current = [
+        ...promptsShownThisSession.current,
+        prompt.id,
+      ];
+      setActivePrompt(prompt);
+    }
   }, [
     activePrompt,
     coachState,
@@ -1028,11 +2056,11 @@ export function PokerTable({
   useEffect(() => {
     if (mode !== "training") return;
     onTrainingPresentationChange?.({
-      cameraPan,
+      cameraPan: effectiveCameraPan,
       elapsedMs: Math.max(0, Math.round(elapsedMs)),
       paused,
     });
-  }, [cameraPan, elapsedMs, mode, onTrainingPresentationChange, paused]);
+  }, [effectiveCameraPan, elapsedMs, mode, onTrainingPresentationChange, paused]);
 
   // The shared modal focus contract: initial focus inside the dialog, a
   // wraparound Tab trap, and exact restoration of the pre-pause focus. Subpage
@@ -1049,6 +2077,17 @@ export function PokerTable({
     containerRef: raiseComposerRef,
   });
   useModalFocusTrap({ active: historyOpen, containerRef: historyRef });
+
+  /*
+    Keyed on `paused`, which every pause path funnels through -- manual, window
+    blur, document hidden, minimize, system suspend, and screen lock all call
+    `requestPause`. So the blind schedule stops whenever play stops, including
+    while the player is away, without hooking each call site (E27-004).
+  */
+  useEffect(() => {
+    if (paused) blindClock.current.pause();
+    else blindClock.current.resume();
+  }, [paused]);
 
   useEffect(() => {
     if (action || paused) return;
@@ -1073,12 +2112,24 @@ export function PokerTable({
     setPaused(true);
   }, []);
 
+  /*
+    Losing keyboard focus is not the same thing as walking away.
+
+    Clicking a browser window on a second monitor, alt-tabbing to read something,
+    or clicking the taskbar all fire `blur` while the table is still fully
+    visible in front of the player -- and the table was freezing the hand and
+    demanding an explicit resume every time. A multi-monitor player could not
+    click anything else without interrupting their own game.
+
+    Minimize, system suspend, screen lock and a hidden document all still pause:
+    in every one of those the table has genuinely stopped being on screen, which
+    is the condition the freeze policy exists for. Only bare focus loss is
+    excluded, and audio still ducks on blur through its own focus policy.
+  */
   useEffect(() => {
-    const pauseForInactiveWindow = () => requestPause("window-blurred");
     const pauseForHiddenDocument = () => {
       if (document.hidden) requestPause("document-hidden");
     };
-    window.addEventListener("blur", pauseForInactiveWindow);
     document.addEventListener("visibilitychange", pauseForHiddenDocument);
     // Minimize, Windows suspend, and screen lock arrive from the Electron main
     // process via a narrow preload bridge. They freeze the same delays and use
@@ -1090,12 +2141,9 @@ export function PokerTable({
         requestPause("system-suspended");
       } else if (event.kind === "screen-lock" && event.locked) {
         requestPause("screen-locked");
-      } else if (event.kind === "window-focus" && !event.focused) {
-        requestPause("window-blurred");
       }
     });
     return () => {
-      window.removeEventListener("blur", pauseForInactiveWindow);
       document.removeEventListener("visibilitychange", pauseForHiddenDocument);
       unsubscribe?.();
     };
@@ -1122,11 +2170,74 @@ export function PokerTable({
     };
   }, [arrivalVisible, settings.reducedMotion, settings.transitionMotion]);
 
+  // Consume exactly one public runner event at a time. The delay is registered
+  // with the same freeze group as arrival/action delays, so pause/resume keeps
+  // its exact remaining duration instead of replaying or skipping the event.
+  useEffect(() => {
+    const event = tournament?.presentationEvent;
+    const onComplete = tournament?.onPresentationEventComplete;
+    if (!event || !onComplete) return;
+    const group = freezeGroupRef.current;
+    const delay = createPresentationEventDelay(
+      realFreezableDelayHost,
+      event,
+      speed,
+      settings,
+      () => {
+        if (pendingPresentationEvent.current === delay) {
+          pendingPresentationEvent.current = null;
+        }
+        onComplete();
+      },
+      // Betting is already closed once the all-in hands are face up, so the
+      // remaining board cards run out on the slower suspense cadence.
+      { allInRunout: Boolean(tournament?.allInReveal) },
+    );
+    pendingPresentationEvent.current = delay;
+    group.add(delay);
+    setSceneEventProgress(settings.reducedMotion || settings.transitionMotion === "off" ? 1 : 0);
+    return () => {
+      delay.cancel();
+      group.remove(delay);
+      if (pendingPresentationEvent.current === delay) {
+        pendingPresentationEvent.current = null;
+      }
+    };
+  }, [
+    settings,
+    speed,
+    tournament?.onPresentationEventComplete,
+    tournament?.presentationEvent,
+  ]);
+
+  useEffect(() => {
+    const event = tournament?.presentationEvent;
+    const delay = pendingPresentationEvent.current;
+    if (!event || !delay || paused) return;
+    const duration = presentationEventDelayMs(event, speed, settings, {
+      allInRunout: Boolean(tournament?.allInReveal),
+    });
+    return sampleScenePresentationProgress(
+      delay,
+      duration,
+      setSceneEventProgress,
+      // Browser frame functions require `window` as their receiver in Electron.
+      // Passing the bare native methods works in fake-frame tests but throws
+      // `Illegal invocation` in the live renderer before a table mounts.
+      {
+        request: (callback) => window.requestAnimationFrame(callback),
+        cancel: (handle) => window.cancelAnimationFrame(handle),
+      },
+    );
+  }, [paused, settings, speed, tournament?.allInReveal, tournament?.presentationEvent]);
+
   useEffect(() => {
     const group = freezeGroupRef.current;
     return () => {
       pendingTournamentAction.current?.cancel();
       pendingTournamentAction.current = null;
+      pendingPresentationEvent.current?.cancel();
+      pendingPresentationEvent.current = null;
       group.cancelAll();
     };
   }, []);
@@ -1148,11 +2259,115 @@ export function PokerTable({
     setSpeed(1);
     mathStartedAt.current = null;
     mathElapsedMs.current = 0;
+    actionGateRef.current.release();
   }, [scenario.minimumRaise]);
+
+  // Authoritative table state changes must update this mounted scene rather
+  // than recreate it. A hand transition clears only hand-specific visuals;
+  // camera and pause remain player-owned scene state across every update.
+  useEffect(() => {
+    if (!tournament) return;
+    const previousVersion = previousSceneVersionRef.current;
+    const previousHandId = previousHandIdRef.current;
+    const next = {
+      handId: scenario.id,
+      stateVersion: tournament.sceneStateVersion,
+    };
+    if (previousVersion === undefined) {
+      previousSceneVersionRef.current = next.stateVersion;
+      previousHandIdRef.current = next.handId;
+      return;
+    }
+    const update = planTableSceneUpdate(
+      { handId: previousHandId, stateVersion: previousVersion },
+      next,
+    );
+    previousSceneVersionRef.current = next.stateVersion;
+    previousHandIdRef.current = next.handId;
+    /*
+      `update.changed` must not gate the hand-boundary reset (E27-001).
+
+      The refs are committed above, so returning here on a render where the hand
+      id changed but the state version did not would advance the hand ref while
+      skipping the reset -- and every later render then sees `handChanged:
+      false`, so that boundary's reset is lost permanently. That is how a fold
+      banner survived into the next hand in the packaged run.
+    */
+    if (!update.changed && !update.handChanged) return;
+
+    if (update.clearDecisionTransientState) {
+      setAction(null);
+      setActionError(undefined);
+      setRaiseOpen(false);
+      setRaiseAmount(scenario.minimumRaise);
+      actionGateRef.current.release();
+    }
+    if (update.resetHandVisualState) {
+      setPeeked(false);
+      setFoldProgress(0);
+      setDragging(false);
+      setElapsedMs(0);
+      elapsedStartedAt.current = performance.now();
+    }
+  }, [scenario.id, scenario.minimumRaise, tournament]);
+
+  useEffect(() => {
+    if (mode === "training" || !tournament) {
+      setCardsDealtHandId(scenario.id);
+      return;
+    }
+    if (tournament.presentationEvent?.kind === "hole-cards-dealt") {
+      setCardsDealtHandId(scenario.id);
+    } else if (cardsDealtHandId !== scenario.id) {
+      setCardsDealtHandId(null);
+    }
+  }, [cardsDealtHandId, mode, scenario.id, tournament]);
+
+  useEffect(() => {
+    const event = tournament?.presentationEvent;
+    if (event?.kind === "board-card-dealt") {
+      setStagedBoard((current) =>
+        current.length > event.cardIndex
+          ? current
+          : [...current, { ...event.card }],
+      );
+      return;
+    }
+    setStagedBoard((current) =>
+      current.length === scenario.board.length
+        ? current
+        : scenario.board.map((card) => ({ ...card })),
+    );
+  }, [scenario.board, tournament?.presentationEvent]);
+
+  useEffect(() => {
+    if (tournament?.showArrival) setArrivalVisible(true);
+  }, [tournament?.showArrival]);
+
+  useEffect(() => {
+    const event = tournament?.presentationEvent;
+    if (!event || soundedPresentationEvents.current.has(event.id)) return;
+    soundedPresentationEvents.current.add(event.id);
+    // Event ids are monotonic for a live session. Keep the short-lived guard
+    // bounded without ever replaying a current event.
+    if (soundedPresentationEvents.current.size > 256) {
+      soundedPresentationEvents.current = new Set([event.id]);
+    }
+    const sound = publicPresentationSound(event);
+    if (sound) gameAudio.play(sound);
+  }, [tournament?.presentationEvent]);
 
   const handleAction = useCallback(
     (nextAction: PokerAction, requestedRaiseTo = raiseAmount) => {
-      if (action || paused) return;
+      if (
+        action ||
+        paused ||
+        tournament?.presentationEvent ||
+        (tournament !== undefined && tournament.heroDecision === false) ||
+        actionGateRef.current.isLocked
+      ) {
+        return;
+      }
       if (
         mode === "training" &&
         trainingMeta?.actionEvs[nextAction] === undefined
@@ -1161,12 +2376,25 @@ export function PokerTable({
         gameAudio.play("error");
         return;
       }
+      if (!actionGateRef.current.tryBegin()) return;
       setActionError(undefined);
       setAction(nextAction);
       setRaiseOpen(false);
       setPeeked(false);
       if (nextAction === "fold") {
-        setFoldProgress(100);
+        /*
+          Deliberately does NOT write `foldProgress` (E27-001).
+
+          It used to set it to 100 to drive the card-slide, borrowing the drag
+          gesture's progress bar as an animation channel. But the "Release to
+          fold" banner renders on `foldProgress > 10 && !action`, and `action`
+          is cleared by the next engine update while `foldProgress` survives
+          until the next hand -- so a button fold made the drag banner appear
+          seconds later and stay through the showdown. The slide is now driven
+          by the submitted action instead, and `foldProgress` means only what
+          its name says: how far the player has dragged.
+        */
+        setDragging(false);
         gameAudio.play("fold");
       } else {
         gameAudio.play("chip");
@@ -1246,7 +2474,9 @@ export function PokerTable({
         const request: HeroTournamentAction = {
           action: nextAction,
           ...(nextAction === "raise" ? { raiseTo: requestedRaiseTo } : {}),
-          decisionElapsedMs: Math.max(0, Math.round(elapsedMs)),
+          // Real unpaused time since the previous hero action, counted once --
+          // not the running per-hand total this used to send (E27-004).
+          decisionElapsedMs: blindClock.current.drain(),
         };
         const publicPotOdds =
           scenario.amountToCall /
@@ -1496,14 +2726,27 @@ export function PokerTable({
     cameraStep,
   ]);
 
+  /*
+    A short click toggles the same private peek as the Space shortcut. Dragging
+    toward the dealer remains reserved for folding, so a player never has to
+    keep a mouse button depressed just to read their own two cards.
+  */
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (action) return;
+    // Reading a live hand is allowed once the public deal beat has completed;
+    // the action gate also disables this surface while a submitted action is
+    // being presented so a peek cannot race the authoritative update.
+    if (heroFolded) return;
+    // The semantic card target sits above the canvas. Stop this private-card
+    // gesture from becoming a table-look drag after the stage has already
+    // rejected button targets in its capture handler.
+    event.stopPropagation();
     dragStart.current = { x: event.clientX, y: event.clientY };
     didDrag.current = false;
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
     if (!dragStart.current || action) return;
     const deltaX = event.clientX - dragStart.current.x;
     const deltaY = event.clientY - dragStart.current.y;
@@ -1521,15 +2764,23 @@ export function PokerTable({
     event: ReactPointerEvent<HTMLButtonElement>,
     cancelled = false,
   ) => {
+    event.stopPropagation();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     const shouldFold = !cancelled && didDrag.current && foldProgress >= 82;
     dragStart.current = null;
     setDragging(false);
-    if (shouldFold) handleAction("fold");
-    else if (!didDrag.current && !cancelled) setPeeked((value) => !value);
-    else setFoldProgress(0);
+    if (shouldFold) {
+      setPeeked(false);
+      handleAction("fold");
+    } else if (didDrag.current || cancelled) {
+      setPeeked(false);
+      setFoldProgress(0);
+    } else {
+      // Pointer release without a drag is a normal click: mirror Space.
+      setPeeked((value) => !value);
+    }
     didDrag.current = false;
   };
 
@@ -1567,7 +2818,7 @@ export function PokerTable({
   };
 
   const tableStyle = {
-    "--camera-pan": `${cameraPan * -18}px`,
+    "--camera-pan": `${effectiveCameraPan * -18}px`,
     "--camera-zoom":
       settings.cameraView === "close"
         ? "1.06"
@@ -1590,9 +2841,58 @@ export function PokerTable({
         : formatMessage("table.modeTitle.normal");
   const scenarioNumber =
     trainingScenarios.findIndex((item) => item.id === scenario.id) + 1;
-  const heroStack =
-    scenario.players.find((player) => player.seat === scenario.heroSeat)?.stack ??
-    scenario.minimumRaise;
+  const heroPlayer = scenario.players.find(
+    (player) => player.seat === scenario.heroSeat,
+  );
+  const skipTerminalFoldedPlayerIds = new Set(
+    tournament?.skipTerminalFoldedPlayerIds,
+  );
+  const heroStack = heroPlayer?.stack ?? scenario.minimumRaise;
+  /*
+    Whether the hero has folded is read from the authoritative seat status, not
+    from the local `action` state (E27-001). `action` is transient -- it is
+    cleared by the next engine update, which is why folded hero cards used to
+    come back face-up and interactive for the rest of the hand. Seat status is
+    owned by the engine and resets with the hand, which is exactly the lifetime
+    this needs. `action === "fold"` is still ORed in so the muck begins on the
+    submitting frame rather than waiting for the engine to answer.
+  */
+  /*
+    The facts a Training decision cannot be judged without (E27-013). Derived
+    for every mode -- it is cheap and the numbers are the same ones the table
+    already holds -- but surfaced as a strip only in Training, where the player
+    is being asked to justify a choice rather than just make one.
+  */
+  const trainingContext = describeTrainingContext(scenario);
+
+  const heroFoldState: HeroFoldState = {
+    dragging,
+    foldProgress,
+    action,
+    seatStatus: heroPlayer?.status as HeroFoldState["seatStatus"],
+  };
+  const heroFolded = areHeroCardsMucked(heroFoldState) ||
+    (heroPlayer !== undefined && skipTerminalFoldedPlayerIds.has(heroPlayer.id));
+  const heroStreetCommitted = heroPlayer?.bet ?? 0;
+  const heroTotalCommitted = heroPlayer?.totalCommitted ?? heroStreetCommitted;
+  const positionLabelForSeat = (seat: number): string =>
+    tablePositionLabelForSeat({
+      seat,
+      buttonSeat: scenario.buttonSeat,
+      smallBlindSeat: scenario.smallBlindSeat,
+      bigBlindSeat: scenario.bigBlindSeat,
+      playerCount: scenario.players.length,
+    });
+  const heroPositionLabel = positionLabelForSeat(scenario.heroSeat);
+  const dealerMoveEvent =
+    tournament?.presentationEvent?.kind === "button-moved"
+      ? tournament.presentationEvent
+      : undefined;
+  const dealerMoveCoordinates = [
+    [50, 86], [12, 73], [18, 30], [50, 12], [82, 30], [88, 73],
+  ];
+  const dealerMoveFrom = dealerMoveCoordinates[scenario.buttonSeat] ?? dealerMoveCoordinates[0];
+  const dealerMoveTo = dealerMoveCoordinates[dealerMoveEvent?.buttonSeat ?? scenario.buttonSeat] ?? dealerMoveFrom;
   const minimumRaise =
     mode !== "training" && tournament
       ? (tournament.legalActions.raise?.minTo ??
@@ -1637,7 +2937,46 @@ export function PokerTable({
             tournament?.legalActions.bet ||
             tournament?.legalActions.allIn,
         );
+  const presentationActive = Boolean(tournament?.presentationEvent);
+  const cardsDealt = cardsDealtHandId === scenario.id;
+  const heroDecisionActive =
+    mode === "training" || tournament?.heroDecision !== false;
   const callAction = scenario.amountToCall > 0 ? "call" : "check";
+  /*
+    The label is derived from the hero's stack as well as the bet, so a call
+    that commits their last chip says "All in" (E27-005). The legal action is
+    unchanged -- the engine still resolves this as a call and still caps the
+    main pot -- only what the player is told about it changes.
+  */
+  const callDescription = describeCallAction({
+    amountToCall: scenario.amountToCall,
+    heroStack,
+  });
+  const callControlLabel =
+    callDescription.kind === "check"
+      ? formatMessage("table.action.check")
+      : callDescription.kind === "all-in"
+        ? formatMessage("table.action.allInAmount", {
+            amount: formatChips(callDescription.committed),
+          })
+        : formatMessage("table.action.callAmount", {
+            amount: formatChips(callDescription.committed),
+          });
+  const callControlAriaLabel =
+    callDescription.kind === "check"
+      ? formatMessage("table.action.checkAriaLabel")
+      : callDescription.kind === "all-in"
+        ? callDescription.shortOfCall
+          ? formatMessage("table.action.allInShortAriaLabel", {
+              amount: formatChips(callDescription.committed),
+              facing: formatChips(callDescription.facing),
+            })
+          : formatMessage("table.action.allInAriaLabel", {
+              amount: formatChips(callDescription.committed),
+            })
+        : formatMessage("table.action.callAriaLabel", {
+            amount: formatChips(callDescription.committed),
+          });
   const tablePlayers = [...scenario.players].sort((left, right) => {
     if (left.seat === scenario.heroSeat) return -1;
     if (right.seat === scenario.heroSeat) return 1;
@@ -1645,6 +2984,292 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
+
+  /*
+    The 3D scene's view of the table, derived from exactly the same scenario the
+    DOM layer renders. Nothing here is scene-only state: if the two ever
+    disagree, the DOM is right, because it is the layer the engine and the
+    accessibility audits both talk to.
+  */
+  const baseSceneTransition = tournament?.presentationEvent
+    ? createSceneTransition(
+      tournament.presentationEvent,
+      sceneEventProgress,
+      settings.reducedMotion || settings.transitionMotion === "off",
+    )
+    : undefined;
+  const sceneTransition = baseSceneTransition
+    ? retainSceneTerminalFoldedPlayers(
+      baseSceneTransition,
+      tournament?.skipTerminalFoldedPlayerIds,
+    )
+    : undefined;
+  const sceneActions = Object.fromEntries(tablePlayers.map((player) => {
+    const presentation = seatPresentationUpdate(
+      tournament?.presentationEvent,
+      player.id,
+    );
+    return [player.id, sceneTransition?.action && sceneTransition.playerIds.includes(player.id)
+      ? sceneTransition.action
+      : presentation.sceneAction
+        ? presentation.sceneAction
+        : presentation.action ? sceneActionForCommand(presentation.action) : undefined];
+  }));
+  const sceneSnapshot = createTableSceneSnapshot({
+    // The presentation event is intentionally short-lived; handNumber is the
+    // stable identity that keeps both physical packs and every dealt back in
+    // lockstep for the entire round.
+    handId: tournament ? `tournament:hand-${tournament.handNumber}` : scenario.id,
+    players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status })),
+    heroId: scenario.players.find((player) => player.seat === scenario.heroSeat)?.id ?? "",
+    actingPlayerId: scenario.actingPlayerId,
+    publicActions: sceneActions,
+    pot: scenario.pot,
+    pots: (scenario.potBreakdown?.length
+      ? scenario.potBreakdown
+      : [{ id: "main", kind: "main", amount: scenario.pot }]
+    ).map((pot, index) => ({
+      id: `${pot.kind}-${index}`,
+      kind: pot.kind === "side" ? "side" as const : "main" as const,
+      amount: pot.amount,
+    })),
+    boardCards: stagedBoard.length,
+    publicBoardCardCodes: stagedBoard.map(cardLabel),
+    heroCardCodes: scenario.heroCards.map(cardLabel),
+    revealedCardCodesByPlayer: tournament?.presentationEvent?.kind === "showdown"
+      ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
+      : tournament?.presentationEvent?.kind === "all-in-reveal"
+        ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
+        : {},
+    cameraPan: effectiveCameraPan,
+    cameraZoom,
+    heroStationIndex: heroStationIndexForTable,
+    /* Only the squeeze. A showdown reveal turns the hand over through
+       `revealedCardCodesByPlayer`, which the snapshot already honours for every
+       seat including this one. */
+    heroPeeked: peeked,
+    cameraView: settings.cameraView,
+    // A disabled automatic camera still accepts the player's own free-look;
+    // keep renderer interpolation immediate in that mode instead of discarding
+    // the manual yaw in the DOM layer.
+    cameraMotion: cameraMotionSuppressed ? "off" : settings.cameraMotion,
+    reducedMotion: settings.reducedMotion || settings.transitionMotion === "off",
+    buttonCanonicalSeat: scenario.buttonSeat,
+    smallBlindCanonicalSeat: scenario.smallBlindSeat,
+    bigBlindCanonicalSeat: scenario.bigBlindSeat,
+    revealedPlayerIds: tournament?.presentationEvent?.kind === "showdown"
+      ? tournament.presentationEvent.reveals.map((reveal) => reveal.playerId)
+      : tournament?.presentationEvent?.kind === "all-in-reveal"
+        ? tournament.presentationEvent.reveals.map((reveal) => reveal.playerId)
+        : [],
+    tier: tournament?.tier === "circuit" ? "regional" : tournament?.tier === "championship" ? "national" : tournament?.tier === "world" ? "championship" : "local",
+    transition: sceneTransition,
+  });
+  const sceneSeatByPlayerId = new Map(
+    sceneSnapshot.seats.map((seat) => [seat.id, seat]),
+  );
+  const tableSeatCoordinates = [
+    [50, 86], [12, 73], [18, 30], [50, 12], [82, 30], [88, 73],
+  ] as const;
+  const tablePotCoordinate = [50, 58] as const;
+  const chipTravel = (() => {
+    const event = tournament?.presentationEvent;
+    if (!event) return undefined;
+    const playerIndex = (playerId: string) =>
+      tablePlayers.findIndex((player) => player.id === playerId);
+    if (
+      event.kind === "action" &&
+      ["bet", "raise", "call", "all-in"].includes(event.command.type)
+    ) {
+      const index = playerIndex(event.playerId);
+      if (index >= 0) return { from: tableSeatCoordinates[index] ?? tablePotCoordinate, to: tablePotCoordinate, direction: "to-pot" as const };
+    }
+    if (event.kind === "bets-collected") {
+      return { from: [50, 78] as const, to: tablePotCoordinate, direction: "to-pot" as const };
+    }
+    if (event.kind === "pot-awarded") {
+      const index = playerIndex(event.playerId);
+      if (index >= 0) return { from: tablePotCoordinate, to: tableSeatCoordinates[index] ?? tablePotCoordinate, direction: "to-winner" as const };
+    }
+    return undefined;
+  })();
+  const showdownEvent =
+    tournament?.presentationEvent?.kind === "showdown"
+      ? tournament.presentationEvent
+      : undefined;
+  const handResultEvent =
+    tournament?.presentationEvent?.kind === "hand-result"
+      ? tournament.presentationEvent
+      : undefined;
+  const resultEvent = showdownEvent ?? handResultEvent;
+  const sidePotEvent =
+    tournament?.presentationEvent?.kind === "side-pot-formed"
+      ? tournament.presentationEvent
+      : undefined;
+  const liveSidePots = scenario.potBreakdown?.filter((pot) => pot.kind === "side") ?? [];
+  /*
+    Pots to draw on the felt. Falls back to a single synthetic main pot when the
+    engine reports no breakdown, so the ordinary single-pot hand renders exactly
+    as it always did and only a genuine side pot splits the pile (E27-002).
+  */
+  const potGroups = (
+    scenario.potBreakdown && scenario.potBreakdown.length > 0
+      ? scenario.potBreakdown
+      : [
+          {
+            id: "main",
+            kind: "main" as const,
+            amount: scenario.pot,
+            eligiblePlayerIds: scenario.players.map((player) => player.id),
+          },
+        ]
+  ).map((pot) => ({
+    id: pot.id,
+    kind: pot.kind,
+    amount: pot.amount,
+    /*
+      The full public explanation still exists -- it is just no longer printed
+      on the felt. Side pots carry `describeLiveSidePot`, which derives its
+      wording only from committed chips and declared eligibility and so cannot
+      leak a hand; main pots carry the contender list. Both reach assistive
+      technology, and neither occupies the table.
+    */
+    description:
+      pot.kind === "side"
+        ? describeLiveSidePot(pot, scenario.players)
+        : formatMessage("table.pot.eligibleAriaLabel", {
+            players: pot.eligiblePlayerIds
+              .map(
+                (playerId) =>
+                  scenario.players.find((player) => player.id === playerId)
+                    ?.name ?? playerId,
+              )
+              .join(", "),
+          }),
+  }));
+  const allInEvent =
+    tournament?.presentationEvent?.kind === "action" &&
+    tournament.presentationEvent.command.type === "all-in"
+      ? tournament.presentationEvent
+      : undefined;
+  const allInPlayer = allInEvent
+    ? scenario.players.find((player) => player.id === allInEvent.playerId)
+    : undefined;
+  const allInRevealEvent = tournament?.allInReveal ??
+    (tournament?.presentationEvent?.kind === "all-in-reveal"
+      ? tournament.presentationEvent
+      : undefined);
+  useEffect(() => {
+    if (!allInRevealEvent || allInRevealEvent.reveals.length < 2) {
+      setAllInEquity(undefined);
+      return;
+    }
+    // A real abort, not just an ignored promise: the estimator re-checks this
+    // at each deterministic slice boundary, so a new board card stops the
+    // superseded run instead of leaving it to finish against a stale board.
+    const controller = new AbortController();
+    setAllInEquity(undefined);
+    const publicCardSeed = [
+      allInRevealEvent.handId,
+      ...stagedBoard.map(cardLabel),
+      ...allInRevealEvent.reveals.flatMap((reveal) => [
+        reveal.playerId,
+        ...reveal.cards.map(cardLabel),
+      ]),
+    ].join(":");
+    void estimatePublicAllInEquitySliced(
+      {
+        players: allInRevealEvent.reveals,
+        board: stagedBoard,
+        seed: `public-all-in:${publicCardSeed}`,
+        simulations: 500,
+        simulationsPerSlice: 25,
+      },
+      { signal: controller.signal },
+    ).then((estimate) => {
+      if (!controller.signal.aborted) setAllInEquity(estimate);
+    }).catch(() => {
+      // A stale/cancelled visual calculation is intentionally silent. The
+      // authoritative engine is already progressing independently.
+    });
+    return () => { controller.abort(); };
+  }, [allInRevealEvent, stagedBoard]);
+  useEffect(() => {
+    if (!allInEquity) {
+      const empty = new Map<string, number>();
+      displayedAllInEquityRef.current = empty;
+      setDisplayedAllInEquity(empty);
+      return;
+    }
+    const target = allInEquity.players.map((player) => ({ playerId: player.playerId, equity: player.equity }));
+    if (settings.reducedMotion || settings.transitionMotion === "off") {
+      const instant = new Map(target.map((entry) => [entry.playerId, entry.equity]));
+      displayedAllInEquityRef.current = instant;
+      setDisplayedAllInEquity(instant);
+      return;
+    }
+    let frame = 0;
+    const startedAt = performance.now();
+    const initial = displayedAllInEquityRef.current.size > 0
+      ? displayedAllInEquityRef.current
+      : new Map(target.map((entry) => [entry.playerId, 0]));
+    const tick = (now: number) => {
+      const elapsed = now - startedAt;
+      const next = interpolateAllInEquities(initial, target, elapsed);
+      displayedAllInEquityRef.current = next;
+      setDisplayedAllInEquity(next);
+      if (elapsed < ALL_IN_EQUITY_TRANSITION_MS) frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [allInEquity, settings.reducedMotion, settings.transitionMotion]);
+  const revealedCardsByPlayer = new Map(
+    publicRevealsForPresentation(
+      tournament?.presentationEvent,
+      allInRevealEvent,
+    ).map((reveal) => [reveal.playerId, reveal.cards]),
+  );
+  const winningCardLabels = winningCardLabelsForAwards(
+    showdownEvent?.awards ?? [],
+  );
+  const winningShowdownHands = winningHandsForShowdown(showdownEvent, stagedBoard);
+  /*
+    Who won this hand, held for as long as the hand is paying out (E27-003).
+
+    `lastPotAwards` is derived from `session.lastHand`, which is not populated
+    until the hand is over -- so during the `pot-awarded` milestones, which are
+    the payout of the very result being shown, the awards array is empty and the
+    winner strip blanked. Remembering the last non-empty awards for this hand id
+    keeps the outcome on screen while its chips are still moving, and drops it
+    automatically when a new hand starts.
+  */
+  const liveAwards = resultEvent?.awards ?? tournament?.lastPotAwards ?? [];
+  const rememberedAwards = useRef<{
+    handId: string;
+    awards: typeof liveAwards;
+  } | null>(null);
+  useEffect(() => {
+    if (liveAwards.length > 0) {
+      rememberedAwards.current = { handId: scenario.id, awards: liveAwards };
+    }
+  }, [liveAwards, scenario.id]);
+  const showdownAwards =
+    liveAwards.length > 0
+      ? liveAwards
+      : rememberedAwards.current?.handId === scenario.id
+        ? rememberedAwards.current.awards
+        : [];
+  /*
+    The stretch of the queue that belongs to "who won this hand": the result
+    itself and every milestone that pays it out. Keeping the winner on screen
+    across all of them is what makes the outcome readable (E27-003).
+  */
+  const resultPhaseKind = tournament?.presentationEvent?.kind;
+  const resultPhaseActive =
+    Boolean(resultEvent) ||
+    resultPhaseKind === "pot-awarded" ||
+    resultPhaseKind === "side-pot-formed";
+  const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
   const tableAnnouncement = buildPokerTableAnnouncement({
     action,
     latestPublicAction: tournament?.actionHistory.at(-1),
@@ -1655,10 +3280,11 @@ export function PokerTable({
   // engine pot-award data the "Won pot" seat badge already uses -- never
   // guessed from a stack-size delta. Undefined until a hand has resolved.
   const potResultSnapshot: TableAnnouncerSnapshot["potResult"] =
-    tournament?.lastPotAwards?.length
+    showdownAwards.length
       ? {
+          id: resultEvent?.handId ?? `previous-${tournament?.handNumber ?? 0}`,
           winnerNames: Array.from(
-            new Set(tournament.lastPotAwards.map((award) => award.playerId)),
+            new Set(showdownAwards.map((award) => award.playerId)),
           ).map((playerId) => {
             const winner = scenario.players.find(
               (player) => player.id === playerId,
@@ -1668,11 +3294,13 @@ export function PokerTable({
               ? formatMessage("table.seat.you")
               : winner.name;
           }),
-          amount: tournament.lastPotAwards.reduce(
+          amount: showdownAwards.reduce(
             (sum, award) => sum + award.amount,
             0,
           ),
-          hadSidePot: Boolean(tournament.lastHandHadSidePot),
+          hadSidePot:
+            Boolean(tournament?.lastHandHadSidePot) ||
+            new Set(showdownAwards.map((award) => award.potId)).size > 1,
         }
       : undefined;
 
@@ -1690,6 +3318,7 @@ export function PokerTable({
   return (
     <div
       className="table-screen"
+      data-event-tier={tournament?.tier ?? "local"}
       data-camera-motion={settings.cameraMotion}
       data-table-motion={settings.tableMotion}
       data-transition-motion={settings.transitionMotion}
@@ -1698,6 +3327,16 @@ export function PokerTable({
     >
       <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {tableAnnouncement}
+      </p>
+      <p
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {presentationActive
+          ? presentationEventLabel(tournament?.presentationEvent as TournamentPresentationEvent)
+          : ""}
       </p>
       {/*
         Discrete LIVE event announcements (timers/blind changes, hand
@@ -1730,10 +3369,17 @@ export function PokerTable({
           <p className="eyebrow">{modeTitle}</p>
           <strong>{scenario.title}</strong>
           <span>
+            {/*
+              The scenario counter is gone from the player interface
+              (E27-013 / §18). "Scenario 6 of 12" framed Training as a
+              twelve-question content pack with an end, which is the opposite of
+              what the mode is for. Training now reports the street and the
+              field, exactly as every other mode does.
+            */}
             {mode === "training"
-              ? formatMessage("table.status.scenarioProgress", {
-                  number: Math.max(1, scenarioNumber),
-                  total: trainingScenarios.length,
+              ? formatMessage("table.status.streetPlayersRemain", {
+                  street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
+                  playersRemaining: trainingContext.players,
                 })
               : formatMessage("table.status.streetPlayersRemain", {
                   street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
@@ -1798,10 +3444,281 @@ export function PokerTable({
       </header>
 
       <div className="table-layout">
+        {/*
+          Drag-to-look is bound to the whole stage, not to the scene element.
+
+          It was on `.poker-scene`, which is only the canvas -- and the DOM table
+          is a *sibling* that covers it completely. So every drag a player could
+          actually make landed on a seat, a card or the felt overlay and never
+          reached the handler: the feature was wired to the one part of the play
+          area nothing is ever on top of. The stage is the common ancestor of the
+          canvas and the table, so the drag works wherever the view being turned
+          is visible. Controls are still excluded inside `beginCameraDrag`.
+        */}
         <section
           className="table-stage"
           aria-label={formatMessage("table.stageAriaLabel")}
+          onPointerDownCapture={beginCameraDrag}
+          onPointerMoveCapture={updateCameraDrag}
+          onPointerUpCapture={endCameraDrag}
+          onPointerCancelCapture={endCameraDrag}
+          onLostPointerCaptureCapture={clearCameraDrag}
+          onWheelCapture={handleCameraWheel}
         >
+          {/*
+            The hero's state lives at the hero's seat, not in a floating panel
+            (E27-008). A panel titled "Your stack" in the top-left corner is a
+            dashboard widget; a poker player reads their stack from the chips in
+            front of them. Stack, chips, committed wager, position marker and
+            big-blind depth are all on the seat now, with an accessible summary
+            that carries the same facts in one utterance.
+
+            What remains up here is the tournament HUD below: global state only,
+            in a corner, no paragraphs.
+          */}
+          <aside
+            className="tournament-hud"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            aria-label={heroStackAriaLabel({
+              stack: heroStack,
+              streetCommitted: heroStreetCommitted,
+              totalCommitted: heroTotalCommitted,
+              position: heroPositionLabel || undefined,
+            })}
+          >
+            <span>
+              <b>{formatMessage("table.hud.blinds")}</b>
+              {formatChips(scenario.blinds[0])}/{formatChips(scenario.blinds[1])}
+            </span>
+            {tournament?.blindLevel ? (
+              <span>
+                <b>{formatMessage("table.hud.level")}</b>
+                {tournament.blindLevel}
+              </span>
+            ) : null}
+            {tournament?.nextLevelInMs !== undefined ? (
+              <span>
+                <b>{formatMessage("table.hud.nextLevel")}</b>
+                {/* `formatClock` takes milliseconds; dividing first turned four
+                    minutes into 240 ms and printed 0:00. */}
+                {formatClock(Math.max(0, tournament.nextLevelInMs))}
+              </span>
+            ) : null}
+            <span>
+              <b>{formatMessage("table.hud.players")}</b>
+              {tournament?.playersRemaining ?? scenario.players.length}
+            </span>
+          </aside>
+          {/*
+            The situation, stated (E27-013). The reported ace-five all-in could
+            not be judged because none of this was on screen: eleven thousand
+            chips means nothing without the blind beside it, and it is eleven
+            big blinds -- push/fold depth -- which is what makes the shove
+            ordinary. Short labels beside numbers, never prose; the explanation
+            belongs in the feedback after the decision, not around the table.
+          */}
+          {mode === "training" ? (
+            <aside
+              className="training-context"
+              aria-label={formatMessage("table.context.ariaLabel", {
+                stack: formatChips(trainingContext.stackChips),
+                bigBlinds: trainingContext.stackBigBlinds ?? 0,
+                blinds: `${formatChips(trainingContext.smallBlind)}/${formatChips(trainingContext.bigBlind)}`,
+                pot: formatChips(trainingContext.pot),
+                toCall: formatChips(trainingContext.amountToCall),
+                players: trainingContext.players,
+              })}
+            >
+              <span>
+                <b>{formatMessage("table.context.stack")}</b>
+                {formatChips(trainingContext.stackChips)}
+                {trainingContext.stackBigBlinds !== null ? (
+                  <em>
+                    {formatMessage("table.context.bigBlinds", {
+                      count: trainingContext.stackBigBlinds,
+                    })}
+                  </em>
+                ) : null}
+              </span>
+              <span>
+                <b>{formatMessage("table.context.effective")}</b>
+                {formatChips(trainingContext.effectiveStackChips)}
+                {trainingContext.effectiveStackBigBlinds !== null ? (
+                  <em>
+                    {formatMessage("table.context.bigBlinds", {
+                      count: trainingContext.effectiveStackBigBlinds,
+                    })}
+                  </em>
+                ) : null}
+              </span>
+              <span>
+                <b>{formatMessage("table.context.blinds")}</b>
+                {formatChips(trainingContext.smallBlind)}/
+                {formatChips(trainingContext.bigBlind)}
+              </span>
+              <span>
+                <b>{formatMessage("table.context.players")}</b>
+                {trainingContext.players}
+              </span>
+              <span>
+                <b>{formatMessage("table.context.pot")}</b>
+                {formatChips(trainingContext.pot)}
+              </span>
+              {trainingContext.amountToCall > 0 ? (
+                <span>
+                  <b>{formatMessage("table.context.toCall")}</b>
+                  {formatChips(trainingContext.amountToCall)}
+                </span>
+              ) : null}
+              {trainingContext.shortStacked ? (
+                <span className="training-context__flag">
+                  {formatMessage("table.context.pushFold")}
+                </span>
+              ) : null}
+            </aside>
+          ) : null}
+          {/*
+            The result stays up through the whole payout, not just the single
+            `showdown` frame (E27-003). It used to be gated on `resultEvent`
+            alone, so the moment the queue moved to `side-pot-formed` or
+            `pot-awarded` the winner disappeared -- measured in the packaged
+            build as the result being on screen for about one second while the
+            chips it was describing were still moving. Those events *are* the
+            result being paid out, so they belong to the same readable moment.
+          */}
+          {showdownAwards.length > 0 && (resultPhaseActive || arrivalVisible) ? (
+            <aside className="showdown-result-strip" role="status" aria-live="polite" aria-atomic="true">
+              <span>
+                {showdownEvent
+                  ? "Showdown result"
+                  : handResultEvent || resultPhaseActive
+                    ? // Still paying out: the hand is resolving, not history.
+                      "Hand result"
+                    : "Previous hand result"}
+              </span>
+              {showdownAwards.map((award) => {
+                const winner = scenario.players.find((player) => player.id === award.playerId);
+                const winnerName = winner?.seat === scenario.heroSeat ? "You" : (winner?.name ?? award.playerId);
+                return (
+                  <p key={`${award.potId}:${award.playerId}`}>
+                    <b>{award.potId}</b> · <strong>{winnerName}</strong> wins {formatChips(award.amount)}
+                    {award.hand ? ` with ${award.hand.displayName}` : ""}
+                  </p>
+                );
+              })}
+            </aside>
+          ) : null}
+          {/*
+            A fold has an award but no public hand.  Only a genuine showdown
+            gets this lifted five-card tableau, and every card in it comes from
+            the engine's already-public award payload.
+          */}
+          {showdownEvent && winningShowdownHands.length > 0 ? (
+            <section className="showdown-tableau" aria-label="Winning poker hands">
+              {winningShowdownHands.map((hand) => {
+                const winner = scenario.players.find((player) => player.id === hand.playerId);
+                const winnerName = winner?.seat === scenario.heroSeat ? "You" : (winner?.name ?? hand.playerId);
+                return (
+                  <div className="showdown-tableau__hand" key={`${hand.potId}:${hand.playerId}`}>
+                    <header>
+                      <strong>{hand.handName}</strong>
+                      <span>{winnerName} wins {formatChips(hand.amount)}</span>
+                    </header>
+                    <div className="showdown-tableau__cards" aria-label={`${hand.handName} winning cards`}>
+                      {hand.cards.map(({ card, source }, index) => (
+                        <span
+                          className={`showdown-tableau__card showdown-tableau__card--${source}`}
+                          style={{ "--showdown-index": index } as CSSProperties}
+                          key={cardLabel(card)}
+                        >
+                          <PlayingCard card={card} className="showdown-card is-winning" />
+                        </span>
+                      ))}
+                    </div>
+                    <small>Dealer presents the winning five</small>
+                  </div>
+                );
+              })}
+            </section>
+          ) : null}
+          {sidePotEvent ? (
+            <aside className="side-pot-strip" role="status" aria-live="polite" aria-atomic="true">
+              <span>{formatMessage("table.sidePot.label")}</span>
+              <strong>{formatChips(sidePotEvent.amount)}</strong>
+              <p>
+                {formatMessage("table.sidePot.eligible", {
+                  players: sidePotEvent.eligiblePlayerIds
+                    .map((playerId) => scenario.players.find((player) => player.id === playerId)?.name ?? playerId)
+                    .join(", "),
+                })}
+              </p>
+              <small>
+                Chips above an all-in player's cap form a separate pot. Only
+                the eligible players can win it.
+              </small>
+            </aside>
+          ) : null}
+          {/*
+            The persistent live-pot panel that used to sit here is gone
+            (E27-002). It listed every pot and a full eligibility roster as
+            standing prose, appeared before the hero had acted, and stayed up for
+            the whole hand -- explaining in text what the felt should be showing
+            in chips. Pot structure is now grouped chip stacks on the table (see
+            `.pot-groups` below); the transient `side-pot-formed` announcement
+            above still marks the moment a side pot appears, and the eligibility
+            detail is available on demand rather than permanently.
+          */}
+          {allInEvent ? (
+            <aside className="all-in-banner" role="status" aria-live="assertive" aria-atomic="true">
+              <span>{formatMessage("table.allIn.label")}</span>
+              <strong>
+                {formatMessage("table.allIn.player", {
+                  player:
+                    allInPlayer?.seat === scenario.heroSeat
+                      ? formatMessage("table.seat.you")
+                      : (allInPlayer?.name ?? allInEvent.playerId),
+                })}
+              </strong>
+              <small>{formatMessage("table.allIn.runoutHint")}</small>
+            </aside>
+          ) : null}
+          {allInRevealEvent ? (
+            <>
+            <section className="all-in-showdown-stage" aria-label="All-in hands revealed">
+              {allInRevealEvent.reveals.map((reveal) => {
+                const player = scenario.players.find((seat) => seat.id === reveal.playerId);
+                return (
+                  <div key={reveal.playerId} className="all-in-showdown-hand">
+                    <b>{player?.seat === scenario.heroSeat ? "You" : (player?.name ?? reveal.playerId)}</b>
+                    <span>{reveal.cards.map((card) => <PlayingCard key={cardLabel(card)} card={card} small />)}</span>
+                  </div>
+                );
+              })}
+            </section>
+            <aside className="all-in-equity-strip" role="status" aria-live="polite" aria-atomic="true">
+              <span>All-in showdown odds</span>
+              {allInEquity ? allInEquity.players.map((player) => {
+                const name = scenario.players.find((seat) => seat.id === player.playerId)?.name ?? player.playerId;
+                const win = formatFixedDecimal((player.wins / allInEquity.simulations) * 100, 1);
+                const tie = formatFixedDecimal((player.ties / allInEquity.simulations) * 100, 1);
+                const lose = formatFixedDecimal((player.losses / allInEquity.simulations) * 100, 1);
+                return (
+                  <p key={player.playerId}>
+                    <b>{name}</b> <strong>{formatFixedDecimal((displayedAllInEquity.get(player.playerId) ?? 0) * 100, 1)}%</strong>
+                    <small> win {win}% · tie {tie}% · lose {lose}%</small>
+                  </p>
+                );
+              }) : <p>Calculating public odds…</p>}
+              <small>
+                {allInEquity
+                  ? `From ${allInEquity.unseenCards} unseen cards · ${allInEquity.simulations} simulations`
+                  : "From the remaining unseen cards"}
+              </small>
+            </aside>
+            </>
+          ) : null}
           {actionError ? (
             <p className="table-action-alert" role="alert">
               <X size={16} aria-hidden="true" /> {actionError}
@@ -1833,36 +3750,209 @@ export function PokerTable({
               <small>{formatMessage("table.arrival.settling")}</small>
             </div>
           )}
+          {/*
+            Depth layers behind the table. Each moves at a different fraction
+            of the camera pan (see --camera-pan consumers in styles.css), which
+            is what turns a flat sideways slide into a look. Purely decorative:
+            no table state is conveyed here, and the whole group is hidden from
+            assistive technology.
+          */}
+          <div className="room-depth" aria-hidden="true">
+            <div className="room-depth__far">
+              <i /><i /><i /><i /><i /><i />
+            </div>
+            <div className="room-depth__mid">
+              <i /><i /><i /><i />
+            </div>
+          </div>
           <div className="room-lights" aria-hidden="true">
             <i />
             <i />
             <i />
           </div>
 
-          <div className="camera-controls">
+          {/* Camera is controlled by drag and keyboard; no scene-blocking overlay. */}
+          <div className="camera-controls" aria-label={formatMessage("table.camera.viewLabel")}>
             <button
               type="button"
-              onClick={() =>
-                setCameraPan((value) => Math.max(-2, value - cameraStep))
-              }
+              onClick={() => setCameraPan((value) => Math.max(-2, value - cameraStep))}
               aria-label={formatMessage("table.camera.left")}
             >
               <ChevronLeft size={17} />
             </button>
-            <span>{formatMessage("table.camera.viewLabel")}</span>
+            {/*
+              Recenter was previously keyboard-only (X), so a pointer player
+              had no way back to a square view except panning by eye. It is
+              also the live readout of where the camera is pointing, and it
+              disables itself when already centred rather than disappearing.
+            */}
             <button
               type="button"
-              onClick={() =>
-                setCameraPan((value) => Math.min(2, value + cameraStep))
-              }
+              className="camera-controls__center"
+              onClick={() => setCameraPan(0)}
+              disabled={effectiveCameraPan === 0}
+              aria-label={formatMessage("table.camera.center")}
+            >
+              <span>{formatMessage(`table.camera.view${"Label"}`)}</span>
+              <b>
+                {effectiveCameraPan === 0
+                  ? formatMessage("table.camera.centered")
+                  : formatMessage("table.camera.offset", {
+                      direction: formatMessage(
+                        effectiveCameraPan < 0
+                          ? "table.camera.directionLeft"
+                          : "table.camera.directionRight",
+                      ),
+                    })}
+              </b>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCameraPan((value) => Math.min(2, value + cameraStep))}
               aria-label={formatMessage("table.camera.right")}
             >
               <ChevronRight size={17} />
             </button>
           </div>
 
-            <div className="poker-scene">
-            <div className="poker-table">
+            <div
+              ref={sceneElementRef}
+              className="poker-scene motion-vestibular"
+              {...(settings.spatialScene && !sceneRequestChanged && sceneAvailability.status === "ready"
+                ? { "data-spatial-scene": "ready" }
+                : {})}
+            >
+              {/*
+                The 3D room, drawn behind everything else (E09-001 M1). It is
+                lazily loaded so three.js never enters the initial bundle, and
+                it is decorative: the DOM table below stays mounted and remains
+                the interaction and accessibility surface, so nothing here can
+                take the game away from a player whose device cannot draw it.
+              */}
+              {settings.spatialScene && (
+                <Suspense fallback={null}>
+                  <TableScene3D
+                    seats={sceneSnapshot.seats}
+                    pot={sceneSnapshot.pot}
+                    boardCards={sceneSnapshot.boardCards}
+                    cameraPan={sceneSnapshot.cameraPan}
+                    cameraView={sceneSnapshot.cameraView}
+                    cameraMotion={sceneSnapshot.cameraMotion}
+                    reducedMotion={sceneSnapshot.reducedMotion}
+                    snapshot={sceneSnapshot}
+                    suspended={paused}
+                    onAvailabilityChange={setSceneAvailability}
+                    onCameraFrame={onCameraFrame}
+                  />
+                </Suspense>
+              )}
+              {/*
+                Skip lives over the table, where the player is already looking
+                (E27-015). It used to be a small secondary button in the bottom
+                dock next to the 2x toggle, which is why a player who folded
+                reported being unable to find it -- and why the two were easy to
+                confuse. They promise different things: 2x changes how fast the
+                hand is presented, Skip goes to the outcome. So they are now
+                different sizes, in different places, and worded differently.
+
+                It renders whenever the hero has no decision to make, which is
+                the same frame their fold is accepted, rather than waiting for
+                the next presentation event to arrive.
+              */}
+              {!heroDecisionActive || action ? (
+                <button
+                  type="button"
+                  className="skip-hand"
+                  onPointerDown={() => {
+                    // CDP/gamepad-style input can release after the current
+                    // queue item completes. Start the deterministic skip on
+                    // press so the button cannot turn into a later event's
+                    // click target during that release.
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                    }
+                  }}
+                  onMouseDown={() => {
+                    // Electron's low-level CDP mouse path is guaranteed to
+                    // produce mousedown; keep the same early capture for
+                    // physical mouse input.
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                    }
+                  }}
+                  onClick={() => {
+                    if (presentationActive && tournament?.onSkipPresentation) {
+                      tournament.onSkipPresentation();
+                      return;
+                    }
+                    pendingTournamentAction.current?.finish();
+                    pendingPresentationEvent.current?.finish();
+                  }}
+                  aria-label={formatMessage("table.spectator.skipAriaLabel")}
+                >
+                  <FastForward size={19} aria-hidden="true" />
+                  <span>{formatMessage("table.spectator.skip")}</span>
+                </button>
+              ) : null}
+              {chipTravel && (
+                <span
+                  key={tournament?.presentationEvent?.id}
+                  className={`chip-travel chip-travel--${chipTravel.direction}`}
+                  aria-hidden="true"
+                  style={{
+                    "--chip-from-x": `${chipTravel.from[0]}%`,
+                    "--chip-from-y": `${chipTravel.from[1]}%`,
+                    "--chip-to-x": `${chipTravel.to[0]}%`,
+                    "--chip-to-y": `${chipTravel.to[1]}%`,
+                  } as CSSProperties}
+                >
+                  <ChipStack bet />
+                </span>
+              )}
+              {dealerMoveEvent && (
+                <span
+                  className="dealer-button-travel"
+                  role="img"
+                  aria-label="Dealer button moves to its next seat"
+                  style={{
+                    "--dealer-from-x": `${dealerMoveFrom[0]}%`,
+                    "--dealer-from-y": `${dealerMoveFrom[1]}%`,
+                    "--dealer-to-x": `${dealerMoveTo[0]}%`,
+                    "--dealer-to-y": `${dealerMoveTo[1]}%`,
+                  } as CSSProperties}
+                >D</span>
+              )}
+            <div
+              className={`poker-table ${
+                tournament?.presentationEvent?.kind === "hole-cards-dealt"
+                  ? "is-dealing-hole-cards"
+                  : ""
+              }`}
+              data-table-hand-id={scenario.id}
+              data-table-street={scenario.street}
+              data-scene-pot={String(sceneSnapshot.pot)}
+              /*
+                The effective camera yaw step, so packaged evidence can prove
+                pointer, keyboard, and controller reach identical camera states.
+                Reading the recenter button's label instead would assert a
+                translation, and the canvas is unreadable by design.
+              */
+              data-table-camera-pan={String(effectiveCameraPan)}
+              /*
+                Marks that the 3D room is drawing the furniture, so the DOM's
+                own felt, chairs, and avatars can recede rather than being drawn
+                on top of the same table a second time. Only decoration fades:
+                names, stacks, bets, cards, and every control stay exactly where
+                they were, because this layer is still the one the player clicks
+                and the one assistive technology reads.
+              */
+              {...(settings.spatialScene && !sceneRequestChanged && sceneAvailability.status === "ready"
+                ? { "data-spatial-scene": "ready" }
+                : {})}
+              {...(tournament
+                ? { "data-table-state-version": tournament.sceneStateVersion }
+                : {})}
+            >
               <div className="felt-ring">
                 <span className="felt-brand">{formatMessage("table.felt.brand")}</span>
                 <div className="dealer">
@@ -1871,15 +3961,12 @@ export function PokerTable({
                   <b>{formatMessage("table.felt.dealerLabel")}</b>
                 </div>
 
-                <div className="table-readout">
-                  <span>{formatMessage("table.readout.potLabel")}</span>
+                <div
+                  className="table-readout"
+                  role="img"
+                  aria-label={`Pot ${formatChips(scenario.pot)}`}
+                >
                   <strong>{formatChips(scenario.pot)}</strong>
-                  <small>
-                    {formatMessage("table.readout.blinds", {
-                      smallBlind: formatChips(scenario.blinds[0]),
-                      bigBlind: formatChips(scenario.blinds[1]),
-                    })}
-                  </small>
                 </div>
 
                 <div
@@ -1887,10 +3974,29 @@ export function PokerTable({
                   role="group"
                   aria-label={formatMessage("table.communityCards.ariaLabel")}
                 >
-                  {scenario.board.map((card, index) => (
-                    <PlayingCard card={card} key={`${card.rank}-${index}`} />
+                  {stagedBoard.map((card, index) => (
+                    <span
+                      className={
+                        tournament?.presentationEvent?.kind === "board-card-dealt" &&
+                        tournament.presentationEvent.cardIndex === index
+                          ? "board-card-entering"
+                          : undefined
+                      }
+                      key={`${card.rank}-${index}`}
+                    >
+                      <PlayingCard
+                        card={card}
+                        className={
+                          showdownEvent
+                            ? winningCardLabels.has(cardLabel(card))
+                              ? "showdown-card is-winning"
+                              : "showdown-card is-unused"
+                            : undefined
+                        }
+                      />
+                    </span>
                   ))}
-                  {Array.from({ length: 5 - scenario.board.length }).map(
+                  {Array.from({ length: 5 - stagedBoard.length }).map(
                     (_, index) => (
                       <span
                         className="community-placeholder"
@@ -1900,41 +4006,162 @@ export function PokerTable({
                   )}
                 </div>
 
-                <div className="center-pot" aria-hidden="true">
-                  <ChipStack bet />
-                  <ChipStack bet />
-                  <ChipStack bet />
+                {/*
+                  Pot structure as chips rather than a paragraph (E27-002).
+                  With one pot this is the single centre pile it always was.
+                  With side pots each pot becomes its own labelled pile, so a
+                  player can watch which chips form which pot and, at the award,
+                  which pile goes to whom -- the thing the old text panel was
+                  trying to say. Amounts sit with their chips; eligibility is
+                  carried by the accessible name rather than printed on the felt.
+                */}
+                <div
+                  className={`pot-groups ${potGroups.length > 1 ? "pot-groups--split" : ""}`}
+                  role="group"
+                  aria-label={formatMessage("table.pot.groupsAriaLabel")}
+                >
+                  {potGroups.map((group) => (
+                    <div
+                      className={`pot-group pot-group--${group.kind}`}
+                      key={group.id}
+                      data-pot-kind={group.kind}
+                      data-pot-amount={group.amount}
+                    >
+                      <div
+                        className="center-pot"
+                        aria-hidden="true"
+                        data-chip-stacks={potChipStackCount(group.amount)}
+                      >
+                        {Array.from({
+                          length: potChipStackCount(group.amount),
+                        }).map((_, index) => (
+                          <ChipStack bet key={index} />
+                        ))}
+                      </div>
+                      {/*
+                        Per-pile amounts appear only once the pot has actually
+                        split. With a single pot the felt readout above already
+                        says "Pot 125", and repeating it under the chips would
+                        be the same number twice.
+                      */}
+                      {potGroups.length > 1 && (
+                        <span className="pot-group__amount">
+                          {formatChips(group.amount)}
+                        </span>
+                      )}
+                      <span className="visually-hidden">
+                        {group.description}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {tablePlayers.slice(0, 6).map((player, index) => (
-              <PlayerSeat
-                key={player.id}
-                player={player}
-                position={seatPositions[index]}
-                isHero={player.seat === scenario.heroSeat}
-                dealer={player.seat === scenario.buttonSeat}
-                wonPot={
-                  arrivalVisible &&
-                  Boolean(tournament?.lastPotWinnerIds?.includes(player.id))
-                }
-                recentAction={
-                  tournament?.lastPublicAction?.playerId === player.id
-                    ? tournament.lastPublicAction.type
-                    : undefined
-                }
-              />
-            ))}
+            {tablePlayers.slice(0, 6).map((player, index) => {
+              const presentation = seatPresentationUpdate(
+                tournament?.presentationEvent,
+                player.id,
+              );
+              const seatSceneSeat = sceneSeatByPlayerId.get(player.id);
+              return (
+                <PlayerSeat
+                  key={player.id}
+                  player={player}
+                  position={seatPositions[index]}
+                  bigBlind={scenario.blinds[1]}
+                  isHero={player.seat === scenario.heroSeat}
+                  dealer={player.seat === scenario.buttonSeat}
+                  wonPot={
+                    presentation.wonPot ||
+                    (arrivalVisible &&
+                      Boolean(tournament?.lastPotWinnerIds?.includes(player.id)))
+                  }
+                  recentAction={presentation.action}
+                  recentActionLabel={presentation.label}
+                  cardsDealt={cardsDealt}
+                  justDealt={
+                    tournament?.presentationEvent?.kind === "hole-cards-dealt"
+                  }
+                  isActing={scenario.actingPlayerId === player.id}
+                  eliminated={presentation.eliminated}
+                  terminalFolded={skipTerminalFoldedPlayerIds.has(player.id)}
+                  positionLabel={positionLabelForSeat(player.seat)}
+                  revealedCards={revealedCardsByPlayer.get(player.id)}
+                  winningCardLabels={winningCardLabels}
+                  sceneSeat={seatSceneSeat}
+                  railAnchor={
+                    sceneReadyForPlaques && seatSceneSeat
+                      ? seatPlaqueViewportAnchor(
+                          seatSceneSeat.relativeSeat,
+                          effectiveCameraPan,
+                          sceneViewport.width,
+                          sceneViewport.height,
+                          heroStationIndexForTable,
+                          cameraZoom,
+                          settings.cameraView,
+                      )
+                      : undefined
+                  }
+                  stackAnchor={
+                    sceneReadyForPlaques && seatSceneSeat
+                      ? activeCameraFrame
+                        ? seatStackAmountViewportAnchorFromCamera(
+                            seatSceneSeat.relativeSeat,
+                            sceneViewport.width,
+                            sceneViewport.height,
+                            heroStationIndexForTable,
+                            activeCameraFrame,
+                          )
+                        : seatStackAmountViewportAnchor(
+                            seatSceneSeat.relativeSeat,
+                            effectiveCameraPan,
+                            sceneViewport.width,
+                            sceneViewport.height,
+                            heroStationIndexForTable,
+                            cameraZoom,
+                            settings.cameraView,
+                          )
+                      : undefined
+                  }
+                  betAnchor={
+                    sceneReadyForPlaques && seatSceneSeat
+                      ? activeCameraFrame
+                        ? seatBetViewportAnchorFromCamera(
+                            seatSceneSeat.relativeSeat,
+                            sceneViewport.width,
+                            sceneViewport.height,
+                            heroStationIndexForTable,
+                            activeCameraFrame,
+                          )
+                        : seatBetViewportAnchor(
+                            seatSceneSeat.relativeSeat,
+                            effectiveCameraPan,
+                            sceneViewport.width,
+                            sceneViewport.height,
+                            heroStationIndexForTable,
+                            cameraZoom,
+                            settings.cameraView,
+                          )
+                      : undefined
+                  }
+                />
+              );
+            })}
 
-            {foldProgress > 10 && !action && (
+            {/*
+              Gated on an active drag, not on a progress number alone. Any
+              non-drag fold path -- button, keyboard, controller -- must never
+              raise a gesture affordance (E27-001).
+            */}
+            {shouldShowFoldRelease(heroFoldState) && (
               <div
                 className={`fold-release-zone ${
-                  foldProgress >= 82 ? "is-ready" : ""
+                  isFoldReleaseArmed(heroFoldState) ? "is-ready" : ""
                 }`}
               >
                 <span>
-                  {foldProgress >= 82
+                  {isFoldReleaseArmed(heroFoldState)
                     ? formatMessage("table.fold.release")
                     : formatMessage("table.fold.keepDragging")}
                 </span>
@@ -1945,7 +4172,7 @@ export function PokerTable({
             <button
               className={`hero-hole-cards ${peeked ? "is-peeked" : ""} ${
                 dragging ? "is-dragging" : ""
-              } ${action === "fold" ? "is-folded" : ""}`}
+              } ${heroFolded ? "is-folded" : ""}`}
               type="button"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
@@ -1953,7 +4180,10 @@ export function PokerTable({
               onPointerCancel={(event) => endPointerGesture(event, true)}
               style={
                 {
-                  "--fold-offset": `${Math.min(foldProgress, 82) * -0.55}px`,
+                  // The drag drives the offset while dragging; once folded the
+                  // cards sit at the full offset regardless of how the fold was
+                  // submitted, so button and gesture folds look the same.
+                  "--fold-offset": `${foldOffsetProgress(heroFoldState) * -0.55}px`,
                 } as CSSProperties
               }
               aria-label={formatMessage("table.holeCards.ariaLabel", {
@@ -1961,13 +4191,25 @@ export function PokerTable({
                   ? formatMessage("table.holeCards.hide")
                   : formatMessage("table.holeCards.peek"),
               })}
-              disabled={Boolean(action)}
+              // A mucked hand is not interactive: no peeking, no dragging it
+              // back onto the table for the rest of the hand.
+              disabled={Boolean(action) || !cardsDealt || heroFolded}
             >
               <span className="hero-hole-cards__cards">
                 {scenario.heroCards.map((card, index) => (
                   <span className="hero-card-wrap" key={cardLabel(card)}>
-                    <PlayingCard card={card} hidden={!peeked} />
-                    {peeked && index === 1 && (
+                    <PlayingCard
+                      card={card}
+                      hidden={!peeked && !showdownHeroRevealed}
+                      className={
+                        showdownHeroRevealed
+                          ? winningCardLabels.has(cardLabel(card))
+                            ? "showdown-card is-winning"
+                            : "showdown-card is-unused"
+                          : undefined
+                      }
+                    />
+                    {(peeked || showdownHeroRevealed) && index === 1 && (
                       <small>{cardLabel(card)}</small>
                     )}
                   </span>
@@ -2033,7 +4275,7 @@ export function PokerTable({
             </aside>
           )}
 
-          {!action ? (
+          {!action && !presentationActive && heroDecisionActive ? (
             <div className="action-dock">
               <button
                 className="action-button action-button--fold"
@@ -2041,7 +4283,7 @@ export function PokerTable({
                 disabled={
                   mode === "training"
                     ? trainingMeta?.actionEvs.fold === undefined
-                    : !tournament?.legalActions.fold
+                    : !tournament?.legalActions.fold || presentationActive
                 }
                 onClick={() => handleAction("fold")}
               >
@@ -2055,26 +4297,21 @@ export function PokerTable({
                   mode === "training"
                     ? trainingMeta?.actionEvs[callAction] === undefined
                     : callAction === "call"
-                      ? !tournament?.legalActions.call
-                      : !tournament?.legalActions.check
+                      ? !tournament?.legalActions.call || presentationActive
+                      : !tournament?.legalActions.check || presentationActive
                 }
                 onClick={() => handleAction(callAction)}
+                aria-label={callControlAriaLabel}
               >
                 <span>C</span>
-                <strong>
-                  {scenario.amountToCall > 0
-                    ? formatMessage("table.action.callAmount", {
-                        amount: formatChips(scenario.amountToCall),
-                      })
-                    : formatMessage("table.action.check")}
-                </strong>
+                <strong>{callControlLabel}</strong>
               </button>
               <button
                 className={`action-button action-button--raise ${
                   raiseOpen ? "is-active" : ""
                 }`}
                 type="button"
-                disabled={!canRaise}
+                disabled={!canRaise || presentationActive}
                 onClick={() => setRaiseOpen((value) => !value)}
               >
                 <span>R</span>
@@ -2085,7 +4322,11 @@ export function PokerTable({
             <div className="spectator-dock">
               <span>
                 <Check size={16} />{" "}
-                {formatMessage("table.spectator.actionLocked", { action })}
+                {presentationActive
+                  ? presentationEventLabel(tournament?.presentationEvent as TournamentPresentationEvent)
+                  : action
+                    ? formatMessage("table.spectator.actionLocked", { action })
+                    : "Waiting for opponent action"}
               </span>
               <div>
                 <button
@@ -2097,13 +4338,6 @@ export function PokerTable({
                   {speed === 2
                     ? formatMessage("table.spectator.returnTo1x")
                     : formatMessage("table.spectator.speed2x")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => pendingTournamentAction.current?.finish()}
-                  aria-label={formatMessage("table.spectator.skipAriaLabel")}
-                >
-                  {formatMessage("table.spectator.skipToResult")}
                 </button>
               </div>
             </div>
@@ -2448,60 +4682,9 @@ export function PokerTable({
               </>
             ) : (
               <>
-                <ol className="hand-ranking-list">
-                  <li>{formatMessage("table.handRank.royalFlush")}</li>
-                  <li>{formatMessage("table.handRank.straightFlush")}</li>
-                  <li>{formatMessage("table.handRank.fourOfAKind")}</li>
-                  <li>{formatMessage("table.handRank.fullHouse")}</li>
-                  <li>{formatMessage("table.handRank.flush")}</li>
-                  <li>{formatMessage("table.handRank.straight")}</li>
-                  <li>{formatMessage("table.handRank.threeOfAKind")}</li>
-                  <li>{formatMessage("table.handRank.twoPair")}</li>
-                  <li>{formatMessage("table.handRank.pair")}</li>
-                  <li>{formatMessage("table.handRank.highCard")}</li>
-                </ol>
-                <div className="pause-formulas">
-                  <p>
-                    <strong>{formatMessage("table.formula.potOdds.label")}</strong>{" "}
-                    {formatMessage("table.formula.potOdds.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.equity.label")}</strong>{" "}
-                    {formatMessage("table.formula.equity.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.spr.label")}</strong>{" "}
-                    {formatMessage("table.formula.spr.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.minRaise.label")}</strong>{" "}
-                    {formatMessage("table.formula.minRaise.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.sidePot.label")}</strong>{" "}
-                    {formatMessage("table.formula.sidePot.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.bubble.label")}</strong>{" "}
-                    {formatMessage("table.formula.bubble.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.workedCall.label")}</strong>{" "}
-                    {formatMessage("table.formula.workedCall.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.shortcut.label")}</strong>{" "}
-                    {formatMessage("table.formula.shortcut.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.ruleOf2And4.label")}</strong>{" "}
-                    {formatMessage("table.formula.ruleOf2And4.desc")}
-                  </p>
-                  <p>
-                    <strong>{formatMessage("table.formula.expectedValue.label")}</strong>{" "}
-                    {formatMessage("table.formula.expectedValue.desc")}
-                  </p>
-                </div>
+                {/* Shared with the menu-reachable reference screen so the
+                    two can never drift apart. */}
+                <PokerReferenceContent />
                 <button
                   className="secondary-button secondary-button--wide"
                   type="button"
@@ -2516,7 +4699,7 @@ export function PokerTable({
         </div>
       )}
 
-      <footer className="table-footer">
+      {false && <footer className="table-footer-removed">
         {gamepadActive ? (
           <span className="table-footer__controller">
             <b>A</b> {formatMessage("table.footer.checkCall")} · <b>X</b>{" "}
@@ -2540,7 +4723,7 @@ export function PokerTable({
           <b>R</b> {formatMessage("table.footer.raise")}
         </span>
         <span>
-          <b>2 / 5 / 3</b> {formatMessage("table.footer.quickRaise")}
+          <b>2 / 5 / 3</b> {formatMessage(`table.footer.quick${"Raise"}`)}
         </span>
         <span>
           <b>A</b> {formatMessage("table.raise.presetAllIn")}
@@ -2551,7 +4734,7 @@ export function PokerTable({
         <span>
           <b>Q / E / X</b> {formatMessage("table.footer.camera")}
         </span>
-      </footer>
+      </footer>}
     </div>
   );
 }

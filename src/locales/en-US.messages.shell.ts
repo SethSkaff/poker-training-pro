@@ -70,6 +70,9 @@ export const SHELL_MESSAGES = Object.freeze({
   "settings.display.heading": "Display",
   "settings.display.fullscreen.label": "Fullscreen",
   "settings.display.fullscreen.description": "Alt + Enter also changes display mode.",
+  "settings.display.spatialScene.label": "3D room (preview)",
+  "settings.display.spatialScene.description":
+    "Draws the table inside a three-dimensional championship room. Preview: the room is still being built. Controls, cards, and screen-reader information are identical either way, and this is ignored on hardware that cannot draw it.",
   "settings.display.reduceMotion.label": "Reduce motion",
   "settings.display.reduceMotion.description":
     "Use quiet fades instead of camera and object travel.",
@@ -424,7 +427,7 @@ export const SHELL_MESSAGES = Object.freeze({
   // consumed by src/modes/tournamentSession.ts and rendered by
   // src/components/Dashboard.tsx's career-tour event list/detail board).
   // These are naming/categorization labels, not calibrated poker content —
-  // see TODOS.md string-extraction verdict for the reasoning.
+  // These labels are covered by the locale catalog tests.
   "career.event.local-qualifier": "Local Qualifier",
   "career.event.regional-open": "Regional Open",
   "career.event.circuit-main": "Circuit Main Event",

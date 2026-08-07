@@ -46,6 +46,19 @@ const { safeSendToRenderer } = require("./safe-send.cjs");
 
 const isDevelopment = !app.isPackaged;
 const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
+// Test-only renderer capability override used by the packaged scene fallback
+// audit. The renderer cannot infer this from a CDP override after it has
+// already started loading three.js, so main forwards an explicit, isolated
+// argument through preload instead.
+const forceWebGl2Failure = process.argv.includes("--ptp-force-webgl2-failure");
+// Electron does not automatically copy arbitrary main-process command-line
+// switches into renderer `process.argv`. Forward only the two fixed audit
+// fixtures, and only alongside the existing isolated lifecycle capability.
+const auditSceneSeed = lifecycleSmokeEnabled ? parseAuditSceneSeed(process.argv) : null;
+// Packaged scene audits must exercise CSS media queries against a real native
+// BrowserWindow. CDP device metrics change the visual viewport but not the
+// Electron window bounds that drive compact desktop layout.
+const auditWindowSize = lifecycleSmokeEnabled ? parseAuditWindowSize(process.argv) : null;
 const APP_PROTOCOL = "poker-training-pro";
 protocol.registerSchemesAsPrivileged([
   {
@@ -88,10 +101,14 @@ function broadcastLifecycle(payload) {
 
 function createWindow() {
   let healthySessionTimer;
+  const windowWidth = auditWindowSize?.width ?? 1440;
+  const windowHeight = auditWindowSize?.height ?? 920;
   const window = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 1100,
+    width: windowWidth,
+    height: windowHeight,
+    // 1024×768 is a supported compact desktop audit target. Retain the normal
+    // 1100px player minimum outside this explicit package-only test path.
+    minWidth: auditWindowSize ? 1024 : 1100,
     minHeight: 720,
     backgroundColor: "#07130f",
     title: "Poker Training Pro",
@@ -99,15 +116,28 @@ function createWindow() {
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
+      /*
+        Chromium throttles timers to roughly once a second and suspends
+        animation frames in a backgrounded window. For an app that is mostly a
+        clock -- blind levels, decision timers, and a presentation queue that
+        hands one public event to the renderer at a time -- that reads to the
+        player as the game stopping dead the moment they click a window on
+        another monitor. The table is still fully visible; only keyboard focus
+        moved. Genuine invisibility (minimize, screen lock, system suspend) is
+        handled explicitly by the lifecycle bridge and still freezes the hand.
+      */
+      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
       webviewTag: false,
       devTools: isDevelopment,
-      additionalArguments: lifecycleSmokeEnabled
-        ? ["--ptp-lifecycle-smoke"]
-        : [],
+      additionalArguments: [
+        ...(lifecycleSmokeEnabled ? ["--ptp-lifecycle-smoke"] : []),
+        ...(forceWebGl2Failure ? ["--ptp-force-webgl2-failure"] : []),
+        ...(auditSceneSeed ? [`--ptp-scene-audit-seed=${auditSceneSeed}`] : []),
+      ],
     },
   });
 
@@ -175,6 +205,26 @@ function createWindow() {
   } else {
     window.loadURL(`${APP_PROTOCOL}://app/index.html`);
   }
+}
+
+function parseAuditWindowSize(argv) {
+  const flag = argv.find((entry) => entry.startsWith("--ptp-audit-window-size="));
+  if (!flag) return null;
+  const match = /^--ptp-audit-window-size=(\d{4})x(\d{3,4})$/.exec(flag);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isInteger(width) || !Number.isInteger(height)
+    || width < 1024 || width > 3840 || height < 720 || height > 2160) return null;
+  return { width, height };
+}
+
+function parseAuditSceneSeed(argv) {
+  const flag = argv.find((entry) => entry.startsWith("--ptp-scene-audit-seed="));
+  const value = flag?.slice("--ptp-scene-audit-seed=".length);
+  return value === "runner-showdown-3" || value === "scene-side-pot-0"
+    ? value
+    : null;
 }
 
 /**
@@ -773,6 +823,13 @@ async function showProcessRecovery(window, failureKind) {
     const buttons = unresponsive
       ? ["Wait", "Reload app", "Quit"]
       : ["Reload app", "Quit"];
+    // A renderer failure can leave a hidden/minimized native window behind.
+    // Bring that existing window forward before asking for recovery; otherwise
+    // the application appears to have simply disappeared even though its main
+    // process is alive and holding the player's autosave.
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
     const selection = await dialog.showMessageBox(window, {
       type: "error",
       title: "Poker Training Pro needs attention",
@@ -783,7 +840,10 @@ async function showProcessRecovery(window, failureKind) {
         "Your last acknowledged autosave is kept separately. Reload the app to recover it, or quit without deleting progress.",
       buttons,
       defaultId: unresponsive ? 0 : 0,
-      cancelId: unresponsive ? 0 : 1,
+      // Closing the recovery prompt (Escape/Alt+F4) must never silently choose
+      // Quit after a crash.  Reload is the safe default and retains the
+      // separately committed autosave.
+      cancelId: 0,
       noLink: true,
     });
     if (window.isDestroyed()) return;

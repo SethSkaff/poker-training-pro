@@ -89,6 +89,7 @@ export interface NormalDecision {
   usedPersonalityDeviation: boolean;
   reason: string;
   publicSignals: PublicExploitSignals;
+  adaptationPressure: number;
 }
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
@@ -134,7 +135,7 @@ export const NORMAL_OPPONENT_PROFILES = Object.freeze({
       bluffAppetite: 0.14,
     },
     competenceRate: 0.95,
-    maxEvLossBb: 0.12,
+    maxEvLossBb: 0.1,
   }),
   tempo: makeProfile({
     id: "tempo",
@@ -149,7 +150,7 @@ export const NORMAL_OPPONENT_PROFILES = Object.freeze({
       bluffAppetite: 0.4,
     },
     competenceRate: 0.94,
-    maxEvLossBb: 0.18,
+    maxEvLossBb: 0.16,
   }),
   pressure: makeProfile({
     id: "pressure",
@@ -622,6 +623,20 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
   );
   const best = ranked[0];
   const bestEv = best.estimatedEv;
+  // The EV budget bounds how far a personality may stray from the best line.
+  //
+  // E11-002 named a narrow budget as "Cause 4" -- the personality layer had
+  // nothing to choose from. Measurement after fixing Causes 1-3 shows the
+  // premise no longer holds the same way: the median gap to the second-best
+  // action across the 36 canonical league cells is 1.05 BB, so widening the
+  // budget far enough to manufacture deviations also admits genuine blunders
+  // (at a 27 BB pot a pot-scaled budget admitted a 3.3 BB EV loss, and
+  // profiles began folding and shoving where continuing is clearly right).
+  //
+  // A skilled professional facing clearly-separated options *should* take the
+  // best line. Personality distinctness is therefore enforced directly, by
+  // asserting the profiles differ from one another (see botLeague.test.ts),
+  // rather than by inflating this budget until they diverge by accident.
   const hardBudget = profile.maxEvLossBb * input.bigBlind;
   const signals = derivePublicExploitSignals(
     input.informationSet,
@@ -629,7 +644,20 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
   );
   const hand = analyzePrivateHand(input.informationSet);
   const random = createSeededRandom(publicDecisionSeed(input, profile));
-  const useBest = random() < profile.competenceRate;
+  // Adaptation changes the *frequency* of bounded deviations, not the action
+  // legality or the EV-loss ceiling. A credible folder/caller creates more
+  // pressure opportunities for aggressive profiles; a noisy tiny sample does
+  // almost nothing because confidence is Bayesian-shrunk above.
+  const adaptationPressure = clamp01(
+    signals.confidence *
+      (signals.foldToPressure * profile.personality.aggression * 0.9 +
+        signals.looseness * profile.personality.aggression * 0.35),
+  );
+  const deviationProbability = clamp01(
+    (1 - profile.competenceRate) * (1 + adaptationPressure) +
+      profile.personality.bluffAppetite * 0.025,
+  );
+  const useBest = random() >= deviationProbability;
 
   const deviations = ranked.slice(1).filter((evaluation) => {
     const loss = bestEv - evaluation.estimatedEv;
@@ -671,7 +699,8 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
     usedPersonalityDeviation: !selectedBestAction,
     reason: selectedBestAction
       ? `${profile.name} selected the highest modeled-EV line under its current range estimate.`
-      : `${profile.name} used a bounded ${purpose} deviation supported by its own hole-card texture and public action history.`,
+      : `${profile.name} used a bounded ${purpose} deviation supported by its own hole-card texture and public action history${adaptationPressure > 0.08 ? "; public pressure signals increased its attack frequency" : ""}.`,
     publicSignals: signals,
+    adaptationPressure,
   };
 }

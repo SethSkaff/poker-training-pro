@@ -42,6 +42,11 @@ body,
 body {
   min-height: 100vh;
   overflow-x: hidden;
+  /* This is a game surface, not a document: a drag anywhere in the room must
+     never turn HUD copy or tournament status into a blue text-selection
+     highlight.  Actual text-entry controls opt back in below. */
+  -webkit-user-select: none;
+  user-select: none;
   background:
     radial-gradient(circle at 50% -20%, rgba(46, 199, 174, 0.12), transparent 42%),
     var(--bg);
@@ -52,6 +57,12 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 button {
@@ -1743,9 +1754,31 @@ input[type="range"]::-webkit-slider-thumb {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
+  /* A poker table is a direct-manipulation game surface, not a document.
+     Prevent browser selection from taking over a held felt drag. */
+  -webkit-user-select: none;
+  user-select: none;
   background:
     radial-gradient(ellipse at 48% 15%, rgba(43, 112, 90, 0.2), transparent 38%),
     linear-gradient(#08130f, #030907 72%);
+}
+
+/* Preserve normal editing behaviour for the few genuine form controls. */
+.table-screen input:not([type="range"]),
+.table-screen textarea,
+.table-screen [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.table-stage {
+  overscroll-behavior: contain;
+  touch-action: none;
+  cursor: grab;
+}
+
+.table-stage:has(*:active) {
+  cursor: grabbing;
 }
 
 .table-screen::before {
@@ -2094,6 +2127,7 @@ input[type="range"]::-webkit-slider-thumb {
 .room-flight__background-art {
   position: absolute;
   z-index: 0;
+  pointer-events: none;
   inset: -9%;
   width: 118%;
   height: 118%;
@@ -2116,6 +2150,7 @@ input[type="range"]::-webkit-slider-thumb {
 .room-flight__venue {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   transform-origin: 50% 72%;
   animation: championship-flythrough 4.3s cubic-bezier(0.3, 0.02, 0.15, 1) forwards;
 }
@@ -2193,11 +2228,118 @@ input[type="range"]::-webkit-slider-thumb {
   transform-style: preserve-3d;
 }
 
-.venue-table:nth-child(1) { top: 8%; left: 4%; transform: scale(0.63); }
-.venue-table:nth-child(2) { top: 3%; right: 5%; transform: scale(0.68); }
-.venue-table:nth-child(3) { top: 34%; left: 18%; transform: scale(0.88); }
-.venue-table:nth-child(4) { top: 31%; right: 15%; transform: scale(0.92); }
-.venue-table:nth-child(5) { top: 58%; left: 50%; transform: translateX(-50%) scale(1.28); }
+/*
+  Table placement runs back-to-front: slot 1 sits against the far wall, the
+  last slot is the one the camera passes closest to on its way to the hero
+  chair. Every tier from `national` up asks for six to eight tables, so all
+  eight slots are placed -- an unplaced table would collapse to the layer's
+  top-left corner and read as a graphical fault rather than a room.
+*/
+.venue-table:nth-child(1) { top: 2%; left: 6%; }
+.venue-table:nth-child(2) { top: 0%; right: 7%; }
+.venue-table:nth-child(3) { top: 12%; left: 34%; }
+.venue-table:nth-child(4) { top: 27%; left: 2%; }
+.venue-table:nth-child(5) { top: 25%; right: 3%; }
+.venue-table:nth-child(6) { top: 44%; left: 14%; }
+.venue-table:nth-child(7) { top: 42%; right: 12%; }
+.venue-table:nth-child(8) { top: 62%; left: 50%; margin-left: -130px; }
+
+/*
+  Depth does the rest. Scale grows towards the camera, and the sweep the table
+  makes during the fly-through is proportional to depth, so near tables slide
+  past quickly while the far wall barely moves -- parallax, which is what makes
+  the shot read as travel through a space rather than a zoom on a picture.
+*/
+/*
+  The sweep values are set on the container and change with the fly-through
+  phase. `transform` is what transitions, not the custom property, so this
+  interpolates smoothly without needing `@property` registration: the variable
+  flips at the phase change and the transform eases to its new value.
+*/
+.venue-tables {
+  --venue-sweep: 0px;
+  --venue-rise: 0px;
+}
+
+.room-flight--room .venue-tables {
+  --venue-sweep: 26px;
+  --venue-rise: 104px;
+}
+
+.room-flight--seat .venue-tables {
+  --venue-sweep: 62px;
+  --venue-rise: 290px;
+}
+
+.venue-table {
+  --venue-depth: 0.5;
+  --venue-grandeur: 1;
+  transition: transform 1.7s cubic-bezier(0.3, 0.02, 0.15, 1);
+  transform:
+    translate3d(
+      calc(var(--venue-depth) * var(--venue-sweep, 0px)),
+      calc(var(--venue-depth) * var(--venue-rise, 0px)),
+      0
+    )
+    scale(calc((0.58 + var(--venue-depth) * 0.72) * var(--venue-grandeur)));
+}
+
+.venue-table__dealer {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 30px;
+  height: 54px;
+  transform: translateX(-50%);
+}
+
+/* Head, house jacket, and the dealer's chip tray in front of them. */
+.venue-table__dealer i {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  width: 18px;
+  height: 20px;
+  border-radius: 48% 48% 42% 42%;
+  background: #d0a077;
+}
+
+.venue-table__dealer b {
+  position: absolute;
+  right: 0;
+  bottom: 12px;
+  left: 0;
+  height: 34px;
+  border-radius: 13px 13px 3px 3px;
+  background: linear-gradient(135deg, #2b3440, #12171d);
+}
+
+.venue-table__dealer em {
+  position: absolute;
+  bottom: 0;
+  left: -9px;
+  width: 48px;
+  height: 9px;
+  border-radius: 3px;
+  background: linear-gradient(#2a1c12, #150e08);
+  box-shadow: inset 0 1px rgba(255, 205, 128, 0.35);
+}
+
+/* A guest's chips: three banded rows, enough to read as a stack in silhouette. */
+.venue-stack {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  width: 13px;
+  height: 12px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    #e8e2d6 0 2px,
+    #b3271f 2px 4px
+  );
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  transform: translateX(-50%);
+}
 
 .venue-table__felt {
   position: absolute;
@@ -2510,6 +2652,281 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 0 0 auto;
 }
 
+/* Tier changes are procedural atmosphere layers, not copied venue art. */
+.room-flight[data-event-tier="regional"] .venue-lights i:nth-child(odd) { background: #78d8ff; }
+.room-flight[data-event-tier="circuit"] .venue-lights i:nth-child(3n) { background: #d58cff; }
+.room-flight[data-event-tier="circuit"] .venue-table { filter: saturate(1.1); }
+.room-flight[data-event-tier="national"] .venue-marquee { border-color: rgba(255, 210, 112, .9); transform: scale(1.08); }
+.room-flight[data-event-tier="national"] .venue-table { filter: saturate(1.15) brightness(1.08); }
+.room-flight[data-event-tier="championship"] .venue-marquee { border-color: rgba(255, 210, 112, .9); transform: scale(1.1); }
+.room-flight[data-event-tier="championship"] .venue-table { filter: saturate(1.2) brightness(1.12); }
+.room-flight[data-event-tier="world"] .venue-lights i { background: #ffe39b; box-shadow: 0 0 22px rgba(255, 192, 78, .85); }
+/*
+  Tier grandeur scales the room up rather than replacing the transform: the
+  depth transform is what carries the parallax, so a flat `scale()` here would
+  overwrite it and flatten the whole shot back into a zoom.
+*/
+.room-flight[data-event-tier="world"] .venue-table { --venue-grandeur: 1.1; filter: saturate(1.25) brightness(1.14); }
+.room-flight[data-event-tier="world"] .venue-guest:nth-child(odd) { transform: scale(1.14); }
+
+/* A fixed status lane for the player instead of a hidden near-camera seat.
+   It is deliberately outside the moving poker scene and well clear of the
+   central alert, right-side camera controls, bottom cards, and action dock. */
+/*
+  The tournament HUD replaces the old `.hero-stack-hud` panel (E27-008).
+
+  That panel was titled "Your stack" and carried the hero's stack, commitment,
+  and position in the top-left corner -- a dashboard widget for facts that
+  belong in front of the player, on their seat, attached to their chips. Those
+  moved to the seat. What is left here is what genuinely has nowhere else to
+  live: global tournament state that belongs to the room rather than to any
+  seat -- blinds, ante, level, time to the next level, players left.
+
+  Deliberately a single quiet row of short labels beside numbers. It is a
+  readout, not a place for prose.
+*/
+.tournament-hud {
+  position: absolute;
+  z-index: 34;
+  top: clamp(16px, 2.1vh, 26px);
+  left: clamp(16px, 1.8vw, 28px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 13px;
+  border: 1px solid rgba(237, 189, 98, 0.48);
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: #fff7df;
+  background: rgba(3, 13, 9, 0.91);
+  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.38);
+  font-variant-numeric: tabular-nums;
+}
+
+.tournament-hud > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: #fff7df;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tournament-hud b {
+  color: var(--gold-soft);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Stack depth beside the chips it describes, on every seat (E27-008). */
+.seat-label__depth {
+  color: var(--cyan);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.showdown-result-strip {
+  position: absolute;
+  z-index: 35;
+  top: clamp(16px, 2.1vh, 26px);
+  left: 50%;
+  min-width: min(360px, calc(100% - 390px));
+  transform: translateX(-50%);
+  border: 1px solid rgba(237, 189, 98, 0.38);
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: #fff4d0;
+  background: rgba(19, 28, 17, 0.92);
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+
+.showdown-result-strip > span {
+  color: var(--gold-soft);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.showdown-result-strip p {
+  margin: 3px 0 0;
+  font-size: 10px;
+}
+
+/* The end-of-hand reveal is a compact dealer presentation, not another line
+   of HUD copy.  It appears only for the runner's public showdown event. */
+.showdown-tableau {
+  position: absolute;
+  z-index: 36;
+  top: clamp(72px, 11vh, 122px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.showdown-tableau__hand {
+  display: grid;
+  justify-items: center;
+  min-width: 250px;
+  padding: 9px 16px 7px;
+  border: 1px solid rgba(255, 211, 98, .78);
+  border-radius: 13px;
+  color: #fff4d5;
+  background: linear-gradient(160deg, rgba(41, 31, 12, .96), rgba(16, 26, 18, .94));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .54), 0 0 24px rgba(255, 192, 56, .18);
+}
+
+.showdown-tableau__hand header {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.showdown-tableau__hand header strong {
+  color: #ffe49c;
+  font-size: 16px;
+  letter-spacing: .045em;
+  text-shadow: 0 0 12px rgba(255, 199, 59, .4);
+}
+
+.showdown-tableau__hand header span,
+.showdown-tableau__hand small {
+  color: #d8cfb7;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.showdown-tableau__cards {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  min-height: 69px;
+  margin: 5px 0 2px;
+  padding: 0 15px;
+}
+
+.showdown-tableau__card {
+  display: block;
+  margin-left: -14px;
+  transform: translateY(calc(var(--showdown-index) * -2px)) rotate(calc((var(--showdown-index) - 2) * 2deg));
+  transform-origin: center bottom;
+  animation: showdown-dealer-lift 360ms cubic-bezier(.2, .88, .33, 1) both;
+  animation-delay: calc(var(--showdown-index) * 48ms);
+}
+
+.showdown-tableau__card:first-child { margin-left: 0; }
+.showdown-tableau__card--hole .playing-card { border-color: #ffe197; }
+.showdown-tableau__card--board .playing-card { border-color: #f5d36f; }
+
+@keyframes showdown-dealer-lift {
+  from { opacity: 0; transform: translateY(28px) rotate(calc((var(--showdown-index) - 2) * 2deg)); }
+  to { opacity: 1; transform: translateY(calc(var(--showdown-index) * -2px)) rotate(calc((var(--showdown-index) - 2) * 2deg)); }
+}
+
+.side-pot-strip {
+  position: absolute;
+  z-index: 35;
+  top: clamp(74px, 9vh, 104px);
+  left: 50%;
+  min-width: 180px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(99, 192, 226, .5);
+  border-radius: 10px;
+  padding: 7px 11px;
+  color: #e4fbff;
+  background: rgba(5, 30, 39, .94);
+  box-shadow: 0 7px 18px rgba(0, 0, 0, .35);
+  text-align: center;
+}
+
+.side-pot-strip > span { color: var(--cyan); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.side-pot-strip > strong { margin-left: 6px; font-size: 14px; }
+.side-pot-strip p { margin: 3px 0 0; color: #c9e9ee; font-size: 9px; }
+.side-pot-strip small {
+  display: block;
+  max-width: 285px;
+  margin: 5px auto 0;
+  color: #b7dbe5;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.all-in-banner {
+  position: absolute;
+  z-index: 36;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  min-width: 210px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 118, 86, .82);
+  border-radius: 13px;
+  padding: 10px 16px;
+  color: #fff4e5;
+  background: rgba(65, 14, 10, .92);
+  box-shadow: 0 0 0 4px rgba(255, 118, 86, .15), 0 12px 28px rgba(0, 0, 0, .4);
+  text-align: center;
+  animation: all-in-arrival 720ms cubic-bezier(.18,.82,.22,1) both;
+}
+
+.all-in-banner > span { color: #ffae78; font-size: 9px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
+.all-in-banner > strong { font-family: "Barlow Condensed", sans-serif; font-size: 24px; }
+.all-in-banner > small { color: #ffd7bb; font-size: 9px; }
+@keyframes all-in-arrival { from { opacity: 0; transform: translate(-50%, -50%) scale(.78); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+
+.all-in-equity-strip {
+  position: absolute;
+  z-index: 36;
+  top: clamp(132px, 17vh, 188px);
+  right: clamp(18px, 3vw, 48px);
+  width: min(248px, 30vw);
+  border: 1px solid rgba(255, 191, 92, .6);
+  border-radius: 11px;
+  padding: 8px 10px;
+  color: #fff7e8;
+  background: rgba(37, 22, 11, .94);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .38);
+}
+
+.all-in-equity-strip > span {
+  display: block;
+  color: #ffcb72;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.all-in-equity-strip p { display: grid; grid-template-columns: 1fr auto; gap: 1px 7px; margin: 5px 0 0; font-size: 10px; }
+.all-in-equity-strip p > strong { color: #fff0bd; }
+.all-in-equity-strip p > small { grid-column: 1 / -1; color: #e6cda1; font-size: 8px; }
+.all-in-equity-strip > small { display: block; margin-top: 6px; color: #ddc18d; font-size: 8px; line-height: 1.3; }
+
+.all-in-showdown-stage {
+  position: absolute; z-index: 17; left: 50%; top: 20%; transform: translateX(-50%);
+  display: flex; align-items: flex-start; justify-content: center; gap: 16px;
+  pointer-events: none; animation: all-in-hand-stage 520ms cubic-bezier(.18,.82,.22,1) both;
+}
+.all-in-showdown-hand { display: grid; justify-items: center; gap: 4px; color: #fff0bd; font-size: 10px; text-shadow: 0 1px 3px #160c06; }
+.all-in-showdown-hand > span { display: flex; margin-left: -8px; }
+.all-in-showdown-hand .playing-card { margin-left: -8px; box-shadow: 0 3px 9px #10080699; }
+@keyframes all-in-hand-stage { from { opacity: 0; transform: translate(-50%, 18px) scale(.86); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+
+.showdown-result-strip p + p {
+  border-top: 1px solid rgba(255, 255, 255, .1);
+  padding-top: 3px;
+}
+
 .table-stage::before {
   position: absolute;
   right: 0;
@@ -2518,6 +2935,105 @@ input[type="range"]::-webkit-slider-thumb {
   height: 1px;
   background: rgba(255, 255, 255, 0.055);
   content: "";
+}
+
+/* ---------------------------------------------------------------------------
+   Room depth (E09-002 parallax / E09-003 spatial look).
+
+   Three planes translate at different fractions of --camera-pan: distant hall
+   at 0.28x, mid-ground tables at 0.62x, the table plane itself at 1x. That
+   ratio is the entire illusion -- looking left genuinely reveals a different
+   relationship between the layers instead of sliding one flat image.
+
+   The parallax is a transform on a `translateX` the camera already sets, so it
+   inherits the camera's own transition and the vestibular motion tier. It is
+   suppressed with camera motion off, where the layers simply sit at rest.
+--------------------------------------------------------------------------- */
+
+.room-depth {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.room-depth__far,
+.room-depth__mid {
+  position: absolute;
+  right: -14%;
+  left: -14%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  transition: transform 320ms ease;
+}
+
+.room-depth__far {
+  bottom: 61%;
+  height: 116px;
+  /* 0.28x: the far wall barely shifts, which is what reads as distance. */
+  transform: translateX(calc(var(--camera-pan, 0px) * -0.72));
+  opacity: 0.5;
+  filter: blur(1.6px);
+}
+
+.room-depth__mid {
+  bottom: 52%;
+  height: 84px;
+  transform: translateX(calc(var(--camera-pan, 0px) * -0.38));
+  opacity: 0.72;
+  filter: blur(0.6px);
+}
+
+/* Distant tables: an ellipse with a rail and a suggestion of seated players. */
+.room-depth__far i,
+.room-depth__mid i {
+  position: relative;
+  width: 92px;
+  height: 34px;
+  border: 3px solid rgba(14, 22, 19, 0.9);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #1b5240, #0e3125);
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.45);
+}
+
+.room-depth__mid i {
+  width: 128px;
+  height: 46px;
+}
+
+.room-depth__far i::before,
+.room-depth__mid i::before {
+  content: "";
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 15px;
+  height: 15px;
+  transform: translateX(-50%);
+  border-radius: 50% 50% 40% 40%;
+  background: #2b2119;
+}
+
+.room-depth__far i::after,
+.room-depth__mid i::after {
+  content: "";
+  position: absolute;
+  right: -8px;
+  bottom: -4px;
+  left: -8px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.42);
+  filter: blur(3px);
+}
+
+:root[data-camera-motion="off"] .room-depth__far,
+:root[data-camera-motion="off"] .room-depth__mid,
+.table-screen[data-camera-motion="off"] .room-depth__far,
+.table-screen[data-camera-motion="off"] .room-depth__mid {
+  transform: none;
+  transition: none;
 }
 
 .room-lights {
@@ -2586,6 +3102,42 @@ input[type="range"]::-webkit-slider-thumb {
   background: rgba(93, 228, 206, 0.07);
 }
 
+.camera-controls__center {
+  display: grid;
+  width: auto;
+  min-width: 86px;
+  height: 26px;
+  padding: 0 8px;
+  gap: 0;
+  place-items: center;
+  line-height: 1.1;
+}
+
+.camera-controls__center > span {
+  font-size: 7px;
+  letter-spacing: 0.09em;
+}
+
+.camera-controls__center > b {
+  color: var(--cyan);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.camera-controls__center:disabled {
+  cursor: default;
+}
+
+.camera-controls__center:disabled > b {
+  color: var(--muted);
+}
+
+.camera-controls__center:disabled:hover {
+  color: var(--muted);
+  background: transparent;
+}
+
 .poker-scene {
   position: absolute;
   top: 30px;
@@ -2593,7 +3145,414 @@ input[type="range"]::-webkit-slider-thumb {
   bottom: 150px;
   left: 0;
   transform: translateX(var(--camera-pan));
-  transition: transform 320ms ease;
+  /* Free-look is driven continuously by held-pointer movement.  A long eased
+     transition made that motion feel like delayed, discrete seat jumps even
+     though the camera value was a float. */
+  transition: transform 55ms linear;
+}
+
+/*
+  The 3D room sits behind every table element (E09-001 M1). It is decorative
+  and inert: the DOM table above keeps all hit-testing, focus, and assistive
+  semantics, so a pointer never lands on the canvas and a keyboard never reaches
+  it. `z-index: 0` puts it under the felt without leaving the stacking context,
+  and the canvas is sized by the renderer rather than by CSS pixels so the
+  device-pixel-ratio cap in `tableScene.ts` actually governs fragment cost.
+*/
+.table-scene-3d {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/*
+  Scene-ready composition contract (D3D-M103): the WebGL layer owns the felt,
+  rail, physical chairs/bodies, and chip geometry. The DOM remains mounted as
+  the accessible, interactive HUD: cards, player/stack/bet labels, position
+  markers, action state, and controls never enter this decorative fade.
+
+  The table's opaque CSS surface was previously left in front of the canvas,
+  making an otherwise-ready 3D table read like a hidden prototype. Keep its
+  geometry for DOM anchoring, but make only its physical paint transparent.
+  There is intentionally no transition here: a lost/failed context must restore
+  the complete 2.5D picture in the same rendered frame.
+*/
+.poker-scene[data-spatial-scene="ready"] .poker-table {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .poker-table::before,
+.poker-scene[data-spatial-scene="ready"] .poker-table::after,
+.poker-scene[data-spatial-scene="ready"] .seat-figure,
+.poker-scene[data-spatial-scene="ready"] .seat-chip-stack,
+.poker-scene[data-spatial-scene="ready"] .center-pot {
+  /* These are retained for the accessibility/fallback DOM but must contribute
+     no residual 2.5D paint: at 6% their oversized heads/chairs still read as
+     clipped duplicate people against the dark WebGL room. */
+  opacity: 0;
+}
+
+/* `.felt-ring` is also the DOM anchor for community cards and pot/readout
+   facts. Fade its border only: setting opacity on the container would dim every
+   one of those children and make the accessible HUD visually unreadable. */
+.poker-scene[data-spatial-scene="ready"] .felt-ring {
+  border-color: transparent;
+}
+
+.poker-table[data-spatial-scene="ready"] .felt-brand,
+.poker-table[data-spatial-scene="ready"] .community-placeholder {
+  opacity: 0;
+}
+
+/* -------------------------------------------------------------------------
+   Direction A / open-arc-v1.  This is a structural ready-mode layout, not a
+   tuned version of the fallback ellipse: the canvas gets the complete room,
+   the dashboard column stops claiming width, and DOM remains the accessible
+   text/control mirror above it.  The fallback rules above remain untouched. */
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) {
+  display: block;
+  height: calc(100vh - 62px);
+  padding: 0;
+}
+
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .table-stage {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #0b0f0e;
+}
+
+/* Secondary information remains mounted for assistive technology and pause
+   navigation, but ordinary play no longer gives it a permanent dashboard bay. */
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .training-panel,
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .feedback-panel,
+.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .mode-preview-panel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .poker-scene {
+  inset: 0;
+  transform: none;
+  transition: none;
+}
+
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .poker-table {
+  inset: 0;
+  width: auto;
+  height: auto;
+  transform: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.poker-scene[data-spatial-scene="ready"] .opponent-cards,
+.poker-scene[data-spatial-scene="ready"] .dealer,
+.poker-scene[data-spatial-scene="ready"] .pot-groups,
+.poker-scene[data-spatial-scene="ready"] .table-readout {
+  opacity: 0;
+}
+
+/*
+  The board is dealt onto the felt, so the DOM community row must not paint a
+  second copy of it floating over the table. Four crisp flat cards hanging in
+  screen space in front of the physical board were the last "UI pasted into the
+  scene" element left in the seated frame, and they were the reason the real
+  cards behind them looked like a mistake.
+
+  Faded, not unmounted: this row carries the accessible community-card label and
+  it is the real cue in the 2.5D fallback, so it stays mounted and stays in the
+  accessibility tree. `animation: none` is required as well -- the deal-in
+  keyframes run with `both`, and a filled animation outranks this opacity.
+*/
+.poker-scene[data-spatial-scene="ready"] .community-cards,
+.poker-scene[data-spatial-scene="ready"] .community-cards .playing-card {
+  opacity: 0;
+  animation: none;
+  transition: none;
+}
+
+/*
+  Five DOM plaques are attached to the open forward arc by *projecting the
+  physical rail*, not by fixed viewport percentages.  The previous anchors
+  (14%/57%, 18%/31%, 50%/21%, 82%/31%, 86%/57%) matched no actual chair: the
+  two near-side plaques landed in unlit room a metre outside the rail, and the
+  centre plaque collided with the main pot plaque.  `--seat-rail-x/y` come from
+  `seatPlaqueViewportAnchor`, so a plaque tracks its own chair through pan and
+  every responsive camera depth.  The percentages below are only the fallback
+  used for the frame before the scene reports its size.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat--hero { left: 50%; bottom: 15%; top: auto; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--lower-left { --seat-rail-x-default: 22%; --seat-rail-y-default: 60%; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--upper-left { --seat-rail-x-default: 33%; --seat-rail-y-default: 46%; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--top { --seat-rail-x-default: 50%; --seat-rail-y-default: 43%; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--upper-right { --seat-rail-x-default: 67%; --seat-rail-y-default: 46%; }
+.poker-scene[data-spatial-scene="ready"] .player-seat--lower-right { --seat-rail-x-default: 78%; --seat-rail-y-default: 60%; }
+
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) {
+  left: var(--seat-rail-x, var(--seat-rail-x-default));
+  top: var(--seat-rail-y, var(--seat-rail-y-default));
+  bottom: auto;
+  right: auto;
+  /* The anchor is the rail point, so the plaque stack sits directly above it. */
+  transform: translate(-50%, -100%);
+}
+
+/*
+  The physical dealer puck and blind markers are the world-space owners of that
+  information, so the DOM badges must not paint a second copy floating beside
+  the plaque. They stay mounted for the accessible seat label and the 2.5D
+  fallback, which is the only place they are the real cue.
+*/
+.poker-scene[data-spatial-scene="ready"] .dealer-button {
+  opacity: 0;
+  animation: none;
+}
+
+/*
+  `opacity: 0` alone does not hide these. `.opponent-cards` carries
+  `animation: opponent-card-deal ... both`, and a running animation's keyframed
+  opacity beats a plain declaration in the cascade -- so the DOM card mirrors
+  kept painting over the room while the physical cards were also drawn. The
+  extra `.player-seat` raises specificity above the later `.is-folded`/
+  `.is-revealed` animation rules. Opacity, not visibility, so the revealed-card
+  text stays in the accessibility tree.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat .opponent-card-hand,
+.poker-scene[data-spatial-scene="ready"] .player-seat .opponent-cards {
+  opacity: 0;
+  animation: none;
+  transition: none;
+}
+
+/* Numeric facts are projected from scene-space anchors. They are not children
+   of the rail plaque's moving box, so a pan or zoom cannot leave the number
+   behind while the physical rack/bet moves. */
+.poker-scene[data-spatial-scene="ready"] .player-seat {
+  position: static;
+  width: 0;
+  height: 0;
+  transform: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-label {
+  position: absolute;
+  left: var(--seat-stack-x);
+  top: var(--seat-stack-y);
+  z-index: 20;
+  margin: 0;
+  opacity: 0.98;
+  transform: translate(-50%, 0);
+  animation: none;
+  transition: none;
+  pointer-events: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-bet {
+  position: absolute;
+  left: var(--seat-bet-x);
+  top: var(--seat-bet-y);
+  z-index: 20;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  padding: 2px 6px;
+  opacity: 0.98;
+  transform: translate(-50%, -50%);
+  animation: none;
+  transition: none;
+  pointer-events: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat--hero {
+  visibility: visible;
+  pointer-events: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat--hero .seat-figure {
+  visibility: hidden;
+}
+
+/*
+  Ready-mode seat tags are gone entirely.
+
+  Two independent reasons landed on the same answer. The owner called them "really
+  bad and distracting" and then asked for no floating UI at all; and a study of
+  PokerStars VR found *zero* floating nameplates at its poker tables across every
+  screenshot from 2019 to 2026 -- stack and name information lives in a menu, while
+  the table itself carries only physical objects.
+
+  They stay mounted and keep their accessible text, so screen readers, the seat
+  live regions, and the 2.5D fallback are all unaffected: this removes paint, not
+  information. Opacity rather than `display` for exactly that reason, and
+  `animation: none` because a keyframed opacity would otherwise outrank it -- the
+  same trap that kept the DOM card mirrors visible.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-position-marker {
+  opacity: 0;
+  animation: none;
+  transition: none;
+}
+
+/* Public actions remain in semantic/live DOM and in the articulated scene; do
+   not add another floating text substitute in the ready-mode table. */
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-action-label {
+  opacity: 0;
+  animation: none;
+  transition: none;
+}
+
+/*
+  Superseded sizing rules for the seat tags, kept only so the fallback and any
+  non-ready surface still get sane values.
+  black slabs with borders and drop shadows sitting on the felt, and they read as
+  UI stuck over the room rather than nameplates on a rail -- distracting enough
+  that they competed with the players themselves. Smaller, translucent, no
+  border, no shadow, tighter text. The DOM remains the accessible owner, so
+  nothing is lost by making the paint recede.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-label {
+  min-width: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 5px;
+  padding: 2px 7px;
+  background: rgba(6, 10, 14, 0.5);
+  box-shadow: none;
+  backdrop-filter: blur(2px);
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-label strong {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  opacity: 0.86;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-label > span {
+  font-size: 9px;
+  opacity: 0.78;
+}
+
+/* The blinds/position pill is secondary information; keep it very small. */
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-position-marker {
+  border: 0;
+  padding: 1px 4px;
+  font-size: 7px;
+  background: rgba(6, 10, 14, 0.45);
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+/* The acting/action plaque is the one that should still draw the eye. */
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-action-label {
+  padding: 2px 6px;
+  font-size: 8px;
+  box-shadow: none;
+  opacity: 0.9;
+  animation: none;
+}
+
+/*
+  Seat text belongs in one short row sitting on the rail, not a stacked column.
+  A column of marker + action + nameplate is tall enough to reach the face above
+  it, which Direction A forbids ("faces never sit behind a ... action label").
+  One row keeps the whole block inside the rail-to-shoulder gap at every target.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: 30vw;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-label,
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-action-label {
+  position: static;
+  transform: none;
+  margin: 0;
+  inset: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/*
+  The position marker keeps its own anchor rather than joining the row. Left in
+  the flow it collided with the action label -- "UTG" drawn over "FOLDED" and
+  "BTN" over "CALLS" -- because it carries its own offsets and a higher z-index.
+  Above the plaque's leading edge it stays inside the measured 38-68 px
+  rail-to-chin gap and clear of both the name and the face.
+*/
+.poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-position-marker {
+  position: absolute;
+  inset: auto auto calc(100% + 3px) 0;
+  transform: none;
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* The DOM hero-card button remains the semantic/focus target while physical
+   cards own the ready-mode paint.  Peek exposes only compact readable text. */
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .hero-hole-cards {
+  bottom: 14%;
+  z-index: 44;
+  min-width: 180px;
+  min-height: 126px;
+  background: transparent;
+}
+.poker-scene[data-spatial-scene="ready"] .hero-hole-cards .playing-card,
+.poker-scene[data-spatial-scene="ready"] .hero-hole-cards .peek-label {
+  opacity: 0;
+}
+/*
+  No text tag over the physical cards. This used to be the only way to read the
+  hero's hand in ready mode, because the physical cards were face up and too
+  small to resolve; now a squeeze turns the real cards over and bends the corner
+  up, and a floating "Q<>" label beside them is the floating UI that squeeze
+  exists to replace. The label stays in the DOM for assistive technology and for
+  the 2.5D fallback, where it is the real cue.
+*/
+.poker-scene[data-spatial-scene="ready"] .hero-hole-cards.is-peeked .hero-card-wrap small {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Defined HUD safe areas: a quiet top band, bounded bottom action rail, and a
+   top-right Skip that cannot cover the centre actor or felt. */
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .tournament-hud { top: 10px; left: 14px; padding: 6px 9px; }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .camera-controls { top: 10px; right: 138px; }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .skip-hand { top: 10px; right: 16px; left: auto; min-height: 44px; padding: 0 17px; transform: none; }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .skip-hand:hover,
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .skip-hand:focus-visible { transform: translateY(-1px); }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-dock { right: max(16px, calc((100% - 760px) / 2)); bottom: 10px; left: max(16px, calc((100% - 760px) / 2)); }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-button { min-height: 58px; }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-context { right: max(16px, calc((100% - 760px) / 2)); bottom: 76px; left: max(16px, calc((100% - 760px) / 2)); }
+.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .spectator-dock { right: max(16px, calc((100% - 760px) / 2)); bottom: 10px; left: max(16px, calc((100% - 760px) / 2)); min-height: 44px; }
+
+@media (max-height: 800px) {
+  .table-layout:has(.poker-scene[data-spatial-scene="ready"]) { height: calc(100vh - 54px); }
+  .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .tournament-hud { max-height: 48px; overflow: hidden; }
+  .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-dock { bottom: 6px; }
+  .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-button { min-height: 58px; }
+  .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-context { bottom: 68px; }
 }
 
 .poker-table {
@@ -2605,12 +3564,51 @@ input[type="range"]::-webkit-slider-thumb {
   transform: translateX(-50%) scale(var(--camera-zoom, 1)) perspective(900px) rotateX(56deg);
   border: 22px solid #171a17;
   border-radius: 50%;
-  background: #164938;
+  /* A lit surface rather than a flat fill: an overhead key light above and
+     slightly behind the centre, a subtle woven nap so the green is not one
+     uniform colour, and a cool rim bounce along the far edge. All static
+     gradients -- no animation, so this costs nothing at the motion tiers. */
+  background:
+    radial-gradient(
+      ellipse 62% 48% at 50% 30%,
+      rgba(88, 176, 141, 0.34),
+      rgba(22, 73, 56, 0) 68%
+    ),
+    radial-gradient(
+      ellipse 90% 70% at 50% 108%,
+      rgba(3, 14, 11, 0.62),
+      rgba(3, 14, 11, 0) 62%
+    ),
+    repeating-linear-gradient(
+      52deg,
+      rgba(255, 255, 255, 0.014) 0 2px,
+      rgba(0, 0, 0, 0.014) 2px 4px
+    ),
+    linear-gradient(178deg, #1a5540, #143f31 62%, #0f3226);
   box-shadow:
     0 0 0 3px #916f39,
     0 0 0 11px #0b110e,
     0 47px 60px rgba(0, 0, 0, 0.57),
-    inset 0 0 100px rgba(0, 0, 0, 0.43);
+    inset 0 22px 44px rgba(0, 0, 0, 0.28),
+    inset 0 -30px 46px rgba(0, 0, 0, 0.46),
+    inset 0 2px 0 rgba(190, 236, 214, 0.14);
+}
+
+/* Rail highlight: the padded edge catches the same overhead light, which is
+   what stops the ellipse reading as a cut-out shape. */
+.poker-table::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: -22px;
+  border-radius: 50%;
+  background: linear-gradient(
+    182deg,
+    rgba(255, 255, 255, 0.11),
+    rgba(255, 255, 255, 0) 34%,
+    rgba(0, 0, 0, 0.3)
+  );
+  pointer-events: none;
 }
 
 /* At 1080p and ultrawide widths, an 800px table leaves the championship room
@@ -2697,18 +3695,11 @@ input[type="range"]::-webkit-slider-thumb {
   transform: translateX(-50%);
 }
 
-.table-readout span,
-.table-readout small {
-  color: rgba(226, 248, 240, 0.55);
-  font-size: 8px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .table-readout strong {
   color: var(--gold-soft);
   font-size: 24px;
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
   text-shadow: 0 0 18px rgba(237, 189, 98, 0.28);
 }
 
@@ -2788,12 +3779,102 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 4px;
 }
 
+.showdown-card {
+  transition: opacity 180ms ease, box-shadow 180ms ease, transform 220ms ease;
+}
+
+.showdown-card.is-winning {
+  z-index: 2;
+  border-color: #ffe197;
+  box-shadow: 0 0 0 2px rgba(255, 202, 74, 0.34), 0 0 18px rgba(255, 193, 56, 0.55);
+  transform: translateY(-8px) scale(1.05);
+}
+
+.showdown-card.is-unused {
+  opacity: 0.56;
+  filter: saturate(0.55);
+}
+
+/* E06-001 step 2: once a hand is legally face up, lift it clear of the seat
+   furniture and enlarge it so the player can actually read the two cards the
+   runout is about to be decided against. The seat itself does not move, so
+   stack, committed bet, and position markers stay exactly where they were. */
+.player-seat.is-revealed .opponent-cards {
+  z-index: 6;
+  gap: 5px;
+  transform: translateY(-10px) scale(1.14);
+  transform-origin: center bottom;
+  transition: transform 260ms cubic-bezier(0.24, 0.82, 0.36, 1);
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.5));
+}
+
+.player-seat.is-revealed .opponent-cards::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -7px -9px -6px -9px;
+  border: 1px solid rgba(255, 214, 138, 0.34);
+  border-radius: 9px;
+  background: rgba(9, 26, 20, 0.72);
+}
+
 .community-placeholder {
   display: block;
   width: 51px;
   height: 71px;
   border: 1px dashed rgba(255, 255, 255, 0.13);
   border-radius: 6px;
+}
+
+/*
+  Pot structure lives on the felt as chips (E27-002), replacing the persistent
+  "Live pots" text panel that listed every pot and its eligibility roster for
+  the whole hand. One pot renders exactly as it always did -- a single centre
+  pile, with the amount coming from the felt readout above. A genuine side pot
+  splits the pile into labelled groups, so the player can watch which chips form
+  which pot and which pile goes where at the award.
+*/
+.pot-groups {
+  position: absolute;
+  top: 77%;
+  left: 50%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 22px;
+  transform: translateX(-50%);
+}
+
+.pot-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.pot-group__amount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: rgba(255, 249, 236, 0.9);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+.pot-group__amount b {
+  color: rgba(255, 209, 63, 0.92);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* The pile itself is laid out by `.pot-groups`, not absolutely placed. */
+.pot-groups .center-pot {
+  position: static;
+  transform: none;
 }
 
 .center-pot {
@@ -2804,6 +3885,57 @@ input[type="range"]::-webkit-slider-thumb {
   gap: 6px;
   transform: translateX(-50%);
 }
+
+/*
+  A seat's resting pile, drawn as real stacked chips whose height tracks the
+  stack in big blinds (E27-009). Seats previously carried one fixed three-chip
+  glyph, so the only way to learn a player was short was to read the number and
+  divide by the blind.
+
+  Anchored to the seat's lower edge and stacking upward, so piles at different
+  seats are comparable at a glance and a short stack is visibly stubby before
+  any number is read.
+*/
+.seat-chip-stack {
+  position: absolute;
+  z-index: 3;
+  bottom: 4px;
+  left: -22px;
+  display: flex;
+  width: max-content;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.seat-chip-denomination {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 0;
+}
+
+.seat-chip-stack i {
+  display: block;
+  width: 13px;
+  height: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  margin-top: -1px;
+  background: #1c8f4e;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+}
+
+.seat-chip-stack i[data-denomination="100"] { background: #17191f; }
+.seat-chip-stack i[data-denomination="500"] { background: #5a2b78; }
+.seat-chip-stack i[data-denomination="1000"] { background: #d8aa2c; }
+.seat-chip-stack i[data-denomination="5000"] { background: #f07824; }
+.seat-chip-stack i[data-denomination="25000"] { background: #3c261b; }
+.seat-chip-stack i[data-denomination="100000"] { background: #c985b9; }
+
+/* Under ten big blinds, preserve the short-rack cue without changing value. */
+.seat-chip-stack--short i { box-shadow: 0 0 0 1px rgba(255, 209, 63, 0.38); }
 
 .chip-stack {
   position: relative;
@@ -2855,8 +3987,12 @@ input[type="range"]::-webkit-slider-thumb {
     filter 260ms ease;
 }
 
+/* The near-camera hero uses the dedicated, always-visible stack HUD below.
+   Keeping the avatar seat out of this layer prevents it overlapping the hero
+   cards while the HUD remains a real DOM/accessibility element. */
 .player-seat--hero {
-  display: none;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .player-seat--lower-left {
@@ -3057,11 +4193,221 @@ input[type="range"]::-webkit-slider-thumb {
   display: none;
 }
 
-.player-seat--lower-left .seat-avatar { background-position: 0 0; }
-.player-seat--upper-left .seat-avatar { background-position: 50% 0; }
-.player-seat--top .seat-avatar { background-position: 100% 0; }
-.player-seat--upper-right .seat-avatar { background-position: 0 100%; }
-.player-seat--lower-right .seat-avatar { background-position: 50% 100%; }
+.seat-avatar--variant-0 { background-position: 0 0; }
+.seat-avatar--variant-1 { background-position: 50% 0; }
+.seat-avatar--variant-2 { background-position: 100% 0; }
+.seat-avatar--variant-3 { background-position: 0 100%; }
+.seat-avatar--variant-4 { background-position: 50% 100%; }
+.seat-avatar--variant-5 { background-position: 100% 100%; }
+
+/* ---------------------------------------------------------------------------
+   Seated figure (E09-002 grounding + E10-001 per-identity variation).
+
+   Everything below is drawn procedurally from CSS custom properties supplied
+   by lib/opponentAppearance, whose only input is the player id. Six portrait
+   cells therefore produce thousands of distinguishable seated people without
+   a portrait per opponent, and appearance stays uncorrelated with play.
+   The figure is decorative: it is `aria-hidden`, and every fact it hints at
+   (name, stack, status, committed bet) is already exposed as real text.
+--------------------------------------------------------------------------- */
+
+.seat-figure {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 86px;
+  height: 104px;
+  transform: rotate(var(--seat-lean, 0deg));
+  transform-origin: center 92%;
+}
+
+.seat-figure-shadow {
+  position: absolute;
+  bottom: -3px;
+  left: 50%;
+  width: 78px;
+  height: 13px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.5),
+    rgba(0, 0, 0, 0) 72%
+  );
+}
+
+.seat-figure-chair {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 62px;
+  height: 46px;
+  transform: translateX(-50%);
+  border-radius: 12px 12px 5px 5px;
+  background: linear-gradient(180deg, #2a1d16, #150e0a);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.06);
+}
+
+.seat-figure-torso {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: var(--seat-shoulders, 72px);
+  height: 40px;
+  transform: translateX(-50%);
+  border-radius: 26px 26px 7px 7px;
+  background: linear-gradient(
+    170deg,
+    var(--seat-cloth-trim, #3d4c5c),
+    var(--seat-cloth, #28323d)
+  );
+  box-shadow:
+    inset 0 -8px 12px rgba(0, 0, 0, 0.32),
+    0 4px 9px rgba(0, 0, 0, 0.35);
+}
+
+/* A sliver of neck above the collar carries the figure's skin tone. */
+.seat-figure-torso::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  width: 22px;
+  height: 12px;
+  transform: translateX(-50%);
+  border-radius: 6px 6px 2px 2px;
+  background: var(--seat-skin, #e5bd9a);
+  filter: brightness(0.88);
+}
+
+.seat-figure .seat-avatar {
+  position: relative;
+  z-index: 2;
+  margin-bottom: 26px;
+}
+
+.seat-figure--body-slim .seat-figure-torso { --seat-shoulders: 58px; }
+.seat-figure--body-average .seat-figure-torso { --seat-shoulders: 68px; }
+.seat-figure--body-broad .seat-figure-torso { --seat-shoulders: 79px; }
+.seat-figure--body-heavy .seat-figure-torso { --seat-shoulders: 86px; height: 44px; }
+
+.seat-figure--posture-hunched .seat-figure .seat-avatar,
+.seat-figure--posture-hunched .seat-avatar { margin-bottom: 21px; }
+.seat-figure--posture-reclined .seat-avatar { margin-bottom: 30px; }
+
+/* Age presentation is a light grade on the portrait, never a caricature. */
+.seat-figure--age-young .seat-avatar { filter: saturate(1.08) brightness(1.04); }
+.seat-figure--age-adult .seat-avatar { filter: none; }
+.seat-figure--age-middle .seat-avatar { filter: saturate(0.92) contrast(1.04); }
+.seat-figure--age-senior .seat-avatar { filter: saturate(0.8) brightness(0.96); }
+
+.seat-avatar--face-oval { border-radius: 26px 26px 15px 15px; }
+.seat-avatar--face-square { border-radius: 15px 15px 9px 9px; }
+.seat-avatar--face-round { border-radius: 32px; }
+.seat-avatar--face-long { border-radius: 24px 24px 20px 20px; height: 92px; }
+
+.seat-figure-hair {
+  position: absolute;
+  z-index: 3;
+  top: -4px;
+  left: 50%;
+  width: 74px;
+  height: 26px;
+  transform: translateX(-50%);
+  background: var(--seat-hair, #3b2a1e);
+  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.4);
+}
+
+.seat-figure-hair--cropped { height: 18px; border-radius: 15px 15px 3px 3px; }
+.seat-figure-hair--swept {
+  height: 22px;
+  border-radius: 18px 10px 4px 12px;
+  transform: translateX(-52%) rotate(-3deg);
+}
+.seat-figure-hair--curls {
+  height: 25px;
+  border-radius: 18px 18px 12px 12px;
+  box-shadow:
+    inset 0 -6px 10px rgba(0, 0, 0, 0.4),
+    inset 6px 4px 0 rgba(255, 255, 255, 0.07),
+    inset -6px 4px 0 rgba(255, 255, 255, 0.07);
+}
+.seat-figure-hair--bun { height: 17px; border-radius: 14px 14px 3px 3px; }
+.seat-figure-hair--bun::after {
+  content: "";
+  position: absolute;
+  top: -9px;
+  right: 9px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: inherit;
+}
+.seat-figure-hair--long { height: 40px; border-radius: 20px 20px 5px 5px; }
+.seat-figure-hair--bald { display: none; }
+
+.seat-figure-accessory {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.seat-figure-accessory--glasses {
+  top: 33px;
+  width: 52px;
+  height: 13px;
+  border: 2px solid rgba(24, 22, 20, 0.85);
+  border-radius: 7px;
+  background:
+    linear-gradient(90deg, rgba(180, 214, 234, 0.3) 44%, transparent 44% 56%, rgba(180, 214, 234, 0.3) 56%);
+}
+
+.seat-figure-accessory--cap {
+  top: -8px;
+  width: 78px;
+  height: 22px;
+  border-radius: 16px 16px 4px 4px;
+  background: linear-gradient(180deg, #1f3a52, #12222f);
+}
+.seat-figure-accessory--cap::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 84px;
+  height: 8px;
+  transform: translateX(-50%);
+  border-radius: 0 0 9px 9px;
+  background: #0d1a24;
+}
+
+.seat-figure-accessory--visor {
+  top: 20px;
+  width: 80px;
+  height: 11px;
+  border-radius: 3px 3px 8px 8px;
+  background: linear-gradient(180deg, #2b2118, #443127);
+}
+
+.seat-figure-accessory--headset {
+  top: -2px;
+  width: 88px;
+  height: 34px;
+  border: 4px solid rgba(38, 46, 54, 0.92);
+  border-bottom: none;
+  border-radius: 22px 22px 0 0;
+}
+
+.seat-figure-accessory--chain {
+  top: 74px;
+  width: 26px;
+  height: 12px;
+  border: 2px solid rgba(226, 194, 116, 0.8);
+  border-top: none;
+  border-radius: 0 0 13px 13px;
+}
 
 .thinking-ring {
   position: absolute;
@@ -3081,8 +4427,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 .seat-label {
   display: flex;
-  min-width: 103px;
-  flex-direction: column;
+  min-width: 0;
+  flex-direction: row;
   align-items: center;
   margin-top: -5px;
   border: 1px solid rgba(255, 255, 255, 0.13);
@@ -3093,33 +4439,18 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .seat-label strong {
-  font-size: 10px;
-}
-
-.seat-label > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   color: var(--gold-soft);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-.seat-label .chip-stack {
-  width: 13px;
-  height: 11px;
-  transform: scale(0.58);
-  transform-origin: left center;
-  margin-right: -6px;
-}
-
 .seat-bet {
   position: absolute;
-  top: 123px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
+  top: 140px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
   min-height: 22px;
   border: 1px solid rgba(237, 189, 98, 0.2);
   border-radius: 999px;
@@ -3128,6 +4459,7 @@ input[type="range"]::-webkit-slider-thumb {
   background: rgba(3, 11, 8, 0.9);
   box-shadow: 0 5px 12px rgba(0, 0, 0, 0.26);
   font-size: 9px;
+  font-variant-numeric: tabular-nums;
   animation: opponent-chip-push 420ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
@@ -3135,13 +4467,139 @@ input[type="range"]::-webkit-slider-thumb {
   animation: opponent-card-deal 360ms ease-out both;
 }
 
+.seat-position-marker {
+  position: absolute;
+  z-index: 6;
+  top: -31px;
+  right: -25px;
+  min-width: 25px;
+  border: 1px solid rgba(93, 228, 206, 0.5);
+  border-radius: 999px;
+  padding: 3px 5px;
+  color: #dffff7;
+  background: rgba(2, 18, 14, 0.94);
+  box-shadow: 0 3px 9px rgba(0, 0, 0, 0.35);
+  font-size: 8px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.dealer-button {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  box-shadow: 0 0 0 2px rgba(237, 189, 98, 0.25), 0 3px 8px rgba(0, 0, 0, 0.4);
+}
+
+.dealer-button-travel {
+  position: absolute;
+  z-index: 31;
+  top: var(--dealer-from-y);
+  left: var(--dealer-from-x);
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(237, 189, 98, 0.9);
+  border-radius: 50%;
+  color: #1c1b18;
+  background: #fff1be;
+  box-shadow: 0 0 0 3px rgba(237, 189, 98, 0.22), 0 6px 15px rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+  font-weight: 900;
+  animation: dealer-button-travel 820ms cubic-bezier(.18,.78,.2,1) both;
+}
+
+/* A renderer-only token for the public event queue. It travels independently
+   of authoritative stack/pot numbers, so skipping cannot affect chip totals. */
+.chip-travel {
+  position: absolute;
+  z-index: 30;
+  top: var(--chip-from-y);
+  left: var(--chip-from-x);
+  pointer-events: none;
+  animation: chip-travel 560ms cubic-bezier(.18,.82,.22,1) both;
+}
+
+.chip-travel .chip-stack {
+  transform: translate(-50%, -50%) scale(1.2);
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .45));
+}
+
+@keyframes chip-travel {
+  from { top: var(--chip-from-y); left: var(--chip-from-x); opacity: .5; transform: scale(.7); }
+  72% { top: var(--chip-to-y); left: var(--chip-to-x); opacity: 1; transform: scale(1.12); }
+  to { top: var(--chip-to-y); left: var(--chip-to-x); opacity: 0; transform: scale(.94); }
+}
+
+@keyframes dealer-button-travel {
+  from { top: var(--dealer-from-y); left: var(--dealer-from-x); opacity: 0.6; transform: translate(-50%, -50%) scale(.7); }
+  70% { top: var(--dealer-to-y); left: var(--dealer-to-x); opacity: 1; transform: translate(-50%, -50%) scale(1.14); }
+  to { top: var(--dealer-to-y); left: var(--dealer-to-x); opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+.board-card-entering {
+  display: inline-flex;
+  animation: board-card-deal 440ms cubic-bezier(.18,.82,.22,1) both;
+  transform-origin: 50% -130px;
+}
+
+@keyframes board-card-deal {
+  from { opacity: 0; transform: translateY(-150px) scale(.68) rotate(-9deg); }
+  to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+
+.poker-table.is-dealing-hole-cards .opponent-cards {
+  animation: opponent-card-deal 620ms cubic-bezier(.18,.82,.22,1) both;
+  transform-origin: 50% -160px;
+}
+
+.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(2) .opponent-cards { animation-delay: 80ms; }
+.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(3) .opponent-cards { animation-delay: 150ms; }
+.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(4) .opponent-cards { animation-delay: 220ms; }
+.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(5) .opponent-cards { animation-delay: 290ms; }
+
+.poker-table.is-dealing-hole-cards .hero-hole-cards {
+  animation: hero-card-deal 620ms 360ms cubic-bezier(.18,.82,.22,1) both;
+}
+
 .player-seat.is-folded .opponent-cards {
   animation: opponent-card-muck 320ms ease-in both;
+}
+
+.seat-action-label {
+  position: absolute;
+  z-index: 5;
+  top: -20px;
+  left: 50%;
+  padding: 3px 6px;
+  border: 1px solid rgba(237, 189, 98, 0.5);
+  border-radius: 999px;
+  color: #fff2c4;
+  background: rgba(16, 25, 20, 0.88);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  animation: seat-action-pop 760ms ease-out both;
+}
+
+@keyframes seat-action-pop {
+  from { opacity: 0; transform: translate(-50%, 8px) scale(.8); }
+  20% { opacity: 1; }
+  to { opacity: .9; transform: translate(-50%, 0) scale(1); }
 }
 
 @keyframes opponent-card-deal {
   from { opacity: 0; transform: translateY(-38px) scale(0.82) rotate(-7deg); }
   to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+
+@keyframes hero-card-deal {
+  from { opacity: 0; transform: translate(-50%, -250px) scale(.72) rotate(-7deg); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1) rotate(0); }
 }
 
 @keyframes opponent-card-muck {
@@ -3188,19 +4646,33 @@ input[type="range"]::-webkit-slider-thumb {
   animation: opponent-win-label 780ms ease-out both;
 }
 
+/* The public pot-award event adds this class to its recipient. Pair the
+   readable winner badge with a modest seat halo, so a win is perceptible even
+   when the player is not looking directly at the text label. */
+.player-seat.is-winner .seat-avatar {
+  box-shadow: 0 0 0 3px rgba(255, 209, 63, 0.52), 0 0 22px rgba(255, 190, 58, 0.38);
+  animation: opponent-win-seat 520ms ease-out both;
+}
+
+@keyframes opponent-win-seat {
+  from { filter: brightness(1.35) saturate(1.28); transform: scale(1.08); }
+  to { filter: brightness(1) saturate(1); transform: scale(1); }
+}
+
 .dealer-button {
   position: absolute;
   top: 60px;
   right: -17px;
   display: grid;
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   place-items: center;
+  border: 1px solid rgba(237, 189, 98, 0.75);
   border-radius: 50%;
   color: #1c1b18;
   background: #ede9dc;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
-  font-size: 8px;
+  box-shadow: 0 0 0 2px rgba(237, 189, 98, 0.25), 0 3px 8px rgba(0, 0, 0, 0.4);
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -3443,6 +4915,130 @@ input[type="range"]::-webkit-slider-thumb {
 
 .action-button--raise.is-active {
   border-color: var(--gold);
+}
+
+/*
+  Skip, over the table (E27-015).
+
+  It used to be a small secondary button in the bottom dock, sitting beside the
+  2x speed toggle -- which is both why a player who folded could not find it and
+  why the two read as the same kind of thing. They are not: 2x changes the rate
+  of the presentation, Skip ends it and goes to the outcome. So Skip is large,
+  amber, and placed in the upper-centre of the table where the eye already is,
+  and 2x stays small and quiet in the dock.
+
+  `z-index: 45` puts it above the table and the 3D canvas but below the pause
+  scrim, so a paused table cannot be skipped through the overlay.
+*/
+/*
+  The Training situation strip (E27-013): the facts a decision cannot be judged
+  without, as short labels beside numbers. Deliberately a single quiet row -- it
+  states the position and stops. The explanation of *why* a line is right stays
+  in the post-decision feedback, where the player has already committed.
+*/
+.training-context {
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  max-width: min(94%, 940px);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 7px 14px;
+  background: rgba(6, 16, 13, 0.82);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transform: translateX(-50%);
+}
+
+.training-context > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: #fffaf0;
+  white-space: nowrap;
+}
+
+.training-context b {
+  color: rgba(255, 249, 236, 0.52);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.training-context em {
+  color: #5de4ce;
+  font-size: 11px;
+  font-style: normal;
+}
+
+/* Under about twelve big blinds the shove stops being exotic and becomes the
+   default question, so the depth is named rather than left to be inferred. */
+.training-context__flag {
+  border: 1px solid rgba(255, 209, 63, 0.5);
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: #ffd13f;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skip-hand {
+  position: absolute;
+  z-index: 45;
+  /*
+    Below the tournament HUD and clear of the top-centre seat. Centring it at
+    the very top of the table put it squarely over that opponent's avatar --
+    prominent, but covering a player whose action is the thing being skipped.
+    It stays in the upper-centre band the design calls for, one seat-row down.
+  */
+  top: 30%;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border: 1px solid rgba(255, 209, 63, 0.55);
+  border-radius: 999px;
+  padding: 0 26px 0 22px;
+  color: #1b1206;
+  background: linear-gradient(180deg, #ffd980, #f0b43a);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transform: translateX(-50%);
+  transition:
+    transform 140ms ease,
+    filter 140ms ease;
+}
+
+.skip-hand:hover,
+.skip-hand:focus-visible {
+  filter: brightness(1.07);
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.skip-hand:focus-visible {
+  outline: 3px solid #ffd13f;
+  outline-offset: 3px;
+}
+
+:root[data-motion-table="off"] .skip-hand,
+:root[data-motion-transition="off"] .skip-hand {
+  transition: none;
 }
 
 .spectator-dock {
@@ -4085,7 +5681,17 @@ input[type="range"]::-webkit-slider-thumb {
   }
 
   .player-seat--top {
-    top: 9%;
+    /* Its centred container includes figure, label, and hand. At compact
+       height, retain clearance for the public hand above it as well. */
+    top: 15%;
+  }
+
+  /* Card hands are anchored above each seat at full height. In a 768px-tall
+     desktop scene that negative lane clips the top opponent's card corners at
+     the scene edge. Move the shared card lane down instead of distorting only
+     one seat's canonical position. */
+  .opponent-cards {
+    top: 4px;
   }
 
   .hero-hole-cards {
@@ -4134,24 +5740,63 @@ input[type="range"]::-webkit-slider-thumb {
   color: #191919;
 }
 
-.reduced-motion *,
-.reduced-motion *::before,
-.reduced-motion *::after {
-  scroll-behavior: auto !important;
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
+/* Motion tiers: vestibular/decorative movement is optional; state-changing
+   card, chip, fold, award, and focus feedback remains perceptible. */
+.motion-vestibular,
+.motion-vestibular::before,
+.motion-vestibular::after {
+  scroll-behavior: auto;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+.feedback-analysis {
+  margin-top: 12px;
+  border: 1px solid rgba(93, 228, 206, 0.18);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(8, 29, 22, 0.62);
+}
+
+.feedback-analysis h3,
+.feedback-analysis h4 {
+  margin: 0 0 8px;
+  color: var(--gold-soft);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.feedback-analysis h4 { margin-top: 12px; color: var(--muted); font-size: 8px; }
+
+.feedback-analysis dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.feedback-analysis dl > div {
+  border-radius: 6px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.feedback-analysis dt { color: var(--muted); font-size: 7px; text-transform: uppercase; }
+.feedback-analysis dd { margin: 3px 0 0; color: var(--text); font-size: 10px; font-weight: 800; }
+
+.feedback-analysis__evs { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.feedback-analysis__evs li { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 9px; text-transform: capitalize; }
+.feedback-analysis__evs b { color: var(--text); font-variant-numeric: tabular-nums; }
+.feedback-analysis__assumption { margin: 11px 0 0; color: #d3ded9; font-size: 9px; line-height: 1.5; }
+
+/* The React motion resolver already layers the live OS preference into the
+   effective settings. Keep this class-based rule so an explicit in-app full
+   choice can override an OS preference without a later media query winning. */
+.reduced-motion .motion-vestibular,
+.reduced-motion .motion-vestibular::before,
+.reduced-motion .motion-vestibular::after {
+  scroll-behavior: auto !important;
+  animation: none !important;
+  transition-duration: 0.01ms !important;
 }
 
 /* Night Circuit desktop shell */
@@ -4160,6 +5805,17 @@ input[type="range"]::-webkit-slider-thumb {
 .night-title {
   position: relative;
   width: 100vw;
+  /*
+    `100vw` includes the vertical scrollbar's width, which is invisible here
+    only because `overflow: hidden` below clips the excess. Screens that opt
+    back into scrolling -- `.reference-shell` sets `overflow: auto` -- grow a
+    scrollbar, and then the shell is exactly one scrollbar wider than the space
+    it has: the packaged screen-layout audit measured the poker reference
+    scrolling sideways by 15px at every viewport. Capping against the parent's
+    width, which already excludes the scrollbar, fixes the scrolling case and
+    is a no-op everywhere else.
+  */
+  max-width: 100%;
   min-width: 1024px;
   min-height: 100vh;
   overflow: hidden;
@@ -4263,7 +5919,15 @@ input[type="range"]::-webkit-slider-thumb {
   align-items: center;
   border-top: 1px solid #9d7a3a;
   border-bottom: 1px solid #9d7a3a;
-  padding: 10px 42px 12px;
+  /*
+    The horizontal padding clears the absolutely-positioned logo below, which
+    sits at `left: 12px` and is 42px wide, so it ends 54px into the box. At the
+    previous 42px the logo covered the first glyph of the title by 12px --
+    measured in the packaged build, where "Championship Series" rendered as
+    "hampionship Series". Kept symmetric so the flex centring still puts the
+    title in the middle of the box rather than nudging it off-centre.
+  */
+  padding: 10px 66px 12px;
   color: #ecd8aa;
   background: #07100f;
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.45);
@@ -5024,7 +6688,21 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .seat-action-hand--hold {
-  display: none;
+  left: -14px;
+  bottom: 10px;
+  width: 30px;
+  opacity: .9;
+  transform: rotate(-10deg);
+  animation: opponent-card-peek 1.8s ease-in-out infinite;
+}
+
+.seat-action-hand--hold::after {
+  top: -11px;
+  right: -6px;
+  width: 16px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(145deg, #f4eee0, #aeb7b2);
 }
 
 @keyframes opponent-chip-hand {
@@ -5096,9 +6774,9 @@ input[type="range"]::-webkit-slider-thumb {
   scroll-behavior: auto !important;
 }
 
-/* Independent motion controls. The global reduced-motion and Safe Mode gates
-   above remain stronger; these selectors intentionally only quiet their named
-   visual surface, leaving gameplay input and state changes instantaneous. */
+/* Independent controls map onto the same tiers. Menu/room/camera/transition
+   quiet vestibular movement; table controls only shorten state feedback, never
+   suppress its labels, cards, chips, winner badge, or audio. */
 :root[data-motion-menu="off"] .night-scene *,
 :root[data-motion-menu="off"] .night-scene::before,
 :root[data-motion-menu="off"] .night-scene::after,
@@ -5131,10 +6809,18 @@ input[type="range"]::-webkit-slider-thumb {
   transform: scale(1.08);
 }
 
+:root[data-motion-room="off"] .venue-table {
+  transition: none !important;
+}
+
 :root[data-motion-room="reduced"] .room-flight::before,
 :root[data-motion-room="reduced"] .room-flight__background-art,
 :root[data-motion-room="reduced"] .room-flight__venue {
   animation-duration: 1.45s !important;
+}
+
+:root[data-motion-room="reduced"] .venue-table {
+  transition-duration: 0.5s !important;
 }
 
 :root[data-motion-camera="off"] .poker-scene {
@@ -5145,15 +6831,34 @@ input[type="range"]::-webkit-slider-thumb {
   transition-duration: 120ms;
 }
 
-:root[data-motion-table="off"] .thinking-ring,
+:root[data-motion-table="off"] .thinking-ring {
+  animation: none !important;
+}
+
+@keyframes opponent-card-peek {
+  0%, 100% { transform: translateY(0) rotate(-10deg); }
+  45% { transform: translate(4px, -5px) rotate(-4deg); }
+}
+
+/* The lift is state, not decoration: with table motion off the revealed hand
+   still sits forward and enlarged, it simply arrives there instantly. */
+:root[data-motion-table="off"] .player-seat.is-revealed .opponent-cards {
+  transition: none !important;
+}
+
 :root[data-motion-table="off"] .seat-bet,
 :root[data-motion-table="off"] .opponent-cards,
 :root[data-motion-table="off"] .player-seat.is-folded .opponent-cards,
 :root[data-motion-table="off"] .opponent-card-hand,
 :root[data-motion-table="off"] .seat-action-hand,
+:root[data-motion-table="off"] .dealer-button-travel,
+:root[data-motion-table="off"] .chip-travel,
+:root[data-motion-table="off"] .all-in-banner,
+:root[data-motion-table="off"] .all-in-showdown-stage,
 :root[data-motion-table="off"] .player-seat.is-out .seat-avatar,
+:root[data-motion-table="off"] .player-seat.is-winner .seat-avatar,
 :root[data-motion-table="off"] .seat-state--winner {
-  animation: none !important;
+  animation-duration: 120ms !important;
 }
 
 :root[data-motion-table="reduced"] .thinking-ring {
@@ -5165,7 +6870,12 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-table="reduced"] .player-seat.is-folded .opponent-cards,
 :root[data-motion-table="reduced"] .opponent-card-hand,
 :root[data-motion-table="reduced"] .seat-action-hand,
+:root[data-motion-table="reduced"] .dealer-button-travel,
+:root[data-motion-table="reduced"] .chip-travel,
+:root[data-motion-table="reduced"] .all-in-banner,
+:root[data-motion-table="reduced"] .all-in-showdown-stage,
 :root[data-motion-table="reduced"] .player-seat.is-out .seat-avatar,
+:root[data-motion-table="reduced"] .player-seat.is-winner .seat-avatar,
 :root[data-motion-table="reduced"] .seat-state--winner {
   animation-duration: 140ms;
 }
@@ -5184,6 +6894,41 @@ input[type="range"]::-webkit-slider-thumb {
 :root[data-motion-transition="reduced"] .room-progress-overlay,
 :root[data-motion-transition="reduced"] .room-progress-overlay ~ .poker-scene {
   animation-duration: 0.9s;
+}
+
+/*
+  Poker Reference, centred and on its own (E21-001 / E27-010). It used to sit as
+  the second of two competing footer offers next to a beginner tutorial link;
+  the tutorial is gone and this is simply what remains, without onboarding
+  language wrapped around it.
+*/
+.mode-stage__secondary--single {
+  display: flex;
+  justify-content: center;
+}
+
+.mode-stage__reference-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  gap: 9px;
+  margin: 18px auto 0;
+  border: 1px solid rgba(93, 228, 206, 0.34);
+  border-radius: 999px;
+  padding: 10px 20px;
+  color: #5de4ce;
+  background: rgba(10, 32, 28, 0.55);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.mode-stage__reference-link:hover,
+.mode-stage__reference-link:focus-visible {
+  border-color: #5de4ce;
+  color: #7ff0dc;
 }
 
 .mode-stage__tutorial-link {
@@ -5574,48 +7319,155 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: clamp(44px, 4.4vw, 68px);
 }
 
+/*
+  This class was applied in the markup and never styled, so its `<strong>` and
+  `<span>` ran together as two bare inline boxes with no whitespace between
+  them: the lobby read "0 of 5 events qualifiedNext up: Local Qualifier".
+  A flex row with a gap and the interpunct separator already used elsewhere in
+  the game ("Preflop . 6 players remain") makes the two facts read as two facts.
+*/
+.tour-lobby__progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 8px 0 0;
+}
+
+.tour-lobby__progress > span::before {
+  margin-right: 10px;
+  color: rgba(236, 216, 170, 0.45);
+  content: "·";
+}
+
+/* ---------------------------------------------------------------------------
+   Horizontal career route (E20-002).
+
+   The journey reads left-to-right along a single connecting line. The line is
+   filled up to `--route-progress` (the current event's slot centre) and a
+   marker sits at that point, so "how far along am I" is answerable at a
+   glance. Stage is carried by a text label and a distinct glyph as well as
+   colour -- the route stays readable with colour removed.
+--------------------------------------------------------------------------- */
+
 .event-route {
+  position: relative;
   grid-row: 2;
   grid-column: 1;
+  display: grid;
   align-self: center;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 10px;
   margin: 0;
-  padding: 0;
+  padding: 34px 0 0;
   list-style: none;
-  counter-reset: route;
+}
+
+/* The route itself. */
+.event-route::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: #3a3128;
+}
+
+/* Progress along the route, plus the travelling marker at its head. */
+.event-route::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: 0;
+  width: var(--route-progress, 0%);
+  height: 12px;
+  border-right: 3px solid #ffd98a;
+  background: linear-gradient(90deg, rgba(224, 174, 75, 0.22), #e0ae4b);
+  background-clip: padding-box;
+  transition: width 420ms cubic-bezier(0.26, 0.8, 0.36, 1);
+}
+
+:root[data-motion-menu="off"] .event-route::after {
+  transition: none;
 }
 
 .event-route li {
   position: relative;
+  min-width: 0;
 }
 
-.event-route li:not(:last-child)::after {
-  position: absolute;
-  bottom: -11px;
-  left: 20px;
-  width: 1px;
-  height: 22px;
-  background: #725c30;
+/* Each event's node on the line. */
+.event-route li::before {
   content: "";
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  z-index: 2;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%);
+  border: 2px solid #3a3128;
+  border-radius: 50%;
+  background: #0a100e;
+}
+
+.event-route li[data-stage="complete"]::before {
+  border-color: #e0ae4b;
+  background: #e0ae4b;
+}
+
+.event-route li[data-stage="current"]::before {
+  width: 15px;
+  height: 15px;
+  top: -27px;
+  border-color: #ffd98a;
+  background: #0a100e;
+  box-shadow: 0 0 0 3px rgba(255, 217, 138, 0.24);
 }
 
 .event-route button {
   display: grid;
   width: 100%;
   min-height: 70px;
-  grid-template-columns: 42px 1fr auto;
-  align-items: center;
-  gap: 15px;
+  height: 100%;
+  grid-template-columns: 30px 1fr;
+  grid-template-rows: auto;
+  align-items: start;
+  gap: 9px;
   border: 0;
-  border-left: 3px solid transparent;
-  padding: 9px 16px 9px 12px;
+  border-top: 3px solid transparent;
+  padding: 11px 12px;
   color: #c7c1b6;
   background: #0a100e;
   cursor: pointer;
   text-align: left;
 }
 
-.event-route li + li {
-  margin-top: 10px;
+.event-route__stage {
+  margin-top: 5px;
+  color: #8e8a81;
+  font-size: 8px;
+  font-style: normal;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.event-route li[data-stage="complete"] .event-route__stage { color: #cfa451; }
+.event-route li[data-stage="current"] .event-route__stage { color: #ffd98a; }
+
+.event-route__index {
+  display: grid;
+  place-items: center;
+  min-height: 22px;
+}
+
+@media (max-width: 1400px) {
+  .event-route strong {
+    font-size: 18px;
+  }
 }
 
 .event-route button:hover:not(:disabled),
@@ -7728,18 +9580,40 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Credits / licenses, About & support, and start-menu credits link. */
+/*
+  Stacked directly above the play-chip boundary notice, sharing its pill
+  styling so the two read as one bottom-right cluster.
+
+  Both used to be anchored bottom-right at nearly the same offsets -- the notice
+  at `right: 18px; bottom: 14px; z-index: 12`, this at `right: 1.4rem;
+  bottom: 1rem; z-index: 3` -- so the notice's opaque pill sat exactly on top of
+  this button and swallowed every click on it, at every viewport. Keyboard focus
+  still reached it, which is why it went unnoticed: the link looked reachable
+  and simply did nothing when clicked.
+
+  It is not moved to the opposite corner because the bottom-left of the menu art
+  is a brightly lit chip, where a plain text link is unreadable. The offset
+  below is the notice's own box (10px text + 12px padding + 2px border ~= 26px)
+  plus its 14px inset and an 8px gap. The packaged screen-layout audit
+  hit-tests both, so a future change that puts them back on top of each other
+  fails a gate instead of shipping.
+*/
 .home-reference__credits-link {
   position: absolute;
-  right: 1.4rem;
-  bottom: 1rem;
-  z-index: 3;
+  right: 18px;
+  bottom: 48px;
+  z-index: 12;
   min-width: 24px;
   min-height: 24px;
-  border: none;
-  background: transparent;
-  color: rgba(240, 240, 236, 0.72);
-  font-size: 0.82rem;
-  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(4, 5, 5, 0.74);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -7852,4 +9726,931 @@ input[type="range"]::-webkit-slider-thumb {
 .about-support__blocked {
   color: rgba(240, 240, 236, 0.66);
   font-size: 0.85rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Post-round review (E18).
+
+   A three-part layout: segment scores across the top, a scrollable decision
+   timeline on the left, and the selected decision's reconstruction and maths
+   on the right. Quality is carried by a glyph and a word as well as colour.
+--------------------------------------------------------------------------- */
+
+.review-shell {
+  overflow: auto;
+}
+
+.review-panel {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  min-height: 100%;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 16px;
+  padding: clamp(20px, 3vh, 34px) clamp(24px, 4vw, 56px);
+  background: rgba(3, 7, 6, 0.86);
+}
+
+.review-header h1 {
+  margin: 10px 0 4px;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: clamp(28px, 3.4vw, 44px);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.review-score {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0;
+}
+
+.review-score strong {
+  color: #ffd98a;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 24px;
+}
+
+.review-score span {
+  color: #98958d;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The review is explicit that it is an estimate, not a solved answer. */
+.review-approximation {
+  max-width: 78ch;
+  margin: 8px 0 0;
+  color: #a9a49a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.review-segments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.review-segment-group h2 {
+  margin: 0 0 6px;
+  color: #98958d;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.review-segment-group ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-segment-group button {
+  display: grid;
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  color: #c7c1b6;
+  background: #0a100e;
+  cursor: pointer;
+  text-align: left;
+}
+
+.review-segment-group button[aria-pressed="true"] {
+  border-color: #e0ae4b;
+  color: #fff8e8;
+}
+
+.review-segment-group button > span {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.review-segment-group button > strong {
+  color: #ffd98a;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 17px;
+}
+
+.review-segment-group button > small {
+  color: #8e8a81;
+  font-size: 8px;
+}
+
+.review-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(280px, 0.5fr) minmax(360px, 1fr);
+  gap: 18px;
+}
+
+.review-timeline {
+  display: flex;
+  max-height: 58vh;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0 6px 0 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.review-timeline button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 26px 1fr;
+  gap: 9px;
+  align-items: start;
+  border: 0;
+  border-left: 3px solid transparent;
+  padding: 8px 10px;
+  color: #c7c1b6;
+  background: #0a100e;
+  cursor: pointer;
+  text-align: left;
+}
+
+.review-timeline button.is-selected {
+  border-left-color: #e0ae4b;
+  color: #fff8e8;
+  background: #14201b;
+}
+
+/* Colour is supplemental: the glyph and the written quality carry the
+   meaning on their own. */
+.review-timeline button[data-quality="best"] { border-left-color: #2f6f4f; }
+.review-timeline button[data-quality="close"] { border-left-color: #4c6b7a; }
+.review-timeline button[data-quality="inaccuracy"] { border-left-color: #9a7a34; }
+.review-timeline button[data-quality="mistake"] { border-left-color: #a45a32; }
+.review-timeline button[data-quality="blunder"] { border-left-color: #a03a35; }
+.review-timeline button.is-selected[data-quality] { border-left-color: #e0ae4b; }
+
+.review-timeline__glyph {
+  color: #cfa451;
+  font-size: 13px;
+  text-align: center;
+}
+
+.review-timeline__detail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.review-timeline__detail strong {
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.review-timeline__detail small,
+.review-timeline__detail em {
+  color: #98958d;
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.05em;
+}
+
+.review-timeline__detail em {
+  margin-top: 2px;
+  color: #b39a63;
+}
+
+.review-detail {
+  min-width: 0;
+  overflow-y: auto;
+  max-height: 58vh;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 16px 18px;
+  background: #070d0b;
+}
+
+.review-detail h2 {
+  margin: 0;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 22px;
+  text-transform: uppercase;
+}
+
+.review-detail h3 {
+  margin: 14px 0 6px;
+  color: #98958d;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.review-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+}
+
+.review-card-row {
+  display: flex;
+  gap: 5px;
+}
+
+.review-verdict {
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.review-verdict [data-quality="best"] { color: #7fc79c; }
+.review-verdict [data-quality="close"] { color: #96bdd0; }
+.review-verdict [data-quality="inaccuracy"] { color: #dcb85f; }
+.review-verdict [data-quality="mistake"] { color: #e29465; }
+.review-verdict [data-quality="blunder"] { color: #e57a72; }
+
+.review-math {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 16px;
+  margin: 14px 0 0;
+}
+
+.review-math div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 4px;
+}
+
+.review-math dt {
+  color: #98958d;
+  font-size: 10px;
+}
+
+.review-math dd {
+  margin: 0;
+  color: #f0e9da;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-action-values {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-action-values li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  border-left: 2px solid #2a2119;
+  padding: 5px 0 5px 9px;
+}
+
+.review-action-values strong {
+  font-size: 11px;
+}
+
+.review-action-values span {
+  color: #ffd98a;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-action-values small {
+  grid-column: 1 / -1;
+  color: #8e8a81;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.review-basis {
+  margin: 12px 0 0;
+  color: #8e8a81;
+  font-size: 9px;
+}
+
+.review-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.review-controls button {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 12px;
+  color: #c7c1b6;
+  background: #0a100e;
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.review-controls button[aria-pressed="true"] {
+  border-color: #e0ae4b;
+  color: #fff8e8;
+}
+
+.review-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #8e8a81;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+}
+
+@media (max-width: 1180px) {
+  .review-body {
+    grid-template-columns: 1fr;
+  }
+
+  .review-timeline,
+  .review-detail {
+    max-height: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   End-of-event ceremony payoff (E22-001).
+
+   The board previously landed as static typography whether the player had won
+   the event or busted out of it. The treatment below is deliberately
+   restrained -- a settling entrance and a warm rim on a win -- and it is
+   additive: the placement, qualification, and Elo rows carry the result on
+   their own, so nothing here is load-bearing information.
+--------------------------------------------------------------------------- */
+
+.ceremony-board {
+  animation: ceremony-settle 620ms cubic-bezier(0.22, 0.86, 0.34, 1) both;
+}
+
+.ceremony-board[data-outcome="win"] {
+  border-top-color: #ffd98a;
+  box-shadow:
+    0 30px 100px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(255, 217, 138, 0.22),
+    0 0 60px rgba(224, 174, 75, 0.16);
+}
+
+.ceremony-board__flare {
+  position: absolute;
+  z-index: -1;
+  top: -40%;
+  left: 50%;
+  width: 150%;
+  height: 90%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(224, 174, 75, 0.2),
+    rgba(224, 174, 75, 0) 68%
+  );
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ceremony-board[data-outcome="win"] .ceremony-board__flare {
+  animation: ceremony-flare 1.5s ease-out both;
+}
+
+@keyframes ceremony-settle {
+  from {
+    transform: translate(-50%, calc(-50% + 14px));
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+}
+
+@keyframes ceremony-flare {
+  0% { opacity: 0; }
+  35% { opacity: 1; }
+  100% { opacity: 0.45; }
+}
+
+/* Reduced motion keeps the win *state* -- the warm rim and the flare's resting
+   glow -- and drops only the movement. Winning stays perceptible either way. */
+:root[data-motion-transition="off"] .ceremony-board,
+:root[data-motion-transition="off"] .ceremony-board__flare {
+  animation-duration: 1ms !important;
+}
+
+:root[data-motion-transition="off"]
+  .ceremony-board[data-outcome="win"]
+  .ceremony-board__flare {
+  opacity: 0.45;
+}
+
+:root[data-motion-transition="reduced"] .ceremony-board,
+:root[data-motion-transition="reduced"] .ceremony-board__flare {
+  animation-duration: 260ms !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Additional seated-character gestures (E10-002).
+
+   `raise` is deliberately distinct from `bet` -- gathering and pushing a stack
+   forward is a different physical act from placing chips -- and `receive` and
+   `out` give the deal and the departure their own beats. All are selected by
+   `seatGestureForPublicState`, whose signature contains no card data, so none
+   of these can encode hand strength.
+--------------------------------------------------------------------------- */
+
+.seat-action-hand--raise {
+  right: -19px;
+  bottom: 9px;
+  width: 34px;
+  animation: opponent-raise-hand 520ms cubic-bezier(0.2, 0.78, 0.3, 1) both;
+}
+
+/* The gathered stack the hand pushes forward. */
+.seat-action-hand--raise::after {
+  content: "";
+  position: absolute;
+  top: -9px;
+  right: -4px;
+  width: 14px;
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e6c98a, #a8813c);
+  box-shadow: 0 -3px 0 rgba(230, 201, 138, 0.55);
+}
+
+.seat-action-hand--receive {
+  left: -15px;
+  bottom: 12px;
+  width: 29px;
+  animation: opponent-receive-hand 420ms cubic-bezier(0.2, 0.82, 0.3, 1) both;
+}
+
+.seat-action-hand--out {
+  left: -16px;
+  opacity: 0.5;
+  animation: opponent-leave-hand 560ms ease-in both;
+}
+
+@keyframes opponent-raise-hand {
+  from { opacity: 0; transform: translate(-14px, 14px) rotate(-18deg); }
+  45% { opacity: 1; transform: translate(4px, -5px) rotate(9deg); }
+  to { opacity: 0.9; transform: translate(0, 0) rotate(0); }
+}
+
+@keyframes opponent-receive-hand {
+  from { opacity: 0; transform: translate(16px, -10px) rotate(16deg); }
+  to { opacity: 0.85; transform: translate(0, 0) rotate(0); }
+}
+
+@keyframes opponent-leave-hand {
+  from { opacity: 0.5; transform: translate(0, 0); }
+  to { opacity: 0; transform: translate(-14px, 8px); }
+}
+
+/* Motion tiers, matching the treatment the other gestures already get. */
+:root[data-motion-table="off"] .seat-action-hand--raise,
+:root[data-motion-table="off"] .seat-action-hand--receive,
+:root[data-motion-table="off"] .seat-action-hand--out {
+  animation-duration: 120ms !important;
+}
+
+:root[data-motion-table="reduced"] .seat-action-hand--raise,
+:root[data-motion-table="reduced"] .seat-action-hand--receive,
+:root[data-motion-table="reduced"] .seat-action-hand--out {
+  animation-duration: 240ms !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Seated-table environment by event tier (E10-003).
+
+   The fly-through already varied by tier; the table the player actually sits
+   at did not, so every event looked identical once seated. These rules reuse
+   the depth layers rather than adding art: crowd density comes from how many
+   distant tables stay visible, room scale from their spread, and lighting from
+   the house-light warmth. Entirely procedural, no per-event asset set.
+--------------------------------------------------------------------------- */
+
+/* Local qualifier: a small, dim room -- the far plane is mostly empty. */
+.table-screen[data-event-tier="local"] .room-depth__far i:nth-child(n + 4) {
+  display: none;
+}
+
+.table-screen[data-event-tier="local"] .room-lights i {
+  opacity: 0.55;
+}
+
+.table-screen[data-event-tier="regional"] .room-depth__far i:nth-child(n + 6) {
+  display: none;
+}
+
+/* Circuit upward: the hall fills out and the house lights warm. */
+.table-screen[data-event-tier="circuit"] .room-lights i {
+  background: linear-gradient(rgba(230, 246, 255, 0.11), transparent);
+}
+
+.table-screen[data-event-tier="championship"] .room-depth__far,
+.table-screen[data-event-tier="world"] .room-depth__far {
+  right: -22%;
+  left: -22%;
+  opacity: 0.62;
+}
+
+.table-screen[data-event-tier="championship"] .room-lights i,
+.table-screen[data-event-tier="world"] .room-lights i {
+  width: 320px;
+  background: linear-gradient(rgba(255, 240, 208, 0.14), transparent);
+}
+
+/* The championship rail carries a warmer, brighter trim. */
+.table-screen[data-event-tier="championship"] .poker-table,
+.table-screen[data-event-tier="world"] .poker-table {
+  box-shadow:
+    0 0 0 3px #c79a4c,
+    0 0 0 11px #0b110e,
+    0 47px 60px rgba(0, 0, 0, 0.57),
+    inset 0 22px 44px rgba(0, 0, 0, 0.28),
+    inset 0 -30px 46px rgba(0, 0, 0, 0.46),
+    inset 0 2px 0 rgba(212, 246, 226, 0.18);
+}
+
+.table-screen[data-event-tier="world"] .room-depth__mid i {
+  width: 142px;
+}
+
+/* Standalone poker reference (E21-003). Reuses the pause menu's own hand-rank
+   and formula styling so the two presentations cannot drift apart. */
+.reference-shell {
+  overflow: auto;
+}
+
+.reference-panel {
+  position: relative;
+  z-index: 20;
+  max-width: 900px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(24px, 4vh, 44px) clamp(24px, 4vw, 56px);
+  background: rgba(3, 7, 6, 0.84);
+}
+
+.reference-panel h1 {
+  margin: 14px 0 6px;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: clamp(28px, 3.4vw, 44px);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.reference-intro {
+  max-width: 70ch;
+  margin: 0 0 22px;
+  color: #a9a49a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.reference-panel .hand-ranking-list,
+.reference-panel .pause-formulas {
+  max-width: 78ch;
+}
+
+.mode-stage__secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+}
+
+/* The ceremony's "what happens next" line, and a clear primary action so the
+   career reads as continuing rather than dead-ending into a menu (E20-001). */
+.ceremony-board__next {
+  margin: 18px 0 0;
+  color: #d9cfb8;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.ceremony-board__primary {
+  border-color: #e0ae4b !important;
+  color: #0a100e !important;
+  background: linear-gradient(180deg, #ffd98a, #d9a445) !important;
+  font-weight: 600;
+}
+
+/* "How this trainer works" orientation, above the poker reference (E21-004). */
+.reference-orientation h2,
+.reference-heading {
+  margin: 26px 0 10px;
+  color: #cfa451;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 19px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.reference-orientation dl {
+  display: grid;
+  max-width: 78ch;
+  gap: 10px;
+  margin: 0;
+}
+
+.reference-orientation dt {
+  color: #f0e9da;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reference-orientation dd {
+  margin: 2px 0 0;
+  color: #a9a49a;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.reference-orientation__boundary {
+  max-width: 78ch;
+  margin: 18px 0 0;
+  border-left: 2px solid #cfa451;
+  padding-left: 12px;
+  color: #d9cfb8;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+/* --- E20-003: travel between career events -------------------------------
+   One venue, re-dressed per tier, carrying the camera from the seat just
+   vacated to the next event's room. Phase is a class on the root, so the whole
+   sequence has a single static frame under `data-motion-room="off"` rather
+   than a separate reduced-motion code path.
+   ------------------------------------------------------------------------ */
+
+.career-travel {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  min-height: 100vh;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 42px 40px 34px;
+  background: radial-gradient(120% 90% at 50% 8%, #14211d, #040706 72%);
+  color: var(--text);
+}
+
+.career-travel__venue {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  transform-origin: 50% 78%;
+  transition: transform 1.6s cubic-bezier(0.32, 0.02, 0.16, 1);
+}
+
+/* The camera: at the seat, rising above the floor, level over the route, then
+   descending toward the next room. */
+.career-travel--seat .career-travel__venue { transform: scale(1.55) translateY(6%); }
+.career-travel--rise .career-travel__venue { transform: scale(1.05) translateY(-6%); }
+.career-travel--route .career-travel__venue { transform: scale(0.82) translateY(-14%); }
+.career-travel--approach .career-travel__venue { transform: scale(1.42) translateY(4%); }
+
+.career-travel__floor {
+  position: absolute;
+  right: -12%;
+  bottom: -18%;
+  left: -12%;
+  height: 62%;
+  background:
+    radial-gradient(70% 100% at 50% 0%, rgba(28, 96, 74, 0.55), transparent 68%),
+    repeating-linear-gradient(
+      98deg,
+      rgba(255, 255, 255, 0.028) 0 3px,
+      transparent 3px 26px
+    ),
+    linear-gradient(#0c1a16, #050908);
+}
+
+/* The seat being left. It recedes as the camera rises, and is gone by the
+   time the route is drawn. */
+.career-travel__seat {
+  position: absolute;
+  bottom: 6%;
+  left: 50%;
+  width: 220px;
+  height: 130px;
+  border-radius: 90px 90px 24px 24px;
+  background: linear-gradient(150deg, #1d2b26, #060a09);
+  box-shadow: 0 28px 34px rgba(0, 0, 0, 0.55);
+  opacity: 1;
+  transform: translateX(-50%);
+  transition:
+    opacity 1s ease,
+    transform 1.6s cubic-bezier(0.32, 0.02, 0.16, 1);
+}
+
+.career-travel--rise .career-travel__seat { opacity: 0.5; transform: translate(-50%, 34px) scale(0.86); }
+.career-travel--route .career-travel__seat,
+.career-travel--approach .career-travel__seat { opacity: 0; transform: translate(-50%, 90px) scale(0.6); }
+
+/* The destination room, growing in behind the route on approach. Each plate
+   carries its own depth so it arrives at its own rate. */
+.career-travel__destination {
+  position: absolute;
+  inset: 22% 8% 26%;
+}
+
+.career-travel__destination span {
+  position: absolute;
+  bottom: calc(var(--travel-depth) * 44%);
+  left: calc(6% + var(--travel-depth) * 66%);
+  width: calc(74px + var(--travel-depth) * 150px);
+  height: calc(34px + var(--travel-depth) * 62px);
+  border: 3px solid rgba(60, 40, 24, 0.85);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #17614a, #0a2d22);
+  opacity: 0;
+  transform: translateY(40px) scale(0.7);
+  transition:
+    opacity 0.9s ease,
+    transform 1.4s cubic-bezier(0.32, 0.02, 0.16, 1);
+}
+
+.career-travel--approach .career-travel__destination span {
+  opacity: calc(0.24 + var(--travel-depth) * 0.5);
+  transform: translateY(0) scale(1);
+}
+
+.career-travel__hud {
+  position: relative;
+  z-index: 4;
+}
+
+.career-travel__hud h1 {
+  margin: 4px 0 0;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.career-travel__status {
+  display: inline-block;
+  margin-top: 10px;
+  color: var(--gold-soft);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+/* The circuit, laid out exactly like the lobby's route so the two read as the
+   same object: the player watches the marker take the step they just earned. */
+.career-travel__route {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  margin: 0;
+  padding: 0;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  list-style: none;
+}
+
+.career-travel__route::before {
+  position: absolute;
+  top: 13px;
+  right: 6%;
+  left: 6%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  content: "";
+}
+
+.career-travel__route li {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.career-travel__route li::before {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  margin-top: 8px;
+  background: #0a1210;
+  content: "";
+}
+
+.career-travel__route li[data-stop-state="cleared"]::before,
+.career-travel__route li[data-stop-state="origin"]::before {
+  border-color: var(--gold-soft);
+  background: var(--gold-soft);
+}
+
+.career-travel__route li[data-stop-state="destination"]::before {
+  border-color: #7be3b3;
+  box-shadow: 0 0 14px rgba(123, 227, 179, 0.75);
+}
+
+.career-travel__route li span {
+  max-width: 12ch;
+  color: rgba(233, 238, 235, 0.62);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.career-travel__route li[data-stop-state="destination"] span {
+  color: #b9f4d8;
+}
+
+/* The marker itself. It starts pinned over the event just played and slides to
+   the destination when the route phase lands -- one transition, so the motion
+   tiers can shorten or remove it without touching the layout. */
+.career-travel__marker {
+  position: absolute;
+  z-index: 5;
+  top: 4px;
+  left: var(--travel-from, 0%);
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  margin-left: -7px;
+  background: radial-gradient(circle at 34% 30%, #fff3cf, #e0a63a);
+  box-shadow: 0 0 18px rgba(255, 190, 84, 0.85);
+  transition: left 1.9s cubic-bezier(0.36, 0.02, 0.14, 1);
+}
+
+.career-travel--route .career-travel__marker,
+.career-travel--approach .career-travel__marker {
+  left: var(--travel-to, 0%);
+}
+
+.career-travel__skip {
+  position: absolute;
+  z-index: 25;
+  right: 34px;
+  bottom: 28px;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 0 18px;
+  color: var(--text);
+  background: rgba(3, 12, 9, 0.74);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+}
+
+/* Tier dressing, matching the arrival fly-through's vocabulary: warmer, denser
+   light the further up the circuit the destination sits. */
+.career-travel[data-to-tier="championship"] .career-travel__destination span,
+.career-travel[data-to-tier="world"] .career-travel__destination span {
+  filter: saturate(1.2) brightness(1.12);
+}
+
+.career-travel[data-to-tier="world"] .career-travel__floor {
+  background:
+    radial-gradient(70% 100% at 50% 0%, rgba(52, 120, 92, 0.6), transparent 68%),
+    repeating-linear-gradient(
+      98deg,
+      rgba(255, 226, 160, 0.04) 0 3px,
+      transparent 3px 26px
+    ),
+    linear-gradient(#101f1a, #050a08);
+}
+
+/* Motion tiers. `off` holds one readable frame -- the route, with the marker
+   already at the destination -- because the point of the screen is the step
+   being recorded, not the camera move. */
+:root[data-motion-room="off"] .career-travel__venue,
+:root[data-motion-room="off"] .career-travel__seat,
+:root[data-motion-room="off"] .career-travel__destination span,
+:root[data-motion-room="off"] .career-travel__marker {
+  transition: none !important;
+}
+
+:root[data-motion-room="reduced"] .career-travel__venue,
+:root[data-motion-room="reduced"] .career-travel__seat,
+:root[data-motion-room="reduced"] .career-travel__destination span,
+:root[data-motion-room="reduced"] .career-travel__marker {
+  transition-duration: 0.55s !important;
 }
