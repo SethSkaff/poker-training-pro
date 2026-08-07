@@ -60,6 +60,12 @@ export type WebGlProbeResult = "available" | "unsupported" | "blocked";
 export interface SceneFrameCallbacks {
   readonly onFirstFrame: () => void;
   readonly onFrameFailure: () => void;
+  readonly onCameraFrame?: (pose: {
+    readonly position: readonly [number, number, number];
+    readonly target: readonly [number, number, number];
+    readonly yaw: number;
+    readonly fov: number;
+  }) => void;
   /** Start without drawing or scheduling a frame while the table is paused. */
   readonly startSuspended?: boolean;
 }

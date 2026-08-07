@@ -427,7 +427,7 @@ export const SHELL_MESSAGES = Object.freeze({
   // consumed by src/modes/tournamentSession.ts and rendered by
   // src/components/Dashboard.tsx's career-tour event list/detail board).
   // These are naming/categorization labels, not calibrated poker content —
-  // see TODOS.md string-extraction verdict for the reasoning.
+  // These labels are covered by the locale catalog tests.
   "career.event.local-qualifier": "Local Qualifier",
   "career.event.regional-open": "Regional Open",
   "career.event.circuit-main": "Circuit Main Event",

@@ -1772,8 +1772,9 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .table-stage {
-  cursor: grab;
+  overscroll-behavior: contain;
   touch-action: none;
+  cursor: grab;
 }
 
 .table-stage:has(*:active) {
@@ -2126,6 +2127,7 @@ input[type="range"]::-webkit-slider-thumb {
 .room-flight__background-art {
   position: absolute;
   z-index: 0;
+  pointer-events: none;
   inset: -9%;
   width: 118%;
   height: 118%;
@@ -2148,6 +2150,7 @@ input[type="range"]::-webkit-slider-thumb {
 .room-flight__venue {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   transform-origin: 50% 72%;
   animation: championship-flythrough 4.3s cubic-bezier(0.3, 0.02, 0.15, 1) forwards;
 }
@@ -3327,12 +3330,59 @@ input[type="range"]::-webkit-slider-thumb {
   `.is-revealed` animation rules. Opacity, not visibility, so the revealed-card
   text stays in the accessibility tree.
 */
-.poker-scene[data-spatial-scene="ready"] .player-seat .seat-bet,
 .poker-scene[data-spatial-scene="ready"] .player-seat .opponent-card-hand,
 .poker-scene[data-spatial-scene="ready"] .player-seat .opponent-cards {
   opacity: 0;
   animation: none;
   transition: none;
+}
+
+/* Numeric facts are projected from scene-space anchors. They are not children
+   of the rail plaque's moving box, so a pan or zoom cannot leave the number
+   behind while the physical rack/bet moves. */
+.poker-scene[data-spatial-scene="ready"] .player-seat {
+  position: static;
+  width: 0;
+  height: 0;
+  transform: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-label {
+  position: absolute;
+  left: var(--seat-stack-x);
+  top: var(--seat-stack-y);
+  z-index: 20;
+  margin: 0;
+  opacity: 0.98;
+  transform: translate(-50%, 0);
+  animation: none;
+  transition: none;
+  pointer-events: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-bet {
+  position: absolute;
+  left: var(--seat-bet-x);
+  top: var(--seat-bet-y);
+  z-index: 20;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  padding: 2px 6px;
+  opacity: 0.98;
+  transform: translate(-50%, -50%);
+  animation: none;
+  transition: none;
+  pointer-events: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat--hero {
+  visibility: visible;
+  pointer-events: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .player-seat--hero .seat-figure {
+  visibility: hidden;
 }
 
 /*
@@ -3350,20 +3400,18 @@ input[type="range"]::-webkit-slider-thumb {
   `animation: none` because a keyframed opacity would otherwise outrank it -- the
   same trap that kept the DOM card mirrors visible.
 */
-.poker-scene[data-spatial-scene="ready"] .player-seat .seat-label,
 .poker-scene[data-spatial-scene="ready"] .player-seat .seat-position-marker {
   opacity: 0;
   animation: none;
   transition: none;
 }
 
-/*
-  The acting player's action plaque is the one piece of seat text that survives,
-  because "who is acting and what did they do" is the single thing a player cannot
-  reconstruct from the felt. It reads as a small in-world label near their lane.
-*/
+/* Public actions remain in semantic/live DOM and in the articulated scene; do
+   not add another floating text substitute in the ready-mode table. */
 .poker-scene[data-spatial-scene="ready"] .player-seat .seat-action-label {
-  opacity: 0.92;
+  opacity: 0;
+  animation: none;
+  transition: none;
 }
 
 /*
@@ -3413,6 +3461,8 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 2px 6px;
   font-size: 8px;
   box-shadow: none;
+  opacity: 0.9;
+  animation: none;
 }
 
 /*
@@ -3645,18 +3695,11 @@ input[type="range"]::-webkit-slider-thumb {
   transform: translateX(-50%);
 }
 
-.table-readout span,
-.table-readout small {
-  color: rgba(226, 248, 240, 0.55);
-  font-size: 8px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .table-readout strong {
   color: var(--gold-soft);
   font-size: 24px;
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
   text-shadow: 0 0 18px rgba(237, 189, 98, 0.28);
 }
 
@@ -3857,30 +3900,42 @@ input[type="range"]::-webkit-slider-thumb {
   position: absolute;
   z-index: 3;
   bottom: 4px;
-  left: -14px;
+  left: -22px;
   display: flex;
-  width: 17px;
+  width: max-content;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.seat-chip-denomination {
+  display: flex;
   flex-direction: column-reverse;
   align-items: center;
-  pointer-events: none;
+  gap: 0;
 }
 
 .seat-chip-stack i {
   display: block;
-  width: 17px;
+  width: 13px;
   height: 4px;
   border: 1px solid rgba(0, 0, 0, 0.55);
   border-radius: 2px;
   margin-top: -1px;
-  background: linear-gradient(180deg, #6f9ad8, #3a5f96);
+  background: #1c8f4e;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
 }
 
-/* Under ten big blinds: the pile turns amber as well as short, so the state is
-   not carried by height alone. */
-.seat-chip-stack--short i {
-  background: linear-gradient(180deg, #ffcf6b, #d68a1f);
-}
+.seat-chip-stack i[data-denomination="100"] { background: #17191f; }
+.seat-chip-stack i[data-denomination="500"] { background: #5a2b78; }
+.seat-chip-stack i[data-denomination="1000"] { background: #d8aa2c; }
+.seat-chip-stack i[data-denomination="5000"] { background: #f07824; }
+.seat-chip-stack i[data-denomination="25000"] { background: #3c261b; }
+.seat-chip-stack i[data-denomination="100000"] { background: #c985b9; }
+
+/* Under ten big blinds, preserve the short-rack cue without changing value. */
+.seat-chip-stack--short i { box-shadow: 0 0 0 1px rgba(255, 209, 63, 0.38); }
 
 .chip-stack {
   position: relative;
@@ -4372,8 +4427,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 .seat-label {
   display: flex;
-  min-width: 103px;
-  flex-direction: column;
+  min-width: 0;
+  flex-direction: row;
   align-items: center;
   margin-top: -5px;
   border: 1px solid rgba(255, 255, 255, 0.13);
@@ -4384,36 +4439,18 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .seat-label strong {
-  font-size: 10px;
-}
-
-.seat-label > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   color: var(--gold-soft);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-.seat-label .chip-stack {
-  width: 13px;
-  height: 11px;
-  transform: scale(0.58);
-  transform-origin: left center;
-  margin-right: -6px;
-}
-
 .seat-bet {
   position: absolute;
-  /* The balance plate ends near 122px for every non-hero seat. Keep the
-     committed-wager lane below it so stack and bet values cannot overlap. */
   top: 140px;
   z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 3px;
+  display: grid;
+  place-items: center;
   min-height: 22px;
   border: 1px solid rgba(237, 189, 98, 0.2);
   border-radius: 999px;
@@ -4422,19 +4459,12 @@ input[type="range"]::-webkit-slider-thumb {
   background: rgba(3, 11, 8, 0.9);
   box-shadow: 0 5px 12px rgba(0, 0, 0, 0.26);
   font-size: 9px;
+  font-variant-numeric: tabular-nums;
   animation: opponent-chip-push 420ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 
 .opponent-cards {
   animation: opponent-card-deal 360ms ease-out both;
-}
-
-.seat-bet > span {
-  color: var(--muted);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .seat-position-marker {
@@ -5758,22 +5788,15 @@ input[type="range"]::-webkit-slider-thumb {
 .feedback-analysis__evs b { color: var(--text); font-variant-numeric: tabular-nums; }
 .feedback-analysis__assumption { margin: 11px 0 0; color: #d3ded9; font-size: 9px; line-height: 1.5; }
 
+/* The React motion resolver already layers the live OS preference into the
+   effective settings. Keep this class-based rule so an explicit in-app full
+   choice can override an OS preference without a later media query winning. */
 .reduced-motion .motion-vestibular,
 .reduced-motion .motion-vestibular::before,
 .reduced-motion .motion-vestibular::after {
   scroll-behavior: auto !important;
   animation: none !important;
   transition-duration: 0.01ms !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .motion-vestibular,
-  .motion-vestibular::before,
-  .motion-vestibular::after {
-    scroll-behavior: auto !important;
-    animation: none !important;
-    transition-duration: 0.01ms !important;
-  }
 }
 
 /* Night Circuit desktop shell */

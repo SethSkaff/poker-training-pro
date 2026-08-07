@@ -14,7 +14,7 @@
 import { seatLocalPoint, type SeatPose } from "./tableSceneModel";
 
 /** The one job the dealer is doing this frame. */
-export type DealerTask = "idle" | "deal" | "collect" | "push";
+export type DealerTask = "idle" | "deal" | "collect" | "muck" | "push";
 
 /** A piece of work the table has given the dealer. */
 export interface DealerWork {
@@ -84,7 +84,7 @@ const BREATH_PERIOD_MS = 4200;
 export function dealerWorkFor(
   candidates: readonly DealerWork[],
 ): DealerWork | undefined {
-  const rank: Record<Exclude<DealerTask, "idle">, number> = { push: 0, collect: 1, deal: 2 };
+  const rank: Record<Exclude<DealerTask, "idle">, number> = { push: 0, muck: 1, collect: 2, deal: 3 };
   return candidates
     .filter((candidate) => candidate.progress < 1)
     .sort((left, right) =>
@@ -155,6 +155,18 @@ export function dealerGestureFor(
         shoulderPitch: -SWEEP_PITCH * out,
         shoulderYaw: bearing * (1 - t),
         lean: 0.030 * out,
+      };
+    }
+    case "muck": {
+      // Folded cards are collected from the named seat, then returned to the
+      // dealer's muck. The cards own the table-space flight; this cue makes the
+      // dealer's hand arrive for the collection instead of waving at the pot.
+      const reach = t < 0.48 ? Math.sin(Math.PI * (t / 0.48) * 0.5) : Math.sin(Math.PI * ((1 - t) / 0.52) * 0.5);
+      return {
+        task: "muck",
+        shoulderPitch: -0.34 * reach,
+        shoulderYaw: bearing * (t < 0.48 ? t / 0.48 : (1 - t) / 0.52),
+        lean: 0.018 * reach,
       };
     }
     default: {

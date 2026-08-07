@@ -42,10 +42,10 @@ export function sceneGestureFor(
       return gesture(0.015 * pulse, 0.12 * pulse, "deal", "none", 0.28 * pulse, 0, 0.36 * pulse);
     case "check":
       /*
-        One clear table knock with the player's right hand.  This ends early
-        in the action beat so it cannot read as the old two-handed bouncing
-        loop: shoulder and elbow reach down, palm lands once, then that one
-        arm returns to its authored resting pose while the other never moves.
+        Two short table knocks with the player's right hand. The contact pulses
+        are deliberately separate so a check reads as a check rather than the
+        old continuous two-handed bounce. Shoulder, elbow and wrist all settle
+        between taps; the chair and torso root never travel.
       */
       return checkGesture(t);
     case "call":
@@ -88,19 +88,24 @@ function gesture(
 }
 
 function checkGesture(progress: number): SceneGesture {
-  // A 0.62-beat knock, followed by an unambiguous rest.  Squaring gives a
-  // brief contact/settle at the felt instead of a rigid full-arm sway.
-  const beat = Math.min(1, progress / 0.62);
-  const knock = Math.sin(Math.PI * beat) ** 2;
+  // Two 110 ms contacts with a readable 90 ms gap. The final third is a
+  // recovery beat, which leaves the hand at the authored resting pose.
+  const tap = (time: number, centre: number, width: number): number => {
+    const local = (time - centre) / width;
+    return Math.abs(local) <= 1 ? Math.sin((local + 1) * Math.PI * 0.5) ** 2 : 0;
+  };
+  const first = tap(progress, 0.24, 0.075);
+  const second = tap(progress, 0.48, 0.075);
+  const knock = Math.max(first, second);
   return gesture(
-    0.014 * knock,
+    0.010 * knock,
     0,
     "rest",
     "none",
-    0.18 * knock,
-    0.045 * knock,
-    0.30 * knock,
-    0.052 * knock,
+    0.16 * knock,
+    0.038 * knock,
+    0.28 * knock,
+    0.050 * knock,
     "right",
   );
 }

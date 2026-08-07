@@ -439,7 +439,6 @@ export function SettingsPanel({
           type="button"
           onClick={() => {
             onChange(defaultSettings);
-            onFullscreenChange(defaultSettings.fullscreen);
           }}
         >
           <RotateCcw size={15} /> {formatMessage("settings.footer.resetDefaults")}

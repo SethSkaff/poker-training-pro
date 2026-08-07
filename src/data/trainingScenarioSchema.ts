@@ -739,7 +739,9 @@ export function trainingScenarioStructuralFingerprint(
     stableValue({
       street: scenario.street,
       blinds: scenario.blinds,
-      ante: scenario.ante ?? 0,
+      // Legacy field is accepted for read compatibility but is neutralized in
+      // every newly normalized scenario so it cannot affect live presentation.
+      ante: 0,
       heroSeat: scenario.heroSeat,
       buttonSeat: scenario.buttonSeat,
       pot: scenario.pot,

@@ -2,6 +2,7 @@ import {
   CAREER_EVENTS,
   advanceTournamentClock,
   applyBettingAction,
+  buildLivePots,
   buildPots,
   createBettingRound,
   createInformationSet,
@@ -546,7 +547,8 @@ function sumCommitted(players: readonly HandInformationPlayer[]): number {
 }
 
 /**
- * Starts the next deterministic hand, posts the big-blind ante and blinds, and
+ * Starts the next deterministic hand and posts only the blinds. Legacy blind
+ * schedules may still carry an ante field, but it is intentionally ignored.
  * creates a core betting round. The first hand and every later hand advance
  * the button clockwise to the next live seat.
  */
@@ -594,21 +596,6 @@ export function beginTournamentSessionHand(
   const streetCommitted = new Map(players.map((player) => [player.id, 0]));
   const forcedActions: HandActionRecord[] = [];
 
-  const ante = postForced(
-    stacks,
-    totalCommitted,
-    streetCommitted,
-    bigBlindPlayer.id,
-    level.bigBlindAnte,
-    false,
-  );
-  if (ante > 0) {
-    forcedActions.push({
-      playerId: bigBlindPlayer.id,
-      type: "big-blind-ante",
-      amount: ante,
-    });
-  }
   const smallBlind = postForced(
     stacks,
     totalCommitted,
@@ -1003,6 +990,7 @@ export function settleTournamentSessionHand(
       playerId: player.id,
       amount: player.totalCommitted,
       folded: player.status === "folded",
+      allIn: player.status === "all-in",
     })),
   );
   const seats = Object.fromEntries(
@@ -1383,66 +1371,19 @@ export function createPokerTableSnapshot(
   // This is public ledger data only: committed amounts and folded status. It
   // lets the table explain an all-in side pot before the board/runout resolves
   // without reading or projecting anybody's hidden cards.
-  const builtLivePots = buildPots(
+  const builtLivePots = buildLivePots(
     hand.betting.players.map((player) => ({
       playerId: player.id,
       amount: player.totalCommitted,
       folded: player.status === "folded",
+      allIn: player.status === "all-in",
     })),
   );
-  const temporarilyUnmatched = builtLivePots.refunds.reduce(
-    (sum, refund) => sum + refund.amount,
-    0,
-  );
-  /*
-    Only an all-in actually splits the pot.
-
-    `buildPots` layers contributions at every distinct commitment level, which
-    is exactly right at settlement -- but this runs *during* the hand, where
-    players holding different amounts is the normal state of a betting round
-    rather than evidence of anything. With antes posted, the very first betting
-    decision of every hand has three levels (ante, small blind, big blind), so
-    the table announced a side pot on every hand it ever dealt. The player who
-    reported it was right and it was never once true.
-
-    A side pot exists when somebody is all-in for less than the others have
-    committed, and that is the only cap worth splitting on: everything else
-    evens out when the street closes. So the settlement layers are folded back
-    together, and a new lane is opened only where an all-in player's stack ran
-    out. `buildPots` itself is untouched -- it is correct for the job it does.
-  */
-  const allInCaps = new Set(
-    hand.betting.players
-      .filter((player) => player.status === "all-in")
-      .map((player) => player.totalCommitted),
-  );
-  const lanes: { amount: number; eligiblePlayerIds: string[] }[] = [];
-  let previousCap = 0;
-  for (const pot of builtLivePots.pots) {
-    if (lanes.length === 0 || allInCaps.has(previousCap)) {
-      lanes.push({ amount: 0, eligiblePlayerIds: [] });
-    }
-    const lane = lanes[lanes.length - 1];
-    lane.amount += pot.amount;
-    // Widest eligibility in the lane wins: merged layers are one contested pot,
-    // and everyone still in the hand can win it.
-    for (const playerId of pot.eligiblePlayerIds) {
-      if (!lane.eligiblePlayerIds.includes(playerId)) lane.eligiblePlayerIds.push(playerId);
-    }
-    previousCap = pot.cap;
-  }
-  const potBreakdown = lanes.map((lane, index) => ({
-    id: index === 0 ? "main" : `side-${index}`,
-    kind: index === 0 ? ("main" as const) : ("side" as const),
-    // Before a betting round closes, buildPots correctly classifies an
-    // unmatched blind/ante as refundable. The public table's inclusive pot
-    // still contains that committed chip, so retain it on the main lane until
-    // later action contests it or the engine returns it.
-    amount: lane.amount + (index === 0 ? temporarilyUnmatched : 0),
-    eligiblePlayerIds: lane.eligiblePlayerIds.map((playerId) => {
-      const player = players.find((entry) => entry.id === playerId);
-      return player?.id ?? playerId;
-    }),
+  const potBreakdown = builtLivePots.pots.map((pot) => ({
+    id: pot.id,
+    kind: pot.kind,
+    amount: pot.amount,
+    eligiblePlayerIds: [...pot.eligiblePlayerIds],
   }));
 
   return {
@@ -1461,7 +1402,7 @@ export function createPokerTableSnapshot(
             : 4,
     street: hand.street,
     blinds: [level.smallBlind, level.bigBlind],
-    ante: level.bigBlindAnte,
+    ante: 0,
     heroSeat: 0,
     buttonSeat: Math.max(0, buttonIndex),
     smallBlindSeat: Math.max(0, smallBlindIndex),

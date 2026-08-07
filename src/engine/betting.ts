@@ -17,6 +17,8 @@ export interface BettingPlayerState {
 
 export interface BettingRoundState {
   players: BettingPlayerState[];
+  /** Fixed chips represented by this round: stacks plus all hand commitments. */
+  chipTotal: number;
   /** Full clockwise order, rotated so the first player to act is first. */
   actionOrder: string[];
   pending: string[];
@@ -89,6 +91,47 @@ function cloneState(state: BettingRoundState): BettingRoundState {
     pending: [...state.pending],
     lastActedAtBet: { ...state.lastActedAtBet },
   };
+}
+
+/**
+ * Verifies the round-local chip ledger. A betting round does not own the
+ * central pot, so every chip is represented exactly once by either a player's
+ * remaining stack or their cumulative hand contribution.
+ */
+export function assertBettingStateInvariant(state: BettingRoundState): void {
+  assertChipAmount(state.chipTotal, "Betting chip total");
+  let observedTotal = 0;
+  for (const player of state.players) {
+    assertChipAmount(player.stack, `Stack for ${player.id}`);
+    assertChipAmount(
+      player.streetCommitted,
+      `Street contribution for ${player.id}`,
+    );
+    assertChipAmount(
+      player.totalCommitted,
+      `Total contribution for ${player.id}`,
+    );
+    if (player.streetCommitted > player.totalCommitted) {
+      throw new Error(
+        `Street contribution for ${player.id} exceeds total contribution`,
+      );
+    }
+    if (player.status === "all-in" && player.stack !== 0) {
+      throw new Error(`All-in player ${player.id} must have a zero stack`);
+    }
+    observedTotal += player.stack + player.totalCommitted;
+  }
+  if (observedTotal !== state.chipTotal) {
+    throw new Error(
+      `Betting chip conservation failed: expected ${state.chipTotal}, observed ${observedTotal}`,
+    );
+  }
+  if (state.currentBet < 0 || state.lastFullRaise <= 0) {
+    throw new Error("Betting thresholds must be positive");
+  }
+  if (state.players.some((player) => player.streetCommitted > state.currentBet)) {
+    throw new Error("A street contribution exceeds the current bet");
+  }
 }
 
 function clockwiseAfter(order: readonly string[], playerId: string): string[] {
@@ -215,6 +258,10 @@ export function createBettingRound(
 
   const state: BettingRoundState = {
     players: normalizedPlayers,
+    chipTotal: normalizedPlayers.reduce(
+      (sum, player) => sum + player.stack + player.totalCommitted,
+      0,
+    ),
     actionOrder: [...actionOrder],
     pending: [],
     currentBet,
@@ -225,6 +272,7 @@ export function createBettingRound(
     handComplete: false,
   };
   recomputePending(state);
+  assertBettingStateInvariant(state);
   return state;
 }
 
@@ -370,6 +418,7 @@ export function applyBettingAction(
 
   state.lastActedAtBet[playerId] = state.currentBet;
   recomputePending(state, playerId);
+  assertBettingStateInvariant(state);
 
   return {
     state,
@@ -386,4 +435,3 @@ export function applyBettingAction(
     },
   };
 }
-

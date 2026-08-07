@@ -47,6 +47,12 @@ export interface TableScene3DProps {
   readonly snapshot?: TableSceneState;
   /** Reports actual usable rendering, never just the player's preference. */
   readonly onAvailabilityChange?: (availability: SceneAvailability) => void;
+  readonly onCameraFrame?: (pose: {
+    readonly position: readonly [number, number, number];
+    readonly target: readonly [number, number, number];
+    readonly yaw: number;
+    readonly fov: number;
+  }) => void;
   /** Production factories remain injectable to test lifecycle ownership. */
   readonly runtime?: {
     readonly probe: (canvas: HTMLCanvasElement) => WebGlProbeResult;
@@ -65,6 +71,7 @@ export function TableScene3D({
   suspended,
   snapshot,
   onAvailabilityChange,
+  onCameraFrame,
   runtime,
 }: TableScene3DProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -85,6 +92,8 @@ export function TableScene3D({
   suspendedRef.current = suspended;
   const reportRef = useRef(onAvailabilityChange);
   reportRef.current = onAvailabilityChange;
+  const cameraFrameRef = useRef(onCameraFrame);
+  cameraFrameRef.current = onCameraFrame;
   const availabilityRef = useRef<SceneAvailability>({ status: "idle" });
   const contextLossCountRef = useRef(0);
   // Audit provenance only: a browser-generated loss must not be confused with
@@ -121,6 +130,13 @@ export function TableScene3D({
           objects: {
             boardCardCodes: [],
             potChipCount: 0,
+            potRenderedChipValue: 0,
+            potLanes: [],
+            dealerPhase: "rest",
+            cardPhase: "settle",
+            presentationEventId: null,
+            cardQuaternion: null,
+            cardPosition: null,
             seats: [],
             markers: { button: null, smallBlind: null, bigBlind: null },
             actingPlayerId: null,
@@ -153,7 +169,10 @@ export function TableScene3D({
           probe,
           startSuspended: suspendedRef.current,
           create: (target, currentState, callbacks) => {
-            const created = sceneRuntime.create(target, currentState, callbacks);
+            const created = sceneRuntime.create(target, currentState, {
+              ...callbacks,
+              onCameraFrame: (pose) => cameraFrameRef.current?.(pose),
+            });
             if (publishScene) sceneRef.current = created;
             return created;
           },

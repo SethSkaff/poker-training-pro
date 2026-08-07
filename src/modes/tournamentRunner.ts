@@ -452,7 +452,7 @@ function progressHandPresentationEvents(
       .filter((player) => player.status === "all-in")
       .map((player) => player.id);
     const revealAllInHands =
-      newlyDealt >= 2 &&
+      newlyDealt >= 1 &&
       allInPlayerIds.length >= 2 &&
       isUncontestedAllInRunout(previousHand.betting.players);
     return [

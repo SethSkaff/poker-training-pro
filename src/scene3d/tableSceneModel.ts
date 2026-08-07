@@ -26,6 +26,7 @@ import {
   TABLE_ANCHORS,
   PLAYER_STATION_COUNT,
   type Station,
+  type SceneCameraView,
 } from "./tableStations";
 
 export {
@@ -50,6 +51,15 @@ export {
   type SceneCameraView,
   type Station,
 } from "./tableStations";
+
+/** Convert the persisted lens choice plus wheel zoom into the renderer FOV input. */
+export function cameraLensZoom(
+  view: SceneCameraView = "standard",
+  wheelZoom = 0,
+): number {
+  const viewZoom = view === "close" ? 0.35 : view === "wide" ? -0.35 : 0;
+  return Math.min(1, Math.max(-1, viewZoom + wheelZoom));
+}
 
 import {
   TABLE_DEPTH,
@@ -102,7 +112,7 @@ export function cameraPose(
   return ringCameraPose(pan, heroIndex, aspect, zoom);
 }
 
-/** The rail plaque anchor for a station, kept for the projected-DOM helpers. */
+/** The rail anchor for a station, kept for non-numeric scene composition. */
 export function seatRailAnchor(pose: SeatPose): readonly [number, number, number] {
   const stations = playerStations();
   const match = stations.find(
@@ -192,8 +202,12 @@ export const CHIP_STACK_SAFE_RADIUS = 0.13;
 export const CHIP_STACK_LOCAL_SIDE_OFFSET = 0.145;
 export const CHIP_STACK_LOCAL_OWNER_OFFSET = -0.018;
 
-/** Dealer/blind pucks sit in the clear strip on the player side of a stack. */
-export const TABLE_MARKER_OWNER_OFFSET = -0.092;
+/** Radius of the physical dealer/blind marker mesh in the renderer. */
+export const TABLE_MARKER_RADIUS = 0.028;
+/** Visible air between a chip rack and the marker that describes its seat. */
+export const TABLE_MARKER_GAP = 0.024;
+/** Conservative radius of the rendered rack footprint, excluding the height. */
+export const CHIP_STACK_FOOTPRINT_RADIUS = 0.052;
 
 /**
  * Project a point into the inset capsule that remains after reserving room for
@@ -237,16 +251,45 @@ export function restingChipStackPosition(
   return clampToSafeFelt(desired);
 }
 
-/** Place a dealer/blind marker in front of, rather than on top of, its stack. */
+/**
+ * Place a dealer/blind marker between its rack and the table centre.
+ *
+ * The old owner offset was a fixed local-Z nudge that happened to put every
+ * puck farther from the centre than its rack. That made the marker read as a
+ * second object behind the chips, and made the error more obvious as the
+ * camera panned. This derives the direction from the actual rack anchor, so
+ * every station uses the same seat-relative radial rule.
+ */
 export function tableMarkerPosition(
   pose: SeatPose,
 ): readonly [number, number, number] {
-  const cardLocal = seatLocalPoint(pose, pose.feltPosition);
-  return seatWorldPoint(pose, [
-    cardLocal[0] + CHIP_STACK_LOCAL_SIDE_OFFSET,
+  const stack = restingChipStackPosition(pose);
+  const radialLength = Math.hypot(stack[0], stack[2]) || 1;
+  const towardCentre = [-stack[0] / radialLength, -stack[2] / radialLength] as const;
+  const advance = CHIP_STACK_FOOTPRINT_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS;
+  return clampToSafeFelt([
+    stack[0] + towardCentre[0] * advance,
     TABLE_HEIGHT + 0.012,
-    cardLocal[2] + TABLE_MARKER_OWNER_OFFSET,
+    stack[2] + towardCentre[1] * advance,
   ]);
+}
+
+/** World anchor for the exact number that describes a player's remaining rack. */
+export function stackAmountPosition(
+  pose: SeatPose,
+): readonly [number, number, number] {
+  const stack = restingChipStackPosition(pose);
+  const local = seatLocalPoint(pose, stack);
+  return seatWorldPoint(pose, [local[0], TABLE_HEIGHT + 0.002, local[2] - 0.030]);
+}
+
+/** World anchor for the exact number that describes chips pushed forward. */
+export function committedAmountPosition(
+  pose: SeatPose,
+): readonly [number, number, number] {
+  const bet = betCirclePosition(pose);
+  const local = seatLocalPoint(pose, bet);
+  return seatWorldPoint(pose, [local[0], TABLE_HEIGHT + 0.006, local[2] - 0.040]);
 }
 
 /** Resolve the actor cue by stable player identity, never an array slot. */
@@ -300,12 +343,12 @@ export function projectToViewport(
   };
 }
 
-/** How far above its rail anchor a seat plaque draws, as a share of viewport height. */
+/** Small visual lift so the stack numeral clears the top chip edge. */
 export const SEAT_PLAQUE_LIFT_PERCENT = 0.8;
 
 /**
- * Viewport anchor for a ready-mode seat plaque, or `undefined` for the hero (whose
- * seat is the camera) or a station behind the lens.
+ * Viewport anchor for a ready-mode stack numeral, or `undefined` for a station
+ * behind the camera lens.
  */
 export function seatPlaqueViewportAnchor(
   relativeSeat: number,
@@ -313,15 +356,17 @@ export function seatPlaqueViewportAnchor(
   viewportWidth: number,
   viewportHeight: number,
   heroIndex = 0,
+  cameraZoom = 0,
+  cameraView: SceneCameraView = "standard",
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
-  if (!Number.isInteger(relativeSeat) || relativeSeat <= 0) return undefined;
+  if (!Number.isInteger(relativeSeat) || relativeSeat < 0) return undefined;
   if (relativeSeat >= PLAYER_STATION_COUNT) return undefined;
   if (viewportWidth <= 0 || viewportHeight <= 0) return undefined;
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose) return undefined;
   const projected = projectToViewport(
-    seatRailAnchor(pose),
-    cameraPose(cameraPan, heroIndex, viewportWidth / viewportHeight),
+    stackAmountPosition(pose),
+    cameraPose(cameraPan, heroIndex, viewportWidth / viewportHeight, cameraLensZoom(cameraView, cameraZoom)),
     viewportWidth,
     viewportHeight,
   );
@@ -330,6 +375,81 @@ export function seatPlaqueViewportAnchor(
     xPercent: projected.xPercent,
     yPercent: projected.yPercent - SEAT_PLAQUE_LIFT_PERCENT,
   };
+}
+
+/** Project the numeric stack amount below the physical denomination columns. */
+export function seatStackAmountViewportAnchor(
+  relativeSeat: number,
+  cameraPan: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  heroIndex = 0,
+  cameraZoom = 0,
+  cameraView: SceneCameraView = "standard",
+): { readonly xPercent: number; readonly yPercent: number } | undefined {
+  if (!Number.isInteger(relativeSeat) || relativeSeat < 0) return undefined;
+  if (relativeSeat >= PLAYER_STATION_COUNT || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
+  const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
+  if (!pose) return undefined;
+  const projected = projectToViewport(
+    stackAmountPosition(pose),
+    cameraPose(cameraPan, heroIndex, viewportWidth / viewportHeight, cameraLensZoom(cameraView, cameraZoom)),
+    viewportWidth,
+    viewportHeight,
+  );
+  return projected.behind ? undefined : { xPercent: projected.xPercent, yPercent: projected.yPercent };
+}
+
+/** Viewport anchor for a committed-bet numeral, using the same camera as the scene. */
+export function seatBetViewportAnchor(
+  relativeSeat: number,
+  cameraPan: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  heroIndex = 0,
+  cameraZoom = 0,
+  cameraView: SceneCameraView = "standard",
+): { readonly xPercent: number; readonly yPercent: number } | undefined {
+  if (!Number.isInteger(relativeSeat) || relativeSeat < 0) return undefined;
+  if (relativeSeat >= PLAYER_STATION_COUNT) return undefined;
+  if (viewportWidth <= 0 || viewportHeight <= 0) return undefined;
+  const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
+  if (!pose) return undefined;
+  const projected = projectToViewport(
+    committedAmountPosition(pose),
+    cameraPose(cameraPan, heroIndex, viewportWidth / viewportHeight, cameraLensZoom(cameraView, cameraZoom)),
+    viewportWidth,
+    viewportHeight,
+  );
+  if (projected.behind) return undefined;
+  return { xPercent: projected.xPercent, yPercent: projected.yPercent };
+}
+
+/** Camera-frame variants used while the renderer is easing toward a new view. */
+export function seatStackAmountViewportAnchorFromCamera(
+  relativeSeat: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  heroIndex: number,
+  activeCamera: ReturnType<typeof cameraPose>,
+): { readonly xPercent: number; readonly yPercent: number } | undefined {
+  const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
+  if (!pose || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
+  const projected = projectToViewport(stackAmountPosition(pose), activeCamera, viewportWidth, viewportHeight);
+  return projected.behind ? undefined : { xPercent: projected.xPercent, yPercent: projected.yPercent };
+}
+
+export function seatBetViewportAnchorFromCamera(
+  relativeSeat: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  heroIndex: number,
+  activeCamera: ReturnType<typeof cameraPose>,
+): { readonly xPercent: number; readonly yPercent: number } | undefined {
+  const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
+  if (!pose || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
+  const projected = projectToViewport(committedAmountPosition(pose), activeCamera, viewportWidth, viewportHeight);
+  return projected.behind ? undefined : { xPercent: projected.xPercent, yPercent: projected.yPercent };
 }
 
 /** Actions the scene can show a body performing. */
@@ -358,6 +478,26 @@ export function actionEase(progress: number): number {
 }
 
 /**
+ * Clockwise two-pass hole-card choreography. The public event is one queue item,
+ * but each physical card gets its own handoff window: first card to every
+ * recipient, then the second card to every recipient. Overlap is intentional so
+ * the dealer never has to teleport a card between pitches.
+ */
+export function holeCardDealProgress(
+  progress: number,
+  recipientIndex: number,
+  cardIndex: number,
+  recipientCount: number,
+): number {
+  const total = Math.max(1, Math.floor(recipientCount) * 2);
+  const order = Math.max(0, Math.min(total - 1,
+    Math.floor(cardIndex) * Math.max(1, Math.floor(recipientCount)) + Math.floor(recipientIndex)));
+  const start = (order / total) * 0.72;
+  const duration = 0.28;
+  return Math.min(1, Math.max(0, (progress - start) / duration));
+}
+
+/**
  * The printed bet circle a wager rests on, in table space.
  *
  * A wager belongs in front of the player who made it until the street closes
@@ -375,7 +515,7 @@ export function betCirclePosition(pose: SeatPose): readonly [number, number, num
 }
 
 /** The pot: the middle of the felt, a little toward the hero. */
-export const POT_POSITION: readonly [number, number, number] = [0, TABLE_HEIGHT, 0.18];
+export const POT_POSITION: readonly [number, number, number] = [0, TABLE_HEIGHT, TABLE_ANCHORS.mainPot[2]];
 
 /**
  * Where a bet's chips are at `progress`, travelling from the seat's felt spot
@@ -466,6 +606,22 @@ export function collectChipPosition(
   ];
 }
 
+/** The inverse of a dealer sweep: a physical pot travels to the winner's rack. */
+export function awardChipPosition(
+  pose: SeatPose,
+  progress: number,
+): readonly [number, number, number] {
+  const t = actionEase(progress);
+  const from = POT_POSITION;
+  const to = restingChipStackPosition(pose);
+  const lift = Math.sin(Math.PI * t) * 0.065;
+  return [
+    from[0] + (to[0] - from[0]) * t,
+    from[1] + lift,
+    from[2] + (to[2] - from[2]) * t,
+  ];
+}
+
 function chipPositionAlongPush(
   pose: SeatPose,
   progress: number,
@@ -518,7 +674,14 @@ export function muckedCardPosition(
 ): readonly [number, number, number] {
   const t = actionEase(progress);
   const [x, y, z] = pose.feltPosition;
-  const muck: readonly [number, number, number] = [0.42, TABLE_HEIGHT, -0.52];
+  // Keep the fold destination on the same dealer-side muck anchor used by the
+  // visible muck pile. The old mirrored X coordinate sent cards away from the
+  // dealer and made the collector gesture physically meaningless.
+  const muck: readonly [number, number, number] = [
+    TABLE_ANCHORS.muck[0],
+    TABLE_HEIGHT,
+    TABLE_ANCHORS.muck[2],
+  ];
   const lift = Math.sin(Math.PI * t) * 0.05;
   return [x + (muck[0] - x) * t, y + lift, z + (muck[2] - z) * t];
 }
@@ -532,8 +695,7 @@ export function muckedCardPosition(
  * who looks short.
  */
 export function chipCountForAmount(amount: number): number {
-  if (amount <= 0) return 0;
-  return Math.max(1, Math.min(18, Math.round(Math.log10(amount + 1) * 4)));
+  return chipInventoryForAmount(amount).length;
 }
 
 /**
@@ -543,15 +705,52 @@ export function chipCountForAmount(amount: number): number {
  * of the displayed amount, so a wager cannot turn a pair of green chips into a
  * new column of unrelated purple ones.
  */
-export const TOURNAMENT_CHIP_DENOMINATIONS = [25_000, 5_000, 1_000, 500, 100, 25, 5, 1] as const;
+/** Public rack order is low-to-high, while the greedy decomposition is high-to-low. */
+export const TOURNAMENT_CHIP_DENOMINATIONS = [25, 100, 500, 1_000, 5_000, 25_000, 100_000] as const;
 
 export function chipInventoryForAmount(amount: number): readonly number[] {
   let remainder = Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0));
   const inventory: number[] = [];
-  for (const denomination of TOURNAMENT_CHIP_DENOMINATIONS) {
+  for (const denomination of [...TOURNAMENT_CHIP_DENOMINATIONS].reverse()) {
     const count = Math.floor(remainder / denomination);
     for (let index = 0; index < count; index += 1) inventory.push(denomination);
     remainder -= count * denomination;
   }
-  return inventory;
+  // Tournament stacks are multiples of 25. Keep the helper exact for legacy
+  // training fixtures and diagnostics without pretending the remainder is a
+  // standard tournament chip; valid tournament values never take this path.
+  if (remainder > 0) inventory.push(remainder);
+  return inventory.sort((left, right) => left - right);
+}
+
+export interface ChipColumnLayout {
+  readonly denomination: number;
+  readonly count: number;
+  readonly column: number;
+}
+
+/**
+ * The physical rack contract: denominations are adjacent and low-to-high;
+ * every column contains one denomination and never exceeds twenty chips.
+ */
+export function chipColumnLayoutForAmount(
+  amount: number,
+  chipsPerColumn = 20,
+): readonly ChipColumnLayout[] {
+  if (!Number.isFinite(chipsPerColumn) || chipsPerColumn < 1) return [];
+  const inventory = chipInventoryForAmount(amount);
+  const groups = new Map<number, number>();
+  for (const denomination of inventory) groups.set(denomination, (groups.get(denomination) ?? 0) + 1);
+  const result: ChipColumnLayout[] = [];
+  let column = 0;
+  for (const [denomination, count] of [...groups.entries()].sort(([a], [b]) => a - b)) {
+    let remaining = count;
+    while (remaining > 0) {
+      const size = Math.min(chipsPerColumn, remaining);
+      result.push({ denomination, count: size, column });
+      remaining -= size;
+      column += 1;
+    }
+  }
+  return result;
 }

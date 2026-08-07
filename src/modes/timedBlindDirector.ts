@@ -7,7 +7,8 @@ export type TimedBlindPhase =
 export interface TimedBlindLevel {
   smallBlind: number;
   bigBlind: number;
-  bigBlindAnte: number;
+  /** Legacy input/output field; timed tables are blind-only. */
+  bigBlindAnte?: number;
 }
 
 export interface TimedBlindPlayer {
@@ -96,7 +97,6 @@ export function directTimedBlinds(
   }
   assertPositiveInteger(input.current.smallBlind, "smallBlind");
   assertPositiveInteger(input.current.bigBlind, "bigBlind");
-  assertPositiveInteger(input.current.bigBlindAnte, "bigBlindAnte");
   assertPositiveInteger(input.startingTotalChips, "startingTotalChips");
 
   const liveStacks = input.players
@@ -172,7 +172,7 @@ export function directTimedBlinds(
     currentSmallBlind,
     roundUpFriendly(bigBlind / 2),
   );
-  const bigBlindAnte = Math.max(input.current.bigBlindAnte, bigBlind);
+  const bigBlindAnte = 0;
 
   return {
     smallBlind,
@@ -186,4 +186,3 @@ export function directTimedBlinds(
     reason,
   };
 }
-

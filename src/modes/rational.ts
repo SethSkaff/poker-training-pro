@@ -120,6 +120,12 @@ export interface RationalDecisionAudit {
     inPosition: boolean;
     drawPotential: number;
     blockerScore: number;
+    /** Public, opportunity-based pressure score used by the action model. */
+    pressureOpportunity: number;
+    /** Count of aggressive actions already visible on this street. */
+    streetAggression: number;
+    /** Whether a pure bluff has a public/private-information justification. */
+    boundedBluffOpportunity: number;
   };
   adjustments: {
     tournamentRiskPremium: number;
@@ -152,6 +158,23 @@ interface CandidateAction {
   id: string;
   command: BettingActionCommand;
   additionalRisk: number;
+}
+
+interface PublicPressureContext {
+  activeOpponents: number;
+  position: number;
+  streetAggression: number;
+  preflopAggression: number;
+  viewerWasPreflopAggressor: boolean;
+  opponentsActedThisStreet: number;
+  cappedOpponents: number;
+  latePositionOpen: number;
+  threeBetOpportunity: number;
+  squeezeOpportunity: number;
+  continuationOpportunity: number;
+  delayedProbeOpportunity: number;
+  stackPressure: number;
+  lowSprValuePressure: number;
 }
 
 interface PublicOpponent {
@@ -862,6 +885,125 @@ function positionScore(informationSet: PlayerInformationSet): number {
   return clamp(heroIndex / (order.length - 1), 0, 1);
 }
 
+function actionsForStreet(
+  informationSet: PlayerInformationSet,
+  street: "preflop" | "flop" | "turn" | "river",
+): PlayerInformationSet["actions"] {
+  const markerIndex = informationSet.actions.findIndex(
+    (action) => action.type === street,
+  );
+  if (street === "preflop") {
+    return markerIndex < 0
+      ? informationSet.actions
+      : informationSet.actions.slice(0, markerIndex);
+  }
+  if (markerIndex < 0) return informationSet.actions;
+  return informationSet.actions.slice(markerIndex + 1);
+}
+
+function aggressiveActionCount(
+  actions: readonly HandActionRecord[],
+): number {
+  return actions.filter(
+    (action) =>
+      action.type === "bet" ||
+      action.type === "raise" ||
+      action.type === "all-in",
+  ).length;
+}
+
+function publicPressureContext(
+  informationSet: PlayerInformationSet,
+  position: number,
+  effectiveStack: number,
+  bigBlind: number,
+): PublicPressureContext {
+  const preflopActions = actionsForStreet(informationSet, "preflop");
+  const currentStreetActions = actionsForStreet(informationSet, informationSet.street);
+  const streetAggression = aggressiveActionCount(currentStreetActions);
+  const preflopAggression = aggressiveActionCount(preflopActions);
+  const viewerWasPreflopAggressor = preflopActions.some(
+    (action) =>
+      action.playerId === informationSet.viewerId &&
+      (action.type === "bet" || action.type === "raise" || action.type === "all-in"),
+  );
+  const activeOpponents = informationSet.players.filter(
+    (player) =>
+      player.id !== informationSet.viewerId &&
+      player.status !== "folded" &&
+      player.status !== "out" &&
+      player.status !== "all-in",
+  );
+  const opponentsActedThisStreet = currentStreetActions.filter(
+    (action) => action.playerId !== informationSet.viewerId && action.type !== "pending",
+  ).length;
+  const cappedOpponents = activeOpponents.filter(
+    (opponent) => aggressionFor(informationSet.actions, opponent.id) < 0.65,
+  ).length;
+  const unopened = streetAggression === 0;
+  const latePositionOpen =
+    informationSet.street === "preflop" && unopened
+      ? clamp((position - 0.45) / 0.55, 0, 1)
+      : 0;
+  const threeBetOpportunity =
+    informationSet.street === "preflop" && preflopAggression === 1
+      ? clamp(0.35 + position * 0.45, 0.2, 0.85)
+      : 0;
+  const squeezeOpportunity =
+    informationSet.street === "preflop" &&
+    preflopAggression >= 1 &&
+    activeOpponents.length >= 2
+      ? clamp(0.25 + (activeOpponents.length - 2) * 0.15 + position * 0.2, 0.2, 0.7)
+      : 0;
+  const continuationOpportunity =
+    informationSet.street === "flop" && viewerWasPreflopAggressor && streetAggression === 0
+      ? clamp(0.35 + position * 0.35, 0.25, 0.75)
+      : 0;
+  const delayedProbeOpportunity =
+    (informationSet.street === "turn" || informationSet.street === "river") &&
+    streetAggression === 0 &&
+    !viewerWasPreflopAggressor &&
+    opponentsActedThisStreet > 0
+      ? clamp(0.18 + (cappedOpponents / Math.max(1, activeOpponents.length)) * 0.32, 0.12, 0.5)
+      : 0;
+  const stackPressure = clamp((14 - effectiveStack / bigBlind) / 14, 0, 1);
+  const lowSprValuePressure = clamp(
+    (2.5 - effectiveStack / Math.max(1, informationSet.pot)) / 2.5,
+    0,
+    1,
+  );
+
+  return {
+    activeOpponents: activeOpponents.length,
+    position,
+    streetAggression,
+    preflopAggression,
+    viewerWasPreflopAggressor,
+    opponentsActedThisStreet,
+    cappedOpponents,
+    latePositionOpen,
+    threeBetOpportunity,
+    squeezeOpportunity,
+    continuationOpportunity,
+    delayedProbeOpportunity,
+    stackPressure,
+    lowSprValuePressure,
+  };
+}
+
+function pressureOpportunity(context: PublicPressureContext): number {
+  const cappedShare =
+    context.cappedOpponents / Math.max(1, context.activeOpponents);
+  const opportunity =
+    context.latePositionOpen * 0.95 +
+    context.threeBetOpportunity * 0.82 +
+    context.squeezeOpportunity * 0.58 +
+    context.continuationOpportunity * 0.62 +
+    context.delayedProbeOpportunity * 0.42 +
+    cappedShare * (context.streetAggression === 0 ? 0.22 : 0);
+  return clamp(opportunity, 0, 1.8);
+}
+
 function tournamentRiskPremium(
   context: RationalTournamentContext | undefined,
   heroStack: number,
@@ -1129,6 +1271,7 @@ function scoreCandidates(
   draw: number,
   blockers: number,
   ranges: readonly OpponentRangeSummary[],
+  pressure: PublicPressureContext,
 ): Array<Omit<RationalActionOption, "probability">> {
   const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
   const spr = effectiveStack / Math.max(1, informationSet.pot);
@@ -1192,6 +1335,35 @@ function scoreCandidates(
       chipUtility += position * bigBlind * 0.1;
       if (role === "bluff") {
         chipUtility += blockers * bigBlind * 0.8 + draw * bigBlind * 0.5;
+      }
+      // Pressure is paid only for a public opportunity. This keeps late
+      // opens, 3-bets, squeezes, and stab/c-bet spots distinct from random
+      // aggression when the table has already shown strength.
+      const strategicPressure = pressureOpportunity(pressure);
+      const pressureMultiplier =
+        type === "all-in"
+          ? pressure.lowSprValuePressure * 0.72 + pressure.stackPressure * 0.42
+          : 0.55 + pressure.position * 0.25;
+      chipUtility +=
+        strategicPressure * pressureMultiplier * bigBlind *
+        (role === "bluff" ? 0.58 : 1);
+
+      // Normalized fold equity is deliberately bounded. A naked bluff needs a
+      // meaningful blocker/draw and a capped public range; it cannot become a
+      // profitable all-in simply because the pot is large.
+      if (role === "bluff") {
+        const credibleBluff =
+          (draw >= 0.16 || blockers >= 0.1) &&
+          foldEquity >= 0.18 &&
+          pressure.streetAggression <= 1 &&
+          pressure.cappedOpponents > 0;
+        if (!credibleBluff) chipUtility -= bigBlind * 1.1;
+        if (type === "all-in" && draw < 0.2) chipUtility -= effectiveStack * 0.45;
+        if (pressure.streetAggression >= 2) chipUtility -= bigBlind * 0.45;
+      }
+
+      if (type === "all-in" && equity < 0.55 && pressure.lowSprValuePressure < 0.35) {
+        chipUtility -= bigBlind * 0.8;
       }
       if (spr <= 2 && equity >= 0.55) chipUtility += bigBlind * 0.35;
       if (spr >= 8 && wager > informationSet.pot && equity < 0.7) {
@@ -1393,6 +1565,12 @@ function assembleRationalDecision(
   const position = positionScore(informationSet);
   const draw = drawPotential(heroCards, informationSet.board);
   const blockers = blockerScore(heroCards, informationSet.board);
+  const pressure = publicPressureContext(
+    informationSet,
+    position,
+    effectiveStack,
+    input.bigBlind,
+  );
   const candidates = buildCandidates(
     informationSet,
     legalActions,
@@ -1410,6 +1588,7 @@ function assembleRationalDecision(
     draw,
     blockers,
     equity.opponentRanges,
+    pressure,
   );
   const distribution = normalizedDistribution(
     scored,
@@ -1445,6 +1624,15 @@ function assembleRationalDecision(
         inPosition: position >= 0.67,
         drawPotential: draw,
         blockerScore: blockers,
+        pressureOpportunity: pressureOpportunity(pressure),
+        streetAggression: pressure.streetAggression,
+        boundedBluffOpportunity:
+          clamp(
+            (draw * 0.7 + blockers * 0.8) *
+              (pressure.cappedOpponents / Math.max(1, pressure.activeOpponents)),
+            0,
+            1,
+          ),
       },
       adjustments: {
         tournamentRiskPremium: riskPremium,

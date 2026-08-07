@@ -46,20 +46,25 @@ import {
   SRGBColorSpace,
   Texture,
   TorusGeometry,
+  Vector3,
   WebGLRenderer,
 } from "three";
 import { POT_HOLOGRAM, potHologramLabel } from "./potHologramPresentation";
 import {
   allInChipPosition,
+  awardChipPosition,
   betChipPosition,
   betCirclePosition,
+  cameraLensZoom,
   cameraPose,
+  chipColumnLayoutForAmount,
   callChipPosition,
   collectChipPosition,
   CAMERA_PITCH_DEGREES,
   CAMERA_VERTICAL_FOV,
   chipInventoryForAmount,
   dealtCardPosition,
+  holeCardDealProgress,
   muckedCardPosition,
   raiseChipPosition,
   restingChipStackPosition,
@@ -85,6 +90,7 @@ import {
   type Station,
 } from "./tableStations";
 import { dealerGestureFor, dealerWorkFor, type DealerWork } from "./dealerGesture";
+import { dealerCardFrame } from "./dealerChoreography";
 import { tableMeshGeometry, type TableMeshName } from "./tableGeometryLibrary";
 import {
   drawCarpetTexture,
@@ -187,13 +193,23 @@ export interface TableSceneHandle {
     objects: {
       boardCardCodes: readonly (string | null)[];
       potChipCount: number;
+      potRenderedChipValue: number;
       /** Public physical main/side lanes, available only to the audit bridge. */
       potLanes: readonly { id: string; amount: number; chipCount: number }[];
       seats: readonly {
         id: string;
         stackChipCount: number;
         betChipCount: number;
+        stackRenderedChipValue: number;
+        betRenderedChipValue: number;
+        stackDenominations: readonly { denomination: number; count: number }[];
+        betDenominations: readonly { denomination: number; count: number }[];
       }[];
+      dealerPhase: string;
+      cardPhase: string;
+      presentationEventId: string | null;
+      cardQuaternion: readonly number[] | null;
+      cardPosition: readonly number[] | null;
       markers: { button: string | null; smallBlind: string | null; bigBlind: string | null };
       actingPlayerId: string | null;
     };
@@ -268,18 +284,13 @@ const CHAIR_FRAME = 0x3a2318;
   holding shows high denominations and a short one does not.
 */
 const CHIP_DENOMINATIONS = [
-  /* Ivory stock, deliberately below paper-white so a chip never becomes a
-     bloom-like white light under the pendant. */
-  { value: 1, color: 0xb8ad98 },
-  { value: 5, color: 0x8e1f28 },
-  /* Lifted well clear of the felt: a $25 chip is green and so is the table,
-     so the separation has to come from value rather than hue. */
   { value: 25, color: 0x1c8f4e },
-  { value: 100, color: 0x14161c },
-  { value: 500, color: 0x4b2569 },
-  { value: 1000, color: 0x9a7a2c },
-  { value: 5000, color: 0x8f4b86 },
-  { value: 25000, color: 0x2b6e88 },
+  { value: 100, color: 0x17191f },
+  { value: 500, color: 0x5a2b78 },
+  { value: 1_000, color: 0xd8aa2c },
+  { value: 5_000, color: 0xf07824 },
+  { value: 25_000, color: 0x3c261b },
+  { value: 100_000, color: 0xc985b9 },
 ] as const;
 
 /** `#rrggbb` for a palette constant, so canvas drawing shares the same source. */
@@ -319,8 +330,11 @@ interface TableSceneResources {
   readonly chipEdgeGeometry: BufferGeometry;
   /** The printed disc on the chip's face; see `build_chip_inlay`. */
   readonly chipInlayGeometry: BufferGeometry;
+  readonly chipShadowGeometry: BufferGeometry;
+  readonly chipShadowMaterial: MeshBasicMaterial;
   chipEdgeMaterial(): MeshStandardMaterial;
   chipMaterial(): MeshStandardMaterial;
+  chipDenominationMaterial(denomination: number): MeshStandardMaterial;
   cardFaceMaterial(code: string): MeshStandardMaterial;
   /** The index revealed by folding a card's top corner back. */
   cardFoldMaterial(code: string): MeshStandardMaterial;
@@ -346,7 +360,7 @@ interface TableSceneResources {
  * edge.  The texture starts at its middle and ends at its printed top, so the
  * raised lip contains the card's rank rather than a full-card billboard.
  */
-function flexedHeroPeekGeometry(): BufferGeometry {
+function flexedHeroPeekGeometryLegacy(): BufferGeometry {
   const strips = 8;
   /*
     This must retain the authored card's 88 mm width.  The former 176 mm
@@ -395,6 +409,49 @@ function flexedHeroPeekGeometry(): BufferGeometry {
   return geometry;
 }
 
+/** A complete card with a shallow edge hinge; the body remains on the felt. */
+function heroPeekGeometry(): BufferGeometry {
+  const rows = 12;
+  const width = 0.088;
+  const length = 0.123;
+  const hingeStart = 0.74;
+  const hingeRadians = 24 * Math.PI / 180;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (let row = 0; row <= rows; row += 1) {
+    const progress = row / rows;
+    const baseZ = -length / 2 + progress * length;
+    const lifted = Math.max(0, (progress - hingeStart) / (1 - hingeStart));
+    const y = 0.002 + lifted * (length * (1 - hingeStart)) * Math.sin(hingeRadians);
+    const z = baseZ - lifted * (length * (1 - hingeStart)) * (1 - Math.cos(hingeRadians));
+    for (const x of [-width / 2, width / 2]) {
+      positions.push(x, y, z);
+      // Match the authored card's mirrored-U correction so the upper-left
+      // rank/suit index remains upper-left in the physical peek mesh.
+      uvs.push(x < 0 ? 1 : 0, 0.02 + progress * 0.96);
+    }
+  }
+  for (let row = 0; row < rows; row += 1) {
+    const left = row * 2;
+    indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.userData = {
+    ...geometry.userData,
+    cardWidth: width,
+    cardLength: length,
+    hingeDegrees: 24,
+    hingeStart,
+    fullCard: true,
+  };
+  return geometry;
+}
+
 function createTableSceneResources(): TableSceneResources {
   const ledger = createSceneResourceLedger();
   const track = <T extends { dispose(): void }>(resource: T): T => ledger.track(resource);
@@ -405,6 +462,42 @@ function createTableSceneResources(): TableSceneResources {
   const potPlaqueCanvases = new Map<"main" | "side", HTMLCanvasElement>();
   const potPlaqueTextures = new Map<"main" | "side", CanvasTexture>();
   const potPlaqueLabels = new Map<"main" | "side", string>();
+  const chipDenominationMaterials = new Map<number, MeshStandardMaterial>();
+  const chipDenominationMaterial = (denomination: number): MeshStandardMaterial => {
+    const cached = chipDenominationMaterials.get(denomination);
+    if (cached) return cached;
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (!context) return track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }));
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#f4efe2";
+    context.beginPath();
+    context.arc(64, 64, 56, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = "#6f5945";
+    context.lineWidth = 4;
+    context.stroke();
+    context.fillStyle = "#17191f";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.font = `800 ${denomination >= 100000 ? 24 : denomination >= 10000 ? 27 : 32}px Inter, Arial, sans-serif`;
+    context.fillText(String(denomination), 64, 64);
+    const texture = track(new CanvasTexture(canvas));
+    texture.colorSpace = SRGBColorSpace;
+    texture.generateMipmaps = false;
+    texture.minFilter = LinearFilter;
+    const material = track(new MeshStandardMaterial({
+      color: 0xffffff,
+      map: texture,
+      transparent: true,
+      roughness: 0.72,
+      metalness: 0,
+    }));
+    chipDenominationMaterials.set(denomination, material);
+    return material;
+  };
   const cardFaceMaterial = (code: string): MeshStandardMaterial => {
     const face = parsePublicCardFace(code);
     if (!face) return cardMaterial;
@@ -773,19 +866,27 @@ function createTableSceneResources(): TableSceneResources {
   return {
     ledger,
     cardGeometry: track(tableMeshGeometry("card")),
-    heroPeekGeometry: track(flexedHeroPeekGeometry()),
+    heroPeekGeometry: track(heroPeekGeometry()),
     cardMaterial,
     cardBackMaterial: track(cardBackMaterial()),
     deckBackMaterial,
     chipGeometry: track(tableMeshGeometry("chip/body")),
     chipEdgeGeometry: track(tableMeshGeometry("chip/edge")),
     chipInlayGeometry: track(tableMeshGeometry("chip/inlay")),
+    chipShadowGeometry: track(new CircleGeometry(0.036, 20)),
+    chipShadowMaterial: track(new MeshBasicMaterial({
+      color: 0x061009,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+    })),
     /* White materials tinted per instance: `setChipStack` writes a real
        denomination colour per chip, so the material must not impose one. */
     // Clay composite: all colour comes from the per-instance denomination,
     // while a very rough dielectric surface keeps the highlights soft.
     chipMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0 })),
     chipEdgeMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 })),
+    chipDenominationMaterial,
     cardFaceMaterial,
     cardFoldMaterial,
     markerMaterial,
@@ -1030,6 +1131,7 @@ export function createTableScene(
   // so the renderer can show the exact chips leaving it instead of spawning a
   // fresh pile at the betting circle.
   const chipCommitmentMotions = new Map<string, ChipCommitmentMotion>();
+  const chipAwardMotions = new Map<string, ChipAwardMotion>();
   let chipCommitmentTransitionId: string | undefined;
 
   const reconcileChipCommitmentMotions = (previous: TableSceneState, next: TableSceneState) => {
@@ -1037,6 +1139,20 @@ export function createTableScene(
     if (transition?.id === chipCommitmentTransitionId) return;
     chipCommitmentTransitionId = transition?.id;
     chipCommitmentMotions.clear();
+    chipAwardMotions.clear();
+    if (transition?.kind === "pot-awarded" && transition.payoutPlayerId) {
+      const afterSeats = new Map(next.seats.map((seat) => [seat.id, seat]));
+      for (const playerId of [transition.payoutPlayerId]) {
+        const after = afterSeats.get(playerId);
+        const amount = transition.payoutAmount ?? transition.amount ?? 0;
+        if (!after || amount <= 0) continue;
+        chipAwardMotions.set(playerId, {
+          transitionId: transition.id,
+          stackBefore: Math.max(0, after.stack - amount),
+          amount,
+        });
+      }
+    }
     if (!transition?.action || !["call", "bet", "raise", "all-in"].includes(transition.action)) return;
     const previousSeats = new Map(previous.seats.map((seat) => [seat.id, seat]));
     for (const playerId of transition.playerIds) {
@@ -1059,10 +1175,13 @@ export function createTableScene(
 
   let cameraViewportWidth = canvas.clientWidth || 1366;
   let cameraViewportHeight = canvas.clientHeight || 768;
-  let cameraCurrent = cameraPose(initial.cameraPan, initial.heroStationIndex ?? 0, camera.aspect, initial.cameraZoom ?? 0);
+  let cameraCurrent = cameraPose(initial.cameraPan, initial.heroStationIndex ?? 0, camera.aspect, cameraLensZoom(initial.cameraView, initial.cameraZoom ?? 0));
   let cameraTarget = cameraCurrent;
   let cameraLastFrameMs = mountedAt;
   let cameraMoving = false;
+  let diagnosticDealerPhase = "rest";
+  let diagnosticCardPhase = "settle";
+  let diagnosticPresentationEventId: string | null = null;
 
   const applyCamera = (pose = cameraCurrent) => {
     if (camera.fov !== pose.fov) {
@@ -1074,7 +1193,7 @@ export function createTableScene(
   };
 
   const setCameraTarget = (next: TableSceneState, snap: boolean) => {
-    cameraTarget = cameraPose(next.cameraPan, next.heroStationIndex ?? 0, camera.aspect, next.cameraZoom ?? 0);
+    cameraTarget = cameraPose(next.cameraPan, next.heroStationIndex ?? 0, camera.aspect, cameraLensZoom(next.cameraView, next.cameraZoom ?? 0));
     if (snap) {
       cameraCurrent = cameraTarget;
       cameraMoving = false;
@@ -1114,6 +1233,7 @@ export function createTableScene(
   const drawFrame = (nowMs: number) => {
     try {
       advanceCamera(nowMs);
+      callbacks?.onCameraFrame?.(cameraCurrent);
       for (const entry of seatViews.values()) entry.view.root.visible = false;
       const activeIds = new Set(state.seats.map((seat) => seat.id));
       const dealerWork: DealerWork[] = [];
@@ -1152,6 +1272,7 @@ export function createTableScene(
           resources,
           state.heroPeeked === true,
           chipCommitmentMotions.get(seat.id),
+          chipAwardMotions.get(seat.id),
         );
         const task = DEALER_TASK_FOR_ACTION[seat.action ?? ""];
         if (task) dealerWork.push({ task, progress, at: entry.pose.feltPosition });
@@ -1176,6 +1297,13 @@ export function createTableScene(
           at: TABLE_ANCHORS.board,
         });
       }
+      if (state.transition?.kind === "all-in-reveal") {
+        dealerWork.push({
+          task: "collect",
+          progress: state.transition.progress,
+          at: TABLE_ANCHORS.board,
+        });
+      }
       /*
         The dealer works the table.
 
@@ -1185,6 +1313,19 @@ export function createTableScene(
         of the seats in flight is the one being served.
       */
       const activeDealerWork = dealerWorkFor(dealerWork);
+      const cardKind = state.transition?.kind === "board-card-dealt"
+        ? "board-card" as const
+        : state.transition?.kind === "pot-awarded"
+          ? "payout" as const
+          : "hole-card" as const;
+      const cardFrame = activeDealerWork
+        ? dealerCardFrame(cardKind, activeDealerWork.progress)
+        : dealerCardFrame(cardKind, 1);
+      diagnosticDealerPhase = cardFrame.phase;
+      diagnosticCardPhase = cardFrame.phase;
+      diagnosticPresentationEventId = activeDealerWork && state.transition?.id
+        ? `${state.transition.id}:${cardKind}:${activeDealerWork.task}:${activeDealerWork.at.map((value) => value.toFixed(3)).join(",")}`
+        : null;
       const gesture = dealerGestureFor(
         activeDealerWork,
         dealerPoseModel,
@@ -1194,7 +1335,8 @@ export function createTableScene(
       );
       dealer.arms.rotation.x = gesture.shoulderPitch;
       dealer.arms.rotation.y = gesture.shoulderYaw;
-      dealer.body.position.z = gesture.lean;
+      dealer.body.position.z = 0;
+      dealer.body.rotation.x = gesture.lean;
       setDealerCardEquipment(
         liveDeck,
         prepDeck,
@@ -1210,7 +1352,10 @@ export function createTableScene(
       placeMarker(smallBlindMarker, state.smallBlindPlayerId, seatViews);
       placeMarker(bigBlindMarker, state.bigBlindPlayerId, seatViews);
       placeTurnIndicator(turnIndicator, state.seats, seatViews);
-      setPotLanes(potChips, state.pots, state.pot, state.transition, resources);
+      const payoutWinner = state.transition?.kind === "pot-awarded"
+        ? seatViews.get(state.transition.payoutPlayerId ?? "")?.pose
+        : undefined;
+      setPotLanes(potChips, state.pots, state.pot, state.transition, resources, payoutWinner);
       for (const lane of potChips.children) {
         const plaque = lane.getObjectByName("pot-amount-plaque");
         if (plaque) plaque.lookAt(camera.position);
@@ -1231,7 +1376,7 @@ export function createTableScene(
   lifecycle = createSceneRenderLifecycle(drawFrame);
   const needsAnimation = (next: TableSceneState) => (
     (!next.reducedMotion
-      && next.transition?.action !== undefined
+      && next.transition !== undefined
       && (next.transition?.progress ?? 1) < 1)
     || cameraMoving
   );
@@ -1322,10 +1467,13 @@ export function createTableScene(
         potChipCount: potChips.children.reduce((total, lane) => (
           total + chipStackCount(lane.getObjectByName("pot-chip-stack") as Group | undefined)
         ), 0),
+        potRenderedChipValue: potChips.children.reduce((total, lane) => (
+          total + chipRenderedValue(lane.getObjectByName("pot-chip-stack") as Group | undefined)
+        ), 0),
         potLanes: potChips.children.map((lane) => ({
           id: String(lane.userData.publicPotId ?? ""),
-          amount: Number(lane.userData.publicPotAmount ?? 0),
-          chipCount: chipStackCount(lane.getObjectByName("pot-chip-stack") as Group | undefined),
+            amount: Number(lane.userData.publicPotAmount ?? 0),
+            chipCount: chipStackCount(lane.getObjectByName("pot-chip-stack") as Group | undefined),
         })),
         seats: state.seats.map((seat) => {
           const view = seatViews.get(seat.id)?.view;
@@ -1333,8 +1481,24 @@ export function createTableScene(
             id: seat.id,
             stackChipCount: chipStackCount(view?.stackChips),
             betChipCount: chipStackCount(view?.betChips),
+            stackRenderedChipValue: chipRenderedValue(view?.stackChips),
+            betRenderedChipValue: chipRenderedValue(view?.betChips),
+            stackDenominations: chipDenominations(view?.stackChips),
+            betDenominations: chipDenominations(view?.betChips),
           };
         }),
+        dealerPhase: diagnosticDealerPhase,
+        cardPhase: diagnosticCardPhase,
+        presentationEventId: diagnosticPresentationEventId,
+        cardQuaternion: (() => {
+          const active = [...board.children].find((card) => card.userData.cardPhase);
+          const value = active?.userData.cardQuaternion;
+          return Array.isArray(value) ? value : null;
+        })(),
+        cardPosition: (() => {
+          const active = [...board.children].find((card) => card.userData.cardPhase);
+          return active ? [active.position.x, active.position.y, active.position.z] : null;
+        })(),
         markers: {
           button: publicObjectPlayerId(buttonMarker),
           smallBlind: publicObjectPlayerId(smallBlindMarker),
@@ -1384,6 +1548,12 @@ interface ChipCommitmentMotion {
   readonly transitionId: string;
   readonly stackBefore: number;
   readonly betBefore: number;
+  readonly amount: number;
+}
+
+interface ChipAwardMotion {
+  readonly transitionId: string;
+  readonly stackBefore: number;
   readonly amount: number;
 }
 
@@ -1797,24 +1967,19 @@ function buildSeat(
   root.rotation.y = pose.facing;
 
   /*
-    The chair belongs to the body group, not the seat root, so hiding an
-    occupant hides their chair with them.
+    Keep the planted chair as a sibling of the occupant. Earlier choreography
+    translated a wrapper containing both, so every check/bet made the chair
+    slide with the player. Action motion now rotates the occupant's torso and
+    joints while the chair stays at this stable station.
 
     The hero's seat gets no body and no chair at all. The camera is at the
     hero's eyes, 0.10 m behind their own station, so a character built there is
-    *inside the lens*: the near plane slices through it and what reaches the
-    frame is the inside of a skull and a shoulder floating across the view. It
-    looked exactly like sitting on top of another player, which is what it was.
-    The hero's own cards and chips still belong to this seat -- only the body
-    the camera is standing in is omitted.
+    inside the lens. The hero's own cards and chips still belong to this seat.
   */
   const body = new Group();
-  // The gesture code leans the body and reaches an arm. With no character there
-  // is still an arm handle, just an empty one, so every gesture stays a no-op on
-  // the hero rather than a null check at each call site.
   let arm: Object3D = new Group();
   if (!isHero) {
-    body.add(buildChair(CHAIR_SEAT, CHAIR_FRAME, resources.ledger));
+    root.add(buildChair(CHAIR_SEAT, CHAIR_FRAME, resources.ledger));
     const character = buildCharacter(describeOpponentCharacter(playerId), resources.ledger);
     body.add(character.root);
     arm = character.arms;
@@ -1851,11 +2016,12 @@ function buildSeat(
  * silhouette clear without putting a character body inside the first-person
  * camera.
  */
-function buildHeroPeekHands(resources: TableSceneResources): Group {
+function buildHeroPeekHandsLegacy(resources: TableSceneResources): Group {
   const hands = new Group();
   const skin = resources.ledger.track(new MeshLambertMaterial({ color: 0xd2a07b }));
   const palmGeometry = resources.ledger.track(new SphereGeometry(1, 12, 8));
   const fingerGeometry = resources.ledger.track(new CylinderGeometry(0.010, 0.012, 0.074, 8));
+  const thumbGeometry = resources.ledger.track(new CylinderGeometry(0.012, 0.014, 0.060, 8));
   const addHand = (
     name: string,
     x: number,
@@ -1894,6 +2060,19 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
       segment.rotation.set(Math.PI / 2.8, 0, (finger - 1.5) * 0.035);
       hand.add(segment);
     }
+    // The reference pose is a pinch, not four floating rods: the near hand's
+    // thumb applies the lift at the card corner while the other palm shields
+    // the packet. Keep the thumb below the printed index window.
+    const thumb = new Mesh(thumbGeometry, skin);
+    thumb.name = role === "side-lift" ? "peek-shield-thumb" : "peek-corner-lift-thumb";
+    thumb.position.set(
+      role === "side-lift" ? mirror * 0.018 : 0.006,
+      0.008,
+      role === "side-lift" ? 0.028 : 0.052,
+    );
+    thumb.rotation.set(Math.PI / 2.35, role === "side-lift" ? -0.22 : 0.12, mirror * 0.08);
+    thumb.scale.y = role === "side-lift" ? 0.72 : 0.82;
+    hand.add(thumb);
     hands.add(hand);
   };
   /*
@@ -1908,6 +2087,81 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
   // They intentionally cannot cover either rank/suit window at the far edge.
   addHand("peek-side-lift-hand", -0.074, -0.004, -0.10, 1, "side-lift");
   addHand("peek-rear-brace-hand", 0.018, -0.068, 0.08, -1, "rear-brace");
+  return hands;
+}
+
+/** First-person rig: both wrists have a visible forearm continuation off frame. */
+function buildHeroPeekHands(resources: TableSceneResources): Group {
+  const hands = new Group();
+  hands.name = "hero-peek-rig";
+  const skin = resources.ledger.track(new MeshLambertMaterial({ color: 0xd2a07b }));
+  const jointGeometry = resources.ledger.track(new SphereGeometry(1, 12, 8));
+  const up = new Vector3(0, 1, 0);
+  const segment = (
+    parent: Group,
+    name: string,
+    from: readonly [number, number, number],
+    to: readonly [number, number, number],
+    radius: number,
+  ) => {
+    const start = new Vector3(...from);
+    const end = new Vector3(...to);
+    const direction = end.clone().sub(start);
+    const mesh = new Mesh(
+      resources.ledger.track(new CylinderGeometry(radius, radius * 1.08, direction.length(), 8)),
+      skin,
+    );
+    mesh.name = name;
+    mesh.position.copy(start).add(end).multiplyScalar(0.5);
+    mesh.quaternion.setFromUnitVectors(up, direction.normalize());
+    parent.add(mesh);
+  };
+  const addArm = (
+    side: "left" | "right",
+    shoulder: readonly [number, number, number],
+    elbow: readonly [number, number, number],
+    wrist: readonly [number, number, number],
+  ) => {
+    const arm = new Group();
+    arm.name = `hero-${side}-arm-chain`;
+    segment(arm, `hero-${side}-upper-arm`, shoulder, elbow, 0.017);
+    segment(arm, `hero-${side}-forearm`, elbow, wrist, 0.014);
+    const elbowJoint = new Mesh(jointGeometry, skin);
+    elbowJoint.name = `hero-${side}-elbow-joint`;
+    elbowJoint.position.set(...elbow);
+    elbowJoint.scale.setScalar(0.018);
+    arm.add(elbowJoint);
+    const hand = new Group();
+    hand.name = `hero-${side}-wrist-hand`;
+    hand.position.set(...wrist);
+    const palm = new Mesh(jointGeometry, skin);
+    palm.name = `hero-${side}-palm`;
+    palm.scale.set(side === "left" ? 0.024 : 0.022, 0.012, 0.030);
+    hand.add(palm);
+    const fingerGeometry = resources.ledger.track(new CylinderGeometry(0.009, 0.011, 0.060, 8));
+    for (let finger = 0; finger < 3; finger += 1) {
+      const tip = new Mesh(fingerGeometry, skin);
+      tip.name = `hero-${side}-finger-${finger}`;
+      tip.position.set((finger - 1) * 0.010, 0.007, side === "left" ? 0.020 : 0.014);
+      tip.rotation.set(Math.PI / 2.7, side === "left" ? 0.12 : -0.10, (finger - 1) * 0.03);
+      hand.add(tip);
+    }
+    const thumb = new Mesh(
+      resources.ledger.track(new CylinderGeometry(0.011, 0.013, 0.054, 8)),
+      skin,
+    );
+    thumb.name = `hero-${side}-thumb`;
+    thumb.position.set(side === "left" ? 0.014 : -0.014, 0.006, 0.028);
+    thumb.rotation.set(Math.PI / 2.2, side === "left" ? -0.18 : 0.18, side === "left" ? 0.10 : -0.10);
+    hand.add(thumb);
+    arm.add(hand);
+    hands.add(arm);
+  };
+  // Origins continue below the first-person frame; wrists arrive at opposite
+  // card edges, producing a real brace/lift gesture instead of floating props.
+  addArm("left", [-0.16, -0.16, -0.22], [-0.12, -0.07, -0.13], [-0.074, -0.002, -0.018]);
+  addArm("right", [0.16, -0.16, -0.22], [0.12, -0.06, -0.11], [0.054, 0.002, 0.038]);
+  hands.userData.rig = "shoulder-upper-arm-elbow-forearm-wrist-palm-fingers";
   return hands;
 }
 
@@ -1939,6 +2193,7 @@ function cornerFoldGeometry(): BufferGeometry {
 const DEALER_TASK_FOR_ACTION: Readonly<Record<string, DealerWork["task"] | undefined>> = {
   deal: "deal",
   collect: "collect",
+  fold: "muck",
   win: "push",
 };
 
@@ -1954,12 +2209,21 @@ function applySeat(
   resources: TableSceneResources,
   peeked: boolean,
   chipCommitment: ChipCommitmentMotion | undefined,
+  chipAward: ChipAwardMotion | undefined,
 ): number {
   const started = startedAt.get(seat.seat) ?? nowMs;
   const localProgress = reducedMotion
     ? 1
     : Math.min(1, (nowMs - started) / ACTION_MS);
-  const progress = transition?.action === seat.action && transition?.playerIds.includes(seat.id)
+  const transitionAffectsSeat = Boolean(
+    (transition?.playerIds.includes(seat.id) || transition?.payoutPlayerId === seat.id)
+      && (transition.action === seat.action
+        || transition.kind === "hole-cards-dealt"
+        || transition.kind === "all-in-reveal"
+        || transition.kind === "showdown"
+        || transition.kind === "pot-awarded"),
+  );
+  const progress = transitionAffectsSeat
     ? transition?.progress ?? localProgress
     : localProgress;
 
@@ -1985,6 +2249,9 @@ function applySeat(
   const folded = seat.folded || transition?.foldedPlayerIds.includes(seat.id) === true;
   const gesture = sceneGestureFor(seat.action, progress, seat.acting, folded);
   view.cards.visible = !folded || progress < 1;
+  const allInReveal = transition?.kind === "all-in-reveal" && !folded;
+  const showdownReveal = transition?.kind === "showdown" && !folded;
+  const winningCodes = transition?.winningCardCodes ?? [];
   /*
     The hero is an ordinary seat now.
 
@@ -2009,10 +2276,18 @@ function applySeat(
     keeping rank text upright rather than flipping or forming a card triangle.
   */
   view.cards.children.forEach((card, index) => {
+    const dealProgress = transition?.kind === "hole-cards-dealt"
+      ? holeCardDealProgress(
+        transition.progress,
+        Math.max(0, transition.playerIds.indexOf(seat.id)),
+        index,
+        transition.playerIds.length,
+      )
+      : progress;
     const target = folded
       ? muckedCardPosition(pose, progress)
       : gesture.cardMotion === "deal"
-        ? dealtCardPosition(pose, progress)
+        ? dealtCardPosition(pose, dealProgress)
         : pose.feltPosition;
     const local = seatLocalPoint(pose, target);
     /*
@@ -2037,10 +2312,14 @@ function applySeat(
       list, label and announcement describing them.
     */
     const toPlayersLeft = index === 0 ? spread : -spread;
+    const code = seat.publicCardCodes?.[index];
+    const winning = showdownReveal && Boolean(code && winningCodes.includes(code));
+    const revealLift = (allInReveal || winning) ? 0.014 : 0;
+    const revealInward = (allInReveal || winning) ? 0.014 : 0;
     card.position.set(
       local[0] + toPlayersLeft,
-      local[1] + (squeezing ? 0.003 : 0),
-      local[2] + (squeezing ? -0.006 : 0),
+      local[1] + (squeezing ? 0.003 : 0) + revealLift,
+      local[2] + (squeezing ? -0.006 : 0) + revealInward,
     );
     // The card's *geometry* now flexes, rather than rotating an entire rigid
     // rectangle. Keeping the packet level preserves the printed orientation
@@ -2048,8 +2327,20 @@ function applySeat(
     card.rotation.x = 0;
     card.rotation.y = squeezing ? (index === 0 ? 0.025 : -0.025) : 0;
     card.scale.setScalar(1);
+    if (winning) card.scale.multiplyScalar(1.045);
     const mesh = card as Mesh;
-    const code = seat.publicCardCodes?.[index];
+    // The dealer-held mesh owns the card before this recipient's handoff. A
+    // seat card is not allowed to appear at its destination before its own
+    // clockwise deal slot begins.
+    const holeFrame = transition?.kind === "hole-cards-dealt"
+      ? dealerCardFrame("hole-card", dealProgress)
+      : dealerCardFrame("hole-card", 1);
+    mesh.visible = transition?.kind === "hole-cards-dealt"
+      ? holeFrame.visible
+      : true;
+    mesh.userData.cardPhase = holeFrame.phase;
+    mesh.userData.cardOwnership = holeFrame.ownership;
+    mesh.userData.cardQuaternion = [...holeFrame.quaternion];
     mesh.geometry = squeezing ? resources.heroPeekGeometry : resources.cardGeometry;
     // A private peek is the one moment the hero must be able to read both
     // cards. The snapshot only supplies `code` for the hero while peeking (or
@@ -2096,10 +2387,14 @@ function applySeat(
   // not translate as a rigid pair: each shoulder and elbow has its own joint
   // rotation, so a check knocks the rail and a wager reaches from stack to bet
   // circle like a person rather than a mannequin on a track.
-  view.body.position.z = gesture.bodyLean;
+  // The chair is a root sibling, so this torso response cannot slide it. Keep
+  // the translation at zero: seated action originates at the shoulders and
+  // elbows, with only a tiny upper-torso pitch for a grounded weight shift.
+  view.body.position.z = 0;
+  view.body.rotation.x = gesture.bodyLean;
   // A wager is not a telekinetic chip effect: the articulated arm follows the
   // same rack-to-circle line as the travelling pile, then settles back.
-  view.arm.position.z = -gesture.armReach;
+  view.arm.position.z = 0;
   const leftShoulder = view.arm.getObjectByName("left-shoulder");
   const rightShoulder = view.arm.getObjectByName("right-shoulder");
   const leftElbow = view.arm.getObjectByName("left-elbow");
@@ -2163,7 +2458,9 @@ function applySeat(
   // flight.  At rest the engine's authoritative balance is shown untouched.
   const displayedStack = isCommitting && chipCommitment
     ? Math.max(0, Math.round(chipCommitment.stackBefore - chipCommitment.amount * progress))
-    : seat.stack;
+    : chipAward !== undefined && chipAward.transitionId === transition?.id
+      ? Math.max(0, Math.round(chipAward.stackBefore + chipAward.amount * progress))
+      : seat.stack;
   setChipStack(view.stackChips, displayedStack, resources);
   /*
     Beside the player, in the player's own frame.
@@ -2254,7 +2551,6 @@ function sameCameraPose(
     && close(left.fov, right.fov);
 }
 
-const MAX_RENDERED_CHIPS = 18;
 /**
  * Chips per column before a new one starts beside it; see `setChipStack`.
  *
@@ -2277,14 +2573,124 @@ const POT_HOLOGRAM_FORWARD = 0.02;
  * approved draw-call budget by bringing more existing stacks into view.
  */
 function setChipStack(group: Group, amount: number, resources: TableSceneResources): void {
-  let stack = group.getObjectByName("instanced-chip-stack") as InstancedMesh | undefined;
-  let spots = group.getObjectByName("instanced-chip-spots") as InstancedMesh | undefined;
-  let faces = group.getObjectByName("instanced-chip-faces") as InstancedMesh | undefined;
+  const layout = chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN);
+  const layoutByDenomination = new Map<number, typeof layout[number][]>();
+  for (const column of layout) {
+    const columns = layoutByDenomination.get(column.denomination) ?? [];
+    columns.push(column);
+    layoutByDenomination.set(column.denomination, columns);
+  }
+  const existing = new Map<number, Group>();
+  for (const child of [...group.children]) {
+    if (!child.name.startsWith("chip-denomination-")) continue;
+    const denomination = Number(child.userData.denomination);
+    if (Number.isFinite(denomination)) existing.set(denomination, child as Group);
+  }
+  const matrix = new Matrix4();
+  const body = new Color();
+  const edge = new Color();
+  const cream = new Color(0xf4efe2);
+  const paletteFor = (denomination: number) => CHIP_DENOMINATIONS.find(
+    (candidate) => candidate.value === denomination,
+  ) ?? CHIP_DENOMINATIONS[0];
+
+  for (const [denomination, columns] of layoutByDenomination) {
+    const rack = existing.get(denomination) ?? new Group();
+    rack.name = `chip-denomination-${denomination}`;
+    rack.userData.denomination = denomination;
+    const count = columns.reduce((total, column) => total + column.count, 0);
+    let stack = rack.getObjectByName("body") as InstancedMesh | undefined;
+    let spots = rack.getObjectByName("edge") as InstancedMesh | undefined;
+    let faces = rack.getObjectByName("face") as InstancedMesh | undefined;
+    if (!stack || stack.count < count) {
+      rack.clear();
+      stack = new InstancedMesh(resources.chipGeometry, resources.chipMaterial(), count);
+      stack.name = "body";
+      spots = new InstancedMesh(resources.chipEdgeGeometry, resources.chipEdgeMaterial(), count);
+      spots.name = "edge";
+      faces = new InstancedMesh(
+        resources.chipInlayGeometry,
+        resources.chipDenominationMaterial(denomination),
+        count,
+      );
+      faces.name = "face";
+      rack.add(stack, spots, faces);
+    }
+    if (!stack || !spots || !faces) throw new Error("Chip denomination rack failed to initialize");
+    let instance = 0;
+    for (const column of columns) {
+      for (let height = 0; height < column.count; height += 1) {
+        matrix.makeRotationY(((instance * 37 + denomination) % 360) * (Math.PI / 180));
+        matrix.setPosition(
+          (column.column % 3) * CHIP_COLUMN_PITCH,
+          height * 0.0037,
+          Math.floor(column.column / 3) * CHIP_COLUMN_PITCH,
+        );
+        stack.setMatrixAt(instance, matrix);
+        spots.setMatrixAt(instance, matrix);
+        faces.setMatrixAt(instance, matrix);
+        const swatch = paletteFor(denomination);
+        body.setHex(swatch.color);
+        stack.setColorAt(instance, body);
+        edge.copy(body).lerp(cream, 0.28);
+        spots.setColorAt(instance, edge);
+        instance += 1;
+      }
+    }
+    stack.count = instance;
+    spots.count = instance;
+    faces.count = instance;
+    stack.instanceMatrix.needsUpdate = true;
+    spots.instanceMatrix.needsUpdate = true;
+    faces.instanceMatrix.needsUpdate = true;
+    if (stack.instanceColor) stack.instanceColor.needsUpdate = true;
+    if (spots.instanceColor) spots.instanceColor.needsUpdate = true;
+    stack.computeBoundingSphere();
+    spots.computeBoundingSphere();
+    faces.computeBoundingSphere();
+    if (!rack.parent) group.add(rack);
+    existing.delete(denomination);
+  }
+  for (const stale of existing.values()) group.remove(stale);
+
+  let shadows = group.getObjectByName("chip-rack-contact-shadows") as InstancedMesh | undefined;
+  if (!shadows || shadows.count < layout.length) {
+    if (shadows) group.remove(shadows);
+    shadows = new InstancedMesh(resources.chipShadowGeometry, resources.chipShadowMaterial, Math.max(1, layout.length));
+    shadows.name = "chip-rack-contact-shadows";
+    group.add(shadows);
+  }
+  for (const column of layout) {
+    matrix.makeRotationX(-Math.PI / 2);
+    matrix.setPosition(
+      (column.column % 3) * CHIP_COLUMN_PITCH,
+      -0.0004,
+      Math.floor(column.column / 3) * CHIP_COLUMN_PITCH,
+    );
+    shadows.setMatrixAt(column.column, matrix);
+  }
+  shadows.count = layout.length;
+  shadows.instanceMatrix.needsUpdate = true;
+  const renderedValue = layout.reduce((total, column) => total + column.denomination * column.count, 0);
+  const renderedCount = layout.reduce((total, column) => total + column.count, 0);
+  group.userData.publicChipCount = renderedCount;
+  group.userData.publicChipAmount = amount;
+  group.userData.publicRenderedChipValue = renderedValue;
+  group.userData.publicChipColumns = layout.map((column) => ({ denomination: column.denomination, count: column.count }));
+  if (renderedValue !== Math.max(0, Math.floor(amount))) {
+    throw new Error(`Rendered chip value mismatch: ${renderedValue} !== ${amount}`);
+  }
+  return;
+  if (false) {
+/* legacy implementation retained below only as source context during this migration */
+  let stack = group.getObjectByName("instanced-chip-stack") as InstancedMesh;
+  let spots = group.getObjectByName("instanced-chip-spots") as InstancedMesh;
+  let faces = group.getObjectByName("instanced-chip-faces") as InstancedMesh;
   if (!stack || !spots) {
     stack = new InstancedMesh(
       resources.chipGeometry,
       resources.chipMaterial(),
-      MAX_RENDERED_CHIPS,
+      chipInventoryForAmount(amount).length,
     );
     stack.name = "instanced-chip-stack";
     /*
@@ -2296,7 +2702,7 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
     spots = new InstancedMesh(
       resources.chipEdgeGeometry,
       resources.chipEdgeMaterial(),
-      MAX_RENDERED_CHIPS,
+      chipInventoryForAmount(amount).length,
     );
     spots.name = "instanced-chip-spots";
     /*
@@ -2308,13 +2714,16 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
     faces = new InstancedMesh(
       resources.chipInlayGeometry,
       resources.chipEdgeMaterial(),
-      MAX_RENDERED_CHIPS,
+      chipInventoryForAmount(amount).length,
     );
     faces.name = "instanced-chip-faces";
     group.add(stack, spots, faces);
   }
+  stack = stack!;
+  spots = spots!;
+  faces = faces!;
   const inventory = chipInventoryForAmount(amount);
-  const renderedCount = Math.min(MAX_RENDERED_CHIPS, inventory.length);
+  const renderedCount = inventory.length;
   const matrix = new Matrix4();
   const body = new Color();
   const inlay = new Color();
@@ -2353,7 +2762,7 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
     */
     const value = inventory[index] ?? 1;
     const denomination = CHIP_DENOMINATIONS.find((candidate) => candidate.value === value)
-      ?? CHIP_DENOMINATIONS[0];
+      ?? CHIP_DENOMINATIONS[CHIP_DENOMINATIONS.length - 1];
     body.setHex(denomination.color);
     stack.setColorAt(index, body);
     // A restrained inlay contrast keeps the denomination readable without a
@@ -2365,24 +2774,35 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
   }
   stack.count = renderedCount;
   stack.instanceMatrix.needsUpdate = true;
-  if (stack.instanceColor) stack.instanceColor.needsUpdate = true;
+  stack.instanceColor!.needsUpdate = true;
   stack.computeBoundingSphere();
   spots.count = renderedCount;
   spots.instanceMatrix.needsUpdate = true;
-  if (spots.instanceColor) spots.instanceColor.needsUpdate = true;
+  spots.instanceColor!.needsUpdate = true;
   spots.computeBoundingSphere();
   if (faces) {
     faces.count = renderedCount;
     faces.instanceMatrix.needsUpdate = true;
-    if (faces.instanceColor) faces.instanceColor.needsUpdate = true;
+    faces.instanceColor!.needsUpdate = true;
     faces.computeBoundingSphere();
   }
   group.userData.publicChipCount = renderedCount;
   group.userData.publicChipAmount = amount;
+  }
 }
 
 function chipStackCount(group: Group | undefined): number {
   return Number(group?.userData.publicChipCount ?? 0);
+}
+
+function chipRenderedValue(group: Group | undefined): number {
+  return Number(group?.userData.publicRenderedChipValue ?? 0);
+}
+
+function chipDenominations(group: Group | undefined): readonly { denomination: number; count: number }[] {
+  return Array.isArray(group?.userData.publicChipColumns)
+    ? group.userData.publicChipColumns
+    : [];
 }
 
 /** Main pot plus explicit side-pot lanes; generated from the redacted snapshot only. */
@@ -2392,6 +2812,7 @@ function setPotLanes(
   aggregate: number,
   transition: TableSceneState["transition"],
   resources: TableSceneResources,
+  payoutWinner?: SeatPose,
 ): void {
   const publicPots = pots && pots.length > 0
     ? pots
@@ -2425,7 +2846,12 @@ function setPotLanes(
   group.children.forEach((lane, index) => {
     const pot = publicPots[index];
     const anchor = pot.kind === "main" ? TABLE_ANCHORS.mainPot : TABLE_ANCHORS.sidePot(index - 1);
-    lane.position.set(...anchor);
+    const payoutTarget = transition?.kind === "pot-awarded"
+      && payoutWinner
+      && (transition.potId ? transition.potId === pot.id : index === 0);
+    lane.position.set(...(payoutTarget
+      ? awardChipPosition(payoutWinner, transition.progress)
+      : anchor));
     lane.userData.publicPotId = pot.id;
     const collectedNow = transition?.action === "collect"
       ? (transition.collectedBets ?? []).reduce((total, collection) => total + collection.amount, 0)
@@ -2433,7 +2859,9 @@ function setPotLanes(
     // At the beginning of a rake, the chips are still visibly at their owners'
     // betting circles.  Grow the pot only as the dealer sweep crosses the felt
     // instead of drawing the final pile before a single chip has moved.
-    const amount = collectedNow > 0
+    const amount = payoutTarget
+      ? Math.max(0, Math.round(pot.amount * (1 - transition.progress)))
+      : collectedNow > 0
       ? Math.max(0, pot.amount - collectedNow + Math.round(collectedNow * transition!.progress))
       : pot.amount;
     lane.userData.publicPotAmount = amount;
@@ -2497,17 +2925,26 @@ function setDealerCardEquipment(
    * `dealerThrow` just after this mesh leaves the hand.  The slight overlap at
    * release makes the handoff continuous at normal table-camera speed.
    */
+  const heldFrame = activeWork?.task === "deal"
+    ? dealerCardFrame(transition?.kind === "board-card-dealt" ? "board-card" : "hole-card", activeWork.progress)
+    : dealerCardFrame("hole-card", 1);
   heldCard.visible = activeWork?.task === "deal"
-    && activeWork.progress >= 0.04
-    && activeWork.progress < 0.40;
+    && (heldFrame.ownership === "dealer-hand" || heldFrame.ownership === "airborne");
+  heldCard.quaternion.set(...heldFrame.quaternion);
+  heldCard.userData.cardPhase = heldFrame.phase;
+  heldCard.userData.cardOwnership = heldFrame.ownership;
 
   const isBoardDeal = transition?.kind === "board-card-dealt";
   if (isBoardDeal) {
+    const burnProgress = Math.min(1, transition.progress / 0.36);
     const burn = burnCardPose(transition.progress);
+    const burnFrame = dealerCardFrame("burn-card", burnProgress);
     burnCard.position.set(...burn.position);
-    burnCard.rotation.set(Math.PI, 0.06, 0);
+    burnCard.quaternion.set(...burnFrame.quaternion);
     burnCard.material = resources.deckBackMaterial(active);
-    burnCard.visible = burn.visible;
+    burnCard.visible = burn.visible && burnFrame.visible;
+    burnCard.userData.cardPhase = burnFrame.phase;
+    burnCard.userData.cardOwnership = burnFrame.ownership;
   } else {
     burnCard.visible = false;
   }
@@ -2556,26 +2993,39 @@ function setBoardCards(
     const mesh = card as Mesh;
     const isDealingThisCard = transition?.kind === "board-card-dealt"
       && transition.cardIndex === index;
+    const isWinningCard = transition?.kind === "showdown"
+      && Boolean(codes[index] && transition.winningCardCodes?.includes(codes[index]));
     if (isDealingThisCard) {
       const pose = boardDealPose(index, transition.progress);
+      const boardProgress = Math.max(0, Math.min(1, (transition.progress - 0.36) / 0.64));
+      const cardFrame = dealerCardFrame("board-card", boardProgress);
       mesh.position.set(
         pose.position[0] - TABLE_ANCHORS.board[0],
         pose.position[1] - TABLE_ANCHORS.board[1],
         pose.position[2] - TABLE_ANCHORS.board[2],
       );
       mesh.rotation.x = pose.rotationX;
-      mesh.visible = true;
+      mesh.quaternion.set(...cardFrame.quaternion);
+      mesh.visible = cardFrame.visible;
       // Face content is held until the flip completes, avoiding an exposed
       // face travelling through the room before its public reveal.
-      mesh.material = transition.progress < 0.68
-        ? resources.deckBackMaterial(deckColourForHand(handId ?? transition.handId))
-        : resources.cardFaceMaterial(codes[index] ?? "");
+      mesh.material = cardFrame.faceUp
+        ? resources.cardFaceMaterial(codes[index] ?? "")
+        : resources.deckBackMaterial(deckColourForHand(handId ?? transition.handId));
+      mesh.userData.cardPhase = cardFrame.phase;
+      mesh.userData.cardOwnership = cardFrame.ownership;
+      mesh.userData.cardQuaternion = [...cardFrame.quaternion];
     } else {
-      mesh.position.set((index - 2) * 0.105 * BOARD_CARD_SCALE, 0, 0);
+      mesh.position.set(
+        (index - 2) * 0.105 * BOARD_CARD_SCALE,
+        isWinningCard ? 0.016 : 0,
+        isWinningCard ? 0.012 : 0,
+      );
       mesh.rotation.x = 0;
       mesh.visible = true;
       mesh.material = resources.cardFaceMaterial(codes[index] ?? "");
     }
+    mesh.scale.setScalar(BOARD_CARD_SCALE * (isWinningCard ? 1.045 : 1));
     mesh.userData.publicCode = codes[index] ?? null;
   });
 }

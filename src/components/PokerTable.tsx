@@ -42,6 +42,11 @@ import {
 } from "../scene3d/tableSceneSnapshot";
 import {
   heroStationIndex,
+  chipInventoryForAmount,
+  seatBetViewportAnchor,
+  seatBetViewportAnchorFromCamera,
+  seatStackAmountViewportAnchor,
+  seatStackAmountViewportAnchorFromCamera,
   seatPlaqueViewportAnchor,
 } from "../scene3d/tableSceneModel";
 import {
@@ -59,7 +64,7 @@ import {
 } from "../lib/format";
 import { gameAudio, type SoundName } from "../lib/audio";
 import { describeCallAction } from "../lib/actionLabels";
-import { isShortStack, seatChipStackCount } from "../lib/chipStackDepth";
+import { isShortStack } from "../lib/chipStackDepth";
 import { describeTrainingContext } from "../lib/trainingScenarioContext";
 import { cameraPanFromHorizontalDrag, cameraZoomFromWheel } from "../lib/tableCameraControls";
 import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
@@ -673,11 +678,11 @@ export function tablePositionLabelForSeat({
 
 function ChipStack({ bet = false }: { bet?: boolean }) {
   return (
-    <span className={`chip-stack ${bet ? "chip-stack--bet" : ""}`} aria-hidden>
-      <i />
-      <i />
-      <i />
-      {!bet && <i />}
+    <span className={`chip-stack ${bet ? "chip-stack--bet" : ""}`} aria-hidden="true">
+      <i data-denomination="25" />
+      <i data-denomination="100" />
+      <i data-denomination="500" />
+      {!bet && <i data-denomination="1000" />}
     </span>
   );
 }
@@ -697,18 +702,25 @@ function SeatChipStack({
   stack: number;
   bigBlind: number;
 }) {
-  const chips = seatChipStackCount(stack, bigBlind);
-  if (chips === 0) return null;
+  const inventory = chipInventoryForAmount(stack);
+  if (inventory.length === 0) return null;
+  const visible = inventory;
+  const groups = Array.from(new Set(visible));
   return (
     <span
       className={`seat-chip-stack ${
         isShortStack(stack, bigBlind) ? "seat-chip-stack--short" : ""
       }`}
-      data-chips={chips}
+      data-chips={inventory.length}
+      data-denominations={groups.join(",")}
       aria-hidden="true"
     >
-      {Array.from({ length: chips }).map((_, index) => (
-        <i key={index} />
+      {groups.map((denomination) => (
+        <span className="seat-chip-denomination" data-denomination={denomination} key={denomination}>
+          {visible.filter((chip) => chip === denomination).map((chip, index) => (
+            <i data-denomination={chip} key={`${chip}-${index}`} />
+          ))}
+        </span>
       ))}
     </span>
   );
@@ -763,6 +775,8 @@ interface PlayerSeatProps {
    * fallback, where the CSS ellipse remains the layout owner.
    */
   railAnchor?: { readonly xPercent: number; readonly yPercent: number };
+  stackAnchor?: { readonly xPercent: number; readonly yPercent: number };
+  betAnchor?: { readonly xPercent: number; readonly yPercent: number };
 }
 
 /**
@@ -862,6 +876,8 @@ function PlayerSeat({
   winningCardLabels,
   sceneSeat,
   railAnchor,
+  stackAnchor,
+  betAnchor,
 }: PlayerSeatProps) {
   const appearance = describeOpponentAppearance(player.id);
   const isMucking = isSeatFoldedForPresentation(
@@ -916,6 +932,18 @@ function PlayerSeat({
             style: {
               "--seat-rail-x": `${railAnchor.xPercent}%`,
               "--seat-rail-y": `${railAnchor.yPercent}%`,
+              ...(stackAnchor
+                ? {
+                    "--seat-stack-x": `${stackAnchor.xPercent}%`,
+                    "--seat-stack-y": `${stackAnchor.yPercent}%`,
+                  }
+                : {}),
+              ...(betAnchor
+                ? {
+                    "--seat-bet-x": `${betAnchor.xPercent}%`,
+                    "--seat-bet-y": `${betAnchor.yPercent}%`,
+                  }
+                : {}),
             } as CSSProperties,
           }
         : {})}
@@ -1005,22 +1033,7 @@ function PlayerSeat({
       */}
       <SeatChipStack stack={player.stack} bigBlind={bigBlind} />
       <div className="seat-label" aria-hidden="true">
-        <strong>{isHero ? formatMessage("table.seat.you") : player.name}</strong>
-        <span>
-          <ChipStack /> {formatChips(player.stack)}
-          {/*
-            Depth in big blinds, beside the chips it describes (E27-008). A
-            tournament decision is made in blinds, and a raw chip count cannot
-            be compared against a rising level without doing the division.
-          */}
-          {bigBlind > 0 ? (
-            <em className="seat-label__depth">
-              {formatMessage("table.context.bigBlinds", {
-                count: Number((player.stack / bigBlind).toFixed(1)),
-              })}
-            </em>
-          ) : null}
-        </span>
+        <strong>{formatChips(player.stack)}</strong>
       </div>
       {/*
         The hero's committed wager sits at the hero's seat, exactly as every
@@ -1029,28 +1042,26 @@ function PlayerSeat({
       */}
       {player.bet > 0 && (
         <div className="seat-bet" aria-hidden="true">
-          <ChipStack bet />
-          <span>{formatMessage("table.seat.committed")}</span>
           <b>{formatChips(player.bet)}</b>
         </div>
       )}
       {isFolded && (
-        <span className="seat-state" aria-hidden="true">
+        <span className="seat-semantic-status visually-hidden">
           {formatMessage("table.seat.folded")}
         </span>
       )}
       {player.status === "all-in" && !wonPot && (
-        <span className="seat-state seat-state--all-in" aria-hidden="true">
+        <span className="seat-semantic-status visually-hidden">
           {formatMessage("table.seat.allIn")}
         </span>
       )}
       {isOut && (
-        <span className="seat-state seat-state--out" aria-hidden="true">
+        <span className="seat-semantic-status visually-hidden">
           {formatMessage("table.seat.out")}
         </span>
       )}
       {wonPot && (
-        <span className="seat-state seat-state--winner" aria-hidden="true">
+        <span className="seat-semantic-status visually-hidden">
           {formatMessage("table.seat.wonPot")}
         </span>
       )}
@@ -1607,6 +1618,12 @@ export function PokerTable({
   onExit,
   tournament,
 }: PokerTableProps) {
+  type ActiveCameraFrame = {
+    readonly position: readonly [number, number, number];
+    readonly target: readonly [number, number, number];
+    readonly yaw: number;
+    readonly fov: number;
+  };
   const [peeked, setPeeked] = useState(false);
   const [foldProgress, setFoldProgress] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -1625,6 +1642,16 @@ export function PokerTable({
   // A temporary, player-controlled lens adjustment. Unlike the saved framing
   // preference, this follows the player through every hand in the round.
   const [cameraZoom, setCameraZoom] = useState(0);
+  const [activeCameraFrame, setActiveCameraFrame] = useState<ActiveCameraFrame | null>(null);
+  const onCameraFrame = useCallback((frame: ActiveCameraFrame) => {
+    setActiveCameraFrame((current) => {
+      if (current
+        && current.position.every((value, index) => Math.abs(value - frame.position[index]) < 0.0005)
+        && current.target.every((value, index) => Math.abs(value - frame.target[index]) < 0.0005)
+        && Math.abs(current.fov - frame.fov) < 0.01) return current;
+      return frame;
+    });
+  }, []);
   // Motion preferences govern *automatic* movement only.  A player turning
   // their view with the mouse is direct manipulation, so it must stay usable
   // even if an older saved profile has camera motion disabled.  That was the
@@ -1707,10 +1734,10 @@ export function PokerTable({
   }, []);
 
   const handleCameraWheel = useCallback((event: React.WheelEvent<HTMLElement>) => {
-    // Never let the table surface scroll the document or invoke browser zoom.
-    // Controls retain their native wheel behaviour but still stop the page from
-    // moving behind the game.
-    event.preventDefault();
+    // The stage CSS owns scroll chaining and native gesture suppression. React's
+    // delegated wheel listener may be passive in Chromium, so calling
+    // preventDefault here produces a renderer warning and does not suppress the
+    // browser gesture reliably.
     if (
       event.target instanceof Element
       && event.target.closest('button, a, input, select, textarea, [role="button"], [role="slider"]')
@@ -2705,9 +2732,9 @@ export function PokerTable({
     keep a mouse button depressed just to read their own two cards.
   */
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    // Reading a live hand is always allowed.  Only a folded hand must reject
-    // the pointer; an in-flight action may disable betting but must not make a
-    // normal card click silently fail.
+    // Reading a live hand is allowed once the public deal beat has completed;
+    // the action gate also disables this surface while a submitted action is
+    // being presented so a peek cannot race the authoritative update.
     if (heroFolded) return;
     // The semantic card target sits above the canvas. Stop this private-card
     // gesture from becoming a table-look drag after the stage has already
@@ -3465,12 +3492,6 @@ export function PokerTable({
               <b>{formatMessage("table.hud.blinds")}</b>
               {formatChips(scenario.blinds[0])}/{formatChips(scenario.blinds[1])}
             </span>
-            {scenario.ante ? (
-              <span>
-                <b>{formatMessage("table.hud.ante")}</b>
-                {formatChips(scenario.ante)}
-              </span>
-            ) : null}
             {tournament?.blindLevel ? (
               <span>
                 <b>{formatMessage("table.hud.level")}</b>
@@ -3537,12 +3558,6 @@ export function PokerTable({
                 {formatChips(trainingContext.smallBlind)}/
                 {formatChips(trainingContext.bigBlind)}
               </span>
-              {trainingContext.ante > 0 ? (
-                <span>
-                  <b>{formatMessage("table.context.ante")}</b>
-                  {formatChips(trainingContext.ante)}
-                </span>
-              ) : null}
               <span>
                 <b>{formatMessage("table.context.players")}</b>
                 {trainingContext.players}
@@ -3757,7 +3772,7 @@ export function PokerTable({
           </div>
 
           {/* Camera is controlled by drag and keyboard; no scene-blocking overlay. */}
-          {false && <div className="camera-controls-removed">
+          <div className="camera-controls" aria-label={formatMessage("table.camera.viewLabel")}>
             <button
               type="button"
               onClick={() => setCameraPan((value) => Math.max(-2, value - cameraStep))}
@@ -3798,7 +3813,7 @@ export function PokerTable({
             >
               <ChevronRight size={17} />
             </button>
-          </div>}
+          </div>
 
             <div
               ref={sceneElementRef}
@@ -3827,6 +3842,7 @@ export function PokerTable({
                     snapshot={sceneSnapshot}
                     suspended={paused}
                     onAvailabilityChange={setSceneAvailability}
+                    onCameraFrame={onCameraFrame}
                   />
                 </Suspense>
               )}
@@ -3945,15 +3961,12 @@ export function PokerTable({
                   <b>{formatMessage("table.felt.dealerLabel")}</b>
                 </div>
 
-                <div className="table-readout">
-                  <span>{formatMessage("table.readout.potLabel")}</span>
+                <div
+                  className="table-readout"
+                  role="img"
+                  aria-label={`Pot ${formatChips(scenario.pot)}`}
+                >
                   <strong>{formatChips(scenario.pot)}</strong>
-                  <small>
-                    {formatMessage("table.readout.blinds", {
-                      smallBlind: formatChips(scenario.blinds[0]),
-                      bigBlind: formatChips(scenario.blinds[1]),
-                    })}
-                  </small>
                 </div>
 
                 <div
@@ -4033,13 +4046,6 @@ export function PokerTable({
                       */}
                       {potGroups.length > 1 && (
                         <span className="pot-group__amount">
-                          <b>
-                            {formatMessage(
-                              group.kind === "main"
-                                ? "table.pot.mainLabel"
-                                : "table.pot.sideLabel",
-                            )}
-                          </b>
                           {formatChips(group.amount)}
                         </span>
                       )}
@@ -4092,7 +4098,51 @@ export function PokerTable({
                           sceneViewport.width,
                           sceneViewport.height,
                           heroStationIndexForTable,
-                        )
+                          cameraZoom,
+                          settings.cameraView,
+                      )
+                      : undefined
+                  }
+                  stackAnchor={
+                    sceneReadyForPlaques && seatSceneSeat
+                      ? activeCameraFrame
+                        ? seatStackAmountViewportAnchorFromCamera(
+                            seatSceneSeat.relativeSeat,
+                            sceneViewport.width,
+                            sceneViewport.height,
+                            heroStationIndexForTable,
+                            activeCameraFrame,
+                          )
+                        : seatStackAmountViewportAnchor(
+                            seatSceneSeat.relativeSeat,
+                            effectiveCameraPan,
+                            sceneViewport.width,
+                            sceneViewport.height,
+                            heroStationIndexForTable,
+                            cameraZoom,
+                            settings.cameraView,
+                          )
+                      : undefined
+                  }
+                  betAnchor={
+                    sceneReadyForPlaques && seatSceneSeat
+                      ? activeCameraFrame
+                        ? seatBetViewportAnchorFromCamera(
+                            seatSceneSeat.relativeSeat,
+                            sceneViewport.width,
+                            sceneViewport.height,
+                            heroStationIndexForTable,
+                            activeCameraFrame,
+                          )
+                        : seatBetViewportAnchor(
+                            seatSceneSeat.relativeSeat,
+                            effectiveCameraPan,
+                            sceneViewport.width,
+                            sceneViewport.height,
+                            heroStationIndexForTable,
+                            cameraZoom,
+                            settings.cameraView,
+                          )
                       : undefined
                   }
                 />
@@ -4143,7 +4193,7 @@ export function PokerTable({
               })}
               // A mucked hand is not interactive: no peeking, no dragging it
               // back onto the table for the rest of the hand.
-              disabled={!cardsDealt || heroFolded}
+              disabled={Boolean(action) || !cardsDealt || heroFolded}
             >
               <span className="hero-hole-cards__cards">
                 {scenario.heroCards.map((card, index) => (

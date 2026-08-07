@@ -456,7 +456,7 @@ function shallowTournament(
     ...level,
     smallBlind: 50,
     bigBlind: 100,
-    bigBlindAnte: 100,
+    bigBlindAnte: 0,
   }));
   return {
     ...session,

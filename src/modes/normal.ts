@@ -89,6 +89,7 @@ export interface NormalDecision {
   usedPersonalityDeviation: boolean;
   reason: string;
   publicSignals: PublicExploitSignals;
+  adaptationPressure: number;
 }
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
@@ -134,7 +135,7 @@ export const NORMAL_OPPONENT_PROFILES = Object.freeze({
       bluffAppetite: 0.14,
     },
     competenceRate: 0.95,
-    maxEvLossBb: 0.12,
+    maxEvLossBb: 0.1,
   }),
   tempo: makeProfile({
     id: "tempo",
@@ -149,7 +150,7 @@ export const NORMAL_OPPONENT_PROFILES = Object.freeze({
       bluffAppetite: 0.4,
     },
     competenceRate: 0.94,
-    maxEvLossBb: 0.18,
+    maxEvLossBb: 0.16,
   }),
   pressure: makeProfile({
     id: "pressure",
@@ -643,7 +644,20 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
   );
   const hand = analyzePrivateHand(input.informationSet);
   const random = createSeededRandom(publicDecisionSeed(input, profile));
-  const useBest = random() < profile.competenceRate;
+  // Adaptation changes the *frequency* of bounded deviations, not the action
+  // legality or the EV-loss ceiling. A credible folder/caller creates more
+  // pressure opportunities for aggressive profiles; a noisy tiny sample does
+  // almost nothing because confidence is Bayesian-shrunk above.
+  const adaptationPressure = clamp01(
+    signals.confidence *
+      (signals.foldToPressure * profile.personality.aggression * 0.9 +
+        signals.looseness * profile.personality.aggression * 0.35),
+  );
+  const deviationProbability = clamp01(
+    (1 - profile.competenceRate) * (1 + adaptationPressure) +
+      profile.personality.bluffAppetite * 0.025,
+  );
+  const useBest = random() >= deviationProbability;
 
   const deviations = ranked.slice(1).filter((evaluation) => {
     const loss = bestEv - evaluation.estimatedEv;
@@ -685,7 +699,8 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
     usedPersonalityDeviation: !selectedBestAction,
     reason: selectedBestAction
       ? `${profile.name} selected the highest modeled-EV line under its current range estimate.`
-      : `${profile.name} used a bounded ${purpose} deviation supported by its own hole-card texture and public action history.`,
+      : `${profile.name} used a bounded ${purpose} deviation supported by its own hole-card texture and public action history${adaptationPressure > 0.08 ? "; public pressure signals increased its attack frequency" : ""}.`,
     publicSignals: signals,
+    adaptationPressure,
   };
 }

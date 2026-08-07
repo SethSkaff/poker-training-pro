@@ -4,7 +4,7 @@
  * The reported case was an all-in recommendation with ace-five suited that the
  * player could not assess. Auditing it showed the recommendation was **correct
  * but under-explained**: `preflop-button-shove-fold-equity` is A-5 suited on the
- * button with 11,000 behind at 500/1,000 with a 125 ante -- eleven big blinds,
+ * button with 11,000 behind at 500/1,000 -- eleven big blinds,
  * which is squarely push/fold territory. Every number needed to see that was
  * either absent from the screen or present only in chips, and eleven thousand
  * chips means nothing without the blind beside it.
@@ -88,7 +88,9 @@ export function describeTrainingContext(
     stackBigBlinds,
     smallBlind,
     bigBlind,
-    ante: scenario.ante ?? 0,
+    // Training scenarios may still deserialize a legacy ante field for
+    // compatibility, but blind-only sessions never treat it as dead money.
+    ante: 0,
     players: contesting.length,
     pot: scenario.pot,
     amountToCall,
