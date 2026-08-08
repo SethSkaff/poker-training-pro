@@ -210,6 +210,16 @@ export const TABLE_MARKER_GAP = 0.024;
 export const CHIP_STACK_FOOTPRINT_RADIUS = 0.052;
 
 /**
+ * Clear table-space gap from the outside edge of a rack to its numeral.
+ *
+ * The label is deliberately anchored in the owner's local frame rather than
+ * nudged in viewport pixels.  This keeps it below the physical rack when the
+ * camera changes lens or yaw, while leaving the committed-bet numeral on its
+ * own inward betting circle.
+ */
+export const STACK_AMOUNT_OUTWARD_GAP = 0.085;
+
+/**
  * Project a point into the inset capsule that remains after reserving room for
  * a full chip rack.  The playing surface is a capsule rather than a rectangle;
  * checking only X/Z bounds let corner-seat stacks clip through the curved rail.
@@ -280,7 +290,11 @@ export function stackAmountPosition(
 ): readonly [number, number, number] {
   const stack = restingChipStackPosition(pose);
   const local = seatLocalPoint(pose, stack);
-  return seatWorldPoint(pose, [local[0], TABLE_HEIGHT + 0.002, local[2] - 0.030]);
+  return seatWorldPoint(pose, [
+    local[0],
+    TABLE_HEIGHT + 0.002,
+    local[2] - STACK_AMOUNT_OUTWARD_GAP,
+  ]);
 }
 
 /** World anchor for the exact number that describes chips pushed forward. */
@@ -433,6 +447,9 @@ export function seatStackAmountViewportAnchorFromCamera(
   heroIndex: number,
   activeCamera: ReturnType<typeof cameraPose>,
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
+  if (!Number.isInteger(relativeSeat) || relativeSeat < 0 || relativeSeat >= PLAYER_STATION_COUNT) {
+    return undefined;
+  }
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
   const projected = projectToViewport(stackAmountPosition(pose), activeCamera, viewportWidth, viewportHeight);
@@ -446,6 +463,9 @@ export function seatBetViewportAnchorFromCamera(
   heroIndex: number,
   activeCamera: ReturnType<typeof cameraPose>,
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
+  if (!Number.isInteger(relativeSeat) || relativeSeat < 0 || relativeSeat >= PLAYER_STATION_COUNT) {
+    return undefined;
+  }
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
   const projected = projectToViewport(committedAmountPosition(pose), activeCamera, viewportWidth, viewportHeight);

@@ -52,6 +52,9 @@ export interface TableScene3DProps {
     readonly target: readonly [number, number, number];
     readonly yaw: number;
     readonly fov: number;
+    /** CSS-pixel viewport used by the renderer for this exact frame. */
+    readonly viewportWidth: number;
+    readonly viewportHeight: number;
   }) => void;
   /** Production factories remain injectable to test lifecycle ownership. */
   readonly runtime?: {
@@ -171,7 +174,17 @@ export function TableScene3D({
           create: (target, currentState, callbacks) => {
             const created = sceneRuntime.create(target, currentState, {
               ...callbacks,
-              onCameraFrame: (pose) => cameraFrameRef.current?.(pose),
+              onCameraFrame: (pose) => {
+                const viewport = canvas.getBoundingClientRect();
+                cameraFrameRef.current?.({
+                  ...pose,
+                  // The projection consumer lives in the DOM layer. Give it
+                  // the renderer's CSS viewport, not the device-pixel drawing
+                  // size and not a stale window measurement.
+                  viewportWidth: viewport.width || canvas.clientWidth,
+                  viewportHeight: viewport.height || canvas.clientHeight,
+                });
+              },
             });
             if (publishScene) sceneRef.current = created;
             return created;

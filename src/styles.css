@@ -3351,6 +3351,11 @@ input[type="range"]::-webkit-slider-thumb {
   position: absolute;
   left: var(--seat-stack-x);
   top: var(--seat-stack-y);
+  /* The table-space anchor is already outside the rack footprint. Keep the
+     numeral's top edge at that projected point so it reads below the chips;
+     never apply the old rail/seat transform here. */
+  inset-inline-start: var(--seat-stack-x);
+  inset-block-start: var(--seat-stack-y);
   z-index: 20;
   margin: 0;
   opacity: 0.98;
@@ -3364,6 +3369,8 @@ input[type="range"]::-webkit-slider-thumb {
   position: absolute;
   left: var(--seat-bet-x);
   top: var(--seat-bet-y);
+  inset-inline-start: var(--seat-bet-x);
+  inset-block-start: var(--seat-bet-y);
   z-index: 20;
   min-height: 0;
   margin: 0;

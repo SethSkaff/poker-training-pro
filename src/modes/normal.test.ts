@@ -129,6 +129,21 @@ describe("Normal mode policy", () => {
     expect(decideNormalAction(input)).toEqual(decideNormalAction(input));
   });
 
+  it("rejects fractional bet and raise targets before the engine sees them", () => {
+    expect(() =>
+      decideNormalAction({
+        informationSet: informationSet(),
+        legalActions,
+        profile: "tempo",
+        bigBlind: 200,
+        seed: "fractional-bet",
+        evaluations: [
+          { command: { type: "raise", to: 3_600.5 }, estimatedEv: 1 },
+        ],
+      }),
+    ).toThrow(/illegal action raise/);
+  });
+
   it("is invariant to every opponent hidden-card change", () => {
     const first = decideNormalAction({
       informationSet: informationSet([
@@ -277,5 +292,62 @@ describe("Normal mode policy", () => {
     expect(credible.confidence).toBe(1);
     expect(uncertain.confidence).toBeLessThan(0.1);
     expect(uncertain.foldToPressure).toBeLessThan(credible.foldToPressure);
+  });
+
+  it("turns credible public fold signals into bounded attack-frequency adaptation", () => {
+    const looseFolder: PublicOpponentHistory = {
+      playerId: "villain",
+      handsObserved: 120,
+      voluntaryEntries: 74,
+      aggressiveActions: 46,
+      passiveActions: 40,
+      foldsFacingPressure: 55,
+      pressureOpportunities: 72,
+    };
+    const tinySample: PublicOpponentHistory = {
+      ...looseFolder,
+      handsObserved: 2,
+      voluntaryEntries: 2,
+      aggressiveActions: 2,
+      passiveActions: 0,
+      foldsFacingPressure: 2,
+      pressureOpportunities: 2,
+    };
+    let adaptedDeviations = 0;
+    let unadaptedDeviations = 0;
+    for (let index = 0; index < 2_000; index += 1) {
+      const common = {
+        informationSet: informationSet(),
+        legalActions,
+        evaluations: drawEvaluations,
+        profile: "pressure" as const,
+        bigBlind: 200,
+        seed: `adaptation-${index}`,
+      };
+      const adapted = decideNormalAction({
+        ...common,
+        publicHistory: [looseFolder],
+      });
+      const unadapted = decideNormalAction({
+        ...common,
+        publicHistory: [tinySample],
+      });
+      if (adapted.usedPersonalityDeviation) adaptedDeviations += 1;
+      if (unadapted.usedPersonalityDeviation) unadaptedDeviations += 1;
+      expect(adapted.evLoss).toBeLessThanOrEqual(adapted.evLossBudget + Number.EPSILON);
+    }
+
+    expect(adaptedDeviations).toBeGreaterThan(unadaptedDeviations);
+    expect(
+      decideNormalAction({
+        informationSet: informationSet(),
+        legalActions,
+        evaluations: drawEvaluations,
+        profile: "pressure",
+        bigBlind: 200,
+        seed: "adaptation-metric",
+        publicHistory: [looseFolder],
+      }).adaptationPressure,
+    ).toBeGreaterThan(0.5);
   });
 });

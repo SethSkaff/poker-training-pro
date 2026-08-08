@@ -135,7 +135,10 @@ export const NORMAL_OPPONENT_PROFILES = Object.freeze({
       bluffAppetite: 0.14,
     },
     competenceRate: 0.95,
-    maxEvLossBb: 0.1,
+    // The anchor is deliberately the most disciplined profile: it will
+    // still take a close, coherent alternative, but it should not wander
+    // into the same bounded-deviation band as the looser table personalities.
+    maxEvLossBb: 0.06,
   }),
   tempo: makeProfile({
     id: "tempo",
@@ -180,7 +183,7 @@ export const NORMAL_OPPONENT_PROFILES = Object.freeze({
       bluffAppetite: 0.72,
     },
     competenceRate: 0.91,
-    maxEvLossBb: 0.3,
+    maxEvLossBb: 0.28,
   }),
   wideLens: makeProfile({
     id: "wide-lens",
@@ -195,7 +198,7 @@ export const NORMAL_OPPONENT_PROFILES = Object.freeze({
       bluffAppetite: 0.48,
     },
     competenceRate: 0.9,
-    maxEvLossBb: 0.32,
+    maxEvLossBb: 0.36,
   }),
 } as const);
 
@@ -457,6 +460,7 @@ function assertLegalEvaluation(
       valid =
         legal.bet !== undefined &&
         command.to !== undefined &&
+        Number.isSafeInteger(command.to) &&
         command.to >= legal.bet.min &&
         command.to <= legal.bet.max;
       break;
@@ -464,6 +468,7 @@ function assertLegalEvaluation(
       valid =
         legal.raise !== undefined &&
         command.to !== undefined &&
+        Number.isSafeInteger(command.to) &&
         command.to >= legal.raise.minTo &&
         command.to <= legal.raise.maxTo;
       break;

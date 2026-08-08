@@ -35,7 +35,10 @@ import {
   createSceneTransition,
   retainSceneTerminalFoldedPlayers,
 } from "../scene3d/sceneTransition";
-import { sampleScenePresentationProgress } from "../scene3d/scenePresentationProgress";
+import {
+  monotonicScenePresentationProgress,
+  sampleScenePresentationProgress,
+} from "../scene3d/scenePresentationProgress";
 import {
   createTableSceneSnapshot,
   type SceneSnapshotSeat,
@@ -927,11 +930,15 @@ function PlayerSeat({
         // asserting a translation rather than a terminal action state.
         recentAction && !isHero ? { "data-seat-action": recentAction } : {}
       )}
-      {...(railAnchor
+      {...((railAnchor || stackAnchor || betAnchor)
         ? {
             style: {
-              "--seat-rail-x": `${railAnchor.xPercent}%`,
-              "--seat-rail-y": `${railAnchor.yPercent}%`,
+              ...(railAnchor
+                ? {
+                    "--seat-rail-x": `${railAnchor.xPercent}%`,
+                    "--seat-rail-y": `${railAnchor.yPercent}%`,
+                  }
+                : {}),
               ...(stackAnchor
                 ? {
                     "--seat-stack-x": `${stackAnchor.xPercent}%`,
@@ -1623,6 +1630,8 @@ export function PokerTable({
     readonly target: readonly [number, number, number];
     readonly yaw: number;
     readonly fov: number;
+    readonly viewportWidth: number;
+    readonly viewportHeight: number;
   };
   const [peeked, setPeeked] = useState(false);
   const [foldProgress, setFoldProgress] = useState(0);
@@ -1644,13 +1653,9 @@ export function PokerTable({
   const [cameraZoom, setCameraZoom] = useState(0);
   const [activeCameraFrame, setActiveCameraFrame] = useState<ActiveCameraFrame | null>(null);
   const onCameraFrame = useCallback((frame: ActiveCameraFrame) => {
-    setActiveCameraFrame((current) => {
-      if (current
-        && current.position.every((value, index) => Math.abs(value - frame.position[index]) < 0.0005)
-        && current.target.every((value, index) => Math.abs(value - frame.target[index]) < 0.0005)
-        && Math.abs(current.fov - frame.fov) < 0.01) return current;
-      return frame;
-    });
+    // Publish every renderer frame. A camera step smaller than the old
+    // epsilon can still move a close-lens numeral by several CSS pixels.
+    setActiveCameraFrame(frame);
   }, []);
   // Motion preferences govern *automatic* movement only.  A player turning
   // their view with the mouse is direct manipulation, so it must stay usable
@@ -1837,6 +1842,17 @@ export function PokerTable({
   const [displayedAllInEquity, setDisplayedAllInEquity] = useState<ReadonlyMap<string, number>>(new Map());
   const displayedAllInEquityRef = useRef<ReadonlyMap<string, number>>(new Map());
   const [sceneEventProgress, setSceneEventProgress] = useState(1);
+  const sceneProgressCursorRef = useRef({ eventId: null as string | null, progress: 1 });
+  const publishSceneEventProgress = useCallback((eventId: string, progress: number) => {
+    const next = monotonicScenePresentationProgress(
+      sceneProgressCursorRef.current,
+      eventId,
+      progress,
+    );
+    setSceneEventProgress(next);
+  }, []);
+  const presentationEventCompleteRef = useRef(tournament?.onPresentationEventComplete);
+  presentationEventCompleteRef.current = tournament?.onPresentationEventComplete;
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
   const actionGateRef = useRef(createTableActionGate());
@@ -2175,7 +2191,7 @@ export function PokerTable({
   // its exact remaining duration instead of replaying or skipping the event.
   useEffect(() => {
     const event = tournament?.presentationEvent;
-    const onComplete = tournament?.onPresentationEventComplete;
+    const onComplete = presentationEventCompleteRef.current;
     if (!event || !onComplete) return;
     const group = freezeGroupRef.current;
     const delay = createPresentationEventDelay(
@@ -2195,7 +2211,10 @@ export function PokerTable({
     );
     pendingPresentationEvent.current = delay;
     group.add(delay);
-    setSceneEventProgress(settings.reducedMotion || settings.transitionMotion === "off" ? 1 : 0);
+    publishSceneEventProgress(
+      event.id,
+      settings.reducedMotion || settings.transitionMotion === "off" ? 1 : 0,
+    );
     return () => {
       delay.cancel();
       group.remove(delay);
@@ -2204,10 +2223,12 @@ export function PokerTable({
       }
     };
   }, [
-    settings,
+    settings.reducedMotion,
+    settings.transitionMotion,
+    publishSceneEventProgress,
     speed,
-    tournament?.onPresentationEventComplete,
-    tournament?.presentationEvent,
+    tournament?.presentationEvent?.id,
+    tournament?.allInReveal,
   ]);
 
   useEffect(() => {
@@ -2220,7 +2241,7 @@ export function PokerTable({
     return sampleScenePresentationProgress(
       delay,
       duration,
-      setSceneEventProgress,
+      (progress) => publishSceneEventProgress(event.id, progress),
       // Browser frame functions require `window` as their receiver in Electron.
       // Passing the bare native methods works in fake-frame tests but throws
       // `Illegal invocation` in the live renderer before a table mounts.
@@ -2229,7 +2250,15 @@ export function PokerTable({
         cancel: (handle) => window.cancelAnimationFrame(handle),
       },
     );
-  }, [paused, settings, speed, tournament?.allInReveal, tournament?.presentationEvent]);
+  }, [
+    paused,
+    settings.reducedMotion,
+    settings.transitionMotion,
+    publishSceneEventProgress,
+    speed,
+    tournament?.allInReveal,
+    tournament?.presentationEvent?.id,
+  ]);
 
   useEffect(() => {
     const group = freezeGroupRef.current;
@@ -4064,6 +4093,8 @@ export function PokerTable({
                 player.id,
               );
               const seatSceneSeat = sceneSeatByPlayerId.get(player.id);
+              const projectionWidth = activeCameraFrame?.viewportWidth || sceneViewport.width;
+              const projectionHeight = activeCameraFrame?.viewportHeight || sceneViewport.height;
               return (
                 <PlayerSeat
                   key={player.id}
@@ -4095,8 +4126,8 @@ export function PokerTable({
                       ? seatPlaqueViewportAnchor(
                           seatSceneSeat.relativeSeat,
                           effectiveCameraPan,
-                          sceneViewport.width,
-                          sceneViewport.height,
+                          projectionWidth,
+                          projectionHeight,
                           heroStationIndexForTable,
                           cameraZoom,
                           settings.cameraView,
@@ -4108,16 +4139,16 @@ export function PokerTable({
                       ? activeCameraFrame
                         ? seatStackAmountViewportAnchorFromCamera(
                             seatSceneSeat.relativeSeat,
-                            sceneViewport.width,
-                            sceneViewport.height,
+                            projectionWidth,
+                            projectionHeight,
                             heroStationIndexForTable,
                             activeCameraFrame,
                           )
                         : seatStackAmountViewportAnchor(
                             seatSceneSeat.relativeSeat,
                             effectiveCameraPan,
-                            sceneViewport.width,
-                            sceneViewport.height,
+                            projectionWidth,
+                            projectionHeight,
                             heroStationIndexForTable,
                             cameraZoom,
                             settings.cameraView,
@@ -4129,16 +4160,16 @@ export function PokerTable({
                       ? activeCameraFrame
                         ? seatBetViewportAnchorFromCamera(
                             seatSceneSeat.relativeSeat,
-                            sceneViewport.width,
-                            sceneViewport.height,
+                            projectionWidth,
+                            projectionHeight,
                             heroStationIndexForTable,
                             activeCameraFrame,
                           )
                         : seatBetViewportAnchor(
                             seatSceneSeat.relativeSeat,
                             effectiveCameraPan,
-                            sceneViewport.width,
-                            sceneViewport.height,
+                            projectionWidth,
+                            projectionHeight,
                             heroStationIndexForTable,
                             cameraZoom,
                             settings.cameraView,

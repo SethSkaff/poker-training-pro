@@ -12,6 +12,49 @@ export const HERO_PEEK_CARD_WIDTH = 0.088;
 export const HERO_PEEK_CARD_LENGTH = 0.123;
 export const HERO_PEEK_HINGE_DEGREES = 24;
 
+/**
+ * The hero station faces the table along local +Z. From that seated camera,
+ * local +X projects to the viewer's left, so the texture's left edge belongs on
+ * the mesh's positive-X edge. The vertical mapping is intentionally reversed:
+ * local +Z is the far/top edge of the card and must sample the canvas top, not
+ * the rotated duplicate index painted at the canvas bottom.
+ */
+export function heroPeekFaceUvForLocalPoint(
+  localX: number,
+  progress: number,
+): readonly [number, number] {
+  const clampedProgress = Math.min(1, Math.max(0, progress));
+  return [
+    localX < 0 ? 1 : 0,
+    0.98 - clampedProgress * 0.96,
+  ] as const;
+}
+
+/** The common local offset of the first-person hand rig from the card packet. */
+export const HERO_PEEK_HAND_ROOT_OFFSET = {
+  y: 0.006,
+  z: 0,
+} as const;
+
+/**
+ * Arm-chain landmarks relative to the hand root. Positive local X is viewer
+ * left. The left wrist therefore finishes outside the left card, while the
+ * right wrist finishes beyond the cards' far edge and can support them without
+ * being in the face layer.
+ */
+export const HERO_PEEK_HAND_RIG = {
+  left: {
+    shoulder: [0.18, -0.16, -0.22] as const,
+    elbow: [0.15, -0.07, -0.12] as const,
+    wrist: [0.14, -0.004, -0.012] as const,
+  },
+  right: {
+    shoulder: [-0.16, -0.16, -0.22] as const,
+    elbow: [-0.08, -0.07, -0.10] as const,
+    wrist: [0, 0.018, 0.075] as const,
+  },
+} as const;
+
 export type InterfaceScale = "compact" | "standard" | "large" | "extra-large";
 
 export interface ProjectedBounds {
@@ -25,6 +68,8 @@ export interface HeroPeekProjectedLayout {
   readonly cardBounds: readonly ProjectedBounds[];
   readonly protectedIndexBounds: readonly ProjectedBounds[];
   readonly handBounds: readonly ProjectedBounds[];
+  readonly handDepths: readonly number[];
+  readonly cardFarEdgeDepth: number;
   readonly interfaceScale: InterfaceScale;
 }
 
@@ -60,6 +105,18 @@ function projectedBounds(
   )));
 }
 
+function handVolumePoints(
+  landmarks: readonly (readonly [number, number, number])[],
+  radius = 0.023,
+): readonly (readonly [number, number, number])[] {
+  return landmarks.flatMap(([x, y, z]) => [
+    [x - radius, y - radius, z - radius],
+    [x + radius, y - radius, z - radius],
+    [x - radius, y + radius, z + radius],
+    [x + radius, y + radius, z + radius],
+  ] as const);
+}
+
 function cardPoints(centerX: number, z: number): readonly (readonly [number, number, number])[] {
   return [
     [centerX - HERO_PEEK_CARD_WIDTH / 2, TABLE_HEIGHT + 0.003, z - HERO_PEEK_CARD_LENGTH / 2],
@@ -84,32 +141,54 @@ export function heroPeekProjectedLayout(options: {
   readonly heroIndex?: number;
 }): HeroPeekProjectedLayout {
   const pose = seatPoses(1, options.heroIndex ?? 0)[0];
-  if (!pose) return { cardBounds: [], protectedIndexBounds: [], handBounds: [], interfaceScale: options.interfaceScale };
-  const z = -0.006;
+  if (!pose) {
+    return {
+      cardBounds: [],
+      protectedIndexBounds: [],
+      handBounds: [],
+      handDepths: [],
+      cardFarEdgeDepth: 0,
+      interfaceScale: options.interfaceScale,
+    };
+  }
+  const z = 0;
   const cardCenters = [0.040, -0.040];
   const cards = cardCenters.map((x) => projectedBounds(
     cardPoints(x, z), pose, options.pan, options.cameraView, options.wheelZoom ?? 0,
     options.viewportWidth, options.viewportHeight,
   ));
   const protectedIndexBounds = cardCenters.map((centerX) => projectedBounds([
-    [centerX - HERO_PEEK_CARD_WIDTH / 2, TABLE_HEIGHT + 0.004, z + 0.031],
-    [centerX - HERO_PEEK_CARD_WIDTH / 2 + 0.020, TABLE_HEIGHT + 0.004, z + 0.031],
-    [centerX - HERO_PEEK_CARD_WIDTH / 2 + 0.020, TABLE_HEIGHT + 0.022, z + 0.056],
-    [centerX - HERO_PEEK_CARD_WIDTH / 2, TABLE_HEIGHT + 0.022, z + 0.056],
+    [centerX + HERO_PEEK_CARD_WIDTH / 2 - 0.020, TABLE_HEIGHT + 0.004, z + 0.031],
+    [centerX + HERO_PEEK_CARD_WIDTH / 2, TABLE_HEIGHT + 0.004, z + 0.031],
+    [centerX + HERO_PEEK_CARD_WIDTH / 2, TABLE_HEIGHT + 0.022, z + 0.056],
+    [centerX + HERO_PEEK_CARD_WIDTH / 2 - 0.020, TABLE_HEIGHT + 0.022, z + 0.056],
   ], pose, options.pan, options.cameraView, options.wheelZoom ?? 0,
   options.viewportWidth, options.viewportHeight));
-  const rigRoot: readonly [number, number, number] = [0, TABLE_HEIGHT + 0.012, -0.038];
-  const armLandmarks: readonly (readonly [number, number, number])[] = [
-    [-0.16, TABLE_HEIGHT - 0.148, -0.258], [-0.12, TABLE_HEIGHT - 0.058, -0.168], [-0.074, TABLE_HEIGHT + 0.010, -0.056],
-    [0.16, TABLE_HEIGHT - 0.148, -0.258], [0.12, TABLE_HEIGHT - 0.048, -0.148], [0.054, TABLE_HEIGHT + 0.014, 0.000],
-    [-0.074, TABLE_HEIGHT + 0.019, -0.036], [0.054, TABLE_HEIGHT + 0.019, 0.014],
-  ];
+  const root = [0, TABLE_HEIGHT + HERO_PEEK_HAND_ROOT_OFFSET.y, z + HERO_PEEK_HAND_ROOT_OFFSET.z] as const;
+  const armLandmarks = [
+    [HERO_PEEK_HAND_RIG.left.shoulder, HERO_PEEK_HAND_RIG.left.elbow, HERO_PEEK_HAND_RIG.left.wrist],
+    [HERO_PEEK_HAND_RIG.right.shoulder, HERO_PEEK_HAND_RIG.right.elbow, HERO_PEEK_HAND_RIG.right.wrist],
+  ].map((arm) => arm.map(([x, y, localZ]) => [x + root[0], TABLE_HEIGHT + HERO_PEEK_HAND_ROOT_OFFSET.y + y, localZ + root[2]] as const));
   const handBounds = [
-    armLandmarks.slice(0, 3),
-    armLandmarks.slice(3, 6),
-  ].map((landmarks) => projectedBounds(landmarks, pose, options.pan, options.cameraView, options.wheelZoom ?? 0, options.viewportWidth, options.viewportHeight));
-  void rigRoot;
-  return { cardBounds: cards, protectedIndexBounds, handBounds, interfaceScale: options.interfaceScale };
+    armLandmarks[0],
+    armLandmarks[1],
+  ].map((landmarks) => projectedBounds(
+    handVolumePoints(landmarks),
+    pose,
+    options.pan,
+    options.cameraView,
+    options.wheelZoom ?? 0,
+    options.viewportWidth,
+    options.viewportHeight,
+  ));
+  return {
+    cardBounds: cards,
+    protectedIndexBounds,
+    handBounds,
+    handDepths: armLandmarks.map((arm) => arm[2][2]),
+    cardFarEdgeDepth: z + HERO_PEEK_CARD_LENGTH / 2,
+    interfaceScale: options.interfaceScale,
+  };
 }
 
 export function projectedBoundsOverlap(left: ProjectedBounds, right: ProjectedBounds): boolean {
