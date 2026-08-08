@@ -68,8 +68,8 @@ describe("persistent hero stack HUD", () => {
     expect(source).toContain("totalCommitted: heroTotalCommitted");
     // The stack itself now renders through the seat, for hero and opponents
     // alike, with its depth in big blinds beside it.
-    expect(source).toContain("<ChipStack /> {formatChips(player.stack)}");
-    expect(source).toContain("seat-label__depth");
+    expect(source).toContain("<strong>{formatChips(player.stack)}</strong>");
+    expect(source).not.toContain("seat-label__depth");
     expect(source).toContain('role="status"');
     expect(source).toContain('aria-live="polite"');
   });
@@ -93,8 +93,6 @@ describe("persistent hero stack HUD", () => {
       path.join(componentDirectory, "..", "styles.css"),
       "utf8",
     );
-    const depth = styles.match(/\.seat-label__depth\s*\{([\s\S]*?)\n\}/)?.[1];
-    expect(depth).toBeDefined();
-    expect(depth).not.toMatch(/display\s*:\s*none|visibility\s*:\s*hidden/i);
+    expect(styles).toContain("font-variant-numeric: tabular-nums");
   });
 });

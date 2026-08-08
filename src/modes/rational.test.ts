@@ -151,6 +151,25 @@ function probabilityByType(
 }
 
 describe("rational policy contract", () => {
+  it("fails closed when the information set names a different actor", () => {
+    const spot = { ...makeSpot(), actingPlayerId: "villain" };
+    expect(() =>
+      decideRationalAction(input(spot, facingBetLegal(spot))),
+    ).toThrow(/may act only for the information-set viewer/);
+  });
+
+  it("rejects malformed revealed opponent holdings before equity work", () => {
+    const spot = makeSpot();
+    spot.players[1] = {
+      ...spot.players[1],
+      revealed: true,
+      holeCards: cards("7s"),
+    };
+    expect(() =>
+      decideRationalAction(input(spot, facingBetLegal(spot))),
+    ).toThrow(/exactly two hole cards/);
+  });
+
   it("is deterministic for an identical information set and policy seed", () => {
     const spot = makeSpot();
     const policyInput = input(spot, facingBetLegal(spot));

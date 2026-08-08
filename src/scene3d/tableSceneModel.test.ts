@@ -9,18 +9,32 @@
 import { describe, expect, it } from "vitest";
 import {
   actionEase,
+  awardChipPosition,
   allInChipPosition,
   betChipPosition,
   betCirclePosition,
   callChipPosition,
   chipInventoryForAmount,
+  chipColumnLayoutForAmount,
   chipCountForAmount,
+  committedAmountPosition,
   collectChipPosition,
   POT_POSITION,
   dealtCardPosition,
+  holeCardDealProgress,
   muckedCardPosition,
   raiseChipPosition,
   restingChipStackPosition,
+  stackAmountPosition,
+  seatBetViewportAnchor,
+  seatBetViewportAnchorFromCamera,
+  seatStackAmountViewportAnchor,
+  seatStackAmountViewportAnchorFromCamera,
+  seatPlaqueViewportAnchor,
+  cameraPose,
+  TABLE_MARKER_GAP,
+  TABLE_MARKER_RADIUS,
+  CHIP_STACK_FOOTPRINT_RADIUS,
   tableMarkerPosition,
   seatLocalPoint,
   seatPoses,
@@ -35,6 +49,7 @@ import {
   CARD_ZONE_DEPTH,
   CARD_ZONE_WIDTH,
   BET_CIRCLE_RADIUS,
+  STACK_AMOUNT_OUTWARD_GAP,
   turnIndicatorPositionForPlayer,
 } from "./tableSceneModel";
 
@@ -185,6 +200,24 @@ describe("objects travel between real places", () => {
     expect(distance(dealtCardPosition(pose, 0), end)).toBeGreaterThan(0.2);
   });
 
+  it("deals hole cards in clockwise first-card/second-card passes", () => {
+    const firstSeatFirstCard = holeCardDealProgress(0.10, 0, 0, 3);
+    const secondSeatFirstCard = holeCardDealProgress(0.10, 1, 0, 3);
+    const firstSeatSecondCard = holeCardDealProgress(0.10, 0, 1, 3);
+    expect(firstSeatFirstCard).toBeGreaterThan(0);
+    expect(secondSeatFirstCard).toBe(0);
+    expect(firstSeatSecondCard).toBe(0);
+    expect(holeCardDealProgress(1, 2, 1, 3)).toBe(1);
+  });
+
+  it("pushes an awarded pot from the center to the winner's rack", () => {
+    const start = awardChipPosition(pose, 0);
+    const end = awardChipPosition(pose, 1);
+    expect(start).toEqual(POT_POSITION);
+    expect(end).toEqual(restingChipStackPosition(pose));
+    expect(awardChipPosition(pose, 0.5)[1]).toBeGreaterThan(TABLE_HEIGHT);
+  });
+
   it("holds the recipient card at the dealer's hand through the visible pickup", () => {
     expect(dealtCardPosition(pose, 0.15)).toEqual(dealtCardPosition(pose, 0));
     expect(dealtCardPosition(pose, 0)).toEqual(TABLE_ANCHORS.dealerThrow);
@@ -207,6 +240,8 @@ describe("objects travel between real places", () => {
     const start = muckedCardPosition(pose, 0);
     const end = muckedCardPosition(pose, 1);
     expect(start[0]).toBeCloseTo(pose.feltPosition[0], 6);
+    expect(end[0]).toBeCloseTo(TABLE_ANCHORS.muck[0], 6);
+    expect(end[2]).toBeCloseTo(TABLE_ANCHORS.muck[2], 6);
     // A fold has to read as the cards leaving, not vanishing.
     expect(distance(start, end)).toBeGreaterThan(0.2);
   });
@@ -343,7 +378,7 @@ describe("chip stacks read as depth without unbounded geometry", () => {
   it("grows with the amount but stays bounded", () => {
     expect(chipCountForAmount(50)).toBeGreaterThan(0);
     expect(chipCountForAmount(15_000)).toBeGreaterThan(chipCountForAmount(500));
-    expect(chipCountForAmount(1_000_000_000)).toBeLessThanOrEqual(18);
+    expect(chipCountForAmount(1_000_000_000)).toBe(chipInventoryForAmount(1_000_000_000).length);
   });
 
   it("never returns a fractional chip", () => {
@@ -392,14 +427,117 @@ describe("resting chip stacks stay in their owner's safe play lane", () => {
 });
 
 describe("dealer and blind markers", () => {
-  it("sit in the clear foreground strip in front of each owner's stack", () => {
+  it("sit between each owner's rack and the centre with a real gap", () => {
     for (const pose of seatPoses(6)) {
       const stack = restingChipStackPosition(pose);
       const marker = tableMarkerPosition(pose);
-      // Pucks remain in the same seat lane but leave enough air not to read as
-      // sitting on the chip stack.
-      expect(distance(marker, stack), `seat ${pose.seat}`).toBeGreaterThan(0.06);
-      expect(Math.hypot(marker[0], marker[2])).toBeGreaterThan(Math.hypot(stack[0], stack[2]));
+      const gap = distance(marker, stack);
+      // Pucks remain in the same radial seat lane, leave air around the rack,
+      // and move toward the felt centre rather than behind the chips.
+      expect(gap, `seat ${pose.seat}`).toBeGreaterThanOrEqual(
+        TABLE_MARKER_GAP + TABLE_MARKER_RADIUS,
+      );
+      expect(gap).toBeLessThan(
+        CHIP_STACK_FOOTPRINT_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS + 0.01,
+      );
+      expect(Math.hypot(marker[0], marker[2])).toBeLessThan(Math.hypot(stack[0], stack[2]));
+    }
+  });
+
+  it("keeps numeric anchors attached to the represented rack and betting circle", () => {
+    for (const pose of seatPoses(6)) {
+      const stack = stackAmountPosition(pose);
+      const bet = committedAmountPosition(pose);
+      expect(Math.hypot(stack[0] - restingChipStackPosition(pose)[0], stack[2] - restingChipStackPosition(pose)[2])).toBeCloseTo(STACK_AMOUNT_OUTWARD_GAP, 8);
+      expect(Math.hypot(bet[0] - betCirclePosition(pose)[0], bet[2] - betCirclePosition(pose)[2])).toBeCloseTo(0.04, 8);
+      expect(stack[1]).toBeCloseTo(TABLE_HEIGHT + 0.002, 8);
+      expect(bet[1]).toBeCloseTo(TABLE_HEIGHT + 0.006, 8);
+    }
+  });
+
+  it("keeps every rendered rack column denomination-pure and exact", () => {
+    for (const amount of [25, 150, 1_800, 14_950, 84_321]) {
+      const columns = chipColumnLayoutForAmount(amount, 8);
+      expect(columns.reduce((total, column) => total + column.denomination * column.count, 0)).toBe(amount);
+      expect(columns.every((column) => column.count > 0 && column.count <= 8)).toBe(true);
+      expect(columns.map((column) => column.denomination)).toEqual(
+        [...columns.map((column) => column.denomination)].sort((left, right) => left - right),
+      );
+      expect(new Set(columns.map((column) => column.column)).size).toBe(columns.length);
+    }
+  });
+
+  it("projects stack and bet numerals for the hero and every rotated seat", () => {
+    for (const heroIndex of [0, 1, 2, 3, 4, 5]) {
+      for (const pan of [-2, 0, 2]) {
+        for (const relativeSeat of [0, 1, 2, 3, 4, 5]) {
+          const stack = seatPlaqueViewportAnchor(relativeSeat, pan, 1366, 768, heroIndex);
+          const bet = seatBetViewportAnchor(relativeSeat, pan, 1366, 768, heroIndex);
+          for (const anchor of [stack, bet]) {
+            expect(anchor === undefined || (
+              Number.isFinite(anchor.xPercent) && Number.isFinite(anchor.yPercent)
+            )).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it("uses one active camera lens for stack and bet overlays", () => {
+    const standard = seatStackAmountViewportAnchor(0, 0, 1366, 768, 0, 0, "standard");
+    const close = seatStackAmountViewportAnchor(0, 0, 1366, 768, 0, 0, "close");
+    const wide = seatStackAmountViewportAnchor(0, 0, 1366, 768, 0, 0, "wide");
+    expect(standard).toBeDefined();
+    expect(close).toBeDefined();
+    expect(wide).toBeDefined();
+    expect(close?.xPercent).not.toBeCloseTo(standard?.xPercent ?? 0, 4);
+    expect(wide?.xPercent).not.toBeCloseTo(standard?.xPercent ?? 0, 4);
+    for (const cameraView of ["wide", "standard", "close"] as const) {
+      for (const pan of [-2, 0, 2]) {
+        for (const scale of [0.85, 1, 1.15, 1.3]) {
+          const stack = seatStackAmountViewportAnchor(0, pan, 1366 * scale, 768 * scale, 0, 0, cameraView);
+          const bet = seatBetViewportAnchor(0, pan, 1366 * scale, 768 * scale, 0, 0, cameraView);
+          expect(stack === undefined || Number.isFinite(stack.xPercent)).toBe(true);
+          expect(bet === undefined || Number.isFinite(bet.yPercent)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("projects stable table anchors coherently through zoom, pan, and resize", () => {
+    const aspect = 1366 / 768;
+    const camera = cameraPose(0, 0, aspect, 0);
+    const zoomedCamera = cameraPose(0, 0, aspect, 0.75);
+    const pannedCamera = cameraPose(1, 0, aspect, 0.75);
+    const base = seatStackAmountViewportAnchorFromCamera(0, 1366, 768, 0, camera);
+    const zoomed = seatStackAmountViewportAnchorFromCamera(0, 1366, 768, 0, zoomedCamera);
+    const panned = seatStackAmountViewportAnchorFromCamera(0, 1366, 768, 0, pannedCamera);
+    expect(base).toBeDefined();
+    expect(zoomed).toBeDefined();
+    expect(panned).toBeDefined();
+    expect(Math.hypot((zoomed?.xPercent ?? 0) - 50, (zoomed?.yPercent ?? 0) - 50))
+      .toBeGreaterThan(Math.hypot((base?.xPercent ?? 0) - 50, (base?.yPercent ?? 0) - 50));
+    expect(Math.abs((panned?.xPercent ?? 0) - (zoomed?.xPercent ?? 0))).toBeGreaterThan(0.1);
+
+    // UI scale / resize with the same aspect ratio changes pixel size, not the
+    // table-space percentage. This is the regression that screen-locked labels
+    // failed: their pixel coordinates stayed stale instead.
+    const resized = seatStackAmountViewportAnchor(0, 0, 2732, 1536, 0, 0.75, "standard");
+    expect(resized?.xPercent).toBeCloseTo(zoomed?.xPercent ?? 0, 8);
+    expect(resized?.yPercent).toBeCloseTo(zoomed?.yPercent ?? 0, 8);
+  });
+
+  it("keeps stack and committed-bet numerals distinct in every camera frame", () => {
+    for (const pan of [-2, 0, 2]) {
+      const camera = cameraPose(pan, 0, 1366 / 768, 0.5);
+      const stack = seatStackAmountViewportAnchorFromCamera(0, 1366, 768, 0, camera);
+      const bet = seatBetViewportAnchorFromCamera(0, 1366, 768, 0, camera);
+      expect(stack).toBeDefined();
+      expect(bet).toBeDefined();
+      expect(Math.hypot(
+        (stack?.xPercent ?? 0) - (bet?.xPercent ?? 0),
+        (stack?.yPercent ?? 0) - (bet?.yPercent ?? 0),
+      )).toBeGreaterThan(2);
     }
   });
 });

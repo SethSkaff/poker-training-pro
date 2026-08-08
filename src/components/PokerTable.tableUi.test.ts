@@ -13,11 +13,25 @@ const table = readFileSync(
 );
 
 describe("table UI restraint and card peek", () => {
+  it("applies stack and bet world projections independently of the rail plaque", () => {
+    expect(table).toContain("(railAnchor || stackAnchor || betAnchor)");
+    expect(table).toContain("projectionWidth = activeCameraFrame?.viewportWidth || sceneViewport.width");
+    expect(table).toContain("seatStackAmountViewportAnchorFromCamera");
+    expect(table).toContain("seatBetViewportAnchorFromCamera");
+  });
+
   it("does not render the redundant bottom shortcut bar or floating camera menu", () => {
     expect(table).not.toContain('className="table-footer"');
-    expect(table).not.toContain('className="camera-controls"');
+    expect(table).toContain('className="camera-controls__center"');
     expect(table).not.toContain("table.footer.quickRaise");
-    expect(table).not.toContain("table.camera.viewLabel");
+    expect(table).toContain("table.camera.viewLabel");
+  });
+
+  it("keeps decorative room depth behind camera controls and locks peek during an action", () => {
+    expect(table.indexOf('className="room-depth"')).toBeLessThan(
+      table.indexOf('className="camera-controls"'),
+    );
+    expect(table).toContain("disabled={Boolean(action) || !cardsDealt || heroFolded}");
   });
 
   it("keeps card taps as a private toggle while preserving drag-fold protection", () => {
@@ -26,7 +40,7 @@ describe("table UI restraint and card peek", () => {
     expect(table).toContain("const shouldFold = !cancelled && didDrag.current && foldProgress >= 82");
     // A table action can be in flight while the player is still entitled to
     // read their own cards. Only undealt or mucked cards reject a normal tap.
-    expect(table).toContain("disabled={!cardsDealt || heroFolded}");
+    expect(table).toContain("disabled={Boolean(action) || !cardsDealt || heroFolded}");
     // Opponent cards remain hidden until a legal public showdown reveal.
     expect(table).toContain("hidden={!peeked && !showdownHeroRevealed}");
   });

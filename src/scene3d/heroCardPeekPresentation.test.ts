@@ -40,9 +40,10 @@ describe("hero card peek presentation", () => {
   });
 
   it("uses an actual curved exposed half-card instead of rotating a full card", () => {
-    expect(scene).toContain("function flexedHeroPeekGeometry(): BufferGeometry");
-    expect(scene).toContain("const strips = 8;");
-    expect(scene).toContain("const width = 0.088;");
+    expect(scene).toContain("function heroPeekGeometry(): BufferGeometry");
+    expect(scene).toContain("const rows = 12;");
+    expect(scene).toContain("const hingeRadians = 24 * Math.PI / 180;");
+    expect(scene).toContain("fullCard: true");
     expect(scene).toContain("const revealedEdge = 0.058;");
     expect(scene).toContain("Math.sin(progress * Math.PI * 0.5) * 0.032");
     expect(scene).toContain("const textureV = 0.58 + progress * 0.40;");
@@ -51,7 +52,9 @@ describe("hero card peek presentation", () => {
     expect(scene).toContain("card.rotation.x = 0;");
     expect(scene).toContain("card.rotation.y = squeezing ? (index === 0 ? 0.025 : -0.025) : 0;");
     expect(scene).toContain("const spread = squeezing ? 0.040 : 0.055;");
-    expect(scene).toContain("view.hand.position.set(local[0], local[1] + 0.012, local[2] - 0.038);");
+    expect(scene).toContain("local[1] + HERO_PEEK_HAND_ROOT_OFFSET.y");
+    expect(scene).toContain("local[2] + HERO_PEEK_HAND_ROOT_OFFSET.z");
+    expect(scene).toContain("hand.rotation.set(0, side === \"left\" ? -0.38 : 0.18");
     expect(scene).toContain("fold.visible = false;");
   });
 });

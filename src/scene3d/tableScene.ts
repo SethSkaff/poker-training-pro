@@ -117,6 +117,11 @@ import {
   proceduralCardFaceBytes,
   proceduralTableMarkerBytes,
 } from "./sceneCardFaces";
+import {
+  HERO_PEEK_HAND_RIG,
+  HERO_PEEK_HAND_ROOT_OFFSET,
+  heroPeekFaceUvForLocalPoint,
+} from "./heroPeekPresentation";
 
 export interface SceneSeatState {
   readonly id: string;
@@ -427,9 +432,11 @@ function heroPeekGeometry(): BufferGeometry {
     const z = baseZ - lifted * (length * (1 - hingeStart)) * (1 - Math.cos(hingeRadians));
     for (const x of [-width / 2, width / 2]) {
       positions.push(x, y, z);
-      // Match the authored card's mirrored-U correction so the upper-left
-      // rank/suit index remains upper-left in the physical peek mesh.
-      uvs.push(x < 0 ? 1 : 0, 0.02 + progress * 0.96);
+      // Keep the printed upper-left index in the player's upper-left corner.
+      // The helper documents the seated-camera axis convention and reverses V
+      // so the far edge samples the upright top index, not the rotated duplicate
+      // index painted at the bottom of the card canvas.
+      uvs.push(...heroPeekFaceUvForLocalPoint(x, progress));
     }
   }
   for (let row = 0; row < rows; row += 1) {
@@ -1182,6 +1189,27 @@ export function createTableScene(
   let diagnosticDealerPhase = "rest";
   let diagnosticCardPhase = "settle";
   let diagnosticPresentationEventId: string | null = null;
+  let renderedTransitionId: string | undefined;
+  let renderedTransitionProgress = 1;
+
+  const transitionForRender = (
+    transition: TableSceneState["transition"],
+  ): TableSceneState["transition"] => {
+    if (!transition) {
+      renderedTransitionId = undefined;
+      renderedTransitionProgress = 1;
+      return undefined;
+    }
+    if (renderedTransitionId !== transition.id) {
+      renderedTransitionId = transition.id;
+      renderedTransitionProgress = transition.progress;
+      return transition;
+    }
+    renderedTransitionProgress = Math.max(renderedTransitionProgress, transition.progress);
+    return renderedTransitionProgress === transition.progress
+      ? transition
+      : { ...transition, progress: renderedTransitionProgress };
+  };
 
   const applyCamera = (pose = cameraCurrent) => {
     if (camera.fov !== pose.fov) {
@@ -1234,6 +1262,7 @@ export function createTableScene(
     try {
       advanceCamera(nowMs);
       callbacks?.onCameraFrame?.(cameraCurrent);
+      const renderTransition = transitionForRender(state.transition);
       for (const entry of seatViews.values()) entry.view.root.visible = false;
       const activeIds = new Set(state.seats.map((seat) => seat.id));
       const dealerWork: DealerWork[] = [];
@@ -1267,7 +1296,7 @@ export function createTableScene(
           nowMs,
           actionTiming.startedAt,
           state.reducedMotion,
-          state.transition,
+          renderTransition,
           state.handId,
           resources,
           state.heroPeeked === true,
@@ -1280,27 +1309,27 @@ export function createTableScene(
       // A board street is dealer work too: burn first, then pitch the next
       // card from the live shoe toward the board.  Without this entry the
       // card could animate while the dealer remained in an idle pose.
-      if (state.transition?.kind === "board-card-dealt") {
+      if (renderTransition?.kind === "board-card-dealt") {
         dealerWork.push({
           task: "deal",
-          progress: state.transition.progress,
+          progress: renderTransition.progress,
           at: TABLE_ANCHORS.board,
         });
       }
       // A genuine showdown is the dealer's short collection/presentation beat:
       // reach to the public cards before the payout pushes the pot away. Fold
       // results intentionally skip this because there is no revealed hand.
-      if (state.transition?.kind === "showdown") {
+      if (renderTransition?.kind === "showdown") {
         dealerWork.push({
           task: "collect",
-          progress: state.transition.progress,
+          progress: renderTransition.progress,
           at: TABLE_ANCHORS.board,
         });
       }
-      if (state.transition?.kind === "all-in-reveal") {
+      if (renderTransition?.kind === "all-in-reveal") {
         dealerWork.push({
           task: "collect",
-          progress: state.transition.progress,
+          progress: renderTransition.progress,
           at: TABLE_ANCHORS.board,
         });
       }
@@ -1313,9 +1342,9 @@ export function createTableScene(
         of the seats in flight is the one being served.
       */
       const activeDealerWork = dealerWorkFor(dealerWork);
-      const cardKind = state.transition?.kind === "board-card-dealt"
+      const cardKind = renderTransition?.kind === "board-card-dealt"
         ? "board-card" as const
-        : state.transition?.kind === "pot-awarded"
+        : renderTransition?.kind === "pot-awarded"
           ? "payout" as const
           : "hole-card" as const;
       const cardFrame = activeDealerWork
@@ -1323,8 +1352,8 @@ export function createTableScene(
         : dealerCardFrame(cardKind, 1);
       diagnosticDealerPhase = cardFrame.phase;
       diagnosticCardPhase = cardFrame.phase;
-      diagnosticPresentationEventId = activeDealerWork && state.transition?.id
-        ? `${state.transition.id}:${cardKind}:${activeDealerWork.task}:${activeDealerWork.at.map((value) => value.toFixed(3)).join(",")}`
+      diagnosticPresentationEventId = activeDealerWork && renderTransition?.id
+        ? `${renderTransition.id}:${cardKind}:${activeDealerWork.task}:${activeDealerWork.at.map((value) => value.toFixed(3)).join(",")}`
         : null;
       const gesture = dealerGestureFor(
         activeDealerWork,
@@ -1344,7 +1373,7 @@ export function createTableScene(
         dealerHeldCard,
         dealerBurnCard,
         activeDealerWork,
-        state,
+        renderTransition === state.transition ? state : { ...state, transition: renderTransition },
         nowMs,
         resources,
       );
@@ -1352,15 +1381,15 @@ export function createTableScene(
       placeMarker(smallBlindMarker, state.smallBlindPlayerId, seatViews);
       placeMarker(bigBlindMarker, state.bigBlindPlayerId, seatViews);
       placeTurnIndicator(turnIndicator, state.seats, seatViews);
-      const payoutWinner = state.transition?.kind === "pot-awarded"
-        ? seatViews.get(state.transition.payoutPlayerId ?? "")?.pose
+      const payoutWinner = renderTransition?.kind === "pot-awarded"
+        ? seatViews.get(renderTransition.payoutPlayerId ?? "")?.pose
         : undefined;
-      setPotLanes(potChips, state.pots, state.pot, state.transition, resources, payoutWinner);
+      setPotLanes(potChips, state.pots, state.pot, renderTransition, resources, payoutWinner);
       for (const lane of potChips.children) {
         const plaque = lane.getObjectByName("pot-amount-plaque");
         if (plaque) plaque.lookAt(camera.position);
       }
-      setBoardCards(board, state.boardCards, state.publicBoardCardCodes, resources, state.transition, state.handId);
+      setBoardCards(board, state.boardCards, state.publicBoardCardCodes, resources, renderTransition, state.handId);
       const renderStartedAt = performance.now();
       renderer.render(scene, camera);
       frameTelemetry.record(nowMs, performance.now() - renderStartedAt);
@@ -2134,15 +2163,16 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
     const hand = new Group();
     hand.name = `hero-${side}-wrist-hand`;
     hand.position.set(...wrist);
+    hand.rotation.set(0, side === "left" ? -0.38 : 0.18, side === "left" ? -0.12 : 0.08);
     const palm = new Mesh(jointGeometry, skin);
     palm.name = `hero-${side}-palm`;
-    palm.scale.set(side === "left" ? 0.024 : 0.022, 0.012, 0.030);
+    palm.scale.set(side === "left" ? 0.018 : 0.028, side === "left" ? 0.010 : 0.014, side === "left" ? 0.024 : 0.032);
     hand.add(palm);
     const fingerGeometry = resources.ledger.track(new CylinderGeometry(0.009, 0.011, 0.060, 8));
     for (let finger = 0; finger < 3; finger += 1) {
       const tip = new Mesh(fingerGeometry, skin);
       tip.name = `hero-${side}-finger-${finger}`;
-      tip.position.set((finger - 1) * 0.010, 0.007, side === "left" ? 0.020 : 0.014);
+      tip.position.set((finger - 1) * 0.009, side === "left" ? 0.006 : 0.008, side === "left" ? 0.020 : 0.014);
       tip.rotation.set(Math.PI / 2.7, side === "left" ? 0.12 : -0.10, (finger - 1) * 0.03);
       hand.add(tip);
     }
@@ -2151,7 +2181,7 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
       skin,
     );
     thumb.name = `hero-${side}-thumb`;
-    thumb.position.set(side === "left" ? 0.014 : -0.014, 0.006, 0.028);
+    thumb.position.set(side === "left" ? -0.008 : -0.012, side === "left" ? 0.004 : 0.008, side === "left" ? 0.028 : 0.030);
     thumb.rotation.set(Math.PI / 2.2, side === "left" ? -0.18 : 0.18, side === "left" ? 0.10 : -0.10);
     hand.add(thumb);
     arm.add(hand);
@@ -2159,8 +2189,18 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
   };
   // Origins continue below the first-person frame; wrists arrive at opposite
   // card edges, producing a real brace/lift gesture instead of floating props.
-  addArm("left", [-0.16, -0.16, -0.22], [-0.12, -0.07, -0.13], [-0.074, -0.002, -0.018]);
-  addArm("right", [0.16, -0.16, -0.22], [0.12, -0.06, -0.11], [0.054, 0.002, 0.038]);
+  addArm(
+    "left",
+    HERO_PEEK_HAND_RIG.left.shoulder,
+    HERO_PEEK_HAND_RIG.left.elbow,
+    HERO_PEEK_HAND_RIG.left.wrist,
+  );
+  addArm(
+    "right",
+    HERO_PEEK_HAND_RIG.right.shoulder,
+    HERO_PEEK_HAND_RIG.right.elbow,
+    HERO_PEEK_HAND_RIG.right.wrist,
+  );
   hands.userData.rig = "shoulder-upper-arm-elbow-forearm-wrist-palm-fingers";
   return hands;
 }
@@ -2379,7 +2419,11 @@ function applySeat(
       A seat's local +X is screen *left* from that seat's own camera, so "the
       player's right" is local -X.
     */
-    view.hand.position.set(local[0], local[1] + 0.012, local[2] - 0.038);
+    view.hand.position.set(
+      local[0],
+      local[1] + HERO_PEEK_HAND_ROOT_OFFSET.y,
+      local[2] + HERO_PEEK_HAND_ROOT_OFFSET.z,
+    );
     view.hand.rotation.set(-0.04, 0, 0);
   }
 

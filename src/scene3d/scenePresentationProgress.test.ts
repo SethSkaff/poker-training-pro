@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  monotonicScenePresentationProgress,
   sampleScenePresentationProgress,
   scenePresentationProgress,
   type ScenePresentationDelay,
@@ -32,6 +33,14 @@ class Frames {
 }
 
 describe("scene presentation progress", () => {
+  it("never regresses progress within one public event", () => {
+    const cursor = { eventId: null, progress: 1 };
+    expect(monotonicScenePresentationProgress(cursor, "event-1", 0)).toBe(0);
+    expect(monotonicScenePresentationProgress(cursor, "event-1", 0.6)).toBe(0.6);
+    expect(monotonicScenePresentationProgress(cursor, "event-1", 0.2)).toBe(0.6);
+    expect(monotonicScenePresentationProgress(cursor, "event-2", 0)).toBe(0);
+  });
+
   it("clamps the authoritative delay sample without completing it", () => {
     const delay: ScenePresentationDelay = { remaining: 1_500, isPending: true, isFrozen: false };
     expect(scenePresentationProgress(delay, 1_000)).toBe(0);

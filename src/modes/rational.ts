@@ -414,6 +414,12 @@ function assertInformationSet(
   if (legalActions.playerId !== informationSet.viewerId) {
     throw new Error("Legal actions must belong to the information-set viewer");
   }
+  if (
+    informationSet.actingPlayerId !== undefined &&
+    informationSet.actingPlayerId !== informationSet.viewerId
+  ) {
+    throw new Error("Rational policy may act only for the information-set viewer");
+  }
   const hero = informationSet.players.find(
     (player) => player.id === informationSet.viewerId,
   );
@@ -440,16 +446,23 @@ function assertInformationSet(
         player.status !== "folded" &&
         player.status !== "out",
     )
-    .map((player) => ({
-      id: player.id,
-      status: player.status,
-      stack: player.stack,
-      seat: player.seat,
-      holeCards:
-        player.revealed && player.holeCards
-          ? player.holeCards.map((card) => ({ ...card }))
-          : undefined,
-    }));
+    .map((player) => {
+      if (player.revealed && player.holeCards && player.holeCards.length !== 2) {
+        throw new Error(
+          `Revealed opponent ${player.id} must have exactly two hole cards`,
+        );
+      }
+      return {
+        id: player.id,
+        status: player.status,
+        stack: player.stack,
+        seat: player.seat,
+        holeCards:
+          player.revealed && player.holeCards
+            ? player.holeCards.map((card) => ({ ...card }))
+            : undefined,
+      };
+    });
   if (opponents.length === 0) {
     throw new Error("Rational policy requires at least one live opponent");
   }
@@ -1344,9 +1357,25 @@ function scoreCandidates(
         type === "all-in"
           ? pressure.lowSprValuePressure * 0.72 + pressure.stackPressure * 0.42
           : 0.55 + pressure.position * 0.25;
+      // Rational play must be measurably different from Normal play in the
+      // spots where public information supports it.  Give a raise a bounded
+      // utility lift only for a visible three-bet, squeeze, or continuation
+      // opportunity, and only when the hand is close enough to the
+      // risk-adjusted threshold that escalating is defensible.  This keeps the
+      // distinction strategic rather than turning Rational into a loose
+      // aggression switch.
+      const supportedRaiseBonus =
+        type === "raise" && equity >= requiredEquity - 0.06
+          ? bigBlind * (
+              pressure.threeBetOpportunity * 0.9 +
+              pressure.squeezeOpportunity * 0.45 +
+              pressure.continuationOpportunity * 0.25
+            )
+          : 0;
       chipUtility +=
         strategicPressure * pressureMultiplier * bigBlind *
-        (role === "bluff" ? 0.58 : 1);
+        (role === "bluff" ? 0.58 : 1) +
+        supportedRaiseBonus;
 
       // Normalized fold equity is deliberately bounded. A naked bluff needs a
       // meaningful blocker/draw and a capped public range; it cannot become a

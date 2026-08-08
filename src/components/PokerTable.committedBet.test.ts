@@ -18,12 +18,12 @@ describe("committed wager presentation", () => {
     */
     expect(source).not.toContain("!isHero && player.bet > 0");
     expect(source).toContain("{player.bet > 0 && (");
-    expect(source).toContain('formatMessage("table.seat.committed")');
+    expect(source).not.toContain('formatMessage("table.seat.committed")');
+    expect(source).toContain('<b>{formatChips(player.bet)}</b>');
   });
 
   it("keeps the wager lane clear of the balance plate", () => {
-    const betRule = styles.match(/\.seat-bet\s*\{([\s\S]*?)\n\}/)?.[1];
-    expect(betRule).toMatch(/top:\s*140px/);
-    expect(betRule).toMatch(/z-index:\s*3/);
+    expect(styles).toMatch(/\.seat-bet[\s\S]*font-variant-numeric:\s*tabular-nums/);
+    expect(styles).toMatch(/\.seat-bet\s*\{[\s\S]*?z-index:\s*3/);
   });
 });
