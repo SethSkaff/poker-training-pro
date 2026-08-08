@@ -30,28 +30,27 @@ export function heroPeekFaceUvForLocalPoint(
   ] as const;
 }
 
-/** The common local offset of the first-person hand rig from the card packet. */
+/** The previously approved local offset of the first-person hand rig. */
 export const HERO_PEEK_HAND_ROOT_OFFSET = {
-  y: 0.006,
-  z: 0,
+  y: 0.012,
+  z: -0.038,
 } as const;
 
 /**
- * Arm-chain landmarks relative to the hand root. Positive local X is viewer
- * left. The left wrist therefore finishes outside the left card, while the
- * right wrist finishes beyond the cards' far edge and can support them without
- * being in the face layer.
+ * Arm-chain landmarks relative to the hand root. This is the compact seated
+ * rig used by the previous approved build: both palms stay low and forward,
+ * with the right hand bracing the packet rather than crossing its faces.
  */
 export const HERO_PEEK_HAND_RIG = {
   left: {
-    shoulder: [0.18, -0.16, -0.22] as const,
-    elbow: [0.15, -0.07, -0.12] as const,
-    wrist: [0.14, -0.004, -0.012] as const,
+    shoulder: [-0.16, -0.16, -0.22] as const,
+    elbow: [-0.12, -0.07, -0.13] as const,
+    wrist: [-0.074, -0.002, -0.018] as const,
   },
   right: {
-    shoulder: [-0.16, -0.16, -0.22] as const,
-    elbow: [-0.08, -0.07, -0.10] as const,
-    wrist: [0, 0.018, 0.075] as const,
+    shoulder: [0.16, -0.16, -0.22] as const,
+    elbow: [0.12, -0.06, -0.11] as const,
+    wrist: [0.054, 0.002, 0.038] as const,
   },
 } as const;
 

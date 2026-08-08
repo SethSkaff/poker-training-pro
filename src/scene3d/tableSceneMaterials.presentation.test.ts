@@ -30,9 +30,10 @@ describe("table card and chip material presentation", () => {
     expect(scene).toContain("color: 0xffffff");
   });
 
-  it("uses rough clay chip bodies and muted inlays instead of luminous white plastic", () => {
+  it("uses rough clay chip bodies with the previous light center inlay", () => {
     expect(scene).toContain("chipMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0 }))");
     expect(scene).toContain("chipEdgeMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 }))");
-    expect(scene).toContain("inlay.copy(body).lerp(cream, 0.28);");
+    expect(scene).toContain("edge.copy(body).lerp(cream, 0.55);");
+    expect(scene).toContain("faces.setColorAt(instance, inlay);");
   });
 });
