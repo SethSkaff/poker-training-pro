@@ -14,11 +14,34 @@ const projectRoot = path.resolve(
 );
 const distDirectory = path.join(projectRoot, "dist");
 const textExtensions = new Set([".css", ".html", ".js", ".json", ".map"]);
+/*
+  URLs that appear in the bundle as *identifiers or prose*, never as fetch
+  targets. Each entry is allowed on the basis of what the surrounding code does
+  with it, checked at the time it was added -- not because the string looked
+  harmless.
+
+  The four W3C namespaces and `http://www.w3.org/1999/xhtml` are XML namespace
+  URIs handed to `document.createElementNS`. A namespace URI names a vocabulary;
+  the DOM never dereferences it. three.js uses the xhtml one to create its
+  canvas element.
+
+  `https://jcgt.org/published/0007/04/01/` is a paper citation inside a GLSL
+  comment in three.js's shader chunks (hashed alpha testing). It is inside a
+  comment in a string that is compiled as shader source, so it is never even
+  parsed as JavaScript, let alone requested.
+
+  Adding to this list is a deliberate act: verify what the code does with the
+  string before you add it, and say so here. The gate exists to prove the
+  packaged app makes no network requests, and the packaged network audit
+  independently confirms zero egress at runtime.
+*/
 const allowedLiteralUrls = new Set([
   "http://www.w3.org/1998/Math/MathML",
   "http://www.w3.org/2000/svg",
   "http://www.w3.org/1999/xlink",
   "http://www.w3.org/XML/1998/namespace",
+  "http://www.w3.org/1999/xhtml",
+  "https://jcgt.org/published/0007/04/01/",
 ]);
 const allowedLiteralPrefixes = ["https://react.dev/errors/"];
 

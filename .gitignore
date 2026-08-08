@@ -29,7 +29,11 @@ yarn-error.log*
 # vercel
 .vercel
 
-# build output
+# build output (the only package slots are outputs/current and outputs/next)
 /dist/
 /outputs/
 /work/
+.gstack/
+
+# Python bytecode from the Blender asset scripts.
+__pycache__/

@@ -1,7 +1,7 @@
 # Poker Training Pro audio playlist and license research
 
 Verified: 2026-07-23  
-Scope: paid Windows desktop plus paid iPhone/iPad app  
+Scope: paid Windows/macOS desktop application
 Status: research complete; **zero audio tracks are release-approved**
 
 ## Decision
@@ -13,7 +13,7 @@ The safest short list comes from two composer-owned catalogs:
 
 Nineteen conditional candidates are recorded in [`config/audio-candidate-manifest.json`](../../config/audio-candidate-manifest.json). None is marked accepted because no exact master, proof of acquisition, personalized license, checksum, loudness result, loop test, or platform-scope confirmation has been archived.
 
-The recommended route is to audition first, then buy and archive proprietary project licenses for the final 8–12 tracks. Free CC BY 4.0 use is commercially possible, but an iOS release introduces a non-trivial DRM question: CC BY 4.0 prohibits imposing effective technological measures that restrict recipients. That needs legal review or written licensor permission before placing CC BY masters inside a FairPlay-protected App Store package.
+The recommended route is to audition first, then buy and archive proprietary project licenses for the final 8–12 tracks. Free CC BY 4.0 use is commercially possible, but its prohibition on effective technological measures still needs legal review before placing CC BY masters in a signed desktop package.
 
 This document is a release-engineering assessment, not legal advice.
 
@@ -34,7 +34,7 @@ This document is a release-engineering assessment, not legal advice.
 | [Space Jazz](https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN2100030) | Kevin MacLeod | Rational/long table | Six-minute relaxed synth-jazz written for a game. |
 | [Night on the Docks - Sax](https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100137) | Kevin MacLeod | Late table/noir | Sparse tenor sax and electric piano. |
 | [Jazz Brunch](https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1700074) | Kevin MacLeod | Light table/menu | Officially tagged bright, grooving, and relaxed. |
-| [Ambiment](https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100630) | Kevin MacLeod | Extended practice | A 22-minute piano/synth texture with an excellent repetition profile; mobile size must be measured. |
+| [Ambiment](https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100630) | Kevin MacLeod | Extended practice | A 22-minute piano/synth texture with an excellent repetition profile; desktop package size must be measured. |
 | [Water Prelude](https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100017) | Kevin MacLeod | Reflective practice | Five-minute smooth background cue. |
 
 ### Restrained tournament intensity and progression
@@ -68,7 +68,7 @@ Incompetech’s [current Content ID page](https://incompetech.com/music/royalty-
 
 ### Creative Commons
 
-The [CC BY 4.0 deed](https://creativecommons.org/licenses/by/4.0/) permits sharing and adaptation for commercial purposes. The [legal code](https://creativecommons.org/licenses/by/4.0/legalcode.en) requires creator identification, a license notice/link, a source link where practical, and indication of modifications. It also prohibits adding effective technological measures that restrict recipients. That last condition is why the iOS free-license path remains conditional.
+The [CC BY 4.0 deed](https://creativecommons.org/licenses/by/4.0/) permits sharing and adaptation for commercial purposes. The [legal code](https://creativecommons.org/licenses/by/4.0/legalcode.en) requires creator identification, a license notice/link, a source link where practical, and indication of modifications. It also prohibits adding effective technological measures that restrict recipients, so the signed-package route remains conditional pending legal review.
 
 ## Rejected sources and tracks
 
@@ -84,7 +84,7 @@ The [CC BY 4.0 deed](https://creativecommons.org/licenses/by/4.0/) permits shari
 
 Before spending money or downloading production masters, ask the chosen licensor to confirm:
 
-1. One named `Poker Training Pro` project license covers the Windows desktop app, iPhone app, iPad app, updates, and all regional storefronts.
+1. One named `Poker Training Pro` project license covers the Windows and macOS desktop apps, updates, and regional distribution.
 2. Embedding the master in signed/encrypted packages is permitted and is not “standalone” distribution.
 3. Store previews, trailers, livestreams, and gameplay marketing are covered, or identify which need separate licenses.
 4. If using a Patreon/catalog-wide offer, every personalized certificate remains perpetual after cancellation.
@@ -98,13 +98,13 @@ No candidate may move from `conditional` to `accepted` until all boxes are satis
 - [ ] Confirm instrumental-only content; reject lyrics, vocal samples, casino jingles, sharp stingers, and distracting drops.
 - [ ] Record title, composer, ISRC, source URL, original filename, download date/time, and SHA-256.
 - [ ] Save a PDF or screenshot of the official track page and license terms as they appeared on acquisition day.
-- [ ] Buy/archive a personalized project license, invoice, receipt, and written platform-scope confirmation; or obtain legal sign-off for the CC BY + iOS DRM route.
+- [ ] Buy/archive a personalized project license, invoice, receipt, and written platform-scope confirmation; or obtain legal sign-off for the CC BY signed-desktop-package route.
 - [ ] Add a visible in-game Credits page if any CC BY track remains.
 - [ ] Include title, creator, source, license link, and modification notice in credits.
 - [ ] Confirm the project does not register original or edited tracks in Content ID, Rights Manager, DSPs, or music stores.
 - [ ] Normalize production masters to the game’s loudness target without clipping; preserve the original master separately.
-- [ ] Create tested sample-accurate loop points or use intentional crossfades; verify no click/pop on Windows, iPhone, and iPad.
-- [ ] Encode desktop and mobile variants within the project’s audio-size budgets; measure install-size impact.
+- [ ] Create tested sample-accurate loop points or use intentional crossfades; verify no click/pop on Windows and macOS.
+- [ ] Encode desktop variants within the project’s audio-size budget; measure install-size impact.
 - [ ] Verify offline playback, suspend/resume, headphone disconnect, audio interruption, mute, music-volume, and reduced-power behavior.
 - [ ] Run a 60-minute shuffle soak with no immediate repeats and no state-dependent bias that leaks opponent information.
 - [ ] Confirm packaged audio is not exposed through an in-app export/download feature.

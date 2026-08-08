@@ -21,11 +21,12 @@ import {
   assertNoFatalCdpEvents,
 } from "./release/packaged-render-smoke-lib.mjs";
 import { projectRoot } from "./release/shared.mjs";
+import { classifyCdpFailure, reportCdpOutcome } from "./lib/cdp-outcome.mjs";
 
 const APP = join(
   projectRoot,
   "outputs",
-  "desktop",
+    "next",
   "win-unpacked",
   "Poker Training Pro.exe",
 );
@@ -128,21 +129,21 @@ try {
     },
   );
 
-  console.log(
-    JSON.stringify(
-      {
-        ok: true,
-        documentUrl: safeMode.url,
-        failureCount: 3,
-        recoveryControls: safeMode.buttons,
-        reducedMotionBeforeContinue: safeMode.reducedMotion,
-        reducedMotionAfterContinue: continued.reducedMotion,
-        runtimeExceptions: 0,
-        consoleErrors: 0,
-      },
-      null,
-      2,
-    ),
+  reportCdpOutcome({
+    documentUrl: safeMode.url,
+    failureCount: 3,
+    recoveryControls: safeMode.buttons,
+    reducedMotionBeforeContinue: safeMode.reducedMotion,
+    reducedMotionAfterContinue: continued.reducedMotion,
+    runtimeExceptions: 0,
+    consoleErrors: 0,
+  });
+} catch (error) {
+  // A CDP command deadline proves neither a working safe mode nor a broken
+  // one; it must not be reported as a product failure (E25-003).
+  reportCdpOutcome(
+    { documentUrl: EXPECTED_DOCUMENT_URL, failureCount: 3 },
+    classifyCdpFailure(error),
   );
 } finally {
   try {

@@ -6,6 +6,7 @@ import type {
   LegalActionSet,
 } from "../engine/betting";
 import {
+  assertUniqueCards,
   cardKey,
   createDeck,
   createSeededRandom,
@@ -119,6 +120,12 @@ export interface RationalDecisionAudit {
     inPosition: boolean;
     drawPotential: number;
     blockerScore: number;
+    /** Public, opportunity-based pressure score used by the action model. */
+    pressureOpportunity: number;
+    /** Count of aggressive actions already visible on this street. */
+    streetAggression: number;
+    /** Whether a pure bluff has a public/private-information justification. */
+    boundedBluffOpportunity: number;
   };
   adjustments: {
     tournamentRiskPremium: number;
@@ -151,6 +158,23 @@ interface CandidateAction {
   id: string;
   command: BettingActionCommand;
   additionalRisk: number;
+}
+
+interface PublicPressureContext {
+  activeOpponents: number;
+  position: number;
+  streetAggression: number;
+  preflopAggression: number;
+  viewerWasPreflopAggressor: boolean;
+  opponentsActedThisStreet: number;
+  cappedOpponents: number;
+  latePositionOpen: number;
+  threeBetOpportunity: number;
+  squeezeOpportunity: number;
+  continuationOpportunity: number;
+  delayedProbeOpportunity: number;
+  stackPressure: number;
+  lowSprValuePressure: number;
 }
 
 interface PublicOpponent {
@@ -390,6 +414,12 @@ function assertInformationSet(
   if (legalActions.playerId !== informationSet.viewerId) {
     throw new Error("Legal actions must belong to the information-set viewer");
   }
+  if (
+    informationSet.actingPlayerId !== undefined &&
+    informationSet.actingPlayerId !== informationSet.viewerId
+  ) {
+    throw new Error("Rational policy may act only for the information-set viewer");
+  }
   const hero = informationSet.players.find(
     (player) => player.id === informationSet.viewerId,
   );
@@ -416,16 +446,23 @@ function assertInformationSet(
         player.status !== "folded" &&
         player.status !== "out",
     )
-    .map((player) => ({
-      id: player.id,
-      status: player.status,
-      stack: player.stack,
-      seat: player.seat,
-      holeCards:
-        player.revealed && player.holeCards
-          ? player.holeCards.map((card) => ({ ...card }))
-          : undefined,
-    }));
+    .map((player) => {
+      if (player.revealed && player.holeCards && player.holeCards.length !== 2) {
+        throw new Error(
+          `Revealed opponent ${player.id} must have exactly two hole cards`,
+        );
+      }
+      return {
+        id: player.id,
+        status: player.status,
+        stack: player.stack,
+        seat: player.seat,
+        holeCards:
+          player.revealed && player.holeCards
+            ? player.holeCards.map((card) => ({ ...card }))
+            : undefined,
+      };
+    });
   if (opponents.length === 0) {
     throw new Error("Rational policy requires at least one live opponent");
   }
@@ -699,6 +736,146 @@ export async function estimateRangeEquitySliced(
   return finishRangeEquityWork(state);
 }
 
+/** Public, post-reveal all-in equity. Unlike the policy estimator above this
+ * has no ranges: it evaluates only hole cards which poker rules have already
+ * made public after betting is closed. Keeping it in this module gives the
+ * table the same deterministic, sliced work discipline as Rational decisions.
+ */
+export interface PublicAllInEquityRequest {
+  players: readonly { playerId: string; cards: readonly Card[] }[];
+  board: readonly Card[];
+  seed: DeckSeed;
+  simulations?: number;
+  simulationsPerSlice?: number;
+}
+
+export interface PublicAllInEquityPlayer {
+  playerId: string;
+  wins: number;
+  ties: number;
+  losses: number;
+  equity: number;
+}
+
+export interface PublicAllInEquityEstimate {
+  players: readonly PublicAllInEquityPlayer[];
+  simulations: number;
+  unseenCards: number;
+}
+
+function validatePublicAllInEquity(request: PublicAllInEquityRequest): void {
+  if (request.players.length < 2) {
+    throw new Error("Public all-in equity requires at least two revealed players");
+  }
+  if (request.board.length > 5) throw new Error("A Hold'em board has at most five cards");
+  if (request.players.some((player) => player.cards.length !== 2)) {
+    throw new Error("Each public all-in player must have exactly two hole cards");
+  }
+  assertUniqueCards([
+    ...request.board,
+    ...request.players.flatMap((player) => player.cards),
+  ]);
+  const simulations = request.simulations ?? 500;
+  if (!Number.isInteger(simulations) || simulations < 1 || simulations > 5_000) {
+    throw new Error("Public all-in simulations must be an integer from 1 to 5000");
+  }
+}
+
+/**
+ * Thrown when a sliced public-equity run is abandoned at a slice boundary.
+ * Callers use the marker to distinguish "this result is stale, drop it" from a
+ * genuine validation or evaluation failure that should surface.
+ */
+export class PublicAllInEquityCancelledError extends Error {
+  readonly cancelled = true;
+  constructor(message = "Public all-in equity estimation was cancelled") {
+    super(message);
+    this.name = "PublicAllInEquityCancelledError";
+  }
+}
+
+export function isPublicAllInEquityCancelled(error: unknown): boolean {
+  return error instanceof PublicAllInEquityCancelledError;
+}
+
+export interface PublicAllInEquityOptions
+  extends Pick<SlicedEquityOptions, "yieldControl"> {
+  /**
+   * Checked only at deterministic slice boundaries, so cancellation can never
+   * change the sample stream of a run that does complete.
+   */
+  signal?: { readonly aborted: boolean };
+}
+
+/**
+ * Deterministic Monte Carlo from only publicly known cards. Each slice yields
+ * to the event loop and re-checks the caller's cancellation signal, so a board
+ * or hand change stops the remaining work instead of merely discarding it. The
+ * authoritative tournament engine is never consulted or affected.
+ */
+export async function estimatePublicAllInEquitySliced(
+  request: PublicAllInEquityRequest,
+  options: PublicAllInEquityOptions = {},
+): Promise<PublicAllInEquityEstimate> {
+  validatePublicAllInEquity(request);
+  const signal = options.signal;
+  const throwIfCancelled = () => {
+    if (signal?.aborted) throw new PublicAllInEquityCancelledError();
+  };
+  throwIfCancelled();
+  const simulations = request.simulations ?? 500;
+  const simulationsPerSlice = Math.max(1, request.simulationsPerSlice ?? 25);
+  const knownKeys = new Set(
+    [...request.board, ...request.players.flatMap((player) => player.cards)].map(cardKey),
+  );
+  const unseen = createDeck().filter((card) => !knownKeys.has(cardKey(card)));
+  const runoutCount = 5 - request.board.length;
+  const random = createSeededRandom(request.seed);
+  const totals = request.players.map(() => ({ wins: 0, ties: 0, losses: 0, equity: 0 }));
+  const yieldControl = options.yieldControl ??
+    (() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+
+  for (let completed = 0; completed < simulations; completed += 1) {
+    const deck = unseen.map((card) => ({ ...card }));
+    for (let index = 0; index < runoutCount; index += 1) {
+      const target = index + Math.floor(random() * (deck.length - index));
+      [deck[index], deck[target]] = [deck[target], deck[index]];
+    }
+    const board = [...request.board, ...deck.slice(0, runoutCount)];
+    const values = request.players.map((player) => evaluateBestHand([...player.cards, ...board]));
+    const best = values.reduce((winner, value, index) =>
+      compareHandValues(value, values[winner]) > 0 ? index : winner, 0);
+    const winners = values
+      .map((value, index) => ({ value, index }))
+      .filter(({ value }) => compareHandValues(value, values[best]) === 0)
+      .map(({ index }) => index);
+    totals.forEach((total, index) => {
+      if (!winners.includes(index)) total.losses += 1;
+      else if (winners.length === 1) {
+        total.wins += 1;
+        total.equity += 1;
+      } else {
+        total.ties += 1;
+        total.equity += 1 / winners.length;
+      }
+    });
+    if ((completed + 1) % simulationsPerSlice === 0 && completed + 1 < simulations) {
+      await yieldControl();
+      throwIfCancelled();
+    }
+  }
+  throwIfCancelled();
+  return {
+    players: request.players.map((player, index) => ({
+      playerId: player.playerId,
+      ...totals[index],
+      equity: totals[index].equity / simulations,
+    })),
+    simulations,
+    unseenCards: unseen.length,
+  };
+}
+
 function positionScore(informationSet: PlayerInformationSet): number {
   const active = informationSet.players.filter(
     (player) => player.status !== "folded" && player.status !== "out",
@@ -719,6 +896,125 @@ function positionScore(informationSet: PlayerInformationSet): number {
     (player) => player.id === informationSet.viewerId,
   );
   return clamp(heroIndex / (order.length - 1), 0, 1);
+}
+
+function actionsForStreet(
+  informationSet: PlayerInformationSet,
+  street: "preflop" | "flop" | "turn" | "river",
+): PlayerInformationSet["actions"] {
+  const markerIndex = informationSet.actions.findIndex(
+    (action) => action.type === street,
+  );
+  if (street === "preflop") {
+    return markerIndex < 0
+      ? informationSet.actions
+      : informationSet.actions.slice(0, markerIndex);
+  }
+  if (markerIndex < 0) return informationSet.actions;
+  return informationSet.actions.slice(markerIndex + 1);
+}
+
+function aggressiveActionCount(
+  actions: readonly HandActionRecord[],
+): number {
+  return actions.filter(
+    (action) =>
+      action.type === "bet" ||
+      action.type === "raise" ||
+      action.type === "all-in",
+  ).length;
+}
+
+function publicPressureContext(
+  informationSet: PlayerInformationSet,
+  position: number,
+  effectiveStack: number,
+  bigBlind: number,
+): PublicPressureContext {
+  const preflopActions = actionsForStreet(informationSet, "preflop");
+  const currentStreetActions = actionsForStreet(informationSet, informationSet.street);
+  const streetAggression = aggressiveActionCount(currentStreetActions);
+  const preflopAggression = aggressiveActionCount(preflopActions);
+  const viewerWasPreflopAggressor = preflopActions.some(
+    (action) =>
+      action.playerId === informationSet.viewerId &&
+      (action.type === "bet" || action.type === "raise" || action.type === "all-in"),
+  );
+  const activeOpponents = informationSet.players.filter(
+    (player) =>
+      player.id !== informationSet.viewerId &&
+      player.status !== "folded" &&
+      player.status !== "out" &&
+      player.status !== "all-in",
+  );
+  const opponentsActedThisStreet = currentStreetActions.filter(
+    (action) => action.playerId !== informationSet.viewerId && action.type !== "pending",
+  ).length;
+  const cappedOpponents = activeOpponents.filter(
+    (opponent) => aggressionFor(informationSet.actions, opponent.id) < 0.65,
+  ).length;
+  const unopened = streetAggression === 0;
+  const latePositionOpen =
+    informationSet.street === "preflop" && unopened
+      ? clamp((position - 0.45) / 0.55, 0, 1)
+      : 0;
+  const threeBetOpportunity =
+    informationSet.street === "preflop" && preflopAggression === 1
+      ? clamp(0.35 + position * 0.45, 0.2, 0.85)
+      : 0;
+  const squeezeOpportunity =
+    informationSet.street === "preflop" &&
+    preflopAggression >= 1 &&
+    activeOpponents.length >= 2
+      ? clamp(0.25 + (activeOpponents.length - 2) * 0.15 + position * 0.2, 0.2, 0.7)
+      : 0;
+  const continuationOpportunity =
+    informationSet.street === "flop" && viewerWasPreflopAggressor && streetAggression === 0
+      ? clamp(0.35 + position * 0.35, 0.25, 0.75)
+      : 0;
+  const delayedProbeOpportunity =
+    (informationSet.street === "turn" || informationSet.street === "river") &&
+    streetAggression === 0 &&
+    !viewerWasPreflopAggressor &&
+    opponentsActedThisStreet > 0
+      ? clamp(0.18 + (cappedOpponents / Math.max(1, activeOpponents.length)) * 0.32, 0.12, 0.5)
+      : 0;
+  const stackPressure = clamp((14 - effectiveStack / bigBlind) / 14, 0, 1);
+  const lowSprValuePressure = clamp(
+    (2.5 - effectiveStack / Math.max(1, informationSet.pot)) / 2.5,
+    0,
+    1,
+  );
+
+  return {
+    activeOpponents: activeOpponents.length,
+    position,
+    streetAggression,
+    preflopAggression,
+    viewerWasPreflopAggressor,
+    opponentsActedThisStreet,
+    cappedOpponents,
+    latePositionOpen,
+    threeBetOpportunity,
+    squeezeOpportunity,
+    continuationOpportunity,
+    delayedProbeOpportunity,
+    stackPressure,
+    lowSprValuePressure,
+  };
+}
+
+function pressureOpportunity(context: PublicPressureContext): number {
+  const cappedShare =
+    context.cappedOpponents / Math.max(1, context.activeOpponents);
+  const opportunity =
+    context.latePositionOpen * 0.95 +
+    context.threeBetOpportunity * 0.82 +
+    context.squeezeOpportunity * 0.58 +
+    context.continuationOpportunity * 0.62 +
+    context.delayedProbeOpportunity * 0.42 +
+    cappedShare * (context.streetAggression === 0 ? 0.22 : 0);
+  return clamp(opportunity, 0, 1.8);
 }
 
 function tournamentRiskPremium(
@@ -748,6 +1044,51 @@ function tournamentRiskPremium(
     premium *= 0.72;
   }
   return clamp(premium, 0, 0.22);
+}
+
+/**
+ * How many aggressive actions have already been made on the current street.
+ *
+ * This is the single input that makes an escalating raise war *visible* to the
+ * policy. Without it every re-raise is scored as if it were the first bet of
+ * the street, which is precisely what let a chain run to 600+ actions: each
+ * decision in isolation looked like a fresh, profitable aggression spot.
+ *
+ * Public information only — it counts the same betting actions any player at
+ * the table can see, and never inspects a hand.
+ */
+export function streetAggressionCount(
+  informationSet: PlayerInformationSet,
+): number {
+  let count = 0;
+  for (const action of informationSet.actions) {
+    // Street markers are emitted by the dealer and reset the count.
+    if (action.type === "flop" || action.type === "turn" || action.type === "river") {
+      count = 0;
+      continue;
+    }
+    if (
+      action.type === "bet" ||
+      action.type === "raise" ||
+      action.type === "all-in"
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * The probability that raising again is met by another raise rather than a
+ * fold or a call. It climbs with the number of raises already made, because a
+ * table that has re-raised four times has demonstrated it will do so again.
+ * Capped below 1 so a raise never becomes strictly impossible to justify.
+ */
+function reRaiseRisk(aggression: number): number {
+  if (aggression <= 0) return 0.06;
+  // Slope tuned against the measured 4-bet rate: at 0.17 per prior raise the
+  // gate still recorded Rational 4-betting 65% of the time facing a 3-bet.
+  return Math.min(0.85, 0.06 + aggression * 0.28);
 }
 
 function addCandidate(
@@ -795,7 +1136,17 @@ function buildCandidates(
 
   if (legal.raise) {
     const potAfterCall = informationSet.pot + legal.toCall;
-    const desired = [0.5, 0.8, 1.1].map((fraction) =>
+    const aggression = streetAggressionCount(informationSet);
+    // A re-raise into an escalating war is a larger commitment than an opening
+    // raise, both in real poker and in what it signals. Sizing floors rise
+    // with the aggression already shown.
+    const fractions =
+      aggression >= 3
+        ? [1.0, 1.4, 2.0]
+        : aggression >= 1
+          ? [0.75, 1.1, 1.5]
+          : [0.5, 0.8, 1.1];
+    const desired = fractions.map((fraction) =>
       clamp(
         roundChips(
           informationSet.currentBet + potAfterCall * fraction,
@@ -805,7 +1156,18 @@ function buildCandidates(
         legal.raise?.maxTo ?? 0,
       ),
     );
-    for (const to of new Set([legal.raise.minTo, ...desired, legal.raise.maxTo])) {
+    // The minimum legal raise is deliberately **not** offered as a routine
+    // option. It was the cheapest way to stay aggressive, so it dominated the
+    // candidate set and produced arithmetic (not geometric) escalation:
+    // `lastFullRaise` only ever grew by the previous increment, so a chain of
+    // min re-raises needs hundreds of iterations to exhaust a deep stack.
+    // It is reinstated only when the stack leaves no larger legal sizing.
+    const smallestDesired = Math.min(...desired);
+    const sizes = new Set(desired);
+    if (legal.raise.maxTo <= smallestDesired) sizes.add(legal.raise.minTo);
+    sizes.add(legal.raise.maxTo);
+
+    for (const to of sizes) {
       addCandidate(
         candidates,
         { type: "raise", to },
@@ -922,10 +1284,12 @@ function scoreCandidates(
   draw: number,
   blockers: number,
   ranges: readonly OpponentRangeSummary[],
+  pressure: PublicPressureContext,
 ): Array<Omit<RationalActionOption, "probability">> {
   const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
   const spr = effectiveStack / Math.max(1, informationSet.pot);
   const equityEdge = equity - requiredEquity;
+  const aggression = streetAggressionCount(informationSet);
 
   return candidates.map((candidate) => {
     const type = candidate.command.type;
@@ -961,18 +1325,96 @@ function scoreCandidates(
         1,
       );
       const calledPot = informationSet.pot + wager * 2;
+
+      // Three outcomes, not two. The previous model priced a raise as "they
+      // fold, or they call and we see a showdown", which made raising again
+      // self-reinforcing: the fold-equity reward scaled with the pot the war
+      // itself had created, while the cost grew only by a flat increment. The
+      // missing branch is the one that actually happens in a raise war -- the
+      // opponent comes back over the top and the chips just wagered are dead.
+      const reRaised = reRaiseRisk(aggression);
+      const called = Math.max(0, 1 - foldEquity - reRaised * (1 - foldEquity));
+      const reRaisedShare = (1 - foldEquity) * reRaised;
+      // Facing a re-raise we usually give up the wager; occasionally the hand
+      // is strong enough to continue and recover part of it.
+      const reRaisedValue = -wager * (1 - clamp(equity - 0.25, 0, 0.55));
+
       chipUtility =
         foldEquity * informationSet.pot +
-        (1 - foldEquity) * (calledEquity * calledPot - wager);
+        called * (calledEquity * calledPot - wager) +
+        reRaisedShare * reRaisedValue;
+
       chipUtility -= riskPremium * wager * (1.4 + Math.min(1, wager / Math.max(1, effectiveStack)));
       chipUtility += position * bigBlind * 0.1;
       if (role === "bluff") {
         chipUtility += blockers * bigBlind * 0.8 + draw * bigBlind * 0.5;
       }
+      // Pressure is paid only for a public opportunity. This keeps late
+      // opens, 3-bets, squeezes, and stab/c-bet spots distinct from random
+      // aggression when the table has already shown strength.
+      const strategicPressure = pressureOpportunity(pressure);
+      const pressureMultiplier =
+        type === "all-in"
+          ? pressure.lowSprValuePressure * 0.72 + pressure.stackPressure * 0.42
+          : 0.55 + pressure.position * 0.25;
+      // Rational play must be measurably different from Normal play in the
+      // spots where public information supports it.  Give a raise a bounded
+      // utility lift only for a visible three-bet, squeeze, or continuation
+      // opportunity, and only when the hand is close enough to the
+      // risk-adjusted threshold that escalating is defensible.  This keeps the
+      // distinction strategic rather than turning Rational into a loose
+      // aggression switch.
+      const supportedRaiseBonus =
+        type === "raise" && equity >= requiredEquity - 0.06
+          ? bigBlind * (
+              pressure.threeBetOpportunity * 0.9 +
+              pressure.squeezeOpportunity * 0.45 +
+              pressure.continuationOpportunity * 0.25
+            )
+          : 0;
+      chipUtility +=
+        strategicPressure * pressureMultiplier * bigBlind *
+        (role === "bluff" ? 0.58 : 1) +
+        supportedRaiseBonus;
+
+      // Normalized fold equity is deliberately bounded. A naked bluff needs a
+      // meaningful blocker/draw and a capped public range; it cannot become a
+      // profitable all-in simply because the pot is large.
+      if (role === "bluff") {
+        const credibleBluff =
+          (draw >= 0.16 || blockers >= 0.1) &&
+          foldEquity >= 0.18 &&
+          pressure.streetAggression <= 1 &&
+          pressure.cappedOpponents > 0;
+        if (!credibleBluff) chipUtility -= bigBlind * 1.1;
+        if (type === "all-in" && draw < 0.2) chipUtility -= effectiveStack * 0.45;
+        if (pressure.streetAggression >= 2) chipUtility -= bigBlind * 0.45;
+      }
+
+      if (type === "all-in" && equity < 0.55 && pressure.lowSprValuePressure < 0.35) {
+        chipUtility -= bigBlind * 0.8;
+      }
       if (spr <= 2 && equity >= 0.55) chipUtility += bigBlind * 0.35;
       if (spr >= 8 && wager > informationSet.pot && equity < 0.7) {
         chipUtility -= bigBlind * 0.5;
       }
+
+      // Stack-preservation brake. Busting out of a tournament is worse than
+      // the chip-EV arithmetic says, and the old model had no term at all for
+      // it: the risk premium alone computes to 0.04-0.07 in career play, which
+      // never restrained a deep-stack shove.
+      //
+      // It engages only past a threshold share of the effective stack. A
+      // brake that applied from zero suppressed ordinary value betting too
+      // (measured: Normal's raise rate fell to 2.8%), which is the opposite
+      // failure -- the goal is a table that stops shoving 300 BB with a
+      // marginal edge, not one that never raises.
+      const committedShare = clamp(wager / Math.max(1, effectiveStack), 0, 1);
+      const exposure = Math.max(0, committedShare - 0.25) / 0.75;
+      const survivalWeight = clamp(0.55 + riskPremium * 3, 0.55, 1.6);
+      chipUtility -=
+        exposure * exposure *
+        effectiveStack * survivalWeight * clamp(0.62 - equity, 0, 0.62);
     }
 
     // Reward continuing only when range equity clears the relevant threshold.
@@ -1152,6 +1594,12 @@ function assembleRationalDecision(
   const position = positionScore(informationSet);
   const draw = drawPotential(heroCards, informationSet.board);
   const blockers = blockerScore(heroCards, informationSet.board);
+  const pressure = publicPressureContext(
+    informationSet,
+    position,
+    effectiveStack,
+    input.bigBlind,
+  );
   const candidates = buildCandidates(
     informationSet,
     legalActions,
@@ -1169,6 +1617,7 @@ function assembleRationalDecision(
     draw,
     blockers,
     equity.opponentRanges,
+    pressure,
   );
   const distribution = normalizedDistribution(
     scored,
@@ -1204,6 +1653,15 @@ function assembleRationalDecision(
         inPosition: position >= 0.67,
         drawPotential: draw,
         blockerScore: blockers,
+        pressureOpportunity: pressureOpportunity(pressure),
+        streetAggression: pressure.streetAggression,
+        boundedBluffOpportunity:
+          clamp(
+            (draw * 0.7 + blockers * 0.8) *
+              (pressure.cappedOpponents / Math.max(1, pressure.activeOpponents)),
+            0,
+            1,
+          ),
       },
       adjustments: {
         tournamentRiskPremium: riskPremium,

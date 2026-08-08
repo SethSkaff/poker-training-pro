@@ -5,7 +5,7 @@ import {
   type DeckSeed,
   type LegalActionSet,
 } from "../engine";
-import type { PokerAction } from "../types/poker";
+import type { Card, PokerAction } from "../types/poker";
 import {
   advanceTournamentSessionClock,
   applyTournamentSessionAction,
@@ -24,6 +24,8 @@ import {
   directTimedBlinds,
   type TimedBlindDecision,
 } from "./timedBlindDirector";
+import type { HandValue } from "../engine/evaluator";
+import { isUncontestedAllInRunout } from "../lib/allInPresentation";
 
 export type TournamentRunnerKind = "career" | "timed";
 
@@ -45,6 +47,129 @@ export interface TournamentRunnerDecision {
   playerId: string;
   command: BettingActionCommand;
   policy: "normal" | "rational";
+}
+
+/**
+ * Public, renderer-safe milestones emitted while a hand is presented. These
+ * deliberately contain no opponent hole-card data: visual consumers can pace
+ * a hand without gaining access to information the player could not see.
+ */
+export type TournamentPresentationEvent =
+  | {
+      id: string;
+      kind: "button-moved";
+      handId: string;
+      buttonSeat: number;
+    }
+  | {
+      id: string;
+      kind: "blinds-posted";
+      handId: string;
+      /** Public forced posts, kept separate from voluntary betting actions. */
+      posts: readonly {
+        playerId: string;
+        type: "small-blind" | "big-blind" | "big-blind-ante";
+        amount: number;
+      }[];
+    }
+  | {
+      id: string;
+      kind: "hole-cards-dealt";
+      handId: string;
+      playerIds: readonly string[];
+    }
+  | {
+      id: string;
+      kind: "action";
+      handId: string;
+      playerId: string;
+      command: BettingActionCommand;
+    }
+  | {
+      id: string;
+      kind: "board-card-dealt";
+      handId: string;
+      street: "flop" | "turn" | "river";
+      cardIndex: number;
+      card: Card;
+    }
+  | {
+      id: string;
+      kind: "bets-collected";
+      handId: string;
+      amount: number;
+      /** Public street wagers swept into the pot before the next street clears them. */
+      collections: readonly { playerId: string; amount: number }[];
+    }
+  | {
+      id: string;
+      kind: "showdown";
+      handId: string;
+      /** Only non-folded players are eligible for a public showdown reveal. */
+      playerIds: readonly string[];
+      /**
+       * Ephemeral, public showdown information. This event is never part of a
+       * table snapshot, replay export, or autosave; folded players are absent.
+       */
+      reveals: readonly { playerId: string; cards: readonly Card[] }[];
+      awards: readonly {
+        potId: string;
+        playerId: string;
+        amount: number;
+        hand?: HandValue;
+      }[];
+    }
+  | {
+      /** Legal early reveal after betting is closed by all-in players. */
+      id: string;
+      kind: "all-in-reveal";
+      handId: string;
+      playerIds: readonly string[];
+      reveals: readonly { playerId: string; cards: readonly Card[] }[];
+    }
+  | {
+      id: string;
+      /**
+       * A resolved hand that ended before showdown (for example, everyone
+       * else folded). It deliberately has no hole-card data.
+       */
+      kind: "hand-result";
+      handId: string;
+      awards: readonly {
+        potId: string;
+        playerId: string;
+        amount: number;
+        hand?: HandValue;
+      }[];
+    }
+  | {
+      id: string;
+      kind: "side-pot-formed";
+      handId: string;
+      potId: string;
+      amount: number;
+      /** Players still eligible to win this specific public pot. */
+      eligiblePlayerIds: readonly string[];
+    }
+  | {
+      id: string;
+      kind: "pot-awarded";
+      handId: string;
+      playerId: string;
+      amount: number;
+    }
+  | {
+      id: string;
+      kind: "eliminated";
+      handId: string;
+      playerId: string;
+    };
+
+/** One deterministic engine transition plus the public milestones it produced. */
+export interface TournamentPresentationStep {
+  runner: TournamentRunner;
+  events: readonly TournamentPresentationEvent[];
+  awaitingHero: boolean;
 }
 
 export interface TournamentRunner {
@@ -261,68 +386,367 @@ export function tournamentCommandForHeroAction(
   }
 }
 
+function presentationEventId(
+  runner: TournamentRunner,
+  handId: string,
+  kind: TournamentPresentationEvent["kind"],
+  index = 0,
+): string {
+  return `${runner.sequence}:${handId}:${kind}:${index}`;
+}
+
+function beginHandPresentationEvents(
+  source: TournamentRunner,
+  handId: string,
+): readonly TournamentPresentationEvent[] {
+  const hand = source.session.activeHand;
+  if (!hand) return [];
+  const activePlayerIds = hand.information.players
+    .filter((player) => player.status !== "folded")
+    .map((player) => player.id);
+  const blindPosts = hand.information.actions
+    .filter(
+      (action) =>
+        action.type === "small-blind" || action.type === "big-blind" ||
+        action.type === "big-blind-ante",
+    )
+    .map((action) => ({
+      playerId: action.playerId,
+      type: action.type as "small-blind" | "big-blind" | "big-blind-ante",
+      amount: action.amount ?? 0,
+    }));
+  return [
+    {
+      id: presentationEventId(source, handId, "button-moved"),
+      kind: "button-moved",
+      handId,
+      buttonSeat: hand.buttonSeat,
+    },
+    {
+      id: presentationEventId(source, handId, "blinds-posted"),
+      kind: "blinds-posted",
+      handId,
+      posts: blindPosts,
+    },
+    {
+      id: presentationEventId(source, handId, "hole-cards-dealt"),
+      kind: "hole-cards-dealt",
+      handId,
+      playerIds: activePlayerIds,
+    },
+  ];
+}
+
+function progressHandPresentationEvents(
+  source: TournamentRunner,
+  next: TournamentRunner,
+): readonly TournamentPresentationEvent[] {
+  const previousHand = source.session.activeHand;
+  if (!previousHand) return [];
+  const nextHand = next.session.activeHand;
+  if (nextHand) {
+    const newlyDealt = nextHand.board.length - previousHand.board.length;
+    if (newlyDealt <= 0) return [];
+    const allInPlayerIds = previousHand.betting.players
+      .filter((player) => player.status !== "folded")
+      .filter((player) => player.status === "all-in")
+      .map((player) => player.id);
+    const revealAllInHands =
+      newlyDealt >= 1 &&
+      allInPlayerIds.length >= 2 &&
+      isUncontestedAllInRunout(previousHand.betting.players);
+    return [
+      ...(revealAllInHands
+        ? [{
+            id: presentationEventId(source, previousHand.handId, "all-in-reveal", previousHand.board.length),
+            kind: "all-in-reveal" as const,
+            handId: previousHand.handId,
+            playerIds: allInPlayerIds,
+            reveals: allInPlayerIds.flatMap((playerId) => {
+              const cards = previousHand.holeCards[playerId];
+              return cards?.length === 2
+                ? [{ playerId, cards: cards.map((card) => ({ ...card })) }]
+                : [];
+            }),
+          }]
+        : []),
+      {
+        id: presentationEventId(
+          source,
+          previousHand.handId,
+          "bets-collected",
+          previousHand.board.length,
+        ),
+        kind: "bets-collected" as const,
+        handId: previousHand.handId,
+        amount: previousHand.information.pot,
+        collections: collectedStreetBets(previousHand.betting.players),
+      },
+      ...Array.from({ length: newlyDealt }, (_, index) => ({
+      id: presentationEventId(
+        source,
+        previousHand.handId,
+        "board-card-dealt",
+        previousHand.board.length + index,
+      ),
+      kind: "board-card-dealt" as const,
+      handId: previousHand.handId,
+      street: nextHand.street as "flop" | "turn" | "river",
+      cardIndex: previousHand.board.length + index,
+      card: { ...nextHand.board[previousHand.board.length + index] },
+      })),
+    ];
+  }
+
+  const result = next.session.lastHand;
+  if (!result || result.handId !== previousHand.handId) return [];
+  const events: TournamentPresentationEvent[] = [];
+  events.push({
+    id: presentationEventId(
+      source,
+      result.handId,
+      "bets-collected",
+      previousHand.board.length,
+    ),
+    kind: "bets-collected",
+    handId: result.handId,
+    amount: previousHand.information.pot,
+    collections: collectedStreetBets(previousHand.betting.players),
+  });
+  if (!previousHand.betting.handComplete) {
+    const playerIds = previousHand.betting.players
+      .filter((player) => player.status !== "folded")
+      .map((player) => player.id);
+    events.push({
+      id: presentationEventId(source, result.handId, "showdown"),
+      kind: "showdown",
+      handId: result.handId,
+      playerIds,
+      reveals: playerIds.flatMap((playerId) => {
+        const cards = previousHand.holeCards[playerId];
+        return cards?.length === 2
+          ? [{ playerId, cards: cards.map((card) => ({ ...card })) }]
+          : [];
+      }),
+      awards: result.awards.map((award) => ({
+        potId: award.potId,
+        playerId: award.playerId,
+        amount: award.amount,
+        ...(award.hand ? { hand: award.hand } : {}),
+      })),
+    });
+  } else {
+    events.push({
+      id: presentationEventId(source, result.handId, "hand-result"),
+      kind: "hand-result",
+      handId: result.handId,
+      awards: result.awards.map((award) => ({
+        potId: award.potId,
+        playerId: award.playerId,
+        amount: award.amount,
+        ...(award.hand ? { hand: award.hand } : {}),
+      })),
+    });
+  }
+  result.pots
+    .filter((pot) => pot.kind === "side")
+    .forEach((pot, index) => {
+      events.push({
+        id: presentationEventId(source, result.handId, "side-pot-formed", index),
+        kind: "side-pot-formed",
+        handId: result.handId,
+        potId: pot.id,
+        amount: pot.amount,
+        eligiblePlayerIds: [...pot.eligiblePlayerIds],
+      });
+    });
+  result.awards.forEach((award, index) => {
+    events.push({
+      id: presentationEventId(source, result.handId, "pot-awarded", index),
+      kind: "pot-awarded",
+      handId: result.handId,
+      playerId: award.playerId,
+      amount: award.amount,
+    });
+  });
+  result.eliminatedPlayerIds.forEach((playerId, index) => {
+    events.push({
+      id: presentationEventId(source, result.handId, "eliminated", index),
+      kind: "eliminated",
+      handId: result.handId,
+      playerId,
+    });
+  });
+  return events;
+}
+
+function collectedStreetBets(
+  players: readonly { id: string; streetCommitted: number }[],
+): readonly { playerId: string; amount: number }[] {
+  return players
+    .filter((player) => player.streetCommitted > 0)
+    .map((player) => ({ playerId: player.id, amount: player.streetCommitted }));
+}
+
+function recordedActionRunner(
+  source: TournamentRunner,
+  playerId: string,
+  command: BettingActionCommand,
+  policy: "normal" | "rational",
+  elapsedMs: number,
+  recordReplay?: TournamentReplayAction,
+): TournamentRunner {
+  const handId = source.session.activeHand?.handId;
+  if (!handId) throw new Error("The tournament hand is missing");
+  const nextSession = applyTournamentSessionAction(
+    source.session,
+    playerId,
+    command,
+  );
+  return {
+    ...source,
+    sequence: source.sequence + 1,
+    session: advanceTournamentSessionClock(nextSession, elapsedMs),
+    decisions: [
+      ...source.decisions.slice(-79),
+      {
+        sequence: source.sequence,
+        handId,
+        playerId,
+        command: { ...command },
+        policy,
+      },
+    ],
+    ...(recordReplay
+      ? { replayActions: [...source.replayActions, recordReplay] }
+      : {}),
+  };
+}
+
+/**
+ * Advances exactly one engine transition. The caller owns presentation: it can
+ * enqueue `events`, wait, pause, or skip them before committing `runner`.
+ * Keeping this granular path separate preserves the established synchronous
+ * run-to-hero API used by replay reconstruction and tests.
+ */
+export function advanceTournamentRunnerOneStep(
+  source: TournamentRunner,
+  options: AdvanceTournamentRunnerOptions = {},
+): TournamentPresentationStep {
+  const nowMs = options.nowMs ?? Date.now();
+  let runner = sanitizeTimedCompletion(source);
+  if (runner.session.status === "complete") {
+    return { runner, events: [], awaitingHero: false };
+  }
+  if (!runner.session.activeHand) {
+    runner = applyTimedBlindLevel(runner, nowMs);
+    const next = {
+      ...runner,
+      session: beginTournamentSessionHand(runner.session),
+    };
+    const handId = next.session.activeHand?.handId;
+    if (!handId) throw new Error("Started tournament hand is missing");
+    return {
+      runner: next,
+      events: beginHandPresentationEvents(next, handId),
+      awaitingHero: false,
+    };
+  }
+
+  const hand = runner.session.activeHand;
+  if (hand.betting.complete) {
+    const next = sanitizeTimedCompletion({
+      ...runner,
+      session: progressTournamentSessionHand(runner.session),
+    });
+    return {
+      runner: next,
+      events: progressHandPresentationEvents(runner, next),
+      awaitingHero: false,
+    };
+  }
+
+  const actor = nextToAct(hand.betting);
+  if (!actor) throw new Error("Incomplete betting round has no actor");
+  if (actor === runner.session.heroId) {
+    return { runner, events: [], awaitingHero: true };
+  }
+  const policy = chooseTournamentSessionPolicyAction(
+    runner.session,
+    actor,
+    options.policy,
+  );
+  const elapsed = 1_500 + ((runner.sequence * 977) % 2_750);
+  const next = recordedActionRunner(
+    runner,
+    actor,
+    policy.command,
+    policy.mode,
+    elapsed,
+  );
+  return {
+    runner: next,
+    events: [
+      {
+        id: presentationEventId(runner, hand.handId, "action"),
+        kind: "action",
+        handId: hand.handId,
+        playerId: actor,
+        command: { ...policy.command },
+      },
+    ],
+    awaitingHero: false,
+  };
+}
+
+/** Applies one hero action but intentionally does not auto-run opponents. */
+export function applyHeroTournamentActionOneStep(
+  source: TournamentRunner,
+  request: HeroTournamentAction,
+  options: AdvanceTournamentRunnerOptions = {},
+): TournamentPresentationStep {
+  const legal = heroTournamentLegalActions(source);
+  if (!legal) throw new Error("The tournament is not waiting for the hero");
+  const nowMs = options.nowMs ?? Date.now();
+  const command = tournamentCommandForHeroAction(legal, request);
+  const handId = source.session.activeHand?.handId;
+  if (!handId) throw new Error("The tournament hand is missing");
+  const next = recordedActionRunner(
+    source,
+    source.session.heroId,
+    command,
+    source.session.mode,
+    Math.max(0, request.decisionElapsedMs ?? 0),
+    { request: { ...request }, nowMs },
+  );
+  return {
+    runner: next,
+    events: [
+      {
+        id: presentationEventId(source, handId, "action"),
+        kind: "action",
+        handId,
+        playerId: source.session.heroId,
+        command: { ...command },
+      },
+    ],
+    awaitingHero: false,
+  };
+}
+
 export function advanceTournamentRunnerToHero(
   source: TournamentRunner,
   options: AdvanceTournamentRunnerOptions = {},
 ): TournamentRunner {
   const maxSteps = options.maxSteps ?? 2_500;
-  const nowMs = options.nowMs ?? Date.now();
   let runner = source;
 
   for (let step = 0; step < maxSteps; step += 1) {
-    runner = sanitizeTimedCompletion(runner);
-    if (runner.session.status === "complete") return runner;
-
-    if (!runner.session.activeHand) {
-      runner = applyTimedBlindLevel(runner, nowMs);
-      runner = {
-        ...runner,
-        session: beginTournamentSessionHand(runner.session),
-      };
-      continue;
+    const transition = advanceTournamentRunnerOneStep(runner, options);
+    runner = transition.runner;
+    if (transition.awaitingHero || runner.session.status === "complete") {
+      return sanitizeTimedCompletion(runner);
     }
-
-    const hand = runner.session.activeHand;
-    if (hand.betting.complete) {
-      runner = {
-        ...runner,
-        session: progressTournamentSessionHand(runner.session),
-      };
-      continue;
-    }
-
-    const actor = nextToAct(hand.betting);
-    if (!actor) {
-      throw new Error("Incomplete betting round has no actor");
-    }
-    if (actor === runner.session.heroId) return runner;
-
-    const policy = chooseTournamentSessionPolicyAction(
-      runner.session,
-      actor,
-      options.policy,
-    );
-    const nextSession = applyTournamentSessionAction(
-      runner.session,
-      actor,
-      policy.command,
-    );
-    const elapsed = 1_500 + ((runner.sequence * 977) % 2_750);
-    runner = {
-      ...runner,
-      sequence: runner.sequence + 1,
-      session: advanceTournamentSessionClock(nextSession, elapsed),
-      decisions: [
-        ...runner.decisions.slice(-79),
-        {
-          sequence: runner.sequence,
-          handId: hand.handId,
-          playerId: actor,
-          command: { ...policy.command },
-          policy: policy.mode,
-        },
-      ],
-    };
   }
 
   throw new Error(`Tournament runner exceeded ${maxSteps} automatic steps`);
@@ -342,13 +766,88 @@ export interface AsyncAdvanceTournamentRunnerOptions
   signal?: { readonly aborted: boolean };
 }
 
+/** Async one-transition counterpart used by the live presentation clock. */
+export async function advanceTournamentRunnerOneStepAsync(
+  source: TournamentRunner,
+  estimateEquity: EquityEstimator,
+  options: AsyncAdvanceTournamentRunnerOptions = {},
+): Promise<TournamentPresentationStep> {
+  if (options.signal?.aborted) throw new TournamentAdvanceAborted();
+  const nowMs = options.nowMs ?? Date.now();
+  let runner = sanitizeTimedCompletion(source);
+  if (runner.session.status === "complete") {
+    return { runner, events: [], awaitingHero: false };
+  }
+  if (!runner.session.activeHand) {
+    runner = applyTimedBlindLevel(runner, nowMs);
+    const next = {
+      ...runner,
+      session: beginTournamentSessionHand(runner.session),
+    };
+    const handId = next.session.activeHand?.handId;
+    if (!handId) throw new Error("Started tournament hand is missing");
+    return {
+      runner: next,
+      events: beginHandPresentationEvents(next, handId),
+      awaitingHero: false,
+    };
+  }
+
+  const hand = runner.session.activeHand;
+  if (hand.betting.complete) {
+    const next = sanitizeTimedCompletion({
+      ...runner,
+      session: progressTournamentSessionHand(runner.session),
+    });
+    return {
+      runner: next,
+      events: progressHandPresentationEvents(runner, next),
+      awaitingHero: false,
+    };
+  }
+
+  const actor = nextToAct(hand.betting);
+  if (!actor) throw new Error("Incomplete betting round has no actor");
+  if (actor === runner.session.heroId) {
+    return { runner, events: [], awaitingHero: true };
+  }
+  const policy = await chooseTournamentSessionPolicyActionAsync(
+    runner.session,
+    actor,
+    estimateEquity,
+    options.policy,
+  );
+  if (options.signal?.aborted) throw new TournamentAdvanceAborted();
+  const elapsed = 1_500 + ((runner.sequence * 977) % 2_750);
+  const next = recordedActionRunner(
+    runner,
+    actor,
+    policy.command,
+    policy.mode,
+    elapsed,
+  );
+  return {
+    runner: next,
+    events: [
+      {
+        id: presentationEventId(runner, hand.handId, "action"),
+        kind: "action",
+        handId: hand.handId,
+        playerId: actor,
+        command: { ...policy.command },
+      },
+    ],
+    awaitingHero: false,
+  };
+}
+
 /**
  * Deterministic async counterpart to {@link advanceTournamentRunnerToHero}. It
  * offloads the Rational equity Monte Carlo to `estimateEquity` (typically a
  * worker) so a large decision cannot block the UI thread. For a fixed seed and
  * work budget the resulting runner is bit-for-bit identical to the synchronous
- * loop. The sync loop is retained unchanged for replay, tests, and the iOS
- * bundle.
+ * loop. The sync loop is retained unchanged for replay, tests, and fallback
+ * execution.
  */
 export async function advanceTournamentRunnerToHeroAsync(
   source: TournamentRunner,
@@ -356,66 +855,19 @@ export async function advanceTournamentRunnerToHeroAsync(
   options: AsyncAdvanceTournamentRunnerOptions = {},
 ): Promise<TournamentRunner> {
   const maxSteps = options.maxSteps ?? 2_500;
-  const nowMs = options.nowMs ?? Date.now();
   let runner = source;
 
   for (let step = 0; step < maxSteps; step += 1) {
     if (options.signal?.aborted) throw new TournamentAdvanceAborted();
-    runner = sanitizeTimedCompletion(runner);
-    if (runner.session.status === "complete") return runner;
-
-    if (!runner.session.activeHand) {
-      runner = applyTimedBlindLevel(runner, nowMs);
-      runner = {
-        ...runner,
-        session: beginTournamentSessionHand(runner.session),
-      };
-      continue;
-    }
-
-    const hand = runner.session.activeHand;
-    if (hand.betting.complete) {
-      runner = {
-        ...runner,
-        session: progressTournamentSessionHand(runner.session),
-      };
-      continue;
-    }
-
-    const actor = nextToAct(hand.betting);
-    if (!actor) {
-      throw new Error("Incomplete betting round has no actor");
-    }
-    if (actor === runner.session.heroId) return runner;
-
-    const policy = await chooseTournamentSessionPolicyActionAsync(
-      runner.session,
-      actor,
+    const transition = await advanceTournamentRunnerOneStepAsync(
+      runner,
       estimateEquity,
-      options.policy,
+      options,
     );
-    if (options.signal?.aborted) throw new TournamentAdvanceAborted();
-    const nextSession = applyTournamentSessionAction(
-      runner.session,
-      actor,
-      policy.command,
-    );
-    const elapsed = 1_500 + ((runner.sequence * 977) % 2_750);
-    runner = {
-      ...runner,
-      sequence: runner.sequence + 1,
-      session: advanceTournamentSessionClock(nextSession, elapsed),
-      decisions: [
-        ...runner.decisions.slice(-79),
-        {
-          sequence: runner.sequence,
-          handId: hand.handId,
-          playerId: actor,
-          command: { ...policy.command },
-          policy: policy.mode,
-        },
-      ],
-    };
+    runner = transition.runner;
+    if (transition.awaitingHero || runner.session.status === "complete") {
+      return sanitizeTimedCompletion(runner);
+    }
   }
 
   throw new Error(`Tournament runner exceeded ${maxSteps} automatic steps`);
@@ -426,38 +878,12 @@ export function applyHeroTournamentAction(
   request: HeroTournamentAction,
   options: AdvanceTournamentRunnerOptions = {},
 ): TournamentRunner {
-  const legal = heroTournamentLegalActions(source);
-  if (!legal) throw new Error("The tournament is not waiting for the hero");
   const nowMs = options.nowMs ?? Date.now();
-  const command = tournamentCommandForHeroAction(legal, request);
-  const handId = source.session.activeHand?.handId;
-  if (!handId) throw new Error("The tournament hand is missing");
-  const acted = applyTournamentSessionAction(
-    source.session,
-    source.session.heroId,
-    command,
-  );
-  const elapsed = Math.max(0, request.decisionElapsedMs ?? 0);
-  const runner: TournamentRunner = {
-    ...source,
-    sequence: source.sequence + 1,
-    session: advanceTournamentSessionClock(acted, elapsed),
-    decisions: [
-      ...source.decisions.slice(-79),
-      {
-        sequence: source.sequence,
-        handId,
-        playerId: source.session.heroId,
-        command,
-        policy: source.session.mode,
-      },
-    ],
-    replayActions: [
-      ...source.replayActions,
-      { request: { ...request }, nowMs },
-    ],
-  };
-  return advanceTournamentRunnerToHero(runner, { ...options, nowMs });
+  const step = applyHeroTournamentActionOneStep(source, request, {
+    ...options,
+    nowMs,
+  });
+  return advanceTournamentRunnerToHero(step.runner, { ...options, nowMs });
 }
 
 /**
@@ -472,49 +898,36 @@ export async function applyHeroTournamentActionAsync(
   estimateEquity: EquityEstimator,
   options: AsyncAdvanceTournamentRunnerOptions = {},
 ): Promise<TournamentRunner> {
-  const legal = heroTournamentLegalActions(source);
-  if (!legal) throw new Error("The tournament is not waiting for the hero");
   const nowMs = options.nowMs ?? Date.now();
-  const command = tournamentCommandForHeroAction(legal, request);
-  const handId = source.session.activeHand?.handId;
-  if (!handId) throw new Error("The tournament hand is missing");
-  const acted = applyTournamentSessionAction(
-    source.session,
-    source.session.heroId,
-    command,
-  );
-  const elapsed = Math.max(0, request.decisionElapsedMs ?? 0);
-  const runner: TournamentRunner = {
-    ...source,
-    sequence: source.sequence + 1,
-    session: advanceTournamentSessionClock(acted, elapsed),
-    decisions: [
-      ...source.decisions.slice(-79),
-      {
-        sequence: source.sequence,
-        handId,
-        playerId: source.session.heroId,
-        command,
-        policy: source.session.mode,
-      },
-    ],
-    replayActions: [
-      ...source.replayActions,
-      { request: { ...request }, nowMs },
-    ],
-  };
-  return advanceTournamentRunnerToHeroAsync(runner, estimateEquity, {
+  const step = applyHeroTournamentActionOneStep(source, request, {
+    ...options,
+    nowMs,
+  });
+  return advanceTournamentRunnerToHeroAsync(step.runner, estimateEquity, {
     ...options,
     nowMs,
   });
 }
 
+export const CURRENT_ENGINE_VERSION = "tournament-session-v1";
+export const CURRENT_CONTENT_VERSION = "career-events-v1";
+export const CURRENT_POLICY_VERSION = "normal-rational-v1";
+
+/** Thrown when a replay was produced by a build that would reconstruct differently. */
+export class TournamentReplayVersionError extends Error {
+  readonly versionMismatch = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "TournamentReplayVersionError";
+  }
+}
+
 export interface TournamentRunnerReplay {
   format: "poker-training-pro-tournament-replay";
   version: 1;
-  engineVersion: "tournament-session-v1";
-  contentVersion: "career-events-v1";
-  policyVersion: "normal-rational-v1";
+  engineVersion: typeof CURRENT_ENGINE_VERSION;
+  contentVersion: typeof CURRENT_CONTENT_VERSION;
+  policyVersion: typeof CURRENT_POLICY_VERSION;
   policySimulations: number;
   kind: TournamentRunnerKind;
   eventId: string;
@@ -541,9 +954,9 @@ export function createTournamentRunnerReplay(
   return {
     format: "poker-training-pro-tournament-replay",
     version: 1,
-    engineVersion: "tournament-session-v1",
-    contentVersion: "career-events-v1",
-    policyVersion: "normal-rational-v1",
+    engineVersion: CURRENT_ENGINE_VERSION,
+    contentVersion: CURRENT_CONTENT_VERSION,
+    policyVersion: CURRENT_POLICY_VERSION,
     policySimulations,
     kind: runner.kind,
     eventId: runner.session.event.id,
@@ -579,6 +992,23 @@ export function restoreTournamentRunnerReplay(
     replay.policySimulations < 1
   ) {
     throw new Error("Unsupported tournament replay");
+  }
+  // Reconstruction regenerates opponent decisions, deals, and pots from the
+  // seed, so it is only faithful if the engine, content, and policy that
+  // produced the log still behave identically. Without this check a future
+  // change would silently produce a *different* hand and present it as the
+  // one the player actually played. The export path already enforces strict
+  // equality (`replay-export.cjs`); this closes the same hole on the way in.
+  if (
+    replay.engineVersion !== CURRENT_ENGINE_VERSION ||
+    replay.contentVersion !== CURRENT_CONTENT_VERSION ||
+    replay.policyVersion !== CURRENT_POLICY_VERSION
+  ) {
+    throw new TournamentReplayVersionError(
+      `This replay was recorded by a different build (engine ${String(replay.engineVersion)}, ` +
+        `content ${String(replay.contentVersion)}, policy ${String(replay.policyVersion)}); ` +
+        `this build reconstructs ${CURRENT_ENGINE_VERSION}/${CURRENT_CONTENT_VERSION}/${CURRENT_POLICY_VERSION}.`,
+    );
   }
   const firstNowMs =
     replay.timed?.startedAtMs ?? replay.actions[0]?.nowMs ?? Date.now();

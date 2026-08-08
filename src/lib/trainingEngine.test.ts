@@ -12,10 +12,17 @@ import {
   measureAttemptTiming,
   parseMathAnswer,
   selectNearTransferScenario,
+  selectTrainingSessionStartScenario,
   summarizeTiming,
+  trainingScenarioHistorySimilarity,
   validateTrainingScenario,
   validateTrainingScenarioBank,
+  trainingScenarioSimilarity,
+  rejectUnsuitableScenarios,
+  NEAR_DUPLICATE_SIMILARITY,
 } from "./trainingEngine";
+import { defaultProgress, defaultSettings } from "./storage";
+import { createSaveEnvelope, restoreSaveBackup } from "./saveMigration";
 
 describe("table-style math answer parsing", () => {
   it("accepts percentages, decimals, and literal fractions", () => {
@@ -190,6 +197,60 @@ describe("separate Elo changes", () => {
     expect(graded.result.elapsedMs).toBe(21_000);
     expect(graded.result.completedAt).toBe("2026-07-22T12:00:00.000Z");
   });
+
+  it("moves math Elo in the expected direction for blank, wrong, and correct attempts", () => {
+    const base = {
+      scenario: "preflop-pot-odds-ak",
+      action: "call" as const,
+      decisionElo: 1000,
+      mathElo: 1000,
+      actionElapsedMs: 1000,
+      mathElapsedMs: 1000,
+    };
+
+    expect(gradeTrainingAttempt(base).mathEloDelta).toBeLessThan(0);
+    expect(gradeTrainingAttempt({ ...base, mathAnswer: 10 }).mathEloDelta).toBeLessThan(0);
+    expect(
+      gradeTrainingAttempt({
+        ...base,
+        mathAnswer: scenario("preflop-pot-odds-ak").mathQuestion.correctValue,
+      }).mathEloDelta,
+    ).toBeGreaterThan(0);
+  });
+
+  it("persists both independently updated ratings in a Training save", () => {
+    const graded = gradeTrainingAttempt({
+      scenario: "preflop-pot-odds-ak",
+      action: "call",
+      mathAnswer: 10,
+      decisionElo: defaultProgress.decisionElo,
+      mathElo: defaultProgress.mathElo,
+      actionElapsedMs: 1000,
+      mathElapsedMs: 1000,
+    });
+    const restored = restoreSaveBackup(
+      JSON.stringify(
+        createSaveEnvelope(defaultSettings, {
+          ...defaultProgress,
+          decisionElo: graded.decisionEloAfter,
+          mathElo: graded.mathEloAfter,
+          results: [graded.result],
+        }),
+      ),
+    );
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) throw new Error(restored.error.message);
+    const persisted = restored.save;
+
+    expect(persisted.data.progress.decisionElo).toBe(
+      graded.decisionEloAfter,
+    );
+    expect(persisted.data.progress.mathElo).toBe(graded.mathEloAfter);
+    expect(persisted.data.progress.results[0]).toMatchObject({
+      mathAnswer: 10,
+      mathCorrect: false,
+    });
+  });
 });
 
 describe("timing metrics", () => {
@@ -246,12 +307,12 @@ describe("timing metrics", () => {
 });
 
 describe("near-transfer selection", () => {
-  it("deterministically chooses the same math skill on a different street", () => {
+  it("deterministically chooses a different skill and action rather than cycling on one topic", () => {
     const next = selectNearTransferScenario("preflop-pot-odds-ak");
 
-    expect(next?.id).toBe("river-bluff-catch-price");
-    expect(next?.mathQuestion.topic).toBe("pot-odds");
-    expect(next?.street).not.toBe("preflop");
+    expect(next?.id).not.toBe("river-bluff-catch-price");
+    expect(next?.mathQuestion.topic).not.toBe("pot-odds");
+    expect(next?.recommendedAction).not.toBe("call");
   });
 
   it("deprioritizes completed scenarios and honors a focus topic", () => {
@@ -262,5 +323,174 @@ describe("near-transfer selection", () => {
 
     expect(next?.id).not.toBe("river-bluff-catch-price");
     expect(next?.mathQuestion.topic).toBe("equity");
+  });
+
+  it("covers the full bank without a fixed cycle from every starting scenario", () => {
+    for (const start of trainingScenarios) {
+      const ids = [start.id];
+      let current = start;
+      for (let draw = 0; draw < 100; draw += 1) {
+        const next = selectNearTransferScenario(current, {
+          completedScenarioIds: ids,
+          recentScenarioIds: ids,
+        });
+        if (!next) throw new Error("Expected a training scenario");
+        ids.push(next.id);
+        current = next;
+      }
+      expect(new Set(ids).size).toBe(trainingScenarios.length);
+      expect(new Set(ids.slice(-6)).size).toBe(6);
+      expect(
+        new Set(
+          ids.map(
+            (id) => trainingScenarios.find((scenario) => scenario.id === id)?.recommendedAction,
+          ),
+        ).size,
+      ).toBeGreaterThan(2);
+    }
+  });
+
+  it("tracks the poker features needed to avoid near-duplicate recent prompts", () => {
+    const source = scenario("preflop-pot-odds-ak");
+    const lookalike: RatedTrainingScenario = {
+      ...source,
+      id: "preflop-pot-odds-ak-lookalike",
+      prompt: "Against the shown range, the small blind shoves and action returns to you.",
+    };
+    const similarity = trainingScenarioHistorySimilarity(lookalike, source);
+
+    expect(similarity).toMatchObject({
+      sameHeroCards: true,
+      sameBoardTexture: true,
+      sameStackStructure: true,
+      samePotOddsThreshold: true,
+      sameAction: true,
+      sameLesson: true,
+    });
+    expect(similarity.wordingOverlap).toBeGreaterThan(0);
+
+    const next = selectNearTransferScenario(
+      source,
+      { recentScenarioIds: [source.id] },
+      [source, lookalike, scenario("turn-semi-bluff-ev")],
+    );
+    expect(next?.id).toBe("turn-semi-bluff-ev");
+  });
+
+  it("selects reproducible starts that are not permanently the first scenario", () => {
+    const starts = ["Ada", "Ben", "Cleo", "Drew"].map((name) =>
+      selectTrainingSessionStartScenario(name)?.id,
+    );
+    expect(selectTrainingSessionStartScenario("Ada")?.id).toBe(starts[0]);
+    expect(new Set(starts).size).toBeGreaterThan(1);
+    expect(starts.some((id) => id !== trainingScenarios[0]?.id)).toBe(true);
+  });
+
+  it("uses decision Elo and math Elo independently when selecting the next scenario", () => {
+    const current = scenario("preflop-pot-odds-ak");
+    const lowDecision = selectNearTransferScenario(current, {
+      decisionElo: 1000,
+      mathElo: 1500,
+    });
+    const highDecision = selectNearTransferScenario(current, {
+      decisionElo: 1500,
+      mathElo: 1000,
+    });
+
+    expect(lowDecision?.training.decisionDifficulty).toBeLessThanOrEqual(1340);
+    expect(lowDecision?.training.mathDifficulty).toBeGreaterThanOrEqual(1160);
+    expect(highDecision?.training.decisionDifficulty).toBeGreaterThanOrEqual(1210);
+    expect(highDecision?.training.mathDifficulty).toBeLessThanOrEqual(1230);
+  });
+
+  it("keeps beginners out of the hardest bank tier and advanced players out of trivial tiers", () => {
+    const low = selectTrainingSessionStartScenario("Ada", [], trainingScenarios, {
+      decisionElo: 1000,
+      mathElo: 1000,
+    });
+    const high = selectTrainingSessionStartScenario("Ada", [], trainingScenarios, {
+      decisionElo: 1700,
+      mathElo: 1700,
+    });
+
+    expect(low?.training.decisionDifficulty).toBeLessThanOrEqual(1340);
+    expect(low?.training.mathDifficulty).toBeLessThanOrEqual(1230);
+    expect(high?.training.decisionDifficulty).toBeGreaterThanOrEqual(1210);
+    expect(high?.training.mathDifficulty).toBeGreaterThanOrEqual(1160);
+    expect(selectTrainingSessionStartScenario("Ada", [], trainingScenarios, {
+      decisionElo: 1700,
+      mathElo: 1700,
+    })?.id).toBe(high?.id);
+  });
+});
+
+describe("near-duplicate rejection", () => {
+  it("treats a scenario differing by a chip as the same question", () => {
+    // Strict structural fingerprinting passes this pair as distinct, which is
+    // exactly the gap E15-002 names: a learner does not experience "pot 2700"
+    // and "pot 2750" as different problems.
+    const [base] = trainingScenarios;
+    const nudged = {
+      ...base,
+      id: `${base.id}-nudged`,
+      pot: Math.round(base.pot * 1.01),
+    };
+    expect(
+      trainingScenarioSimilarity(base, nudged),
+    ).toBeGreaterThanOrEqual(NEAR_DUPLICATE_SIMILARITY);
+  });
+
+  it("treats a genuinely different spot as different", () => {
+    const byStreet = new Map(
+      trainingScenarios.map((scenario) => [scenario.street, scenario]),
+    );
+    const preflop = byStreet.get("preflop");
+    const river = byStreet.get("river");
+    if (!preflop || !river) return;
+    expect(trainingScenarioSimilarity(preflop, river)).toBeLessThan(
+      NEAR_DUPLICATE_SIMILARITY,
+    );
+  });
+
+  it("is reflexive and symmetric", () => {
+    const [first, second] = trainingScenarios;
+    expect(trainingScenarioSimilarity(first, first)).toBe(1);
+    expect(trainingScenarioSimilarity(first, second)).toBe(
+      trainingScenarioSimilarity(second, first),
+    );
+  });
+
+  it("reports why each candidate was rejected", () => {
+    const [current, recent] = trainingScenarios;
+    const trace = rejectUnsuitableScenarios(current, trainingScenarios, {
+      recentScenarios: [recent],
+    });
+
+    expect(trace.rejected.find((entry) => entry.id === current.id)?.reason).toBe(
+      "current",
+    );
+    expect(trace.rejected.find((entry) => entry.id === recent.id)?.reason).toBe(
+      "recently-served",
+    );
+    // Reasons are inspectable rather than buried in a score weight.
+    for (const entry of trace.rejected) {
+      expect([
+        "current",
+        "recently-served",
+        "near-duplicate-of-recent",
+        "off-target-difficulty",
+      ]).toContain(entry.reason);
+    }
+  });
+
+  it("falls back rather than deadlocking when everything is rejected", () => {
+    // A hard filter over a twelve-scenario bank would eventually reject the
+    // whole pool. Serving a repeat is worse than serving something fresh, but
+    // far better than serving nothing.
+    const [current] = trainingScenarios;
+    const next = selectNearTransferScenario(current, {
+      recentScenarioIds: trainingScenarios.map((scenario) => scenario.id),
+    });
+    expect(next).toBeDefined();
   });
 });

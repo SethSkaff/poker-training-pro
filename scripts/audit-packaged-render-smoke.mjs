@@ -22,11 +22,12 @@ import {
   assertNoFatalCdpEvents,
   waitForRenderSmoke,
 } from "./release/packaged-render-smoke-lib.mjs";
+import { isCdpTransportTimeout } from "./lib/cdp-outcome.mjs";
 
 const DEFAULT_APP = join(
   projectRoot,
   "outputs",
-  "desktop",
+    "next",
   "win-unpacked",
   "Poker Training Pro.exe",
 );
@@ -236,7 +237,7 @@ export class CdpClient {
     });
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, maximumCommandTimeoutMs = 5_000) {
     if (this.socket.readyState !== WebSocket.OPEN) {
       return Promise.reject(
         new RenderSmokeFailure(
@@ -250,7 +251,7 @@ export class CdpClient {
     return new Promise((resolvePromise, reject) => {
       const commandTimeoutMs = Math.max(
         1,
-        Math.min(5_000, this.deadline - Date.now()),
+        Math.min(maximumCommandTimeoutMs, this.deadline - Date.now()),
       );
       const timer = setTimeout(() => {
         this.pending.delete(id);
@@ -566,6 +567,16 @@ if (isMain) try {
       : "smoke-failed";
   const message =
     error instanceof Error ? error.message : "Unknown renderer smoke failure.";
-  console.error(`Packaged renderer smoke failed [${code}]: ${message}`);
-  process.exitCode = 1;
+  // A CDP command deadline proves neither a rendered app nor a broken one.
+  // Exit 2 so a caller can tell an inconclusive run from a regression without
+  // parsing this text (E25-003).
+  if (isCdpTransportTimeout(error)) {
+    console.error(
+      `Packaged renderer smoke inconclusive [cdp-transport-timeout]: ${message}`,
+    );
+    process.exitCode = 2;
+  } else {
+    console.error(`Packaged renderer smoke failed [${code}]: ${message}`);
+    process.exitCode = 1;
+  }
 }

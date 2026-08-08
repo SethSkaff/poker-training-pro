@@ -9,6 +9,13 @@ const ALLOWED_DOCUMENT_IDS = new Set([
 ]);
 const ALLOWED_FOLDER_TARGETS = new Set(["save", "log"]);
 const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
+const forceWebGl2Failure = process.argv.includes("--ptp-force-webgl2-failure");
+const sceneAuditSeedArgument = process.argv.find((argument) => argument.startsWith("--ptp-scene-audit-seed="));
+const requestedSceneAuditSeed = sceneAuditSeedArgument?.slice("--ptp-scene-audit-seed=".length);
+const sceneAuditSeed = lifecycleSmokeEnabled
+  && ["runner-showdown-3", "scene-side-pot-0"].includes(requestedSceneAuditSeed)
+  ? requestedSceneAuditSeed
+  : "runner-showdown-3";
 
 contextBridge.exposeInMainWorld("desktop", {
   getVersion: () => ipcRenderer.invoke("app:getVersion"),
@@ -27,6 +34,18 @@ contextBridge.exposeInMainWorld("desktop", {
   testLifecycleWindow: lifecycleSmokeEnabled
     ? (action) => ipcRenderer.invoke("test:lifecycleWindow", action)
     : undefined,
+  // Renderer diagnostics are intentionally available only to the isolated
+  // packaged smoke/audit process. They expose no game state and must not become
+  // an ordinary production-window debugging surface.
+  sceneDiagnosticsEnabled: lifecycleSmokeEnabled || undefined,
+  // A fixed public runner seed makes packaged scene captures reproducible. It
+  // exists only alongside the lifecycle-smoke bridge and never reaches a
+  // normal player window or persisted save.
+  sceneAuditSeed: lifecycleSmokeEnabled ? sceneAuditSeed : undefined,
+  // This capability override exists only for the isolated packaged fallback
+  // audit. Normal launches do not expose it, so it cannot become a user
+  // setting or a renderer-controlled hardware policy.
+  forceWebGl2Failure: forceWebGl2Failure || undefined,
   setFullscreen: (fullscreen) =>
     ipcRenderer.invoke("window:setFullscreen", Boolean(fullscreen)),
   getSafeModeState: () =>

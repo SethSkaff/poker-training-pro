@@ -36,7 +36,7 @@ export function auditTrainingToolExclusion(options = {}) {
       path.join(
         root,
         "outputs",
-        "desktop",
+        "next",
         "win-unpacked",
         "resources",
         "app.asar",

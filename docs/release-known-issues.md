@@ -32,7 +32,6 @@ publicly while the issue is open.
 | `PTP-102` | Preview limitation | Open | Windows 10, Windows on ARM, 32-bit Windows, Windows Server, Wine/Proton, and unsupported Windows 11 releases are not claimed. | Do not promise a workaround or support claim. Record environment details and route any scope change through release review. |
 | `PTP-103` | Preview limitation | Open | No automatic or mandatory update mechanism is implemented. | A future public v1 would use a user-initiated, signed full-installer replacement until a separately reviewed signed updater exists. |
 | `PTP-104` | Preview limitation | Open | No soundtrack master is release-approved; the temporary synthesized background loop is muted. | Do not add a candidate track to a package until its exact master and rights evidence pass the audio checklist. |
-| `PTP-105` | Preview limitation | Open | The official iPhone/iPad Simulator and App Store build pipeline require macOS and Xcode; they cannot be validated from this Windows workspace. | Treat the current iOS material as an architecture/UI scaffold until it builds and is tested in the official Apple toolchain. |
 
 ## Maintenance rules
 

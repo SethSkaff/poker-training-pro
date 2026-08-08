@@ -4,6 +4,8 @@ import type { LegalActionSet } from "../engine/betting";
 import type { PlayerInformationSet } from "../engine/tournament";
 import {
   decideRationalAction,
+  estimatePublicAllInEquitySliced,
+  isPublicAllInEquityCancelled,
   estimateRangeEquity,
   estimateRangeEquitySliced,
   MAX_EQUITY_SIMULATIONS_PER_DECISION,
@@ -149,6 +151,25 @@ function probabilityByType(
 }
 
 describe("rational policy contract", () => {
+  it("fails closed when the information set names a different actor", () => {
+    const spot = { ...makeSpot(), actingPlayerId: "villain" };
+    expect(() =>
+      decideRationalAction(input(spot, facingBetLegal(spot))),
+    ).toThrow(/may act only for the information-set viewer/);
+  });
+
+  it("rejects malformed revealed opponent holdings before equity work", () => {
+    const spot = makeSpot();
+    spot.players[1] = {
+      ...spot.players[1],
+      revealed: true,
+      holeCards: cards("7s"),
+    };
+    expect(() =>
+      decideRationalAction(input(spot, facingBetLegal(spot))),
+    ).toThrow(/exactly two hole cards/);
+  });
+
   it("is deterministic for an identical information set and policy seed", () => {
     const spot = makeSpot();
     const policyInput = input(spot, facingBetLegal(spot));
@@ -364,6 +385,226 @@ describe("range-aware equity", () => {
     expect(wide.audit.summary).toBe(narrow.audit.summary);
     expect(wide.audit.equityWork.slices).toBe(10);
     expect(narrow.audit.equityWork.slices).toBe(300);
+  });
+});
+
+describe("public all-in equity", () => {
+  it("uses only legal public cards and produces a known forced winner", async () => {
+    const estimate = await estimatePublicAllInEquitySliced({
+      players: [
+        { playerId: "hero", cards: cards("Th", "2c") },
+        { playerId: "villain", cards: cards("9c", "9d") },
+      ],
+      board: cards("Ah", "Kh", "Qh", "Jh"),
+      seed: "public-royal-flush",
+      simulations: 100,
+      simulationsPerSlice: 11,
+    });
+
+    expect(estimate.unseenCards).toBe(44);
+    expect(estimate.players).toEqual([
+      { playerId: "hero", wins: 100, ties: 0, losses: 0, equity: 1 },
+      { playerId: "villain", wins: 0, ties: 0, losses: 100, equity: 0 },
+    ]);
+  });
+
+  it("is deterministic and yields only between public-work slices", async () => {
+    let yields = 0;
+    const request = {
+      players: [
+        { playerId: "hero", cards: cards("As", "Kd") },
+        { playerId: "villain", cards: cards("Qh", "Qs") },
+      ],
+      board: cards("2c", "7d", "Th"),
+      seed: "public-sliced",
+      simulations: 60,
+      simulationsPerSlice: 13,
+    };
+    const first = await estimatePublicAllInEquitySliced(request, {
+      yieldControl: async () => { yields += 1; },
+    });
+    const second = await estimatePublicAllInEquitySliced(request);
+    expect(first).toEqual(second);
+    expect(yields).toBe(4);
+  });
+
+  it("abandons the remaining work when the caller cancels mid-run", async () => {
+    let slices = 0;
+    const controller = { aborted: false };
+    const request = {
+      players: [
+        { playerId: "hero", cards: cards("As", "Kd") },
+        { playerId: "villain", cards: cards("Qh", "Qs") },
+      ],
+      board: cards("2c", "7d", "Th"),
+      seed: "public-cancelled",
+      simulations: 500,
+      simulationsPerSlice: 25,
+    };
+
+    await expect(
+      estimatePublicAllInEquitySliced(request, {
+        signal: controller,
+        yieldControl: async () => {
+          slices += 1;
+          if (slices === 2) controller.aborted = true;
+        },
+      }),
+    ).rejects.toSatisfy(isPublicAllInEquityCancelled);
+
+    // Stopped at the boundary that observed the abort rather than running all
+    // 19 remaining slices to completion.
+    expect(slices).toBe(2);
+  });
+
+  it("rejects an already-superseded request before doing any work", async () => {
+    let slices = 0;
+    await expect(
+      estimatePublicAllInEquitySliced(
+        {
+          players: [
+            { playerId: "hero", cards: cards("As", "Kd") },
+            { playerId: "villain", cards: cards("Qh", "Qs") },
+          ],
+          board: cards("2c", "7d", "Th"),
+          seed: "public-stale",
+          simulations: 500,
+          simulationsPerSlice: 25,
+        },
+        {
+          signal: { aborted: true },
+          yieldControl: async () => { slices += 1; },
+        },
+      ),
+    ).rejects.toSatisfy(isPublicAllInEquityCancelled);
+    expect(slices).toBe(0);
+  });
+
+  it("still resolves normally when the signal never aborts", async () => {
+    const request = {
+      players: [
+        { playerId: "hero", cards: cards("As", "Kd") },
+        { playerId: "villain", cards: cards("Qh", "Qs") },
+      ],
+      board: cards("2c", "7d", "Th"),
+      seed: "public-sliced",
+      simulations: 60,
+      simulationsPerSlice: 13,
+    };
+    const guarded = await estimatePublicAllInEquitySliced(request, {
+      signal: { aborted: false },
+    });
+    const plain = await estimatePublicAllInEquitySliced(request);
+    expect(guarded).toEqual(plain);
+  });
+});
+
+describe("escalating raise wars", () => {
+  /** A street whose action list already contains `count` raises. */
+  function warActions(count: number): PlayerInformationSet["actions"] {
+    const actions: PlayerInformationSet["actions"] = [
+      { playerId: "villain", type: "bet", amount: 200 },
+    ];
+    for (let index = 0; index < count; index += 1) {
+      actions.push({
+        playerId: index % 2 === 0 ? "hero" : "villain",
+        type: "raise",
+        amount: 200 * (index + 2),
+      });
+    }
+    return actions;
+  }
+
+  it("becomes progressively less willing to re-raise as the war escalates", () => {
+    // The measured defect was a 600+ action raise chain: each decision looked
+    // like a fresh, profitable aggression spot because nothing in the model
+    // could see the war it was already in.
+    const aggressionOf = (raisesSoFar: number) => {
+      const spot = makeSpot({
+        heroCards: cards("Ac", "Qd"),
+        board: cards("Kh", "9s", "4d"),
+        pot: 1_600,
+        currentBet: 400,
+        actions: warActions(raisesSoFar),
+      });
+      const decision = decideRationalAction(
+        input(spot, facingBetLegal(spot), { simulations: 200 }),
+      );
+      return (
+        probabilityByType(decision, "raise") +
+        probabilityByType(decision, "all-in")
+      );
+    };
+
+    const opening = aggressionOf(0);
+    const deep = aggressionOf(6);
+    expect(deep).toBeLessThan(opening);
+  });
+
+  it("does not offer the minimum legal raise as a routine candidate", () => {
+    // Min-raise was the cheapest way to stay aggressive, and `lastFullRaise`
+    // grows only by the previous increment, so a chain of min re-raises
+    // escalates arithmetically and needs hundreds of iterations to exhaust a
+    // deep stack. Sizing must be pot-relative instead.
+    const spot = makeSpot({
+      heroCards: cards("As", "Ks"),
+      board: cards("Ts", "Js", "Qs", "2d", "3c"),
+      pot: 600,
+      currentBet: 200,
+    });
+    const legal = facingBetLegal(spot);
+    const decision = decideRationalAction(
+      input(spot, legal, { simulations: 160 }),
+    );
+    const raiseSizes = decision.distribution
+      .filter((option) => option.command.type === "raise")
+      .map((option) => option.command.to ?? 0);
+
+    expect(raiseSizes.length).toBeGreaterThan(0);
+    expect(raiseSizes).not.toContain(legal.raise?.minTo);
+    // Every offered size is a real pot-relative commitment.
+    for (const size of raiseSizes) {
+      expect(size).toBeGreaterThan(legal.raise?.minTo ?? 0);
+    }
+  });
+
+  it("calls rather than raises when calling strictly dominates", () => {
+    // Marginal equity facing a large bet from a deep stack: continuing is
+    // defensible, escalating is not.
+    const spot = makeSpot({
+      heroCards: cards("Ah", "Jd"),
+      board: cards("As", "9c", "5d", "3h", "2s"),
+      pot: 2_000,
+      currentBet: 500,
+      heroStack: 12_000,
+      villainStack: 12_000,
+      actions: warActions(4),
+    });
+    const decision = decideRationalAction(
+      input(spot, facingBetLegal(spot), { simulations: 240, temperature: 0.3 }),
+    );
+    const aggressive =
+      probabilityByType(decision, "raise") +
+      probabilityByType(decision, "all-in");
+
+    expect(probabilityByType(decision, "call")).toBeGreaterThan(aggressive);
+  });
+
+  it("does not shove a deep stack without a commanding edge", () => {
+    // Cause 3: the risk premium alone computes to 0.04-0.07 in career play and
+    // never restrained a 300 BB shove with a marginal hand.
+    const spot = makeSpot({
+      heroCards: cards("Qh", "Qd"),
+      board: cards("Ac", "Kd", "7s"),
+      pot: 900,
+      currentBet: 300,
+      heroStack: 30_000,
+      villainStack: 30_000,
+    });
+    const decision = decideRationalAction(
+      input(spot, facingBetLegal(spot), { simulations: 240, temperature: 0.3 }),
+    );
+    expect(probabilityByType(decision, "all-in")).toBeLessThan(0.15);
   });
 });
 

@@ -69,6 +69,24 @@ describe("supplementary game audio", () => {
     );
   });
 
+  it("provides restrained public win, all-in, and elimination cues", () => {
+    const graph = audioGraph();
+    vi.stubGlobal("navigator", {
+      userActivation: { hasBeenActive: true },
+    });
+    vi.stubGlobal("AudioContext", graph.Context);
+    const audio = new GameAudio();
+
+    audio.play("win");
+    audio.play("all-in");
+    audio.play("eliminated");
+
+    expect(graph.oscillators.map((oscillator) => oscillator.frequency.setValueAtTime.mock.calls[0]?.[0]))
+      .toEqual([740, 260, 150]);
+    expect(graph.oscillators[0].frequency.exponentialRampToValueAtTime)
+      .toHaveBeenCalledWith(1110, 0.28);
+  });
+
   it("previews only after an explicit call and applies persisted master/effects levels", () => {
     const graph = audioGraph();
     vi.stubGlobal("navigator", {

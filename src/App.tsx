@@ -1,13 +1,26 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   HomeView,
   ModeSelect,
+  NightCircuitScene,
   PlayerRecord,
   TimedSetup,
   TournamentCeremony,
   TourLobby,
 } from "./components/Dashboard";
 import { RecoveryScreen } from "./components/RecoveryScreen";
+import {
+  PokerReferenceContent,
+  TrainerOrientationContent,
+} from "./components/PokerReference";
+import { ArrowLeft } from "lucide-react";
 import { useGamepadNavigation } from "./components/GamepadNavigationProvider";
 import { AboutSupport } from "./components/AboutSupport";
 import { CreditsScreen } from "./components/CreditsScreen";
@@ -17,7 +30,9 @@ import { lazyWithPreload, SceneLoadingFallback } from "./components/SceneLoader"
 import { SettingsPanel } from "./components/SettingsPanel";
 import { trainingScenarios } from "./data/trainingScenarios";
 import { gameAudio } from "./lib/audio";
+import { tournamentResultAudioCue } from "./lib/tournamentResultAudio";
 import { productionMusicManifest } from "./data/musicPlaylistManifest";
+import { createBrowserMusicSink } from "./lib/browserMusicSink";
 import {
   createMusicPlaylist,
   musicVolumeFromSettings,
@@ -47,23 +62,31 @@ import {
 } from "./lib/desktopLifecycle";
 import { createSaveEnvelope } from "./lib/saveMigration";
 import { formatChips } from "./lib/format";
-import { formatMessage } from "./lib/localeMessages";
+import { formatMessage, localeTextAttributes } from "./lib/localeMessages";
 import { deriveSafeModeSettings } from "./lib/safeMode";
 import {
   applyOsReducedMotionDefault,
   readOsReducedMotionPreference,
   subscribeOsReducedMotionPreference,
 } from "./lib/motionPreference";
-import { selectNearTransferScenario } from "./lib/trainingEngine";
+import {
+  completeFirstRunSettings,
+  skipFirstRunSettings,
+} from "./lib/firstRunSettings";
+import {
+  selectNearTransferScenario,
+  selectTrainingSessionStartScenario,
+} from "./lib/trainingEngine";
 import {
   createTrainingCheckpoint,
   restoreTrainingCheckpoint,
   type TrainingPresentationCheckpoint,
 } from "./lib/trainingCheckpoint";
 import {
+  advanceTournamentRunnerOneStep,
+  advanceTournamentRunnerOneStepAsync,
   advanceTournamentRunnerToHero,
-  applyHeroTournamentAction,
-  applyHeroTournamentActionAsync,
+  applyHeroTournamentActionOneStep,
   createCareerTournamentRunner,
   createTimedTournamentRunner,
   createTournamentRunnerReplay,
@@ -71,6 +94,8 @@ import {
   restoreTournamentRunnerReplay,
   TournamentAdvanceAborted,
   type HeroTournamentAction,
+  type TournamentPresentationEvent,
+  type TournamentPresentationStep,
   type TournamentRunner,
   type TournamentRunnerReplay,
 } from "./modes/tournamentRunner";
@@ -85,9 +110,16 @@ import type {
   TournamentSessionCareerResult,
   TournamentSessionResult,
 } from "./modes/tournamentSession";
-import { createPokerTableSnapshot } from "./modes/tournamentSession";
-import type { BettingActionType } from "./engine";
-import type { GameSettings, PlayerProgress } from "./types/poker";
+import {
+  createPokerTableSnapshot,
+  listTournamentSessionEvents,
+  SESSION_TABLE_SIZE,
+} from "./modes/tournamentSession";
+import type {
+  CareerEventResult,
+  GameSettings,
+  PlayerProgress,
+} from "./types/poker";
 
 // Mode-specific heavy scenes are code-split so the initial bundle stays small.
 // Each keeps an idempotent `preload()` used to fetch the next likely scene.
@@ -106,6 +138,16 @@ const RoomFlythrough = lazyWithPreload(() =>
     default: module.RoomFlythrough,
   })),
 );
+const HandReviewScreen = lazyWithPreload(() =>
+  import("./components/HandReviewScreen").then((module) => ({
+    default: module.HandReviewScreen,
+  })),
+);
+const CareerTravel = lazyWithPreload(() =>
+  import("./components/CareerTravel").then((module) => ({
+    default: module.CareerTravel,
+  })),
+);
 
 type DesktopScreen =
   | "home"
@@ -115,23 +157,104 @@ type DesktopScreen =
   | "settings"
   | "timed-setup"
   | "room-transition"
+  | "career-travel"
   | "tournament-table"
   | "practice"
   | "tutorial"
   | "credits"
+  | "hand-review"
+  | "reference"
   | "chip-ack";
 
 type SafeModeState = Awaited<
   ReturnType<NonNullable<Window["desktop"]>["getSafeModeState"]>
 >;
 
-const emptyTourResults: Record<
-  TournamentPolicyMode,
-  TournamentSessionCareerResult[]
-> = {
-  normal: [],
-  rational: [],
-};
+interface PendingTournamentPresentation {
+  source: TournamentRunner;
+  next: TournamentRunner;
+  events: readonly TournamentPresentationEvent[];
+  index: number;
+  /** A single result beat retained after an explicit fast-forward. */
+  skipResultVisible?: boolean;
+  /** Public fold terminal state retained while the readable Skip result holds. */
+  skipTerminalFoldedPlayerIds?: readonly string[];
+}
+
+type AllInRevealPresentation = Extract<
+  TournamentPresentationEvent,
+  { kind: "all-in-reveal" }
+>;
+
+/*
+  Replay export is a support and diagnostics path, not a player feature
+  (E27-011). It is compiled out of ordinary builds rather than merely hidden, so
+  a raw JSON workflow cannot reappear on the ceremony screen through a styling
+  change. Support builds set VITE_ENABLE_REPLAY_EXPORT to turn it back on.
+*/
+const replayExportEnabled =
+  import.meta.env?.VITE_ENABLE_REPLAY_EXPORT === "true";
+
+const emptyCareer = (): NonNullable<PlayerProgress["career"]> => ({
+  normal: { results: [] },
+  rational: { results: [] },
+});
+
+/**
+ * Narrows persisted results to the session's career-result type.
+ *
+ * The save schema stores `fieldSize` as a plain number because it must
+ * faithfully record whatever was written, including by a future build; the
+ * session type pins it to the six-seat table. Anything else is a save from a
+ * format this build does not model, so it is dropped rather than coerced into
+ * a shape the session would then reason about incorrectly.
+ */
+function toSessionCareerResults(
+  results: readonly CareerEventResult[] | undefined,
+): TournamentSessionCareerResult[] {
+  return (results ?? [])
+    .filter((result) => result.fieldSize === SESSION_TABLE_SIZE)
+    .map((result) => ({ ...result, fieldSize: SESSION_TABLE_SIZE }));
+}
+
+/** Records a completed career event and clears that track's active event. */
+function careerWithCompletedEvent(
+  career: PlayerProgress["career"],
+  mode: TournamentPolicyMode,
+  result: TournamentSessionResult,
+): NonNullable<PlayerProgress["career"]> {
+  const base = career ?? emptyCareer();
+  const track = base[mode];
+  return {
+    ...base,
+    [mode]: {
+      // Replaying an event supersedes its earlier result rather than
+      // accumulating duplicates.
+      results: [
+        ...track.results.filter((entry) => entry.eventId !== result.eventId),
+        {
+          eventId: result.eventId,
+          finishPlace: result.finishPlace,
+          fieldSize: result.fieldSize,
+          sourceFieldSize: result.sourceFieldSize,
+          qualifyingPlaces: result.qualifyingPlaces,
+          qualified: result.qualified,
+          tournamentEloDelta: result.tournamentEloDelta,
+        },
+      ],
+    },
+  };
+}
+
+/** Marks an event as the one in progress for a track. */
+function careerWithActiveEvent(
+  career: PlayerProgress["career"],
+  mode: TournamentPolicyMode,
+  eventId: string,
+): NonNullable<PlayerProgress["career"]> {
+  const base = career ?? emptyCareer();
+  return { ...base, [mode]: { ...base[mode], activeEventId: eventId } };
+}
 
 function asTournamentReplay(
   value?: Record<string, unknown>,
@@ -150,6 +273,7 @@ function FirstRunSetup({
   onComplete(settings: GameSettings): void;
 }) {
   const [draft, setDraft] = useState(initialSettings);
+  const [motionChoiceTouched, setMotionChoiceTouched] = useState(false);
   const patch = (next: Partial<GameSettings>) =>
     setDraft((current) => ({ ...current, ...next }));
 
@@ -164,9 +288,10 @@ function FirstRunSetup({
             <input
               type="checkbox"
               checked={draft.reducedMotion}
-              onChange={(event) =>
-                patch({ reducedMotion: event.target.checked })
-              }
+              onChange={(event) => {
+                setMotionChoiceTouched(true);
+                patch({ reducedMotion: event.target.checked });
+              }}
             />
             <span>
               <strong>{formatMessage("shell.firstRun.reduceMotion.label")}</strong>
@@ -216,22 +341,20 @@ function FirstRunSetup({
           <button
             type="button"
             onClick={() =>
-              // Completing setup via Save is an explicit motion choice, even
-              // if the player left the OS-derived pre-selection untouched:
-              // it always wins over the OS preference from now on.
-              onComplete({ ...draft, reducedMotionExplicit: true })
+              onComplete(
+                completeFirstRunSettings(
+                  initialSettings,
+                  draft,
+                  motionChoiceTouched,
+                ),
+              )
             }
           >
             {formatMessage("shell.firstRun.saveButton")}
           </button>
           <button
             type="button"
-            onClick={() =>
-              // Skip makes no motion choice, so the app keeps following the
-              // live OS reduced-motion preference (initialSettings already
-              // reflects it and reducedMotionExplicit stays false).
-              onComplete(initialSettings)
-            }
+            onClick={() => onComplete(skipFirstRunSettings(initialSettings))}
           >
             {formatMessage("shell.firstRun.skipButton")}
           </button>
@@ -251,6 +374,13 @@ export default function App() {
   const [tourMode, setTourMode] = useState<TournamentPolicyMode>("normal");
   const [timedMinutes, setTimedMinutes] = useState(30);
   const [runner, setRunner] = useState<TournamentRunner | null>(null);
+  const [pendingPresentation, setPendingPresentation] =
+    useState<PendingTournamentPresentation | null>(null);
+  // Legal reveal data belongs to the renderer's in-memory presentation state,
+  // not the game model. It remains visible through a queued all-in runout and
+  // is discarded as soon as that hand ends.
+  const [activeAllInReveal, setActiveAllInReveal] =
+    useState<AllInRevealPresentation>();
   const [resumeCandidate, setResumeCandidate] = useState<TournamentRunner | null>(null);
   const [trainingResumeScenarioId, setTrainingResumeScenarioId] = useState<
     string | null
@@ -264,7 +394,17 @@ export default function App() {
   const tournamentPausedAtRef = useRef<number | null>(null);
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
   const [progress, setProgress] = useState(() => loadProgress());
-  const [tourResults, setTourResults] = useState(emptyTourResults);
+  // Career progress is read from the persisted save, not held in ephemeral
+  // component state. The previous `useState(emptyTourResults)` was never
+  // written to disk, so every relaunch restarted the career at Local
+  // Qualifier no matter how far the player had actually progressed.
+  const tourResults = useMemo(
+    () => ({
+      normal: toSessionCareerResults(progress.career?.normal.results),
+      rational: toSessionCareerResults(progress.career?.rational.results),
+    }),
+    [progress.career],
+  );
   const [tournamentResult, setTournamentResult] =
     useState<TournamentSessionResult | null>(null);
   const [lastPublicReplay, setLastPublicReplay] =
@@ -283,6 +423,18 @@ export default function App() {
     () => trainingScenarios[0],
   );
   const lastPresentedHand = useRef<string | null>(null);
+  // Set when the fly-through hands off to the table, so the table's first hand
+  // opens with the same settling overlay a between-hand arrival gets. Without
+  // it the screen swap is a hard cut: the venue vanishes and the felt appears
+  // fully lit mid-deal (E09-004).
+  const arrivingFromFlythrough = useRef(false);
+  // The leg of the circuit currently being travelled (E20-003). Finishing an
+  // event used to drop straight back to a lobby list, which is what made the
+  // career read as a menu with tournaments behind it rather than a circuit.
+  const [travelLeg, setTravelLeg] = useState<{
+    fromEventId: string;
+    toEventId: string;
+  } | null>(null);
   // Worker-backed equity boundary: opponent Monte Carlo runs off the main
   // thread. Decisions stay bit-for-bit deterministic with the synchronous path;
   // a superseded/obsolete decision is cancelled and its stale result rejected.
@@ -290,6 +442,13 @@ export default function App() {
   const decisionAbortRef = useRef<{ aborted: boolean } | null>(null);
   const decisionPendingRef = useRef(false);
   const runnerRef = useRef<TournamentRunner | null>(null);
+  const pendingPresentationRef = useRef<PendingTournamentPresentation | null>(
+    null,
+  );
+  const presentationAdvancePendingRef = useRef(false);
+  const lastTournamentSnapshotRef = useRef<ReturnType<
+    typeof createPokerTableSnapshot
+  > | null>(null);
   // Live OS default layered under any explicit player choice; Safe Mode is
   // applied last and always wins over both.
   const osResolvedSettings: GameSettings = applyOsReducedMotionDefault(
@@ -482,7 +641,7 @@ export default function App() {
   const playlistRef = useRef<MusicPlaylistController | null>(null);
   useEffect(() => {
     const playlist = createMusicPlaylist(productionMusicManifest, {
-      sink: { createVoice: () => null },
+      sink: createBrowserMusicSink(),
       random: { next: () => Math.random() },
       now: () =>
         typeof performance !== "undefined" ? performance.now() : Date.now(),
@@ -691,12 +850,23 @@ export default function App() {
       const result = nextRunner.session.result;
       if (!result) return;
       setLastPublicReplay(replay as unknown as Record<string, unknown>);
-      const nextProgress = {
+      // A finished career event updates the persisted track inside the same
+      // progress object that gets written to disk, and clears the active
+      // event so mode entry advances instead of resuming what just finished.
+      const nextProgress: PlayerProgress = {
         ...progress,
         tournamentElo: Math.max(
           100,
           progress.tournamentElo + result.tournamentEloDelta,
         ),
+        career:
+          nextRunner.kind === "career"
+            ? careerWithCompletedEvent(
+                progress.career,
+                nextRunner.session.mode,
+                result,
+              )
+            : progress.career,
       };
       setProgress(nextProgress);
       persistBoundary(
@@ -705,25 +875,7 @@ export default function App() {
         nextProgress,
         replay as unknown as Record<string, unknown>,
       );
-      if (nextRunner.kind === "career") {
-        setTourResults((current) => ({
-          ...current,
-          [nextRunner.session.mode]: [
-            ...current[nextRunner.session.mode].filter(
-              (entry) => entry.eventId !== result.eventId,
-            ),
-            {
-              eventId: result.eventId,
-              finishPlace: result.finishPlace,
-              fieldSize: result.fieldSize,
-              sourceFieldSize: result.sourceFieldSize,
-              qualifyingPlaces: result.qualifyingPlaces,
-              qualified: result.qualified,
-              tournamentEloDelta: result.tournamentEloDelta,
-            },
-          ],
-        }));
-      }
+      gameAudio.play(tournamentResultAudioCue(result));
       setTournamentResult(result);
     },
     [persistBoundary, progress, settings],
@@ -731,6 +883,14 @@ export default function App() {
 
   const startCareerEvent = useCallback(
     (eventId: string) => {
+      setActiveAllInReveal(undefined);
+      // Mark the event active before play begins, so quitting or crashing
+      // mid-event resumes it rather than losing which event was underway.
+      const startedProgress: PlayerProgress = {
+        ...progress,
+        career: careerWithActiveEvent(progress.career, tourMode, eventId),
+      };
+      setProgress(startedProgress);
       const created = createCareerTournamentRunner({
         eventId,
         hero: {
@@ -739,20 +899,32 @@ export default function App() {
           rating: progress.tournamentElo,
         },
         mode: tourMode,
-        seed: `career:${eventId}:${Date.now()}`,
+        // The isolated packaged scene audit supplies a complete engine seed so
+        // its ordinary UI actions can deterministically expose every public
+        // board street. Normal sessions retain their career-scoped seed.
+        seed: window.desktop?.sceneAuditSeed ?? `career:${eventId}:${Date.now()}`,
         careerResults: tourResults[tourMode],
       });
-      const ready = advanceTournamentRunnerToHero(created, {
+      const opening = advanceTournamentRunnerOneStep(created, {
         policy: { simulations: 60 },
       });
+      const ready = opening.runner;
       const replay = createTournamentRunnerReplay(ready, 60);
       activeReplayRef.current = replay as unknown as Record<string, unknown>;
+      const openingPresentation: PendingTournamentPresentation = {
+        source: created,
+        next: ready,
+        events: opening.events,
+        index: 0,
+      };
+      pendingPresentationRef.current = openingPresentation;
+      setPendingPresentation(openingPresentation);
       setRunner(ready);
       setScreen("room-transition");
       persistBoundary(
         "action",
         settings,
-        progress,
+        startedProgress,
         replay as unknown as Record<string, unknown>,
       );
       gameAudio.play("deal");
@@ -762,6 +934,7 @@ export default function App() {
 
   const startTimedTable = useCallback(
     (minutes: number) => {
+      setActiveAllInReveal(undefined);
       const created = createTimedTournamentRunner({
         minutes,
         hero: {
@@ -771,11 +944,20 @@ export default function App() {
         },
         seed: `timed:${minutes}:${Date.now()}`,
       });
-      const ready = advanceTournamentRunnerToHero(created, {
+      const opening = advanceTournamentRunnerOneStep(created, {
         policy: { simulations: 60 },
       });
+      const ready = opening.runner;
       const replay = createTournamentRunnerReplay(ready, 60);
       activeReplayRef.current = replay as unknown as Record<string, unknown>;
+      const openingPresentation: PendingTournamentPresentation = {
+        source: created,
+        next: ready,
+        events: opening.events,
+        index: 0,
+      };
+      pendingPresentationRef.current = openingPresentation;
+      setPendingPresentation(openingPresentation);
       setTimedMinutes(minutes);
       setRunner(ready);
       setScreen("room-transition");
@@ -790,8 +972,16 @@ export default function App() {
     [persistBoundary, progress, settings],
   );
 
-  const commitHeroAdvance = useCallback(
+  const commitTournamentAdvance = useCallback(
     (previous: TournamentRunner, next: TournamentRunner) => {
+      const nextHandId = next.session.activeHand?.handId;
+      // A legal all-in reveal is public only for its own hand. Keeping it out
+      // of the runner prevents it from leaking into autosaves/replays while
+      // still allowing the cards to remain on the table through every queued
+      // board-card presentation event.
+      setActiveAllInReveal((current) =>
+        current?.handId === nextHandId ? current : undefined,
+      );
       const replay = createTournamentRunnerReplay(next, 60);
       activeReplayRef.current = replay as unknown as Record<string, unknown>;
       finishRunner(next);
@@ -809,54 +999,192 @@ export default function App() {
     [finishRunner, persistBoundary, progress, settings],
   );
 
-  const actInTournament = useCallback(
-    (request: HeroTournamentAction) => {
-      if (!runner) return;
-      // Ignore re-entrant input while the previous decision resolves off-thread.
-      if (decisionPendingRef.current) return;
+  const publishTournamentPresentation = useCallback(
+    (source: TournamentRunner, transition: TournamentPresentationStep) => {
+      if (transition.runner === source && transition.events.length === 0) {
+        return;
+      }
+      if (transition.events.length === 0) {
+        commitTournamentAdvance(source, transition.runner);
+        return;
+      }
+      const legalReveal = transition.events.find(
+        (event): event is AllInRevealPresentation => event.kind === "all-in-reveal",
+      );
+      if (legalReveal) setActiveAllInReveal(legalReveal);
+      const next: PendingTournamentPresentation = {
+        source,
+        next: transition.runner,
+        events: transition.events,
+        index: 0,
+      };
+      pendingPresentationRef.current = next;
+      setPendingPresentation(next);
+    },
+    [commitTournamentAdvance],
+  );
+
+  const completeTournamentPresentationEvent = useCallback(() => {
+    const pending = pendingPresentationRef.current;
+    if (!pending) return;
+    if (pending.index + 1 < pending.events.length) {
+      const next = { ...pending, index: pending.index + 1 };
+      pendingPresentationRef.current = next;
+      setPendingPresentation(next);
+      return;
+    }
+    pendingPresentationRef.current = null;
+    setPendingPresentation(null);
+    commitTournamentAdvance(pending.source, pending.next);
+  }, [commitTournamentAdvance]);
+
+  const skipTournamentPresentation = useCallback(() => {
+    const pending = pendingPresentationRef.current;
+    if (!pending || pending.skipResultVisible) return;
+    // Skipping is a presentation-only operation. Resume authoritative play
+    // from the already-computed current transition, then use the retained
+    // synchronous run-to-hero path to reach the exact state the event queue
+    // would otherwise have produced without replaying a submitted action.
+    const fastForwarded = advanceTournamentRunnerToHero(pending.next, {
+      policy: { simulations: 60 },
+    });
+    const skippedHandId = pending.events[pending.index]?.handId;
+    const skippedEvent = pending.events[pending.index];
+    const result = fastForwarded.session.lastHand;
+    if (result && result.handId === skippedHandId) {
+      // Keep one public, card-safe result beat on screen. The engine has
+      // already progressed deterministically, but committing it waits until
+      // this event has been readable so the next hand cannot replace a win.
+      const resultBeat: PendingTournamentPresentation = {
+        source: pending.source,
+        next: fastForwarded,
+        events: [
+          {
+            id: `skip:${result.handId}:hand-result`,
+            kind: "hand-result",
+            handId: result.handId,
+            awards: result.awards.map((award) => ({
+              potId: award.potId,
+              playerId: award.playerId,
+              amount: award.amount,
+              ...(award.hand ? { hand: award.hand } : {}),
+            })),
+          },
+        ],
+        index: 0,
+        skipResultVisible: true,
+        skipTerminalFoldedPlayerIds: skippedEvent?.kind === "action" && skippedEvent.command.type === "fold"
+          ? [skippedEvent.playerId]
+          : undefined,
+      };
+      pendingPresentationRef.current = resultBeat;
+      setPendingPresentation(resultBeat);
+      return;
+    }
+    pendingPresentationRef.current = null;
+    setPendingPresentation(null);
+    commitTournamentAdvance(pending.source, fastForwarded);
+  }, [commitTournamentAdvance]);
+
+  const advanceTournamentPresentation = useCallback(() => {
+    const source = runnerRef.current;
+    if (
+      !source ||
+      source.session.status === "complete" ||
+      heroTournamentLegalActions(source) ||
+      pendingPresentationRef.current ||
+      presentationAdvancePendingRef.current
+    ) {
+      return;
+    }
+    presentationAdvancePendingRef.current = true;
+    const settle = (transition: TournamentPresentationStep) => {
+      if (runnerRef.current === source) {
+        publishTournamentPresentation(source, transition);
+      }
+    };
+    if (source.session.mode === "rational") {
       equityServiceRef.current ??= createDesktopEquityService();
       const service = equityServiceRef.current;
-      // Supersede any obsolete in-flight equity work before this decision.
       service.cancelPending();
       const signal = { aborted: false };
       decisionAbortRef.current = signal;
-      decisionPendingRef.current = true;
-      const source = runner;
-      const stillActive = () => !signal.aborted && runnerRef.current === source;
-      applyHeroTournamentActionAsync(source, request, service.estimate, {
+      void advanceTournamentRunnerOneStepAsync(source, service.estimate, {
         policy: { simulations: 60 },
         signal,
       })
-        .then((next) => {
-          if (!stillActive()) return;
-          commitHeroAdvance(source, next);
+        .then((transition) => {
+          if (!signal.aborted) settle(transition);
         })
         .catch((error) => {
           if (
-            !stillActive() ||
+            signal.aborted ||
             error instanceof TournamentAdvanceAborted ||
             error instanceof CancelledEquityRequestError ||
             error instanceof StaleEquityRequestError
           ) {
             return;
           }
-          // Fail safe: fall back to the deterministic synchronous path so an
-          // unexpected worker fault never strands the table mid-decision.
-          const next = applyHeroTournamentAction(source, request, {
-            policy: { simulations: 60 },
-          });
-          commitHeroAdvance(source, next);
+          settle(
+            advanceTournamentRunnerOneStep(source, {
+              policy: { simulations: 60 },
+            }),
+          );
         })
         .finally(() => {
-          decisionPendingRef.current = false;
+          presentationAdvancePendingRef.current = false;
         });
+      return;
+    }
+    try {
+      settle(
+        advanceTournamentRunnerOneStep(source, {
+          policy: { simulations: 60 },
+        }),
+      );
+    } finally {
+      presentationAdvancePendingRef.current = false;
+    }
+  }, [publishTournamentPresentation]);
+
+  const actInTournament = useCallback(
+    (request: HeroTournamentAction) => {
+      if (!runner) return;
+      if (decisionPendingRef.current || pendingPresentationRef.current) return;
+      decisionPendingRef.current = true;
+      try {
+        publishTournamentPresentation(
+          runner,
+          applyHeroTournamentActionOneStep(runner, request, {
+            policy: { simulations: 60 },
+          }),
+        );
+      } finally {
+        decisionPendingRef.current = false;
+      }
     },
-    [commitHeroAdvance, runner],
+    [publishTournamentPresentation, runner],
   );
 
   useEffect(() => {
     runnerRef.current = runner;
   }, [runner]);
+
+  // The renderer receives one public milestone at a time. It requests the
+  // next engine transition only after the prior event has been presented, so
+  // opponents can never collapse into a single invisible state update.
+  useEffect(() => {
+    if (
+      screen !== "tournament-table" ||
+      !runner ||
+      runner.session.status === "complete" ||
+      pendingPresentation
+    ) {
+      return;
+    }
+    if (heroTournamentLegalActions(runner)) return;
+    advanceTournamentPresentation();
+  }, [advanceTournamentPresentation, pendingPresentation, runner, screen]);
 
   useEffect(
     () => () => {
@@ -909,14 +1237,24 @@ export default function App() {
   );
 
   const beginTraining = useCallback(() => {
-    const checkpoint = createTrainingCheckpoint(trainingScenario.id);
+    const scenario = selectTrainingSessionStartScenario(
+      progress.playerName,
+      progress.results.map((result) => result.scenarioId),
+      trainingScenarios,
+      {
+        decisionElo: progress.decisionElo,
+        mathElo: progress.mathElo,
+      },
+    ) ?? trainingScenario;
+    setTrainingScenario(scenario);
+    const checkpoint = createTrainingCheckpoint(scenario.id);
     activeReplayRef.current = checkpoint;
     setTrainingPresentation(checkpoint.presentation);
     persistBoundary("action", settings, progress, checkpoint);
     void PokerTable.preload();
     setScreen("practice");
     gameAudio.play("deal");
-  }, [persistBoundary, progress, settings, trainingScenario.id]);
+  }, [persistBoundary, progress, settings, trainingScenario]);
 
   const advanceTrainingScenario = useCallback(
     (scenarioId: string) => {
@@ -924,7 +1262,12 @@ export default function App() {
         (result) => result.scenarioId,
       );
       const next =
-        selectNearTransferScenario(scenarioId, { completedScenarioIds }) ??
+        selectNearTransferScenario(scenarioId, {
+          completedScenarioIds,
+          recentScenarioIds: [...completedScenarioIds, scenarioId],
+          decisionElo: progress.decisionElo,
+          mathElo: progress.mathElo,
+        }) ??
         trainingScenarios[0];
       const checkpoint = createTrainingCheckpoint(next.id);
       activeReplayRef.current = checkpoint;
@@ -1278,7 +1621,60 @@ export default function App() {
     );
   }
 
+  if (screen === "career-travel" && travelLeg) {
+    const stops = listTournamentSessionEvents(tourResults[tourMode]).map(
+      (event) => ({
+        id: event.id,
+        name: event.name,
+        tier: event.tier,
+        cleared: Boolean(
+          tourResults[tourMode].find(
+            (result) => result.eventId === event.id && result.qualified,
+          ),
+        ),
+      }),
+    );
+    // Skipping and completing land in the same place: the next event begins
+    // either way, so a player who never wants the sequence loses nothing but
+    // the seconds.
+    const arrive = () => {
+      const toEventId = travelLeg.toEventId;
+      setTravelLeg(null);
+      startCareerEvent(toEventId);
+    };
+    return (
+      <Suspense
+        fallback={
+          <SceneLoadingFallback
+            label={formatMessage("shell.loading.enteringEvent", {
+              eventName:
+                stops.find((stop) => stop.id === travelLeg.toEventId)?.name ??
+                travelLeg.toEventId,
+            })}
+            onCancel={() => {
+              setTravelLeg(null);
+              setScreen("tour");
+            }}
+          />
+        }
+      >
+        <CareerTravel
+          route={stops}
+          fromEventId={travelLeg.fromEventId}
+          toEventId={travelLeg.toEventId}
+          settings={effectiveSettings}
+          onComplete={arrive}
+        />
+      </Suspense>
+    );
+  }
+
   if (screen === "room-transition" && runner) {
+    // Start fetching the table chunk as the fly-through begins, not when it
+    // ends. The arrival is 4.3 s of authored motion; spending it downloading
+    // the thing the player is walking towards is the whole point of having it
+    // (E09-004: "loading is hidden behind the authored transition").
+    void PokerTable.preload();
     return (
       <Suspense
         fallback={
@@ -1296,6 +1692,7 @@ export default function App() {
       >
         <RoomFlythrough
           eventName={runner.session.event.name}
+          tier={runner.session.event.tier}
           modeLabel={
             runner.kind === "timed"
               ? formatMessage("modes.timed.name")
@@ -1305,8 +1702,7 @@ export default function App() {
           }
           settings={effectiveSettings}
           onComplete={() => {
-            // Preload the table before the fly-through hands off to it.
-            void PokerTable.preload();
+            arrivingFromFlythrough.current = true;
             setScreen("tournament-table");
           }}
         />
@@ -1316,16 +1712,32 @@ export default function App() {
 
   if (screen === "tournament-table" && runner && !tournamentResult) {
     const legalActions = heroTournamentLegalActions(runner);
-    if (!legalActions) {
-      throw new Error("Playable tournament table is not waiting for the hero");
+    const snapshot = runner.session.activeHand
+      ? createPokerTableSnapshot(runner.session)
+      : lastTournamentSnapshotRef.current;
+    if (!snapshot) {
+      throw new Error("Tournament presentation has no table snapshot");
     }
-    const snapshot = createPokerTableSnapshot(runner.session);
+    if (runner.session.activeHand) lastTournamentSnapshotRef.current = snapshot;
+    const spectatorLegalActions = {
+      playerId: runner.session.heroId,
+      toCall: 0,
+      check: false,
+      fold: false,
+      call: false,
+      callAmount: 0,
+      allIn: false,
+      allInTo: 0,
+      raisingReopened: false,
+    };
     const handNumber = runner.session.tournament.tables[0]?.handNumber ?? 1;
     const handPresentationKey = `${runner.session.id}:${handNumber}`;
     const showArrival =
-      handNumber > 1 && lastPresentedHand.current !== handPresentationKey;
+      (handNumber > 1 || arrivingFromFlythrough.current) &&
+      lastPresentedHand.current !== handPresentationKey;
     lastPresentedHand.current = handPresentationKey;
-    const lastPublicAction = runner.decisions.at(-1);
+    arrivingFromFlythrough.current = false;
+    const presentationEvent = pendingPresentation?.events[pendingPresentation.index];
     return (
       <Suspense
         fallback={
@@ -1341,15 +1753,6 @@ export default function App() {
         }
       >
         <PokerTable
-          key={[
-          snapshot.id,
-          snapshot.street,
-          snapshot.pot,
-          snapshot.amountToCall,
-          runner.sequence,
-          runner.session.activeHand?.betting.currentBet ?? 0,
-          runner.session.activeHand?.betting.pending.join("-") ?? "",
-        ].join(":")}
         mode={runner.session.mode}
         scenario={snapshot}
         settings={effectiveSettings}
@@ -1365,14 +1768,34 @@ export default function App() {
           setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
         }}
         tournament={{
-          legalActions,
+          legalActions: legalActions ?? spectatorLegalActions,
           onAction: actInTournament,
+          heroDecision: Boolean(legalActions),
+          presentationEvent,
+          skipTerminalFoldedPlayerIds: pendingPresentation?.skipTerminalFoldedPlayerIds,
+          allInReveal: activeAllInReveal,
+          onPresentationEventComplete: completeTournamentPresentationEvent,
+          onSkipPresentation: skipTournamentPresentation,
           kind: runner.kind,
+          roundId: runner.session.id,
+          sceneStateVersion: runner.sequence,
           handNumber,
           fieldSize: runner.session.entrants.length,
           playersRemaining: runner.session.tournament.players.filter(
             (player) => player.status === "active",
           ).length,
+          /*
+            The blind schedule, made inspectable (E27-004 / E27-008). The clock
+            was corrected but never shown, so a player had no way to see when
+            the level would turn -- or to notice if it turned early.
+          */
+          blindLevel: runner.session.tournament.levelIndex + 1,
+          nextLevelInMs: Math.max(
+            0,
+            (runner.session.tournament.structure.levels[
+              runner.session.tournament.levelIndex
+            ]?.durationMs ?? 0) - runner.session.tournament.levelElapsedMs,
+          ),
           elapsedMs:
             runner.kind === "timed" && runner.timed
               ? Math.max(0, Date.now() - runner.timed.startedAtMs)
@@ -1392,6 +1815,7 @@ export default function App() {
             return `${name}: ${decision.command.type}${amount}`;
           }),
           showArrival,
+          tier: runner.session.event.tier,
           lastPotWinnerIds: Array.from(
             new Set(
               (runner.session.lastHand?.awards ?? []).map(
@@ -1400,19 +1824,16 @@ export default function App() {
             ),
           ),
           lastPotAwards: (runner.session.lastHand?.awards ?? []).map(
-            (award) => ({ playerId: award.playerId, amount: award.amount }),
+            (award) => ({
+              potId: award.potId,
+              playerId: award.playerId,
+              amount: award.amount,
+              ...(award.hand ? { hand: award.hand } : {}),
+            }),
           ),
           lastHandHadSidePot: Boolean(
             runner.session.lastHand?.pots.some((pot) => pot.kind === "side"),
           ),
-          ...(lastPublicAction
-            ? {
-                lastPublicAction: {
-                  playerId: lastPublicAction.playerId,
-                  type: lastPublicAction.command.type as BettingActionType,
-                },
-              }
-            : {}),
           openingBigBlind:
             runner.session.tournament.structure.levels[0]?.bigBlind,
           qualifyingPlaces: runner.session.event.qualifyingPlaces,
@@ -1422,13 +1843,91 @@ export default function App() {
     );
   }
 
+  // Review sits in front of the ceremony so Back returns to it rather than
+  // dropping the player out to the menu mid-flow.
+  if (screen === "reference") {
+    return (
+      <main
+        className="night-shell reference-shell"
+        aria-labelledby="reference-title"
+        {...localeTextAttributes()}
+      >
+        <NightCircuitScene quiet />
+        <section className="reference-panel">
+          <button className="night-back" type="button" onClick={() => navigate("play")}>
+            <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToModes")}
+          </button>
+          <h1 id="reference-title">{formatMessage("reference.title")}</h1>
+          <p className="reference-intro">{formatMessage("reference.intro")}</p>
+          <TrainerOrientationContent />
+          <h2 className="reference-heading">{formatMessage("reference.pokerHeading")}</h2>
+          <PokerReferenceContent />
+        </section>
+      </main>
+    );
+  }
+
+  if (screen === "hand-review") {
+    const reviewable = asTournamentReplay(
+      lastPublicReplay ?? activeReplayRef.current,
+    );
+    // Leaving review returns to whatever was underneath: the ceremony if the
+    // event just ended (that branch renders on `tournamentResult`, not on
+    // `screen`), otherwise the menu.
+    if (reviewable) {
+      return (
+        <Suspense
+          fallback={
+            <SceneLoadingFallback
+              label={formatMessage("review.deriving")}
+              onCancel={() => setScreen("home")}
+            />
+          }
+        >
+          <HandReviewScreen
+            replay={reviewable}
+            onBack={() => setScreen("home")}
+            onReviewed={(totals) => {
+              // Only the rolling totals persist; the annotations behind them
+              // are re-derivable from the replay and are not stored.
+              const previous = progress.reviewTotals ?? {
+                roundsReviewed: 0,
+                decisions: 0,
+                bestDecisions: 0,
+                totalRegretBigBlinds: 0,
+              };
+              const nextProgress: PlayerProgress = {
+                ...progress,
+                reviewTotals: {
+                  roundsReviewed: previous.roundsReviewed + 1,
+                  decisions: previous.decisions + totals.decisions,
+                  bestDecisions: previous.bestDecisions + totals.bestDecisions,
+                  totalRegretBigBlinds:
+                    previous.totalRegretBigBlinds + totals.totalRegretBigBlinds,
+                },
+              };
+              setProgress(nextProgress);
+              persistBoundary("result", settings, nextProgress);
+            }}
+          />
+        </Suspense>
+      );
+    }
+  }
+
   if (tournamentResult) {
     const completedReplay = lastPublicReplay ?? activeReplayRef.current;
     return (
       <TournamentCeremony
         result={tournamentResult}
-        {...(persistence && completedReplay
+        {...(persistence && completedReplay && replayExportEnabled
           ? {
+              /*
+                Replay export is a support and diagnostics workflow, not a
+                player feature (E27-011). "Export event replay" sat on the
+                ceremony beside Next event and Review, offering an ordinary
+                player a raw JSON file they have no use for.
+              */
               onExportReplay: async () => {
                 const result =
                   await persistence.exportPublicReplay(completedReplay);
@@ -1440,6 +1939,14 @@ export default function App() {
                         : {}),
                     }
                   : { ok: false as const, message: result.error.message };
+              },
+            }
+          : {})}
+        {...(completedReplay
+          ? {
+              onReview: () => {
+                setScreen("hand-review");
+                gameAudio.play("click");
               },
             }
           : {})}
@@ -1456,9 +1963,17 @@ export default function App() {
           tournamentResult.nextEventId
             ? () => {
                 persistBoundary("lifecycle", settings, progress);
+                // The next event's scenes are what the travel sequence is
+                // buying time for, so start fetching them now.
+                void RoomFlythrough.preload();
+                void PokerTable.preload();
+                setTravelLeg({
+                  fromEventId: tournamentResult.eventId,
+                  toEventId: tournamentResult.nextEventId!,
+                });
                 setTournamentResult(null);
                 setRunner(null);
-                setScreen("tour");
+                setScreen("career-travel");
               }
             : undefined
         }
@@ -1493,6 +2008,9 @@ export default function App() {
             void PlayableTutorial.preload();
             setScreen("tutorial");
             gameAudio.play("deal");
+          } else if (mode === "reference") {
+            setScreen("reference");
+            gameAudio.play("click");
           } else if (mode === "training") {
             beginTraining();
           } else if (mode === "timed") {
@@ -1529,6 +2047,7 @@ export default function App() {
         key={tourMode}
         mode={tourMode}
         careerResults={tourResults[tourMode]}
+        activeEventId={progress.career?.[tourMode].activeEventId}
         onBack={() => navigate("play")}
         onStartEvent={startCareerEvent}
       />

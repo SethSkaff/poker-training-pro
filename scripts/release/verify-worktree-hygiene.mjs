@@ -11,7 +11,6 @@ const ROOTS = Object.freeze([
   "config",
   "docs",
   "electron",
-  "ios",
   "scripts",
   "src",
 ]);

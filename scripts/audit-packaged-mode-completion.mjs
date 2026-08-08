@@ -17,22 +17,37 @@ import {
   waitForDevToolsPort,
   waitForPageTarget,
 } from "./audit-packaged-render-smoke.mjs";
+import { classifyCdpFailure, reportCdpOutcome } from "./lib/cdp-outcome.mjs";
 
 const PROFILE_PREFIX = "poker-training-pro-mode-completion-";
 const MODES = Object.freeze(["normal", "rational", "timed"]);
 const appPath = resolve(
   projectRoot,
-  argumentValue("--app") ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
+  argumentValue("--app") ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
 );
 const requestedMode = argumentValue("--mode");
 const modes = requestedMode ? [requestedMode] : [...MODES];
+const sceneEnabled = process.argv.includes("--scene");
 const reportPath = resolve(projectRoot, "work", "packaged-mode-completion.json");
 // Rational events can legitimately require substantially more hero decisions
 // than a Normal/Timed run while the renderer performs bounded, deterministic
 // equity work. This is a completion smoke, not a frame-time benchmark, so the
 // ceiling must cover a progressing legal event without silently changing its
 // visible action policy.
-const perModeTimeoutMs = 105_000;
+//
+// Raised from 105 s on 2026-07-26. The old value was set on 2026-07-24, one day
+// before the E11-002 policy correction, and was therefore calibrated against an
+// AI that collapsed a six-handed field in 8-9 hands. Corrected, the same events
+// run 24-29 hands (Normal) and 40-46 (Rational) -- see E13's pacing table -- so
+// a full event no longer fits. The failing run reached the ceremony's doorstep:
+// 25 hero actions and 2038 presentation skips, with the whole budget spent
+// skipping. This is the same class of stale threshold as the bot league's
+// `selectedBestRate <= 0.98` bound, which was replaced for the same reason.
+//
+// The hero policy here is check/call-else-fold, so the run length is bimodal:
+// bust early and the ceremony arrives in seconds, survive and the entire event
+// must play out. The ceiling covers the surviving case with margin.
+const perModeTimeoutMs = 300_000;
 
 if (process.platform !== "win32") throw new Error("Packaged mode completion smoke requires Windows.");
 if (!existsSync(appPath)) throw new Error(`Packaged executable not found: ${appPath}`);
@@ -42,6 +57,7 @@ if (modes.some((mode) => !MODES.includes(mode))) {
 
 const results = [];
 let failure;
+let transportTimeout;
 for (const [index, mode] of modes.entries()) {
   try {
     results.push(await completeMode(mode));
@@ -54,23 +70,34 @@ for (const [index, mode] of modes.entries()) {
     // can be attributed to the following mode's CDP target.
     if (index < modes.length - 1) await delay(1_500);
   } catch (error) {
-    failure = `${mode}: ${error instanceof Error ? error.message : String(error)}`;
+    // A CDP command deadline proves neither a passing mode nor a regression;
+    // it must not be reported as a product failure (E25-003).
+    const classified = classifyCdpFailure(error);
+    if (classified.transportTimeout) {
+      transportTimeout = `${mode}: ${classified.transportTimeout}`;
+    } else {
+      failure = `${mode}: ${classified.failure}`;
+    }
     break;
   }
 }
 
-const report = {
-  schemaVersion: 1,
-  executable: basename(appPath),
-  modes,
-  results,
-  ok: !failure && results.length === modes.length,
-  ...(failure ? { failure } : {}),
-  scope: "Packaged UI completion smoke for Normal, Rational, and Timed Table using only ordinary displayed controls. Each completed event also records heap/DOM/listener deltas and rejects retained history rows, blob URLs, or excessive heap growth. It is bounded event coverage, not a 60-minute hardware soak.",
-};
+if (!failure && !transportTimeout && results.length !== modes.length) {
+  failure = "one or more modes did not finish";
+}
+
+const report = reportCdpOutcome(
+  {
+    schemaVersion: 1,
+    executable: basename(appPath),
+    modes,
+    results,
+    scope:
+      "Packaged UI completion smoke for Normal, Rational, and Timed Table using only ordinary displayed controls. Each completed event also records heap/DOM/listener deltas and rejects retained history rows, blob URLs, or excessive heap growth. The Normal run additionally exercises the two post-event screens that exist only after a ceremony -- hand review (which must derive a real timeline, not its placeholder or error branch, and must carry its approximation notice) and career travel (recorded as skipped, with the reason, when the result unlocks no next event). It is bounded event coverage, not a 60-minute hardware soak.",
+  },
+  { failure, transportTimeout },
+);
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-if (!report.ok) throw new Error(`Packaged mode completion smoke failed: ${failure ?? "one or more modes did not finish"}`);
-console.log(JSON.stringify({ ok: true, ...report }, null, 2));
 
 async function completeMode(mode) {
   const profile = await mkdtemp(join(tmpdir(), PROFILE_PREFIX));
@@ -97,6 +124,7 @@ async function completeMode(mode) {
     await cdp.send("Performance.enable");
     await clickText(cdp, "Skip setup", deadline);
     await waitFor(cdp, ".home-reference", deadline, "home menu");
+    if (sceneEnabled) await enableSpatialScene(cdp, deadline);
     await clickSelector(cdp, 'button[aria-label="Play"]', deadline);
     await clickIfPresent(cdp, "#play-chip-ack-title ~ .startup-gate__actions button");
     await waitFor(cdp, ".mode-stage", deadline, "mode selection");
@@ -111,6 +139,9 @@ async function completeMode(mode) {
     await waitFor(cdp, ".room-flight", deadline, "championship arrival");
     await clickText(cdp, "Skip arrival", deadline);
     await waitFor(cdp, ".poker-table", deadline, "live table");
+    if (sceneEnabled && !await poll(cdp, "document.querySelector('.poker-table')?.dataset.spatialScene === 'ready'", deadline)) {
+      throw new Error("scene-enabled completion run never reached a ready WebGL table.");
+    }
 
     const desktopBridgePresent = await evaluate(
       cdp,
@@ -120,7 +151,18 @@ async function completeMode(mode) {
       throw new Error("packaged preload bridge was unavailable at the live table.");
     }
     const resourcesBefore = await readResourceSnapshot(cdp);
-    const finished = await driveToCeremony(cdp, child, deadline);
+    const finished = await driveToCeremony(cdp, child, deadline, { sceneEnabled });
+    if (sceneEnabled && !finished.eliminationWithProjection) {
+      throw new Error("scene-enabled completion run never observed an eliminated seat with a public scene projection.");
+    }
+    // Hand review and career travel both hang off the completed-event ceremony
+    // and were previously asserted only in jsdom. This is the one place in the
+    // packaged suite where a real ceremony exists, so exercising them here
+    // costs seconds instead of another full event. Only Normal is used: the
+    // surfaces are mode-independent, and paying for it three times would not
+    // buy a third of a claim.
+    const postEvent =
+      mode === "normal" ? await auditPostEventSurfaces(cdp, deadline) : undefined;
     const resourcesAfter = await readResourceSnapshot(cdp);
     assertBoundedTournamentResources(resourcesBefore, resourcesAfter);
     const errors = cdp.takeFatalEvents();
@@ -143,6 +185,7 @@ async function completeMode(mode) {
       mode,
       desktopBridgePresent,
       ...finished,
+      ...(postEvent ? { postEvent } : {}),
       ...(frameworkDiagnostics.length > 0 ? { frameworkDiagnostics } : {}),
       resources: summarizeResourceGrowth(resourcesBefore, resourcesAfter),
     };
@@ -153,34 +196,68 @@ async function completeMode(mode) {
   }
 }
 
-async function driveToCeremony(cdp, child, deadline) {
+async function enableSpatialScene(cdp, deadline) {
+  await clickSelector(cdp, 'button[aria-label="Settings"]', deadline);
+  const enabled = await evaluate(cdp, `(() => {
+    const label = [...document.querySelectorAll('label')].find((candidate) =>
+      (candidate.textContent || '').includes('3D room (preview)'),
+    );
+    const input = label?.querySelector('input[type="checkbox"]');
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (!input.checked) input.click();
+    return input.checked;
+  })()`);
+  if (!enabled) throw new Error("could not enable the ordinary 3D room setting.");
+  await clickSelector(cdp, ".night-back", deadline);
+  await waitFor(cdp, ".home-reference", deadline, "home menu after scene setting");
+}
+
+async function driveToCeremony(cdp, child, deadline, { sceneEnabled: requireScene }) {
   let actions = 0;
   let skips = 0;
   let lastActionAt = 0;
+  let sceneReadyObserved = false;
+  let eliminationWithProjection = false;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`packaged app exited during play (code ${child.exitCode}).`);
     const state = await evaluate(cdp, `(() => {
       const ceremony = document.querySelector('.ceremony-board');
       const skip = document.querySelector('button[aria-label="Skip opponent presentation and continue the hand"]');
+      const table = document.querySelector('.poker-table');
+      const eliminatedProjectedSeats = [...document.querySelectorAll('.player-seat.is-out')]
+        .filter((seat) => seat.hasAttribute('data-scene-canonical-seat')).length;
       const choices = [...document.querySelectorAll('.action-dock .action-button')]
         .filter((button) => button instanceof HTMLButtonElement && !button.disabled);
       const preferred = choices.find((button) => button.classList.contains('action-button--call')) ||
         choices.find((button) => button.classList.contains('action-button--fold'));
+      const canSkip = skip instanceof HTMLButtonElement && !skip.disabled;
+      // Skipping is driven from here so one round trip both observes and
+      // advances the presentation. The ceremony is checked first, so a run
+      // that has already finished is never charged an extra skip.
+      const finished = ceremony instanceof HTMLElement;
+      if (!finished && canSkip) skip.click();
       return {
-        ceremony: ceremony instanceof HTMLElement,
-        placement: ceremony instanceof HTMLElement
+        ceremony: finished,
+        placement: finished
           ? (ceremony.querySelector('.ceremony-board__place')?.textContent || '').trim()
           : undefined,
-        skip: skip instanceof HTMLButtonElement && !skip.disabled,
+        skip: !finished && canSkip,
         action: preferred instanceof HTMLButtonElement ? preferred.className : undefined,
+        sceneReady: table?.dataset.spatialScene === 'ready',
+        eliminatedProjectedSeats,
       };
     })()`);
+    sceneReadyObserved ||= Boolean(state?.sceneReady);
+    eliminationWithProjection ||= state?.eliminatedProjectedSeats > 0;
     if (state?.ceremony) {
       if (!state.placement) throw new Error("ceremony lacked a placement label.");
-      return { actions, skips, placement: state.placement };
+      return { actions, skips, placement: state.placement, ...(requireScene ? { sceneReadyObserved, eliminationWithProjection } : {}) };
     }
     if (state?.skip) {
-      await evaluate(cdp, `document.querySelector('button[aria-label="Skip opponent presentation and continue the hand"]')?.click()`);
+      // The click happens inside the state query above, not in a second
+      // round trip. A full Rational event now emits a couple of thousand
+      // presentation milestones, and at two CDP round trips each the driver
+      // spent its entire budget skipping rather than playing.
       skips += 1;
       await delay(35);
       continue;
@@ -203,6 +280,108 @@ async function driveToCeremony(cdp, child, deadline) {
     await delay(55);
   }
   throw new Error(`timed out before ceremony after ${actions} hero action(s) and ${skips} presentation skip(s).`);
+}
+
+/**
+ * Exercise the two screens that only exist after an event finishes.
+ *
+ * **Hand review** must derive a real review from the completed replay, not sit
+ * on its "deriving" placeholder or its error branch, and must return to the
+ * ceremony. **Career travel** only appears when the result unlocks a next
+ * event, which a check/call-else-fold hero does not always achieve, so its
+ * absence is recorded as `skipped` with the reason rather than silently
+ * counted as a pass. A run where the hero busts early proves nothing about
+ * travel, and the report should say which run it was.
+ */
+async function auditPostEventSurfaces(cdp, deadline) {
+  const result = { review: undefined, travel: undefined };
+
+  const reviewOffered = await evaluate(cdp, buttonExpression("Review key hand", false));
+  if (!reviewOffered) {
+    result.review = { reached: false, reason: "the ceremony offered no review button" };
+  } else {
+    await clickText(cdp, "Review key hand", deadline);
+    await waitFor(cdp, ".review-shell", deadline, "hand review screen");
+    // The shell renders for the deriving placeholder and the error branch too,
+    // so the shell alone is not evidence the review was produced.
+    const derived = await pollValue(cdp, `(() => {
+      const panel = document.querySelector('.review-panel');
+      if (!panel) return null;
+      const alert = panel.querySelector('[role="alert"]');
+      if (alert) return { failed: (alert.textContent || '').trim().slice(0, 160) };
+      const title = panel.querySelector('#review-title');
+      if (!title) return null;
+      return {
+        accuracy: (panel.querySelector('.review-score strong')?.textContent || '').trim(),
+        decisions: (panel.querySelector('.review-score span')?.textContent || '').trim(),
+        timelineRows: panel.querySelectorAll('.review-timeline li').length,
+        segmentGroups: panel.querySelectorAll('.review-segment-group').length,
+        // The review must never present itself as solved play.
+        approximationNotice: (panel.querySelector('.review-approximation')?.textContent || '').trim().length > 0,
+      };
+    })()`, deadline);
+    if (!derived) {
+      throw new Error("hand review never left its deriving placeholder.");
+    }
+    if (derived.failed) {
+      throw new Error(`hand review reported an error: ${derived.failed}`);
+    }
+    if (derived.timelineRows === 0) {
+      throw new Error("hand review derived no decision timeline from the completed event.");
+    }
+    if (!derived.approximationNotice) {
+      throw new Error("hand review omitted its approximation notice.");
+    }
+    result.review = { reached: true, ...derived };
+    await clickSelector(cdp, ".review-shell .night-back", deadline);
+    await waitFor(cdp, ".ceremony-board", deadline, "ceremony after review");
+  }
+
+  const travelOffered = await evaluate(cdp, buttonExpression("Next event", false));
+  if (!travelOffered) {
+    result.travel = {
+      reached: false,
+      reason: "the completed event unlocked no next event, so no travel leg exists",
+    };
+    return result;
+  }
+  await clickText(cdp, "Next event", deadline);
+  await waitFor(cdp, ".career-travel", deadline, "career travel");
+  const travel = await evaluate(cdp, `(() => {
+    const travel = document.querySelector('.career-travel');
+    if (!travel) return null;
+    return {
+      fromTier: travel.getAttribute('data-from-tier'),
+      toTier: travel.getAttribute('data-to-tier'),
+      stops: travel.querySelectorAll('.career-travel__route [data-stop-state]').length,
+      status: (travel.querySelector('[role="status"]')?.textContent || '').trim().slice(0, 120),
+      skippable: travel.querySelector('.career-travel__skip') !== null,
+    };
+  })()`);
+  if (!travel || travel.stops === 0) {
+    throw new Error(`career travel rendered no route stops: ${JSON.stringify(travel)}`);
+  }
+  // The leg must be skippable and must actually deliver the player onward.
+  await clickSelector(cdp, ".career-travel__skip", deadline);
+  const arrived = await poll(
+    cdp,
+    "document.querySelector('.room-flight') !== null || document.querySelector('.poker-table') !== null",
+    deadline,
+  );
+  if (!arrived) {
+    throw new Error("skipping career travel did not deliver the next event.");
+  }
+  result.travel = { reached: true, ...travel, arrived: true };
+  return result;
+}
+
+async function pollValue(cdp, expression, deadline) {
+  while (Date.now() < deadline) {
+    const value = await evaluate(cdp, expression);
+    if (value) return value;
+    await delay(120);
+  }
+  return null;
 }
 
 async function clickSelector(cdp, selector, deadline) {

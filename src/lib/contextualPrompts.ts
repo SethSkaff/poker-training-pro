@@ -95,8 +95,20 @@ export const CONTEXTUAL_PROMPT_ORDER: ContextualPromptId[] = [
   "decision-mistake",
 ];
 
+/*
+  Tips are **off by default** (E27-010).
+
+  They fired for ordinary poker events -- blinds going up, stacks getting
+  shorter in big blinds, waiting before acting -- so routine play arrived as
+  paragraphs of commentary in the corner of a table that was meanwhile showing
+  none of it. A player who wants the commentary can switch it on in the pause
+  menu; a player who does not should never have had to.
+
+  Critical state still reaches the player without this: the blind level is in
+  the HUD, and level changes announce through the table's live region.
+*/
 export function defaultContextualPromptState(): ContextualPromptState {
-  return { enabled: true, seen: [] };
+  return { enabled: false, seen: [] };
 }
 
 export function loadContextualPromptState(): ContextualPromptState {
@@ -109,7 +121,9 @@ export function loadContextualPromptState(): ContextualPromptState {
       seen?: unknown;
     };
     return {
-      enabled: value.enabled !== false,
+      // Absent means off, so an existing save that never expressed a
+      // preference gets the new default rather than inheriting the old one.
+      enabled: value.enabled === true,
       seen: Array.isArray(value.seen)
         ? value.seen.filter(
             (id): id is ContextualPromptId =>
@@ -137,15 +151,58 @@ export function saveContextualPromptState(state: ContextualPromptState) {
  * prompt can appear again. Backs the "Replay contextual tips" control.
  */
 export function resetContextualPromptState(): ContextualPromptState {
+  /*
+    Explicitly enabled, not the default. Tips are off by default (E27-010), but
+    "Replay contextual tips" is a player asking for them: honouring that request
+    by handing back the off-by-default state would make the control do nothing.
+  */
   return { enabled: true, seen: [] };
 }
+
+/**
+ * Whether a prompt teaches a rule or flags a situation.
+ *
+ * The original design suppressed every prompt forever after one dismissal,
+ * which is right for a rule ("this is what a side pot is" needs saying once)
+ * and wrong for a situation. "You are short-stacked" and "the blinds just went
+ * up" are actionable *every* time they happen, and a player who dismissed them
+ * in their first session never saw them again — the advice was silently
+ * switched off precisely when it started to matter.
+ */
+export const PROMPT_RECURRENCE: Record<
+  ContextualPromptId,
+  "rule" | "situation"
+> = {
+  // Rules of the game: true once, then known.
+  "all-in": "rule",
+  "side-pot": "rule",
+  "minimum-raise": "rule",
+  // Situations: recur because the circumstance recurs.
+  "blind-increase": "situation",
+  elimination: "situation",
+  qualification: "situation",
+  "elo-change": "situation",
+  "short-stack": "situation",
+  "decision-mistake": "situation",
+};
 
 export function nextContextualPrompt(
   state: ContextualPromptState,
   occurrences: readonly ContextualPromptId[],
+  /**
+   * Prompts already shown during this sitting. Situational prompts re-arm
+   * between sessions; passing this keeps them from repeating within one.
+   */
+  shownThisSession: readonly ContextualPromptId[] = [],
 ): ContextualPrompt | undefined {
   if (!state.enabled) return undefined;
-  const id = occurrences.find((candidate) => !state.seen.includes(candidate));
+  const id = occurrences.find((candidate) => {
+    if (shownThisSession.includes(candidate)) return false;
+    // A rule stays dismissed for good; a situation only for this session.
+    return PROMPT_RECURRENCE[candidate] === "situation"
+      ? true
+      : !state.seen.includes(candidate);
+  });
   return id ? CONTEXTUAL_PROMPTS[id] : undefined;
 }
 

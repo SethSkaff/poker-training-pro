@@ -39,7 +39,7 @@ describe("timed blind director", () => {
     },
   );
 
-  it("never lowers blinds or the big-blind ante", () => {
+  it("never lowers blinds and never creates an ante", () => {
     const decision = directTimedBlinds(
       input({
         elapsedMs: 18 * 60_000,
@@ -48,7 +48,7 @@ describe("timed blind director", () => {
     );
     expect(decision.smallBlind).toBeGreaterThanOrEqual(1_000);
     expect(decision.bigBlind).toBeGreaterThanOrEqual(2_000);
-    expect(decision.bigBlindAnte).toBeGreaterThanOrEqual(2_000);
+    expect(decision.bigBlindAnte).toBe(0);
   });
 
   it("increases public pressure later in the same session", () => {
@@ -129,7 +129,7 @@ describe("timed blind director", () => {
       }),
     );
     expect(decision.bigBlind).toBeGreaterThanOrEqual(12_300);
-    expect(decision.bigBlindAnte).toBe(decision.bigBlind);
+    expect(decision.bigBlindAnte).toBe(0);
   });
 
   it("forces the shorter heads-up stack all-in at the deadline", () => {

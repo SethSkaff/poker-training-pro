@@ -1,6 +1,6 @@
 import type { PokerAction, Street } from "../types/poker";
 
-export type DecisionTimingSurface = "desktop" | "mobile";
+export type DecisionTimingSurface = "desktop";
 
 export interface DecisionTimingInput {
   seed: string;
@@ -81,10 +81,7 @@ export function calculateAiDecisionTiming(
     boundedDifficultyMs +
     Math.round(tempo * 130) +
     antiTellNoiseMs;
-  const surfaceDelay =
-    surface === "mobile"
-      ? clamp(Math.round(desktopDelay * 0.66), 480, 2_800)
-      : clamp(desktopDelay, 650, 4_300);
+  const surfaceDelay = clamp(desktopDelay, 650, 4_300);
   const delayMs = Math.max(180, Math.round(surfaceDelay / presentationRate));
 
   return {

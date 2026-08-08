@@ -10,7 +10,9 @@ import {
   selectNearTransferScenario,
 } from "./trainingEngine";
 
-export const TRAINING_CALIBRATION_VERSION = "training-calibration-1.0.0";
+// 1.1.0 diversifies the deterministic next-scenario selector and removes the
+// former two-prompt cycle; the baseline is intentionally re-reviewed below.
+export const TRAINING_CALIBRATION_VERSION = "training-calibration-1.1.0";
 
 export type CalibrationDifficultyBand =
   | "foundation"

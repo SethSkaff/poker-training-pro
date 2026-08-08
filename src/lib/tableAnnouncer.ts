@@ -13,6 +13,8 @@ export interface TableAnnouncement {
 }
 
 export interface TablePotResultSnapshot {
+  /** Public hand id, used to announce a result exactly once at showdown. */
+  id: string;
   /** Display names already resolved to "You" for the hero, exactly as the
    *  visible seat labels read -- never a raw internal identifier and never
    *  inferred from hidden cards. */
@@ -41,9 +43,7 @@ export interface TableAnnouncerSnapshot {
    *  read as a running per-second countdown. */
   bigBlind: number;
   smallBlind: number;
-  /** 1-indexed hand number, when a tournament/Timed Table backs the table. A
-   *  change signals a new hand has begun, which is the single moment
-   *  `potResult` (for the hand that just ended) is announced. */
+  /** 1-indexed hand number, when a tournament/Timed Table backs the table. */
   handNumber?: number;
   /** The hero's own action for the CURRENT hand, or null before acting. */
   heroAction: PokerAction | null;
@@ -99,21 +99,20 @@ export function deriveTableAnnouncements(
     });
   }
 
-  // --- Results: the hand that just finished, announced exactly once at the
-  // moment the NEXT hand's number appears alongside its public result.
+  // --- Results: a public result is announced exactly once when the showdown
+  // event reaches the table. The same id carries into the next hand without
+  // repeating the message.
   if (
-    typeof previous.handNumber === "number" &&
-    typeof next.handNumber === "number" &&
-    next.handNumber !== previous.handNumber &&
     next.potResult &&
-    next.potResult.winnerNames.length > 0
+    next.potResult.winnerNames.length > 0 &&
+    next.potResult.id !== previous.potResult?.id
   ) {
     const { winnerNames, amount, hadSidePot } = next.potResult;
     const names = winnerNames.join(
       winnerNames.length > 1 ? formatMessage("table.announce.namesJoiner") : "",
     );
     announcements.push({
-      id: `result-${next.handNumber}`,
+      id: `result-${next.potResult.id}`,
       priority: "polite",
       text: [
         formatMessage(

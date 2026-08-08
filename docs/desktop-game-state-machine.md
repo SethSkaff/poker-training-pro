@@ -182,7 +182,10 @@ stateDiagram-v2
     EventResult --> LoadingNew: Retry same scored event
     EventResult --> NormalSetup: Next/choose event in Normal
     EventResult --> RationalSetup: Next/choose event in Rational
+    EventResult --> HandReview: Review this round
     EventResult --> MainMenu: Return to menu or Back
+    HandReview --> EventResult: Back
+    HandReview --> MainMenu: Back when the ceremony has been dismissed
     TimedResult --> LoadingNew: Retry same duration as new scored run
     TimedResult --> TimedSetup: Change duration
     TimedResult --> MainMenu: Return to menu or Back
@@ -321,6 +324,7 @@ and Cancel through this table. A modal consumes Back before its parent state.
 | Resume-ready recap | Stay paused | Stay paused | Snapshot remains resumable; quit | Resume-ready or exit |
 | Training result | Return to main menu after save receipt | Same | Finish save, then quit | Main menu or exit |
 | Normal/Rational event result | Return to main menu after save receipt | Same | Finish save, then quit | Main menu or exit |
+| Hand review | Return to the event result, or the menu once it is dismissed | Same | Abort derivation; nothing to save (annotations are ephemeral), then quit | Event result, main menu, or exit |
 | Timed result | Return to main menu after save receipt | Same | Finish save, then quit | Main menu or exit |
 | Quit confirmation | Do not quit | Do not quit | Confirm quit | Prior state or exit |
 
@@ -335,6 +339,27 @@ Rules:
    durable save receipt before its actions become enabled.
 5. Retry from a completed result always creates a new run/attempt ID. It cannot
    mutate the already committed result.
+
+### HandReview
+
+Entered from the event-result ceremony's **Review this round** action, which
+appears only when a replay for the completed round is available.
+
+- **Derived, never stored.** The screen replays the round's stored envelope and
+  recomputes each hero decision on demand. Annotations are ephemeral; only
+  aggregates are eligible to persist, so leaving needs no save boundary.
+- **Cancellation is required, not optional.** Derivation runs equity
+  simulations per decision. Back aborts the in-flight derivation at the next
+  decision boundary rather than letting an abandoned round finish computing.
+- **Redaction is reapplied.** Reconstruction from a seed could in principle
+  recover every player's cards. Each decision passes through
+  `createInformationSet(..., heroId)`, so the review can only show what the
+  player could legitimately see at that moment.
+- **Fails closed on version drift.** A replay recorded by a different engine,
+  content, or policy version is refused rather than reconstructed into a
+  different hand and presented as the one that was played.
+- **Mid-review quit/background** follows the ordinary lifecycle policy: there is
+  no uncommitted state, so the pause/suspend path simply aborts derivation.
 
 ## Persistence and recovery protocol
 

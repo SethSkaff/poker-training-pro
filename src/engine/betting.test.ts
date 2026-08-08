@@ -33,6 +33,24 @@ function act(
 }
 
 describe("betting round", () => {
+  it("allows a legal open shove when action first reaches the player", () => {
+    const state = createBettingRound(
+      [player("hero", 950), player("bb", 950, 50)],
+      ["hero", "bb"],
+      { minimumBet: 50, nominalOpeningBet: 50 },
+    );
+    const legal = getLegalActions(state, "hero");
+    expect(legal.allIn).toBe(true);
+    expect(legal.allInTo).toBe(950);
+    const result = applyBettingAction(state, "hero", { type: "all-in" });
+    expect(result.event).toMatchObject({ type: "all-in", allIn: true });
+    expect(result.state.players.find((player) => player.id === "hero")).toMatchObject({
+      stack: 0,
+      totalCommitted: 950,
+      status: "all-in",
+    });
+  });
+
   it("gives the big blind an option after a limped pre-flop round", () => {
     let state = createBettingRound(
       [
@@ -146,4 +164,3 @@ describe("betting round", () => {
     expect(state.handComplete).toBe(true);
   });
 });
-

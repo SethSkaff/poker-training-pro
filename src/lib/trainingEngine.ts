@@ -17,6 +17,7 @@ import {
   parseQuizMathAnswer,
   type NumericLocaleResource,
 } from "./localeNumbers";
+import { compareHandValues, createDeck, createSeededRandom, evaluateBestHand } from "../engine";
 
 const TABLE_CLOCK_MS = 30_000;
 
@@ -111,8 +112,22 @@ export interface TimingSummary {
 
 export interface NearTransferOptions {
   completedScenarioIds?: Iterable<string>;
+  /** Most recent completed/current ids, newest last. Kept out of the next draw. */
+  recentScenarioIds?: Iterable<string>;
   focusTopic?: MathTopic;
   preferDifferentStreet?: boolean;
+  /**
+   * The two ratings deliberately stay separate: a player can receive a more
+   * demanding decision while still practising approachable arithmetic, or the
+   * reverse. Omit both to use the bank's neutral, diverse ordering.
+   */
+  decisionElo?: number;
+  mathElo?: number;
+}
+
+export interface TrainingStartOptions {
+  decisionElo?: number;
+  mathElo?: number;
 }
 
 /**
@@ -390,10 +405,144 @@ function sharedTagCount(
   return second.tags.filter((tag) => tags.has(tag)).length;
 }
 
+function cardSignature(cards: RatedTrainingScenario["heroCards"]): string {
+  return cards.map((card) => `${card.rank}-${card.suit}`).sort().join(",");
+}
+
+function boardTextureSignature(scenario: RatedTrainingScenario): string {
+  const suits = scenario.board.reduce<Record<string, number>>((counts, card) => {
+    counts[card.suit] = (counts[card.suit] ?? 0) + 1;
+    return counts;
+  }, {});
+  const ranks = scenario.board.reduce<Record<string, number>>((counts, card) => {
+    counts[card.rank] = (counts[card.rank] ?? 0) + 1;
+    return counts;
+  }, {});
+  return [
+    scenario.street,
+    Object.values(suits).sort((left, right) => right - left).join("-"),
+    Object.values(ranks).sort((left, right) => right - left).join("-"),
+  ].join(":");
+}
+
+function stackStructureSignature(scenario: RatedTrainingScenario): string {
+  const hero = scenario.players.find((player) => player.id === "hero");
+  const effectiveBigBlinds = hero ? hero.stack / scenario.blinds[1] : 0;
+  const band =
+    effectiveBigBlinds <= 12 ? "short" : effectiveBigBlinds <= 30 ? "medium" : "deep";
+  const livePlayers = scenario.players.filter((player) => player.status !== "folded").length;
+  return `${band}:${livePlayers}`;
+}
+
+function potOddsSignature(scenario: RatedTrainingScenario): string {
+  if (scenario.amountToCall === 0) return "free";
+  const requiredEquity = scenario.amountToCall / (scenario.pot + scenario.amountToCall);
+  return `${Math.round(requiredEquity * 10) * 10}%`;
+}
+
+function wordingSimilarity(first: string, second: string): number {
+  const words = (value: string) => new Set(value.toLowerCase().match(/[a-z]{4,}/g) ?? []);
+  const firstWords = words(first);
+  const secondWords = words(second);
+  if (firstWords.size === 0 || secondWords.size === 0) return 0;
+  let shared = 0;
+  for (const word of firstWords) if (secondWords.has(word)) shared += 1;
+  return shared / Math.min(firstWords.size, secondWords.size);
+}
+
+/** Reports the poker features selection treats as near-duplicates. */
+export function trainingScenarioHistorySimilarity(
+  candidate: RatedTrainingScenario,
+  recent: RatedTrainingScenario,
+): {
+  sameHeroCards: boolean;
+  sameBoardTexture: boolean;
+  sameStackStructure: boolean;
+  samePotOddsThreshold: boolean;
+  sameAction: boolean;
+  sameLesson: boolean;
+  wordingOverlap: number;
+} {
+  return {
+    sameHeroCards: cardSignature(candidate.heroCards) === cardSignature(recent.heroCards),
+    sameBoardTexture: boardTextureSignature(candidate) === boardTextureSignature(recent),
+    sameStackStructure: stackStructureSignature(candidate) === stackStructureSignature(recent),
+    samePotOddsThreshold: potOddsSignature(candidate) === potOddsSignature(recent),
+    sameAction: candidate.recommendedAction === recent.recommendedAction,
+    sameLesson: candidate.mathQuestion.topic === recent.mathQuestion.topic,
+    wordingOverlap: wordingSimilarity(candidate.prompt, recent.prompt),
+  };
+}
+
+function recentHistoryPenalty(
+  candidate: RatedTrainingScenario,
+  recentScenarios: readonly RatedTrainingScenario[],
+): number {
+  return recentScenarios.reduce((penalty, recent) => {
+    const similarity = trainingScenarioHistorySimilarity(candidate, recent);
+    return penalty +
+      (similarity.sameHeroCards ? 500 : 0) +
+      (similarity.sameBoardTexture ? 28 : 0) +
+      (similarity.sameStackStructure ? 12 : 0) +
+      (similarity.samePotOddsThreshold ? 14 : 0) +
+      (similarity.sameAction ? 32 : 0) +
+      (similarity.sameLesson ? 28 : 0) +
+      (similarity.wordingOverlap >= 0.45 ? 20 : 0);
+  }, 0);
+}
+
+const BEGINNER_ELO_CEILING = 1_100;
+const ADVANCED_ELO_FLOOR = 1_500;
+
+function assertOptionalRating(rating: number | undefined, label: string): void {
+  if (rating !== undefined) assertFinite(rating, label);
+}
+
 /**
- * Chooses a deterministic near-transfer problem. The selector prioritizes the
- * same mathematical operation on a changed surface/street, then the same
- * transfer group, similar difficulty, and shared vocabulary.
+ * Returns a separate selection adjustment for decision and maths skill.
+ *
+ * The guardrails keep an early player away from the extreme end of the bank
+ * and keep an established player out of its introductory material. Within
+ * those bounds, distance from each authored Elo calibrates the ranking. The
+ * values are intentionally modest enough that the recent-history and
+ * near-transfer rules still prevent a mechanical loop.
+ */
+function adaptiveDifficultyAdjustment(
+  scenario: RatedTrainingScenario,
+  decisionElo: number | undefined,
+  mathElo: number | undefined,
+): number {
+  assertOptionalRating(decisionElo, "decisionElo");
+  assertOptionalRating(mathElo, "mathElo");
+
+  let score = 0;
+  if (decisionElo !== undefined) {
+    if (
+      (decisionElo <= BEGINNER_ELO_CEILING &&
+        scenario.training.decisionDifficulty > 1_340) ||
+      (decisionElo >= ADVANCED_ELO_FLOOR &&
+        scenario.training.decisionDifficulty < 1_210)
+    ) {
+      return -10_000;
+    }
+    score -= Math.abs(scenario.training.decisionDifficulty - decisionElo) / 16;
+  }
+  if (mathElo !== undefined) {
+    if (
+      (mathElo <= BEGINNER_ELO_CEILING && scenario.training.mathDifficulty > 1_230) ||
+      (mathElo >= ADVANCED_ELO_FLOOR && scenario.training.mathDifficulty < 1_160)
+    ) {
+      return -10_000;
+    }
+    score -= Math.abs(scenario.training.mathDifficulty - mathElo) / 16;
+  }
+  return score;
+}
+
+/**
+ * Chooses a deterministic but deliberately diverse next problem. Near-transfer
+ * is a small tie-breaker, never a dominant score: a training session must not
+ * collapse into a two-card cycle merely because two prompts share a topic.
  */
 export function selectNearTransferScenario(
   currentScenario: RatedTrainingScenario | string,
@@ -408,23 +557,59 @@ export function selectNearTransferScenario(
   if (!current) return undefined;
 
   const completed = new Set(options.completedScenarioIds ?? []);
+  const recent = [...(options.recentScenarioIds ?? [])].slice(-6);
+  const recentSet = new Set([...recent, current.id]);
+  const recentScenarios = recent
+    .map((id) => pool.find((scenario) => scenario.id === id))
+    .filter((scenario): scenario is RatedTrainingScenario => scenario !== undefined);
   const preferDifferentStreet = options.preferDifferentStreet ?? true;
-  const candidates = pool
+
+  // Constraint-driven reject stage (E15-002), run before scoring so a
+  // near-duplicate cannot win on weights alone. It is soft by design: with a
+  // twelve-scenario bank a hard filter would eventually reject everything, so
+  // an empty survivor set falls back to scoring the whole pool. Serving a
+  // repeat is worse than serving something fresh, but better than serving
+  // nothing.
+  const rejection = rejectUnsuitableScenarios(current, pool, {
+    recentScenarios,
+  });
+  const rejectedIds = new Set(
+    rejection.rejected
+      .filter((entry) => entry.reason === "near-duplicate-of-recent")
+      .map((entry) => entry.id),
+  );
+  const eligible =
+    rejection.considered > 0
+      ? pool.filter((scenario) => !rejectedIds.has(scenario.id))
+      : pool;
+
+  const candidates = eligible
     .filter((scenario) => scenario.id !== current.id)
     .map((scenario) => {
       let score = 0;
-      if (!completed.has(scenario.id)) score += 40;
-      if (scenario.mathQuestion.topic === current.mathQuestion.topic) score += 100;
-      if (scenario.training.transferGroup === current.training.transferGroup) score += 65;
+      // A fresh scenario always wins over a superficially similar repeat. This
+      // makes one complete bank pass the first priority; history similarity
+      // then determines the order within that pass.
+      if (!completed.has(scenario.id)) score += 1_000;
+      if (recentSet.has(scenario.id)) score -= 10_000;
+      if (scenario.mathQuestion.topic !== current.mathQuestion.topic) score += 28;
+      if (scenario.training.transferGroup !== current.training.transferGroup) score += 16;
+      if (scenario.recommendedAction !== current.recommendedAction) score += 24;
       if (
         options.focusTopic &&
         scenario.mathQuestion.topic === options.focusTopic
       ) {
         score += 120;
       }
-      score += sharedTagCount(current, scenario) * 6;
+      score += sharedTagCount(current, scenario) * 2;
       score -= Math.abs(current.difficulty - scenario.difficulty) * 8;
       if (preferDifferentStreet && scenario.street !== current.street) score += 12;
+      score += adaptiveDifficultyAdjustment(
+        scenario,
+        options.decisionElo,
+        options.mathElo,
+      );
+      score -= recentHistoryPenalty(scenario, recentScenarios);
       return { scenario, score };
     })
     .sort((left, right) => {
@@ -433,4 +618,196 @@ export function selectNearTransferScenario(
     });
 
   return candidates[0]?.scenario;
+}
+
+/** A reproducible initial prompt that cannot always be the first bank entry. */
+export function selectTrainingSessionStartScenario(
+  playerName: string,
+  completedScenarioIds: Iterable<string> = [],
+  pool: RatedTrainingScenario[] = trainingScenarios,
+  options: TrainingStartOptions = {},
+): RatedTrainingScenario | undefined {
+  if (pool.length === 0) return undefined;
+  const completed = new Set(completedScenarioIds);
+  const candidates = pool.filter((scenario) => !completed.has(scenario.id));
+  const source = candidates.length ? candidates : pool;
+  let hash = 2166136261;
+  for (const character of `${playerName}:${completed.size}`) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  assertOptionalRating(options.decisionElo, "decisionElo");
+  assertOptionalRating(options.mathElo, "mathElo");
+  const adaptiveSource = source
+    .map((scenario) => ({
+      scenario,
+      score: adaptiveDifficultyAdjustment(
+        scenario,
+        options.decisionElo,
+        options.mathElo,
+      ),
+    }))
+    .filter(({ score }) => score > -10_000);
+  const ranked = adaptiveSource.length ? adaptiveSource : source.map((scenario) => ({ scenario, score: 0 }));
+  const highestScore = Math.max(...ranked.map(({ score }) => score));
+  const suitable = ranked
+    .filter(({ score }) => score >= highestScore - 10)
+    .map(({ scenario }) => scenario);
+  return suitable[(hash >>> 0) % suitable.length];
+}
+
+/**
+ * Estimated hero equity for a Training scenario.
+ *
+ * Training scenarios author hero cards and a board but **no villain range**, so
+ * there is no stated range to run against. Rather than invent one, this
+ * measures equity against a uniformly random opponent hand from the remaining
+ * deck and the caller labels it as exactly that. It is the honest baseline a
+ * learner needs to compare against the required equity: "you needed 28% and
+ * you had roughly 61% against a random hand" is a true and useful statement,
+ * whereas a fabricated range would be neither.
+ *
+ * Deterministic: seeded from the scenario id, so the same scenario always
+ * reports the same figure and the feedback panel never flickers.
+ */
+export function estimateTrainingEquity(
+  scenario: RatedTrainingScenario,
+  simulations = 400,
+): { equity: number; simulations: number; assumption: "random-hand" } {
+  const known = new Set(
+    [...scenario.heroCards, ...scenario.board].map(
+      (card) => `${card.rank}${card.suit}`,
+    ),
+  );
+  const deck = createDeck().filter(
+    (card) => !known.has(`${card.rank}${card.suit}`),
+  );
+  const runout = 5 - scenario.board.length;
+  // Two villain cards plus the remaining board must fit in the stub.
+  if (runout < 0 || deck.length < runout + 2 || scenario.heroCards.length !== 2) {
+    return { equity: 0, simulations: 0, assumption: "random-hand" };
+  }
+
+  const random = createSeededRandom(`training-equity:${scenario.id}`);
+  let score = 0;
+  for (let trial = 0; trial < simulations; trial += 1) {
+    const stub = deck.map((card) => ({ ...card }));
+    const drawn = runout + 2;
+    for (let index = 0; index < drawn; index += 1) {
+      const target = index + Math.floor(random() * (stub.length - index));
+      [stub[index], stub[target]] = [stub[target], stub[index]];
+    }
+    const board = [...scenario.board, ...stub.slice(0, runout)];
+    const villain = stub.slice(runout, runout + 2);
+    const heroValue = evaluateBestHand([...scenario.heroCards, ...board]);
+    const villainValue = evaluateBestHand([...villain, ...board]);
+    const comparison = compareHandValues(heroValue, villainValue);
+    if (comparison > 0) score += 1;
+    else if (comparison === 0) score += 0.5;
+  }
+
+  return {
+    equity: score / simulations,
+    simulations,
+    assumption: "random-hand",
+  };
+}
+
+/**
+ * How alike two scenarios feel to a player, on 0..1.
+ *
+ * The schema's structural fingerprint is strict equality, so a scenario
+ * differing by a single chip passes as distinct while still feeling like the
+ * same question. A learner does not experience "pot 2700" and "pot 2750" as
+ * different problems, and serving both in a row wastes a rep. This measures
+ * the dimensions that actually drive the decision.
+ */
+export function trainingScenarioSimilarity(
+  left: RatedTrainingScenario,
+  right: RatedTrainingScenario,
+): number {
+  if (left.id === right.id) return 1;
+
+  const near = (a: number, b: number, tolerance: number) =>
+    Math.abs(a - b) <= Math.max(1, Math.max(Math.abs(a), Math.abs(b)) * tolerance);
+
+  // Weighted so the shape of the decision dominates cosmetic differences.
+  const checks: Array<[weight: number, same: boolean]> = [
+    [3, left.street === right.street],
+    [3, left.mathQuestion.topic === right.mathQuestion.topic],
+    [3, left.recommendedAction === right.recommendedAction],
+    [2, left.training.transferGroup === right.training.transferGroup],
+    // Pot and price within 10% read as the same spot.
+    [2, near(left.pot, right.pot, 0.1)],
+    [2, near(left.amountToCall, right.amountToCall, 0.1)],
+    [1, left.heroSeat === right.heroSeat],
+    [1, Math.abs(left.difficulty - right.difficulty) <= 0.5],
+    [1, left.board.length === right.board.length],
+  ];
+
+  const total = checks.reduce((sum, [weight]) => sum + weight, 0);
+  const matched = checks.reduce(
+    (sum, [weight, same]) => sum + (same ? weight : 0),
+    0,
+  );
+  return matched / total;
+}
+
+/** Above this, two scenarios are treated as the same question. */
+export const NEAR_DUPLICATE_SIMILARITY = 0.82;
+
+export type ScenarioRejectionReason =
+  | "current"
+  | "recently-served"
+  | "near-duplicate-of-recent"
+  | "off-target-difficulty";
+
+export interface ScenarioSelectionTrace {
+  selected?: RatedTrainingScenario;
+  /** Every candidate the reject stage removed, with the reason it went. */
+  rejected: Array<{ id: string; reason: ScenarioRejectionReason }>;
+  considered: number;
+}
+
+/**
+ * The explicit reject stage E15-002 asks for, exposed separately from
+ * scoring so the reasons are inspectable rather than buried in a weight.
+ *
+ * Rejection is deliberately *soft*: if every candidate is rejected the caller
+ * falls back to scoring the full pool, because serving a repeat beats serving
+ * nothing. A hard filter would deadlock a twelve-scenario bank.
+ */
+export function rejectUnsuitableScenarios(
+  current: RatedTrainingScenario,
+  pool: readonly RatedTrainingScenario[],
+  options: {
+    recentScenarios?: readonly RatedTrainingScenario[];
+    decisionElo?: number;
+  } = {},
+): ScenarioSelectionTrace {
+  const recent = options.recentScenarios ?? [];
+  const rejected: ScenarioSelectionTrace["rejected"] = [];
+  const survivors: RatedTrainingScenario[] = [];
+
+  for (const scenario of pool) {
+    if (scenario.id === current.id) {
+      rejected.push({ id: scenario.id, reason: "current" });
+      continue;
+    }
+    if (recent.some((entry) => entry.id === scenario.id)) {
+      rejected.push({ id: scenario.id, reason: "recently-served" });
+      continue;
+    }
+    const duplicateOfRecent = [current, ...recent].some(
+      (entry) =>
+        trainingScenarioSimilarity(entry, scenario) >= NEAR_DUPLICATE_SIMILARITY,
+    );
+    if (duplicateOfRecent) {
+      rejected.push({ id: scenario.id, reason: "near-duplicate-of-recent" });
+      continue;
+    }
+    survivors.push(scenario);
+  }
+
+  return { rejected, considered: survivors.length };
 }

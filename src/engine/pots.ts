@@ -9,6 +9,8 @@ export interface PlayerContribution {
   playerId: string;
   amount: number;
   folded?: boolean;
+  /** Only an all-in cap can start a new contestable side-pot layer. */
+  allIn?: boolean;
 }
 
 export interface ContestablePot {
@@ -27,6 +29,13 @@ export interface PotRefund {
 
 export interface PotBuildResult {
   pots: ContestablePot[];
+  refunds: PotRefund[];
+  totalContributed: number;
+}
+
+export interface LivePotBuildResult {
+  pots: ContestablePot[];
+  /** Contributions that are currently unmatched and still await return. */
   refunds: PotRefund[];
   totalContributed: number;
 }
@@ -76,6 +85,36 @@ export function buildPots(
   const pots: ContestablePot[] = [];
   const refundMap = new Map<string, number>();
   let previousCap = 0;
+  const allInCaps = new Set(
+    positive
+      .filter((entry) => entry.allIn)
+      .map((entry) => entry.amount),
+  );
+  let currentPot:
+    | {
+        amount: number;
+        cap: number;
+        contributorIds: string[];
+        eligiblePlayerIds: string[];
+      }
+    | undefined;
+
+  const flushPot = () => {
+    if (!currentPot) return;
+    if (currentPot.amount <= 0) {
+      currentPot = undefined;
+      return;
+    }
+    if (currentPot.eligiblePlayerIds.length === 0) {
+      throw new Error("A contested contribution layer has no eligible winner");
+    }
+    pots.push({
+      id: pots.length === 0 ? "main" : `side-${pots.length}`,
+      kind: pots.length === 0 ? "main" : "side",
+      ...currentPot,
+    });
+    currentPot = undefined;
+  };
 
   for (const cap of levels) {
     const contributors = positive.filter((entry) => entry.amount >= cap);
@@ -91,19 +130,29 @@ export function buildPots(
     const eligiblePlayerIds = contributors
       .filter((entry) => !entry.folded)
       .map((entry) => entry.playerId);
-    if (eligiblePlayerIds.length === 0) {
-      throw new Error("A contested contribution layer has no eligible winner");
+    if (!currentPot) {
+      currentPot = {
+        amount: 0,
+        cap,
+        contributorIds: [],
+        eligiblePlayerIds: [],
+      };
     }
-
-    pots.push({
-      id: pots.length === 0 ? "main" : `side-${pots.length}`,
-      kind: pots.length === 0 ? "main" : "side",
-      amount,
-      cap,
-      contributorIds: contributors.map((entry) => entry.playerId),
-      eligiblePlayerIds,
-    });
+    currentPot.amount += amount;
+    currentPot.cap = cap;
+    for (const playerId of contributors.map((entry) => entry.playerId)) {
+      if (!currentPot.contributorIds.includes(playerId)) {
+        currentPot.contributorIds.push(playerId);
+      }
+    }
+    for (const playerId of eligiblePlayerIds) {
+      if (!currentPot.eligiblePlayerIds.includes(playerId)) {
+        currentPot.eligiblePlayerIds.push(playerId);
+      }
+    }
+    if (allInCaps.has(cap)) flushPot();
   }
+  flushPot();
 
   return {
     pots,
@@ -115,6 +164,57 @@ export function buildPots(
       (sum, contribution) => sum + contribution.amount,
       0,
     ),
+  };
+}
+
+/**
+ * Builds the public, in-progress pot view. Unequal active commitments are
+ * ordinary betting and remain one pot; contribution layers become separate
+ * only at an actual all-in cap. Pending unmatched returns remain included in
+ * the inclusive hand total until settlement applies the refund.
+ */
+export function buildLivePots(
+  contributions: readonly PlayerContribution[],
+): LivePotBuildResult {
+  const totalContributed = contributions.reduce(
+    (sum, contribution) => sum + contribution.amount,
+    0,
+  );
+  if (totalContributed === 0) {
+    return { pots: [], refunds: [], totalContributed: 0 };
+  }
+
+  const built = buildPots(contributions);
+  if (!contributions.some((contribution) => contribution.allIn)) {
+    const positive = contributions.filter((contribution) => contribution.amount > 0);
+    const eligiblePlayerIds = positive
+      .filter((contribution) => !contribution.folded)
+      .map((contribution) => contribution.playerId);
+    if (eligiblePlayerIds.length === 0) {
+      return { ...built, pots: [] };
+    }
+    return {
+      pots: [{
+        id: "main",
+        kind: "main",
+        amount: totalContributed,
+        cap: Math.max(...positive.map((contribution) => contribution.amount)),
+        contributorIds: positive.map((contribution) => contribution.playerId),
+        eligiblePlayerIds,
+      }],
+      refunds: built.refunds,
+      totalContributed,
+    };
+  }
+
+  if (built.pots.length === 0 || built.refunds.length === 0) return built;
+  const [main, ...sidePots] = built.pots;
+  return {
+    ...built,
+    pots: [
+      { ...main, amount: main.amount + built.refunds.reduce((sum, refund) => sum + refund.amount, 0) },
+      ...sidePots,
+    ],
   };
 }
 
@@ -237,4 +337,3 @@ export function resolvePots(
 
   return { awards, evaluatedHands };
 }
-

@@ -86,26 +86,40 @@ function driveEventToCompletion(
   return { completed: session.status === "complete", policyDecisions };
 }
 
+/*
+  One case per seed rather than a loop inside a single test.
+
+  Each seed is an independent regression, so the assertions are unchanged --
+  but driving five whole tournaments in one synchronous `it` blocks the worker
+  for the duration of all five, and Vitest cannot interrupt synchronous work.
+  A worker blocked past 60 s cannot answer the reporter's `onTaskUpdate` RPC,
+  and the run then exits non-zero while reporting every test green. Split, a
+  failure also names the seed that caused it instead of the batch it was in.
+*/
 describe("policy bet/raise targets are always legal whole-chip amounts", () => {
-  it("plays previously-aborting Normal-mode career seeds to completion", () => {
-    for (const seed of REGRESSION_SEEDS.normal) {
+  it.each(REGRESSION_SEEDS.normal)(
+    "plays previously-aborting Normal-mode career seed %s to completion",
+    (seed) => {
       const { completed, policyDecisions } = driveEventToCompletion(
         "normal",
         seed,
       );
       expect(policyDecisions).toBeGreaterThan(0);
       expect(completed).toBe(true);
-    }
-  }, 120_000);
+    },
+    60_000,
+  );
 
-  it("plays previously-aborting Rational-mode career seeds to completion", () => {
-    for (const seed of REGRESSION_SEEDS.rational) {
+  it.each(REGRESSION_SEEDS.rational)(
+    "plays previously-aborting Rational-mode career seed %s to completion",
+    (seed) => {
       const { completed, policyDecisions } = driveEventToCompletion(
         "rational",
         seed,
       );
       expect(policyDecisions).toBeGreaterThan(0);
       expect(completed).toBe(true);
-    }
-  }, 120_000);
+    },
+    60_000,
+  );
 });

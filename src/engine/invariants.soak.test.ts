@@ -104,11 +104,14 @@ describe("release invariant soak", () => {
         () => 1 + Math.floor(random() * 500),
       );
       const leaderAmount = Math.max(...otherAmounts) + 1 + Math.floor(random() * 50);
+      const shortStackIndex = otherAmounts.indexOf(Math.min(...otherAmounts));
       const contributions = [leaderAmount, ...otherAmounts].map(
         (amount, index) => ({
           playerId: `p${index}`,
           amount,
-          folded: index > 0 && random() < 0.35,
+          folded:
+            index > 0 && index !== shortStackIndex + 1 && random() < 0.35,
+          allIn: index === shortStackIndex + 1,
         }),
       );
       const built = buildPots(contributions);

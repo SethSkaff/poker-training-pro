@@ -145,14 +145,14 @@ describe("compressed career event selection", () => {
     for (const level of event.structure.levels.slice(0, 12)) {
       expect(level.smallBlind / level.bigBlind).toBeGreaterThanOrEqual(0.4);
       expect(level.smallBlind / level.bigBlind).toBeLessThanOrEqual(2 / 3);
-      expect(level.bigBlindAnte).toBe(level.bigBlind);
+      expect(level.bigBlindAnte).toBe(0);
     }
     expect(event.structure.maxSeats).toBe(SESSION_TABLE_SIZE);
   });
 });
 
 describe("six-seat tournament session", () => {
-  it("seats and deals deterministically, posting a big-blind ante and blinds", () => {
+  it("seats and deals deterministically, posting only the blinds", () => {
     const first = beginTournamentSessionHand(createSession());
     const replay = beginTournamentSessionHand(createSession());
     const hand = first.activeHand;
@@ -162,13 +162,67 @@ describe("six-seat tournament session", () => {
     expect(first.tournament.players).toHaveLength(6);
     expect(first.tournament.players).toEqual(replay.tournament.players);
     expect(hand.holeCards).toEqual(replay.activeHand?.holeCards);
-    expect(hand.information.pot).toBe(
-      level.bigBlindAnte + level.smallBlind + level.bigBlind,
-    );
+    expect(hand.information.pot).toBe(level.smallBlind + level.bigBlind);
+    expect(hand.information.pot).toBe(75);
+    expect(hand.information.actions.map((action) => action.type)).toEqual([
+      "small-blind",
+      "big-blind",
+    ]);
     expect(hand.information.actingPlayerId).toBe(nextToAct(hand.betting));
     expect(new Set(first.tournament.players.map((player) => player.seat)).size).toBe(
       6,
     );
+  });
+
+  it("assigns dealer, blinds, and pre-flop action in one clockwise engine sequence", () => {
+    const session = beginTournamentSessionHand(createSession("normal", "clockwise-blinds"));
+    const hand = session.activeHand;
+    if (!hand) throw new Error("Expected a hand");
+
+    const active = session.tournament.players
+      .filter((player) => player.status === "active")
+      .sort((left, right) => (left.seat as number) - (right.seat as number));
+    const canonicalSeatFor = (id: string) => active.find((player) => player.id === id)?.seat;
+    const advance = (seat: number, distance: number) => ((seat - 1 + distance) % SESSION_TABLE_SIZE) + 1;
+
+    expect(canonicalSeatFor(hand.smallBlindPlayerId)).toBe(
+      advance(hand.buttonSeat, 1),
+    );
+    expect(canonicalSeatFor(hand.bigBlindPlayerId)).toBe(
+      advance(hand.buttonSeat, 2),
+    );
+    expect(canonicalSeatFor(hand.betting.actionOrder[0] as string)).toBe(
+      advance(hand.buttonSeat, 3),
+    );
+  });
+
+  it("surfaces the engine's acting player through each betting transition", () => {
+    const dealt = beginTournamentSessionHand(createSession("normal", "acting-seat"));
+    const firstHand = dealt.activeHand;
+    if (!firstHand) throw new Error("Expected a hand");
+    const firstActor = nextToAct(firstHand.betting);
+    if (!firstActor) throw new Error("Expected an actor");
+
+    expect(createPokerTableSnapshot(dealt).actingPlayerId).toBe(firstActor);
+    expect(
+      createPokerTableSnapshot(dealt).players.every(
+        (player) => player.totalCommitted !== undefined,
+      ),
+    ).toBe(true);
+    const legal = getLegalActions(firstHand.betting, firstActor);
+    const command: BettingActionCommand = legal.check
+      ? { type: "check" }
+      : legal.call
+        ? { type: "call" }
+        : { type: "fold" };
+    const advanced = applyTournamentSessionAction(dealt, firstActor, command);
+    const nextHand = advanced.activeHand;
+    if (!nextHand) throw new Error("Expected the hand to continue");
+
+    expect(createPokerTableSnapshot(advanced).actingPlayerId).toBe(
+      nextToAct(nextHand.betting),
+    );
+    expect(nextToAct(nextHand.betting)).not.toBe(firstActor);
   });
 
   it("advances blind levels with residual time through the core clock", () => {
@@ -254,6 +308,126 @@ describe("six-seat tournament session", () => {
     ).toBe(true);
     expect(snapshot.pot).toBeGreaterThan(0);
     expect(snapshot.tags).toContain(SESSION_FORMAT);
+  });
+
+  it("projects a public live pot ledger without projecting opponent cards", () => {
+    const session = beginTournamentSessionHand(createSession());
+    const snapshot = createPokerTableSnapshot(session);
+
+    expect(snapshot.potBreakdown).toBeDefined();
+    expect(snapshot.potBreakdown?.reduce((sum, pot) => sum + pot.amount, 0)).toBe(
+      snapshot.pot,
+    );
+    expect(snapshot.potBreakdown?.[0]).toMatchObject({ kind: "main" });
+    // Match the serialized *keys*, not the bare letters: a card would appear
+    // as {"rank":…,"suit":…}, whereas a generated player name may legitimately
+    // contain those letters (e.g. "F-rank-ie").
+    expect(JSON.stringify(snapshot.potBreakdown)).not.toContain('"rank":');
+    expect(JSON.stringify(snapshot.potBreakdown)).not.toContain('"suit":');
+
+    /*
+      One pot at the start of a hand, with nobody all-in.
+
+      `buildPots` layers contributions at every distinct commitment level, which
+      is right at settlement and wrong here: with antes posted, the opening
+      position of every hand has three levels -- ante, small blind, big blind --
+      and the table announced a side pot on all of them. A side pot needs
+      somebody all-in for less than the rest have committed; unequal chips in
+      the middle of a betting round is just a betting round.
+    */
+    expect(snapshot.potBreakdown?.filter((pot) => pot.kind === "side")).toEqual([]);
+    expect(snapshot.potBreakdown).toHaveLength(1);
+  });
+
+  it("separates live main and side pots before a runout", () => {
+    const session = beginTournamentSessionHand(createSession());
+    const hand = session.activeHand;
+    if (!hand) throw new Error("Expected an active hand");
+    const amounts = [400, 1_000, 1_000, 0, 0, 0];
+    const withAllIns = {
+      ...session,
+      activeHand: {
+        ...hand,
+        betting: {
+          ...hand.betting,
+          players: hand.betting.players.map((player, index) => ({
+            ...player,
+            totalCommitted: amounts[index] ?? 0,
+            status: index < 3 ? "all-in" as const : "folded" as const,
+          })),
+        },
+        information: {
+          ...hand.information,
+          pot: 2_400,
+          players: hand.information.players.map((player, index) => ({
+            ...player,
+            totalCommitted: amounts[index] ?? 0,
+            status: index < 3 ? "all-in" as const : "folded" as const,
+          })),
+        },
+      },
+    };
+    const snapshot = createPokerTableSnapshot(withAllIns);
+
+    expect(snapshot.potBreakdown).toMatchObject([
+      { kind: "main", amount: 1_200 },
+      { kind: "side", amount: 1_200 },
+    ]);
+    expect(snapshot.potBreakdown?.[1]?.eligiblePlayerIds).toHaveLength(2);
+  });
+
+  it("keeps main and side pots separate after a street's bets are collected", () => {
+    const session = beginTournamentSessionHand(createSession());
+    const hand = session.activeHand;
+    if (!hand) throw new Error("Expected an active hand");
+    const amounts = [400, 1_000, 1_000, 0, 0, 0];
+    // The distinguishing state is `bet` -- during the street each player still
+    // has chips in front of them; collecting a street zeroes `bet` while
+    // `totalCommitted` (which is what defines the pot ladder) persists.
+    const withCommitments = (bet: number) => ({
+      ...session,
+      activeHand: {
+        ...hand,
+        betting: {
+          ...hand.betting,
+          currentBet: bet === 0 ? 0 : hand.betting.currentBet,
+          players: hand.betting.players.map((player, index) => ({
+            ...player,
+            bet: bet === 0 ? 0 : (amounts[index] ?? 0),
+            totalCommitted: amounts[index] ?? 0,
+            status: index < 3 ? ("all-in" as const) : ("folded" as const),
+          })),
+        },
+        information: {
+          ...hand.information,
+          pot: 2_400,
+          currentBet: bet === 0 ? 0 : hand.information.currentBet,
+          players: hand.information.players.map((player, index) => ({
+            ...player,
+            bet: bet === 0 ? 0 : (amounts[index] ?? 0),
+            totalCommitted: amounts[index] ?? 0,
+            status: index < 3 ? ("all-in" as const) : ("folded" as const),
+          })),
+        },
+      },
+    });
+
+    const duringStreet = createPokerTableSnapshot(withCommitments(1));
+    const afterCollection = createPokerTableSnapshot(withCommitments(0));
+
+    // Two lanes before and after: the collection animation consolidates chips
+    // visually, it never merges a capped side pot into the main pot.
+    expect(afterCollection.potBreakdown).toEqual(duringStreet.potBreakdown);
+    expect(afterCollection.potBreakdown).toMatchObject([
+      { kind: "main", amount: 1_200 },
+      { kind: "side", amount: 1_200 },
+    ]);
+    expect(afterCollection.potBreakdown?.[0]?.eligiblePlayerIds).toHaveLength(3);
+    expect(afterCollection.potBreakdown?.[1]?.eligiblePlayerIds).toHaveLength(2);
+    // Chip conservation across the collection.
+    expect(
+      afterCollection.potBreakdown?.reduce((sum, pot) => sum + pot.amount, 0),
+    ).toBe(2_400);
   });
 
   it("synthesizes title/prompt/actionReason through the message catalog with correct interpolation", () => {

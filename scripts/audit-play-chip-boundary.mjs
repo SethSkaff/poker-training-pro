@@ -35,7 +35,7 @@ const buildRoot = path.join(projectRoot, "dist");
 const packagedAsar = path.join(
   projectRoot,
   "outputs",
-  "desktop",
+    "next",
   "win-unpacked",
   "resources",
   "app.asar",
@@ -216,7 +216,7 @@ function auditInputs({
   if (disclosures.packagedAsar === false) {
     findings.push({
       type: "missing play-chip disclosure",
-      path: "outputs/desktop/win-unpacked/resources/app.asar",
+      path: "outputs/next/win-unpacked/resources/app.asar",
       evidence: "Packaged renderer is stale or omits the required disclosure.",
     });
   }

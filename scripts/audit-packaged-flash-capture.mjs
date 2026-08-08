@@ -55,10 +55,22 @@ if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
   );
 }
 
-const DEFAULT_APP = join(projectRoot, "outputs", "desktop", "win-unpacked", "Poker Training Pro.exe");
+const DEFAULT_APP = join(projectRoot, "outputs", "next", "win-unpacked", "Poker Training Pro.exe");
 const PROFILE_PREFIX = "poker-training-pro-flash-capture-";
 const LAUNCH_TIMEOUT_MS = 30_000;
 const NAVIGATION_TIMEOUT_MS = 8_000;
+// Waiting for the *next hand* is not a navigation step. Once the hero folds,
+// the remaining five opponents must play the hand out -- possibly across three
+// more streets -- before the button-moved milestone appears, and this audit
+// deliberately does not skip presentations because the animations are what it
+// is here to photograph. The 12 s every other step gets was calibrated when a
+// hand was 8-9 actions; after the E11-002 correction hands run 24-46, so this
+// step alone needs its own allowance.
+const HAND_TRANSITION_TIMEOUT_MS = 75_000;
+// Waits for the betting round to advance -- the flop appearing, or the hero
+// being asked again -- sit between the two: they need a full orbit of
+// opponents but not a whole hand.
+const GAME_PROGRESS_TIMEOUT_MS = 45_000;
 const CAPTURE_INTERVAL_MS = 100;
 // Every-Nth-pixel sampling for the per-frame luminance/red-coverage
 // reduction (see flash-luminance-analysis-lib.mjs summarizeFramePixels).
@@ -91,6 +103,36 @@ const SEQUENCE_PLAN = [
     id: "dealt-hand",
     label: "First dealt hand with chip/card motion",
     durationMs: 2_000,
+  },
+  {
+    id: "hero-wager-travel",
+    label: "Hero call visibly travels chips toward the pot",
+    durationMs: 900,
+    requiredSignal: "chipTravel",
+  },
+  {
+    id: "board-card-progression",
+    label: "Flop cards enter the board one at a time",
+    durationMs: 1_100,
+    requiredSignal: "boardProgression",
+    // Staged entry is the thing Reduce Motion removes. Requiring it in the
+    // reduced-motion pass demanded the animation in the very pass that exists
+    // to verify animations are suppressed: measured board counts were
+    // [1,1,1,2,2,2,3,3] with full motion and [4,4,4,...] with it reduced --
+    // the board complete before the burst began. Both are correct.
+    motionDependentSignal: true,
+  },
+  {
+    id: "hero-fold-state",
+    label: "Hero fold is visible before the hand can resolve",
+    durationMs: 900,
+    requiredSignal: "heroFolded",
+  },
+  {
+    id: "dealer-button-move",
+    label: "Dealer button travels before the next hand posts blinds",
+    durationMs: 900,
+    requiredSignal: "dealerMove",
   },
 ];
 
@@ -187,7 +229,12 @@ async function runCapturePass(appPath, { passId, reducedMotion }) {
   );
   const output = captureBoundedOutput(child, 8_192);
   const navigationBudgetMs = SEQUENCE_PLAN.reduce((sum, seq) => sum + seq.durationMs + NAVIGATION_TIMEOUT_MS, 0);
-  const deadline = Date.now() + LAUNCH_TIMEOUT_MS + navigationBudgetMs + NAVIGATION_TIMEOUT_MS * 3;
+  // The hand-transition wait is budgeted separately: it is the one step whose
+  // length is set by how long a hand of poker takes, not by the renderer.
+  const deadline =
+    Date.now() + LAUNCH_TIMEOUT_MS + navigationBudgetMs +
+    NAVIGATION_TIMEOUT_MS * 3 + HAND_TRANSITION_TIMEOUT_MS +
+    GAME_PROGRESS_TIMEOUT_MS * 2;
   let cdp;
   const sequences = [];
 
@@ -223,20 +270,20 @@ async function runCapturePass(appPath, { passId, reducedMotion }) {
 
     // Sequence 1: title/menu ambient loop (Play/Settings screen).
     await waitForSelector(cdp, child, output, deadline, ".home-reference", "title/menu screen");
-    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("title-menu")));
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("title-menu"), reducedMotion));
 
     // Sequence 2: mode selection.
     await clickSelector(cdp, ".home-reference__hit--play");
     await delay(250);
     await clickIfPresent(cdp, "#play-chip-ack-title ~ .startup-gate__actions button");
     await waitForSelector(cdp, child, output, deadline, ".mode-stage", "mode selection screen");
-    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("mode-select")));
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("mode-select"), reducedMotion));
 
     // Sequence 3: room fly-through start (Normal mode -> live tournament arrival).
     await clickSelector(cdp, ".mode-stage__choice--normal");
     await clickSelectorWithText(cdp, "button", "Enter event");
     await waitForSelector(cdp, child, output, deadline, ".room-flight", "room fly-through");
-    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("room-flythrough-start")));
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("room-flythrough-start"), reducedMotion));
     // The capture burst above can outlast the flythrough's own auto-complete
     // timer (the flythrough is not paused for screenshotting), so the skip
     // control may already be gone by the time we get here; either path leads
@@ -245,7 +292,39 @@ async function runCapturePass(appPath, { passId, reducedMotion }) {
 
     // Sequence 4: first dealt hand (live tournament table, chip/card motion).
     await waitForSelector(cdp, child, output, deadline, ".poker-table", "live tournament table");
-    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("dealt-hand")));
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("dealt-hand"), reducedMotion));
+
+    // Sequence 5: use an ordinary visible Call control, then observe the
+    // renderer's public chip-travel token. This does not inject an engine
+    // action or bypass the presentation queue: it is the same mouse path a
+    // player uses. A call can legally be all-in; both outcomes still produce
+    // a public wager and therefore the same travel affordance.
+    await waitForSelector(cdp, child, output, deadline, ".action-dock", "first hero decision");
+    await clickSelector(cdp, ".action-button--call");
+    await waitForSelector(cdp, child, output, deadline, ".chip-travel", "hero wager chip travel");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("hero-wager-travel"), reducedMotion));
+
+    // A flop is not guaranteed by the hero calling. That assumption held when
+    // the pre-E11-002 policy almost never folded, so a called pot always saw
+    // a board; the corrected policy folds 46% of the time facing a bet, and a
+    // hand now frequently ends preflop with the blinds uncontested. Waiting
+    // longer cannot fix that -- the event being waited for never happens -- so
+    // this plays on, calling when asked, until a flop is actually dealt.
+    await reachProgressiveFlop(cdp, child, output, deadline);
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("board-card-progression"), reducedMotion));
+
+    // Let the public queue advance to the next real hero decision, then fold
+    // through the normal player control. The capture starts while the folded
+    // table state is visible and before a result strip can replace it.
+    await waitForSelector(cdp, child, output, deadline, ".action-dock", "next hero decision after call", GAME_PROGRESS_TIMEOUT_MS);
+    await clickSelector(cdp, ".action-button--fold");
+    await waitForSelector(cdp, child, output, deadline, ".player-seat--hero.is-folded", "visible hero fold state");
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("hero-fold-state"), reducedMotion));
+
+    // The hero remains seated after folding. Once the public hand settles,
+    // the next hand starts with the button-moved milestone before blind posts.
+    await waitForSelector(cdp, child, output, deadline, ".dealer-button-travel", "dealer button travel between hands", HAND_TRANSITION_TIMEOUT_MS);
+    sequences.push(await captureAndAnalyzeSequence(cdp, sequenceById("dealer-button-move"), reducedMotion));
 
     assertNoFatalCdpEvents(cdp.takeFatalEvents());
   } finally {
@@ -288,7 +367,7 @@ function sequenceById(id) {
   return sequence;
 }
 
-async function captureAndAnalyzeSequence(cdp, sequenceDefinition) {
+async function captureAndAnalyzeSequence(cdp, sequenceDefinition, reducedMotion = false) {
   const rawFrames = await captureBurst(cdp, sequenceDefinition.durationMs);
   const frames = rawFrames.map((rawFrame) => {
     const decoded = decodePng(Buffer.from(rawFrame.dataBase64, "base64"));
@@ -304,6 +383,14 @@ async function captureAndAnalyzeSequence(cdp, sequenceDefinition) {
     };
   });
   const evaluation = evaluateFlashSequence({ sequenceId: sequenceDefinition.id, frames });
+  const perceptualSignals = summarizePerceptualSignals(rawFrames);
+  const signalRequired = Boolean(
+    sequenceDefinition.requiredSignal &&
+      !(reducedMotion && sequenceDefinition.motionDependentSignal),
+  );
+  const signalPass = signalRequired
+    ? perceptualSignals[sequenceDefinition.requiredSignal]?.observed === true
+    : true;
   const achievedMeanFrameIntervalMs =
     frames.length > 1 ? round(evaluation.durationMs / (frames.length - 1), 1) : null;
   return {
@@ -312,6 +399,9 @@ async function captureAndAnalyzeSequence(cdp, sequenceDefinition) {
     plannedDurationMs: sequenceDefinition.durationMs,
     plannedCaptureIntervalMs: CAPTURE_INTERVAL_MS,
     frameCount: frames.length,
+    ...(sequenceDefinition.requiredSignal && !signalRequired
+      ? { requiredSignalWaived: "reduced-motion suppresses this animation by design" }
+      : {}),
     capturedDurationMs: evaluation.durationMs,
     // Actual achieved interval between screenshots, which on this host ran
     // well above the CAPTURE_INTERVAL_MS request (CDP round-trip + PNG
@@ -332,7 +422,8 @@ async function captureAndAnalyzeSequence(cdp, sequenceDefinition) {
       eventTimestampsMs: evaluation.redFlash.events.map((event) => event.atMs),
       pass: evaluation.redFlash.pass,
     },
-    pass: evaluation.pass,
+    perceptualSignals,
+    pass: evaluation.pass && signalPass,
   };
 }
 
@@ -357,7 +448,11 @@ async function captureBurst(cdp, durationMs) {
   while (Date.now() - start < durationMs && frames.length < maxFrames) {
     const frameStart = Date.now();
     const shot = await captureScreenshotFast(cdp);
-    frames.push({ timestampMs: frameStart - start, dataBase64: shot.data });
+    frames.push({
+      timestampMs: frameStart - start,
+      dataBase64: shot.data,
+      presentation: await readPresentationSignals(cdp),
+    });
     const remaining = CAPTURE_INTERVAL_MS - (Date.now() - frameStart);
     if (remaining > 0) await delay(remaining);
   }
@@ -365,6 +460,73 @@ async function captureBurst(cdp, durationMs) {
     throw new Error("Flash capture burst produced fewer than two frames.");
   }
   return frames;
+}
+
+/**
+ * Read only public DOM state alongside each rendered frame. The screenshot is
+ * still the primary visual artifact; these signals make the resulting gate
+ * fail if an otherwise-similar frame burst was captured after a transition
+ * had already been replaced by its end state.
+ */
+async function readPresentationSignals(cdp) {
+  const result = await cdp.send("Runtime.evaluate", {
+    expression: `(() => {
+      const table = document.querySelector('.poker-table');
+      if (!window.__ptpPerceptualTable && table) window.__ptpPerceptualTable = table;
+      const chip = document.querySelector('.chip-travel');
+      return {
+        tableStable: Boolean(table && window.__ptpPerceptualTable === table),
+        chipTravel: Boolean(chip),
+        chipAnimationMs: chip instanceof HTMLElement
+          ? Number.parseFloat(getComputedStyle(chip).animationDuration) * 1000
+          : 0,
+        heroFolded: Boolean(document.querySelector('.player-seat--hero.is-folded')),
+        handResultVisible: Boolean(document.querySelector('.showdown-result-strip')),
+        boardEntering: Boolean(document.querySelector('.board-card-entering')),
+        communityCardCount: document.querySelectorAll('.community-cards .playing-card').length,
+        dealerMoving: Boolean(document.querySelector('.dealer-button-travel')),
+        dealerAnimationMs: (() => {
+          const dealer = document.querySelector('.dealer-button-travel');
+          return dealer instanceof HTMLElement
+            ? Number.parseFloat(getComputedStyle(dealer).animationDuration) * 1000
+            : 0;
+        })(),
+      };
+    })()`,
+    returnByValue: true,
+  });
+  return result.result?.value ?? {};
+}
+
+function summarizePerceptualSignals(rawFrames) {
+  const signals = rawFrames.map((frame) => frame.presentation ?? {});
+  const chipTravelFrames = signals.filter((signal) => signal.chipTravel === true);
+  const heroFoldedFrames = signals.filter((signal) => signal.heroFolded === true);
+  return {
+    tableStable: {
+      observed: signals.length > 0 && signals.every((signal) => signal.tableStable === true),
+    },
+    chipTravel: {
+      observed: chipTravelFrames.length > 0 && chipTravelFrames.some((signal) => signal.chipAnimationMs > 0),
+      frameCount: chipTravelFrames.length,
+      animationDurationsMs: chipTravelFrames.map((signal) => signal.chipAnimationMs),
+    },
+    heroFolded: {
+      observed: heroFoldedFrames.length > 0 && heroFoldedFrames.some((signal) => signal.handResultVisible === false),
+      frameCount: heroFoldedFrames.length,
+    },
+    boardProgression: {
+      observed: signals.some((signal) => signal.boardEntering === true) &&
+        new Set(signals.map((signal) => signal.communityCardCount).filter(Number.isFinite)).size >= 2,
+      counts: signals.map((signal) => signal.communityCardCount),
+    },
+    dealerMove: {
+      observed: signals.some((signal) => signal.dealerMoving === true && signal.dealerAnimationMs > 0),
+      animationDurationsMs: signals
+        .filter((signal) => signal.dealerMoving === true)
+        .map((signal) => signal.dealerAnimationMs),
+    },
+  };
 }
 
 async function captureScreenshotFast(cdp) {
@@ -389,8 +551,58 @@ async function clickIfPresent(cdp, selector) {
   return true;
 }
 
-async function waitForSelector(cdp, child, output, deadline, selector, label) {
-  const localDeadline = Math.min(deadline, Date.now() + NAVIGATION_TIMEOUT_MS + 4_000);
+/**
+ * Plays forward until the flop is actually being dealt.
+ *
+ * The board-card-progression capture needs a real flop. Whether one arrives is
+ * up to the table: after the E11-002 correction the field folds often enough
+ * that a called pot regularly ends preflop. Rather than wait on an event that
+ * may never occur in this hand, take the ordinary Call control whenever the
+ * hero is asked and let the next hand run, bounded by hands and by the global
+ * deadline. Every action here is the same mouse path a player uses.
+ */
+async function reachProgressiveFlop(cdp, child, output, deadline) {
+  const maxHands = 12;
+  for (let attempt = 0; attempt < maxHands; attempt += 1) {
+    const localDeadline = Math.min(deadline, Date.now() + GAME_PROGRESS_TIMEOUT_MS);
+    while (Date.now() < localDeadline) {
+      if (child.exitCode !== null) {
+        throw new Error(
+          `Packaged app exited while waiting for a flop (code ${child.exitCode}): ${output.stderr.slice(-300)}`,
+        );
+      }
+      const state = await cdp.send("Runtime.evaluate", {
+        expression: `(() => {
+          if (document.querySelector('.board-card-entering')) return 'flop';
+          if (document.querySelector('.ceremony-board')) return 'ceremony';
+          const call = document.querySelector('.action-button--call');
+          const check = document.querySelector('.action-button--check');
+          const button = call || check;
+          if (button instanceof HTMLButtonElement && !button.disabled) {
+            button.click();
+            return 'acted';
+          }
+          return 'waiting';
+        })()`,
+        returnByValue: true,
+      });
+      const value = state.result?.value;
+      if (value === 'flop') return;
+      if (value === 'ceremony') {
+        throw new Error(
+          'The event ended before any flop was dealt, so the board-card progression could not be captured.',
+        );
+      }
+      await delay(50);
+    }
+  }
+  throw new Error(
+    `No flop was dealt within ${maxHands} hands, so the board-card progression could not be captured.`,
+  );
+}
+
+async function waitForSelector(cdp, child, output, deadline, selector, label, allowanceMs = NAVIGATION_TIMEOUT_MS + 4_000) {
+  const localDeadline = Math.min(deadline, Date.now() + allowanceMs);
   while (Date.now() < localDeadline) {
     if (child.exitCode !== null) {
       throw new Error(
@@ -401,7 +613,35 @@ async function waitForSelector(cdp, child, output, deadline, selector, label) {
     if (found) return;
     await delay(50);
   }
-  throw new Error(`Timed out waiting for ${label} (${selector}).`);
+  // "Timed out waiting for X" is equally true of a crashed renderer, a
+  // finished event, and a hand that simply never reached that state, and those
+  // have nothing in common. Say which screen was actually up.
+  let screen = "unavailable";
+  try {
+    const described = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const has = (s) => document.querySelector(s) !== null;
+        return JSON.stringify({
+          table: has('.poker-table'),
+          ceremony: has('.ceremony-board'),
+          flythrough: has('.room-flight'),
+          arrival: has('.room-progress-overlay'),
+          modeStage: has('.mode-stage'),
+          home: has('.home-reference'),
+          actionDock: has('.action-dock'),
+          board: document.querySelectorAll('.board-card').length,
+          loading: has('.scene-loading'),
+        });
+      })()`,
+      returnByValue: true,
+    });
+    screen = String(described.result?.value ?? "unavailable");
+  } catch {
+    screen = "unavailable (the renderer did not answer)";
+  }
+  throw new Error(
+    `Timed out waiting for ${label} (${selector}). On screen: ${screen}`,
+  );
 }
 
 async function clickSelector(cdp, selector) {
@@ -570,6 +810,14 @@ function parseArguments(arguments_) {
 const isMain =
   typeof process.argv[1] === "string" && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 
+/** A CDP deadline proves neither a presentation pass nor a product failure. */
+export function classifyCaptureFailure(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /^CDP command .* timed out\.$/.test(message)
+    ? "inconclusive-cdp-timeout"
+    : "product-failure";
+}
+
 if (isMain) {
   try {
     const report = await runPackagedFlashCapture(parseArguments(process.argv.slice(2)));
@@ -588,9 +836,10 @@ if (isMain) {
     );
     if (!report.overallPass) process.exitCode = 1;
   } catch (error) {
+    const outcome = classifyCaptureFailure(error);
     console.error(
-      `Packaged flash/luminance analysis failed to run: ${error instanceof Error ? error.message : "unknown error"}`,
+      `Packaged flash/luminance analysis ${outcome}: ${error instanceof Error ? error.message : "unknown error"}`,
     );
-    process.exitCode = 1;
+    process.exitCode = outcome === "inconclusive-cdp-timeout" ? 2 : 1;
   }
 }

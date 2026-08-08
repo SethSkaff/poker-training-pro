@@ -36,14 +36,6 @@ describe("AI decision presentation timing", () => {
     expect(quick.delayMs).toBe(Math.round(normal.delayMs / 2));
   });
 
-  it("uses a shorter capped mobile animation budget", () => {
-    const desktop = calculateAiDecisionTiming(BASE);
-    const mobile = calculateAiDecisionTiming({ ...BASE, surface: "mobile" });
-
-    expect(mobile.delayMs).toBeLessThan(desktop.delayMs);
-    expect(mobile.delayMs).toBeLessThanOrEqual(2_800);
-  });
-
   it("caps the difficulty signal below the anti-tell noise envelope", () => {
     const result = calculateAiDecisionTiming({
       ...BASE,

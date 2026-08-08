@@ -22,18 +22,28 @@ const PROFILE_PREFIX = "poker-training-pro-input-smoke-";
 const projectRoot = resolve(new URL("..", import.meta.url).pathname.slice(1));
 const appPath = resolve(
   projectRoot,
-  argumentValue("--app") ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
+  argumentValue("--app") ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
 );
 const reportPath = resolve(projectRoot, "work", "packaged-input-smoke.json");
+const TABLE_GEOMETRY_VIEWPORTS = [
+  { width: 1100, height: 720 },
+  { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
+  { width: 1920, height: 1080 },
+  { width: 2560, height: 1080 },
+];
+const TABLE_INTERFACE_SCALES = ["compact", "standard", "large", "extra-large"];
 // This is the overall CDP session budget (also bounds every individual CDP
-// command's timeout via CdpClient.send's `Math.min(5_000, deadline - now)`).
+// command's timeout via CdpClient.send. Native range gestures get a bounded
+// longer per-command allowance because Chromium can wait for compositor input
+// acknowledgement longer than ordinary DOM evaluation.
 // 35s left effectively no slack once per-check polls were widened below to
 // tolerate legitimate opponent-presentation/animation variance, and the
 // raise-legality poll can take several hands to reach a decision where
 // raising is legal. 90s keeps a full run comfortable without masking a
 // genuinely hung packaged app (the process-exit and devtools-port waits below
 // still fail fast on a real crash).
-const timeoutMs = 90_000;
+const timeoutMs = 120_000;
 
 if (process.platform !== "win32") {
   throw new Error("Packaged input smoke requires a Windows Electron executable.");
@@ -64,6 +74,7 @@ const output = captureBoundedOutput(child, 8_192);
 const checks = [];
 let client;
 let failure;
+let transportTimeout;
 
 try {
   const deadline = Date.now() + timeoutMs;
@@ -144,7 +155,44 @@ try {
   await expectSelector(client, ".room-flight", "tournament arrival");
   await expectMouseClick(client, "button", "Skip arrival", "skip arrival mouse input");
   await expectSelector(client, ".poker-table", "live tournament table");
+  // E01-002 presents forced posts/deals and each opponent action as a public
+  // queue. Wait for the first *legal hero decision* instead of assuming the
+  // table becomes interactive in the same renderer tick as room arrival.
+  await expectHeroDecisionAfterPresentation(client, 20_000);
+  await dismissContextCoachIfPresent(client);
+  await captureStableTableScene(client);
   await expectClearTableInformationLanes(client);
+
+  // Exercise the production Gamepad API polling path while the live table is
+  // still visible. The later lifecycle smoke deliberately minimizes this
+  // same window; the product correctly suspends its visibility-aware polling
+  // loop while hidden, so testing controller routing before that state change
+  // keeps this an interaction assertion rather than a window-manager race.
+  await client.send("Page.bringToFront");
+  await delay(200);
+  await pressMockGamepadAUntilRouted(client);
+  /*
+    The skip control moved out of the bottom dock to a prominent button over the
+    table (E27-015), and its accessible name was reworded to say what is *not*
+    skipped as well as what is. Selecting on the class is stable across further
+    copy changes; the exact accessible name is asserted by the unit tests that
+    own that wording.
+  */
+  await expectMouseClick(
+    client,
+    "button.skip-hand",
+    undefined,
+    "fast-forward controller action presentation",
+  );
+  // 20 s, matching the wait for the *opening* hero decision above. After the
+  // controller action the queue has to carry a full orbit of opponents, and
+  // possibly a street change, before the hero acts again -- no shorter than
+  // the opening sequence, so an 8 s budget here was never consistent with the
+  // 20 s one there. Post-E11-002 hands are 24-46 hands long rather than 8-9,
+  // with correspondingly more milestones per orbit. Skipping only accelerates
+  // the queue; it advances on its own delays regardless, so waiting is enough.
+  await expectHeroDecisionDrainingPresentation(client, "table advances after Gamepad action");
+
   await expectMinimizePausesAndRestores(client);
   await expectMouseClick(client, ".action-context button", undefined, "hand-history mouse input");
   await expectSelector(client, ".hand-history-popover", "public hand history");
@@ -154,6 +202,12 @@ try {
     "document.querySelector('.hand-history-popover') === null",
     "hand history closes cleanly",
   );
+  // Exercise one whole live decision before raise sizing. This is both a real
+  // action path and the packaged regression for E01-001: engine state must
+  // advance without replacing the table DOM node. `sceneStateVersion` changes
+  // on every runner action; the element reference must remain exact.
+  await advanceOneDecisionWithoutRaising(client);
+  await expectStableTableSceneAfterAdvance(client);
   // Raising is only sometimes legal on the very first live decision: opponent
   // stacks/actions vary with the wall-clock-derived tournament seed
   // (`career:${eventId}:${Date.now()}` in src/App.tsx), so hero may face a
@@ -178,12 +232,12 @@ try {
   await expectMouseClick(client, ".bet-composer .primary-button", undefined, "confirm raise mouse input");
   await expectSelector(
     client,
-    'button[aria-label="Skip opponent presentation and continue the hand"]',
+    'button.skip-hand',
     "fast-forward control after action",
   );
   await expectMouseClick(
     client,
-    'button[aria-label="Skip opponent presentation and continue the hand"]',
+    'button.skip-hand',
     undefined,
     "fast-forward mouse input",
   );
@@ -197,7 +251,7 @@ try {
   // menu -- so accepting them here would let the script march on assuming
   // table context that no longer exists. Widen only the timeout; the very
   // next hero decision must still be a real `.action-dock`.
-  await expectSelector(client, ".action-dock", "table advances after fast-forward", 8_000);
+  await expectHeroDecisionDrainingPresentation(client, "table advances after fast-forward");
 
   // Keyboard uses the same running package: Escape opens the pause menu, then
   // mouse toggles audio settings inside its accessible labelled control.
@@ -228,41 +282,16 @@ try {
     "keyboard resume input",
   );
 
-  // The Gamepad API is poll-based (src/lib/gamepad.ts): the app only notices a
-  // press by sampling `getGamepads()` on its own requestAnimationFrame loop
-  // (src/components/GamepadNavigationProvider.tsx). Electron's default
-  // `backgroundThrottling` can slow that rAF loop dramatically whenever the
-  // window is not genuinely focused/unoccluded, which this script cannot fully
-  // rule out from outside the process. Bring the window forward again as the
-  // best available mitigation before relying on a synthetic press being
-  // sampled at all.
-  //
-  // Separately, `detectContext()` in GamepadNavigationProvider.tsx treats any
-  // open modal (`[role="dialog"][aria-modal="true"]`, `.pause-scrim`) as menu
-  // context and routes button:0 to `menu.activate` (a DOM click on
-  // `document.activeElement`) instead of the game's check/call action. A
-  // stray native window-blur auto-pause landing here would silently reroute
-  // the press that way -- no `.spectator-dock` would ever appear, no matter
-  // how long this waits, because no game action was ever dispatched. Resume
-  // from a known baseline first so the context detection sees the live table.
-  await client.send("Page.bringToFront");
-  await delay(200);
-  await pressMockGamepadAUntilRouted(client);
-  await expectMouseClick(
-    client,
-    'button[aria-label="Skip opponent presentation and continue the hand"]',
-    undefined,
-    "fast-forward controller action presentation",
-  );
-  await expectAnySelector(
-    client,
-    [".action-dock", ".ceremony-board", ".room-flight"],
-    "table advances after Gamepad action",
-    8_000,
-  );
-
 } catch (error) {
-  failure = error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  // CDP has its own command deadline. Record that infrastructure failure
+  // independently: it proves neither a passing product interaction nor a
+  // product regression, and should not be reported as the latter.
+  if (/^CDP command .* timed out\.$/.test(message)) {
+    transportTimeout = message;
+  } else {
+    failure = message;
+  }
 } finally {
   try {
     client?.close();
@@ -281,14 +310,25 @@ const report = {
   schemaVersion: 1,
   executable: basename(appPath),
   checks,
-  ok: !failure,
+  ok: !failure && !transportTimeout,
+  outcome: failure
+    ? "product-failure"
+    : transportTimeout
+      ? "inconclusive-cdp-timeout"
+      : "passed",
   ...(failure ? { failure } : {}),
+  ...(transportTimeout ? { transportTimeout } : {}),
   scope:
     "Packaged CDP mouse, keyboard, and Gamepad API smoke for first-run motion/contrast preferences, menu navigation, card peek, drag-fold, raise slider, hand history, fast-forward, pause settings, and resume. Physical-controller ergonomics, assistive technologies, and real-device behavior remain separate acceptance work.",
 };
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 if (failure) throw new Error(`Packaged input smoke failed: ${failure}`);
-console.log(JSON.stringify({ ok: true, ...report }, null, 2));
+if (transportTimeout) {
+  console.warn(JSON.stringify(report, null, 2));
+  process.exitCode = 2;
+} else {
+  console.log(JSON.stringify({ ok: true, ...report }, null, 2));
+}
 
 async function expectSelector(cdp, selector, label, timeout = 8_000) {
   const found = await waitForBoolean(
@@ -297,7 +337,99 @@ async function expectSelector(cdp, selector, label, timeout = 8_000) {
     timeout,
   );
   record(label, found);
-  if (!found) throw new Error(`${label}: ${selector} was not present.`);
+  if (!found) {
+    // "X was not present" is true of a crashed renderer, a finished event, and
+    // a hand still mid-presentation alike, and those have nothing in common.
+    // Say which screen was actually up.
+    const state = await describeScreen(cdp);
+    throw new Error(`${label}: ${selector} was not present. On screen: ${state}`);
+  }
+}
+
+/**
+ * Waits for the hero's next decision, draining the presentation queue as it goes.
+ *
+ * Clicking skip once and then waiting a fixed period was enough when a hand was
+ * a handful of milestones. It is not now: after the E11-002 policy correction a
+ * hand runs a full orbit of five opponents and often several streets, so the
+ * queue keeps producing events long after that single skip. The observed
+ * failure was unambiguous -- table present, ceremony absent, action dock
+ * absent, and the skip button *still there* -- so the driver was waiting on a
+ * queue it had stopped advancing.
+ *
+ * Skipping only accelerates the queue; it advances on its own delays anyway.
+ * This just stops the driver from falling behind it.
+ */
+async function expectHeroDecisionDrainingPresentation(cdp, label, timeout = 30_000) {
+  const deadline = Date.now() + timeout;
+  const skipSelector =
+    'button.skip-hand';
+  while (Date.now() < deadline) {
+    const state = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const dock = document.querySelector('.action-dock') !== null;
+        const skip = document.querySelector(${JSON.stringify(skipSelector)});
+        if (!dock && skip instanceof HTMLButtonElement && !skip.disabled) {
+          skip.click();
+          return 'skipped';
+        }
+        if (dock) return 'dock';
+        if (document.querySelector('.ceremony-board')) return 'ceremony';
+        return 'waiting';
+      })()`,
+      returnByValue: true,
+    });
+    const value = state.result?.value;
+    if (value === "dock") {
+      record(label, true);
+      return;
+    }
+    if (value === "ceremony") {
+      // The event ended before the hero was asked again. That is a legitimate
+      // outcome of playing, not a product failure, but it means this
+      // interaction assertion could not be made -- say so rather than pass.
+      record(label, false);
+      throw new Error(
+        `${label}: the event reached its ceremony before the hero was asked to act again.`,
+      );
+    }
+    await delay(40);
+  }
+  record(label, false);
+  const screen = await describeScreen(cdp);
+  throw new Error(
+    `${label}: no hero decision within ${timeout} ms. On screen: ${screen}`,
+  );
+}
+
+/** A one-line description of which screen the renderer is currently showing. */
+async function describeScreen(cdp) {
+  try {
+    const result = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const has = (selector) => document.querySelector(selector) !== null;
+        const marks = {
+          ceremony: has('.ceremony-board'),
+          table: has('.poker-table'),
+          arrival: has('.room-progress-overlay'),
+          flythrough: has('.room-flight'),
+          actionDock: has('.action-dock'),
+          skipButton: has('button.skip-hand'),
+          pause: has('.pause-overlay'),
+          loading: has('.scene-loading'),
+        };
+        const place = document.querySelector('.ceremony-board__place');
+        return JSON.stringify({
+          ...marks,
+          ...(place ? { placement: (place.textContent || '').trim() } : {}),
+        });
+      })()`,
+      returnByValue: true,
+    });
+    return String(result.result?.value ?? "unavailable");
+  } catch {
+    return "unavailable (the renderer did not answer)";
+  }
 }
 
 async function expectAnySelector(cdp, selectors, label, timeout = 8_000) {
@@ -318,17 +450,142 @@ async function expectBoolean(cdp, expression, label) {
   if (!value) throw new Error(`${label} did not produce the expected state.`);
 }
 
+/** Contextual teaching is optional and intentionally modal; clear it before
+ * asserting physical table controls beneath it so this smoke measures input
+ * routing rather than a coach-overlay flow. */
+async function dismissContextCoachIfPresent(cdp) {
+  const appeared = await waitForBoolean(
+    cdp,
+    "document.querySelector('.context-coach button') !== null",
+    500,
+  );
+  if (!appeared) return;
+  await expectMouseClick(
+    cdp,
+    ".context-coach button",
+    undefined,
+    "dismiss contextual table tip",
+  );
+}
+
+async function expectHeroDecisionAfterPresentation(cdp, timeout) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const dock = await waitForBoolean(
+      cdp,
+      "document.querySelector('.action-dock') !== null",
+      Math.min(5_000, Math.max(250, deadline - Date.now())),
+    );
+    if (dock) {
+      record("public presentation queue reaches the first hero decision", true);
+      return;
+    }
+    await ensureNotPaused(cdp);
+  }
+  record("public presentation queue reaches the first hero decision", false);
+  throw new Error("public presentation queue did not reach a hero decision.");
+}
+
+async function captureStableTableScene(cdp) {
+  const observation = await evaluateValue(cdp, `(() => {
+    const table = document.querySelector('.poker-table');
+    if (!(table instanceof HTMLElement)) return { ok: false };
+    window.__ptpStableTableScene = table;
+    window.__ptpStableTableSceneVersion = table.dataset.tableStateVersion;
+    return {
+      ok: Boolean(table.dataset.tableHandId) && Boolean(table.dataset.tableStateVersion),
+      handId: table.dataset.tableHandId,
+      stateVersion: table.dataset.tableStateVersion,
+    };
+  })()`);
+  const ok = observation?.ok === true;
+  record("capture stable live table scene", ok);
+  if (!ok) throw new Error(`Could not capture the live table scene: ${JSON.stringify(observation)}.`);
+}
+
+async function expectStableTableSceneAfterAdvance(cdp) {
+  const observation = await evaluateValue(cdp, `(() => {
+    const table = document.querySelector('.poker-table');
+    const original = window.__ptpStableTableScene;
+    return {
+      sameNode: table === original,
+      currentStateVersion: table instanceof HTMLElement ? table.dataset.tableStateVersion : undefined,
+      originalStateVersion: window.__ptpStableTableSceneVersion,
+    };
+  })()`);
+  const ok = observation?.sameNode === true &&
+    observation.currentStateVersion !== observation.originalStateVersion;
+  record("table remains mounted while authoritative action state advances", ok);
+  if (!ok) {
+    throw new Error(
+      `Table remounted or did not advance after a live action: ${JSON.stringify(observation)}.`,
+    );
+  }
+}
+
 /**
  * No visible information lane may collide in the shipped six-seat table. This
  * keeps the user's card-corner and bet-versus-stack requirements covered by a
  * package-level test instead of a one-time screenshot review.
  */
 async function expectClearTableInformationLanes(cdp) {
+  const observations = [];
+  try {
+    for (const viewport of TABLE_GEOMETRY_VIEWPORTS) {
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: viewport.width,
+        height: viewport.height,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      for (const scale of TABLE_INTERFACE_SCALES) {
+        await cdp.send("Runtime.evaluate", {
+          expression: `document.documentElement.dataset.interfaceScale = ${JSON.stringify(scale)}`,
+          awaitPromise: false,
+        });
+        // `zoom` changes layout on the next rendering turn. Sampling after a
+        // frame makes this a real stylesheet/DOM geometry assertion rather
+        // than an attribute-only source check.
+        await delay(40);
+        const observation = await inspectTableInformationLanes(cdp);
+        observations.push({ viewport, scale, ...observation });
+      }
+    }
+  } finally {
+    await cdp.send("Emulation.clearDeviceMetricsOverride");
+    await cdp.send("Runtime.evaluate", {
+      expression: 'document.documentElement.dataset.interfaceScale = "standard"',
+      awaitPromise: false,
+    });
+    await delay(40);
+  }
+  const ok = observations.every((observation) => observation.ok === true);
+  record("table information lanes remain visible and non-overlapping across supported viewports and UI scales", ok);
+  if (!ok) {
+    throw new Error(
+      `Table information lanes overlap, are clipped, or are too small: ${JSON.stringify(observations.filter((observation) => !observation.ok))}.`,
+    );
+  }
+}
+
+async function inspectTableInformationLanes(cdp) {
   const result = await cdp.send("Runtime.evaluate", {
     expression: `(() => {
       const intersects = (left, right) =>
         left.left < right.right && left.right > right.left &&
         left.top < right.bottom && left.bottom > right.top;
+      const roundRect = (rect) => ({
+        x: Math.round(rect.x), y: Math.round(rect.y),
+        w: Math.round(rect.width), h: Math.round(rect.height),
+      });
+      const readable = (element) => {
+        if (!(element instanceof HTMLElement)) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width >= 16 && rect.height >= 12 && rect.right > 0 &&
+          rect.left < innerWidth && rect.bottom > 0 && rect.top < innerHeight &&
+          style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0;
+      };
       const seats = [...document.querySelectorAll('.player-seat:not(.player-seat--hero)')]
         .filter((seat) => seat.getBoundingClientRect().width > 2)
         .map((seat) => {
@@ -337,29 +594,105 @@ async function expectClearTableInformationLanes(cdp) {
           const bet = seat.querySelector('.seat-bet');
           return {
             player: seat.getAttribute('aria-label') || 'unknown player',
-            cardsOverlap: cards.length === 2 && intersects(
+            // Which seat position this is. The lanes are laid out per position,
+            // so a failure that names only the player says nothing about where
+            // to look -- and the roster is reseeded each run, so the same
+            // player never lands in the same chair twice.
+            seatClass: [...seat.classList]
+              .filter((name) => name.startsWith('player-seat--'))
+              .join(' '),
+            rects: {
+              label: label ? roundRect(label.getBoundingClientRect()) : null,
+              bet: bet ? roundRect(bet.getBoundingClientRect()) : null,
+              cards: cards.map((card) => roundRect(card.getBoundingClientRect())),
+            },
+          cardsOverlap: cards.length === 2 && intersects(
               cards[0].getBoundingClientRect(), cards[1].getBoundingClientRect(),
             ),
             betOverlapsStack: Boolean(label && bet && intersects(
               label.getBoundingClientRect(), bet.getBoundingClientRect(),
             )),
+            labelReadable: readable(label),
+            betReadable: !bet || readable(bet),
+            dealerReadable: !seat.querySelector('.dealer-button') || readable(seat.querySelector('.dealer-button')),
+            positionReadable: !seat.querySelector('.seat-position-marker') || readable(seat.querySelector('.seat-position-marker')),
           };
         });
+      // The hero's stack moved to the hero's seat and the corner panel became
+      // a global tournament readout (E27-008). The geometry contract is
+      // unchanged in substance: whatever occupies that corner must stay
+      // readable and must not cover the hero's cards or the action dock.
+      const heroHud = document.querySelector('.tournament-hud');
+      const heroCards = document.querySelector('.hero-hole-cards');
+      const actionDock = document.querySelector('.action-dock');
+      const heroHudRect = heroHud?.getBoundingClientRect();
+      const heroCardsRect = heroCards?.getBoundingClientRect();
+      const actionDockRect = actionDock?.getBoundingClientRect();
+      const hero = {
+        readable: readable(heroHud),
+        overlapsCards: Boolean(heroHudRect && heroCardsRect && intersects(heroHudRect, heroCardsRect)),
+        overlapsActions: Boolean(heroHudRect && actionDockRect && intersects(heroHudRect, actionDockRect)),
+      };
+      // State-dependent surfaces: present only in the situations that produce
+      // them, so each is "absent, or readable and not covering the table".
+      // Checking them only when present is what lets one smoke run cover
+      // surfaces that cannot all coexist in a single frame.
+      const conditional = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return { present: false, ok: true };
+        const rect = element.getBoundingClientRect();
+        // Each clause is reported separately. "present, not ok" on its own
+        // says nothing about whether the surface was too small, off-screen,
+        // invisible, or simply sitting on top of something -- and those have
+        // completely different fixes.
+        const isReadable = readable(element);
+        const overCards = Boolean(heroCardsRect && intersects(rect, heroCardsRect));
+        const overActions = Boolean(actionDockRect && intersects(rect, actionDockRect));
+        const ok = isReadable && !overCards && !overActions;
+        return {
+          present: true,
+          ok,
+          ...(ok
+            ? {}
+            : {
+                why: { readable: isReadable, overCards, overActions },
+                rect: {
+                  x: Math.round(rect.x), y: Math.round(rect.y),
+                  w: Math.round(rect.width), h: Math.round(rect.height),
+                },
+                opacity: getComputedStyle(element).opacity,
+              }),
+        };
+      };
+      const surfaces = {
+        // Scoped to opponents. The hero seat is visibility:hidden by design --
+        // the hero's presence is the stack HUD and the action dock, not an
+        // avatar -- so an unscoped .thinking-ring selector finds the hero's
+        // ring inside that hidden seat and reports the surface broken. This
+        // smoke waits for a hero decision before measuring, so that was not an
+        // edge case: it failed at all 20 viewport/scale combinations, every
+        // run. The check is about an indicator a player can actually see,
+        // which is an opponent's.
+        actingIndicator: conditional(
+          '.player-seat:not(.player-seat--hero) .thinking-ring',
+        ),
+        sidePots: conditional('.side-pot-strip'),
+        equityReadout: conditional('.all-in-equity-strip'),
+        showdownHighlight: conditional('.showdown-card.is-winning'),
+      };
       return {
         seats,
-        ok: seats.length >= 5 && seats.every((seat) => !seat.cardsOverlap && !seat.betOverlapsStack),
+        hero,
+        surfaces,
+        ok: seats.length >= 5 && hero.readable && !hero.overlapsCards && !hero.overlapsActions &&
+          Object.values(surfaces).every((surface) => surface.ok) &&
+          seats.every((seat) => !seat.cardsOverlap && !seat.betOverlapsStack &&
+            seat.labelReadable && seat.betReadable && seat.dealerReadable && seat.positionReadable),
       };
     })()`,
     returnByValue: true,
   });
-  const observation = result.result?.value;
-  const ok = observation?.ok === true;
-  record("table card and bet/stack lanes do not overlap", ok);
-  if (!ok) {
-    throw new Error(
-      `Table information lanes overlap or are incomplete: ${JSON.stringify(observation)}.`,
-    );
-  }
+  return result.result?.value ?? { ok: false, reason: "no geometry observation" };
 }
 
 /**
@@ -435,11 +768,11 @@ async function ensureRaiseIsLegalThenAdvance(cdp) {
 }
 
 /**
- * Take whichever legal, non-raise action `.action-dock` currently offers
- * (call/check first, fold as a fallback), then fast-forward through the
- * opponent presentation back to the next decision. Whenever `.action-dock` is
- * rendered at all, the product guarantees at least one of fold/call/check is
- * legal, so this never has to guess.
+ * Take a legal, non-raise action then fast-forward through the opponent
+ * presentation back to the next decision. Prefer fold: an unseeded packaged
+ * run can make call a stack-committing all-in, which turns an input smoke into
+ * a random tournament-bust test rather than a queue test. Fold is legal at
+ * every hero decision and guarantees the next hand can be reached.
  */
 async function advanceOneDecisionWithoutRaising(cdp) {
   // The caller only just observed the raise button as (still) disabled; the
@@ -458,24 +791,24 @@ async function advanceOneDecisionWithoutRaising(cdp) {
       "The action dock was not present while advancing past a non-raise decision.",
     );
   }
-  const callPoint = await selectorPoint(cdp, ".action-button--call");
-  if (callPoint) {
-    await mouseClick(cdp, callPoint.x, callPoint.y);
-    record("advance past non-raise decision: call/check mouse input", true);
-  } else {
-    const foldPoint = await selectorPoint(cdp, ".action-button--fold");
-    if (!foldPoint) {
-      throw new Error(
-        "Neither call/check nor fold was an enabled target while advancing past a non-raise decision.",
-      );
-    }
+  const foldPoint = await selectorPoint(cdp, ".action-button--fold");
+  if (foldPoint) {
     await mouseClick(cdp, foldPoint.x, foldPoint.y);
     record("advance past non-raise decision: fold mouse input", true);
+  } else {
+    const callPoint = await selectorPoint(cdp, ".action-button--call");
+    if (!callPoint) {
+      throw new Error(
+        "Neither fold nor call/check was an enabled target while advancing past a non-raise decision.",
+      );
+    }
+    await mouseClick(cdp, callPoint.x, callPoint.y);
+    record("advance past non-raise decision: call/check mouse input", true);
   }
   await delay(200);
 
   const fastForwardSelector =
-    'button[aria-label="Skip opponent presentation and continue the hand"]';
+    'button.skip-hand';
   const fastForwardAppeared = await waitForBoolean(
     cdp,
     `document.querySelector(${JSON.stringify(fastForwardSelector)}) !== null`,
@@ -485,19 +818,33 @@ async function advanceOneDecisionWithoutRaising(cdp) {
     const fastForwardPoint = await selectorPoint(cdp, fastForwardSelector);
     if (fastForwardPoint) {
       await mouseClick(cdp, fastForwardPoint.x, fastForwardPoint.y);
+      record("queue fast-forward mouse input", true);
       await delay(150);
     }
   }
 
-  const dockReturned = await waitForBoolean(
-    cdp,
-    "document.querySelector('.action-dock') !== null",
-    8_000,
-  );
+  const returnDeadline = Date.now() + 30_000;
+  let dockReturned = false;
+  while (Date.now() < returnDeadline) {
+    dockReturned = await waitForBoolean(
+      cdp,
+      "document.querySelector('.action-dock') !== null",
+      Math.min(5_000, Math.max(250, returnDeadline - Date.now())),
+    );
+    if (dockReturned) break;
+    // Packaging/CDP focus changes can correctly pause the table mid-queue.
+    // Resume through the same visible player confirmation used elsewhere in
+    // this audit, then continue waiting for the queued hand to reach hero.
+    await ensureNotPaused(cdp);
+  }
   if (!dockReturned) {
+    const tableState = await evaluateValue(
+      cdp,
+      "document.querySelector('.table-screen')?.innerText?.slice(0, 2000)",
+    );
     throw new Error(
       "The table did not return to a new decision after advancing past a non-raise decision " +
-        "(the tournament may have ended, e.g. hero busted); the raise-legality poll cannot continue.",
+        `(the tournament may have ended, e.g. hero busted); the raise-legality poll cannot continue. State: ${JSON.stringify(tableState)}`,
     );
   }
 }
@@ -646,16 +993,30 @@ async function clickRangeAtFraction(cdp, selector, fraction) {
   // maps the first press to that value; starting the gesture at the minimum
   // thumb can be swallowed as a thumb-focus gesture when the app is running
   // with its high-contrast preference enabled.
-  await cdp.send("Input.dispatchMouseEvent", {
+  // Chromium can apply a native range-pointer event while never replying to
+  // the corresponding CDP request under Electron. Send the same real CDP
+  // pointer traffic without awaiting that acknowledgement, then the caller
+  // verifies the observable range value changed. This is stricter than a DOM
+  // assignment and avoids classifying a transport quirk as a product failure.
+  dispatchMouseEventWithoutAcknowledgement(cdp, {
     type: "mouseMoved", x: point.x, y: point.y, button: "none", buttons: 0,
   });
-  await cdp.send("Input.dispatchMouseEvent", {
+  dispatchMouseEventWithoutAcknowledgement(cdp, {
     type: "mousePressed", x: point.x, y: point.y, button: "left", buttons: 1, clickCount: 1,
   });
-  await cdp.send("Input.dispatchMouseEvent", {
+  dispatchMouseEventWithoutAcknowledgement(cdp, {
     type: "mouseReleased", x: point.x, y: point.y, button: "left", buttons: 0, clickCount: 1,
   });
   await delay(100);
+}
+
+function dispatchMouseEventWithoutAcknowledgement(cdp, params) {
+  if (cdp.socket.readyState !== WebSocket.OPEN) {
+    throw new Error("Packaged renderer CDP target closed before pointer dispatch.");
+  }
+  const id = cdp.nextId;
+  cdp.nextId += 1;
+  cdp.socket.send(JSON.stringify({ id, method: "Input.dispatchMouseEvent", params }));
 }
 
 async function sendKey(cdp, key, code, windowsVirtualKeyCode) {
@@ -686,6 +1047,24 @@ async function sendKey(cdp, key, code, windowsVirtualKeyCode) {
 async function pressMockGamepadA(cdp) {
   const result = await cdp.send("Runtime.evaluate", {
     expression: `(() => {
+      // Keep a renderer-side trace of the public event boundary. This is
+      // deliberately observation only: the smoke still has to enter through
+      // the browser Gamepad API and the table still has to react on its own.
+      // It distinguishes a throttled/unobserved browser poll from a real
+      // provider-to-table routing failure when a packaged run is inconclusive.
+      const audit = window.__ptpGamepadAudit ?? { events: [], samples: [] };
+      if (!window.__ptpGamepadAudit) {
+        window.__ptpGamepadAudit = audit;
+        window.addEventListener("ptp:gameaction", (event) => {
+          audit.events.push({
+            actionId: event.detail?.actionId ?? null,
+            hidden: document.hidden,
+            table: Boolean(document.querySelector(".table-screen")),
+            paused: Boolean(document.querySelector(".pause-menu")),
+            at: performance.now(),
+          });
+        });
+      }
       const buttons = Array.from({ length: 16 }, (_, index) => ({
         pressed: index === 0,
         value: index === 0 ? 1 : 0,
@@ -697,6 +1076,14 @@ async function pressMockGamepadA(cdp) {
         value: () => [pad],
       });
       window.dispatchEvent(new Event("gamepadconnected"));
+      audit.samples.push({
+        hidden: document.hidden,
+        visibilityState: document.visibilityState,
+        hasTable: Boolean(document.querySelector(".table-screen")),
+        hasActionDock: Boolean(document.querySelector(".action-dock")),
+        paused: Boolean(document.querySelector(".pause-menu")),
+        at: performance.now(),
+      });
       setTimeout(() => { buttons[0].pressed = false; buttons[0].value = 0; }, 3_000);
       return true;
     })()`,
@@ -736,8 +1123,12 @@ async function pressMockGamepadAUntilRouted(cdp) {
     }
     if (attempt === maxAttempts) {
       record("Gamepad API check or call routing", false);
+      const audit = await evaluateValue(
+        cdp,
+        "JSON.stringify(window.__ptpGamepadAudit ?? null)",
+      );
       throw new Error(
-        `Gamepad API check or call routing: .spectator-dock was not present after ${maxAttempts} press attempts.`,
+        `Gamepad API check or call routing: .spectator-dock was not present after ${maxAttempts} press attempts. Renderer trace: ${audit ?? "unavailable"}`,
       );
     }
     record(`Gamepad API check or call routing attempt ${attempt} did not land; retrying`, true);

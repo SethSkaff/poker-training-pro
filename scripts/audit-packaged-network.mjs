@@ -15,6 +15,7 @@ import {
   buildRepresentativePlayPlan,
   summarizeNetworkPlayAudit,
 } from "./release/packaged-network-play-lib.mjs";
+import { isCdpTransportTimeout } from "./lib/cdp-outcome.mjs";
 
 const NETWORK_PROFILE_PREFIX = "poker-training-pro-network-audit-";
 
@@ -22,7 +23,7 @@ const projectRoot = resolve(new URL("..", import.meta.url).pathname.slice(1));
 const appArgument = argumentValue("--app");
 const appPath = resolve(
   projectRoot,
-  appArgument ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
+  appArgument ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
 );
 const observationMs = numberArgument("--duration-ms", 45_000);
 const reportPath = resolve(projectRoot, "work", "packaged-network-audit.json");
@@ -107,6 +108,7 @@ const reachedModes = new Set();
 const completedStepIds = [];
 let cdp;
 let playError = null;
+let transportTimeout = null;
 
 try {
   const deadline = Date.now() + observationMs;
@@ -127,18 +129,26 @@ try {
     if (ok) {
       completedStepIds.push(step.id);
       // Menu/home expectations prove routing, but only a real gameplay table
-      // or tutorial proves that a representative mode was actually exercised.
+        // proves that a representative mode was actually exercised.
       if (
         step.kind === "expectScreen" &&
         step.mode &&
-        ["poker-table", "tutorial"].includes(step.screen)
+        step.screen === "poker-table"
       ) {
         reachedModes.add(step.mode);
       }
     }
   }
 } catch (error) {
-  playError = error instanceof Error ? error.message : String(error);
+  // A CDP command deadline proves neither a clean network observation nor a
+  // policy violation; it must not be reported as a product failure (E25-003).
+  // The network *observations* collected before the timeout still stand and are
+  // reported, since a request that was made was made.
+  if (isCdpTransportTimeout(error)) {
+    transportTimeout = error instanceof Error ? error.message : String(error);
+  } else {
+    playError = error instanceof Error ? error.message : String(error);
+  }
 } finally {
   try {
     cdp?.close();
@@ -168,19 +178,29 @@ const report = summarizeNetworkPlayAudit({
 });
 if (launchError) report.launchError = launchError;
 if (playError) report.playError = playError;
+if (transportTimeout) {
+  report.transportTimeout = transportTimeout;
+  // The walk-through did not finish, so "reached every mode" cannot be
+  // claimed. Say so as inconclusive rather than as a violation.
+  report.ok = false;
+  report.outcome = "inconclusive-cdp-timeout";
+}
 
 mkdirSync(dirname(reportPath), { recursive: true });
 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
-if (!report.ok) {
+if (transportTimeout) {
+  process.stderr.write(`${JSON.stringify(report, null, 2)}\n`);
+  process.exitCode = 2;
+} else if (!report.ok) {
   throw new Error(
     `Packaged network audit failed:\n${report.failures
       .map((error) => `- ${error}`)
       .join("\n")}${playError ? `\n- play error: ${playError}` : ""}`,
   );
+} else {
+  console.log(JSON.stringify({ ok: true, ...report }, null, 2));
 }
-
-console.log(JSON.stringify({ ok: true, ...report }, null, 2));
 
 async function runStep(client, step, deadline) {
   switch (step.kind) {

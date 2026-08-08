@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card, Rank, Suit } from "../types/poker";
-import { buildPots, resolvePots } from "./pots";
+import { buildLivePots, buildPots, resolvePots } from "./pots";
 
 const suits: Record<string, Suit> = {
   c: "clubs",
@@ -19,8 +19,8 @@ function cards(...values: string[]): Card[] {
 describe("pot construction and resolution", () => {
   it("constructs nested main and side pots from contribution caps", () => {
     const result = buildPots([
-      { playerId: "a", amount: 100 },
-      { playerId: "b", amount: 250 },
+      { playerId: "a", amount: 100, allIn: true },
+      { playerId: "b", amount: 250, allIn: true },
       { playerId: "c", amount: 400 },
       { playerId: "d", amount: 400 },
     ]);
@@ -60,9 +60,40 @@ describe("pot construction and resolution", () => {
     ).toBe(result.totalContributed);
   });
 
+  it("keeps unequal non-all-in commitments in one ordinary pot", () => {
+    const result = buildPots([
+      { playerId: "a", amount: 100 },
+      { playerId: "b", amount: 250 },
+      { playerId: "c", amount: 400 },
+    ]);
+    expect(result.pots).toHaveLength(1);
+    expect(result.pots[0]).toMatchObject({ id: "main", kind: "main", amount: 600 });
+    expect(result.refunds).toEqual([{ playerId: "c", amount: 150 }]);
+  });
+
+  it("does not make a side pot from a folded contribution cap", () => {
+    const result = buildPots([
+      { playerId: "folder", amount: 100, folded: true },
+      { playerId: "b", amount: 200 },
+      { playerId: "c", amount: 200 },
+    ]);
+    expect(result.pots).toHaveLength(1);
+    expect(result.pots[0]).toMatchObject({ amount: 500, kind: "main" });
+    expect(result.pots[0]?.eligiblePlayerIds).toEqual(["b", "c"]);
+  });
+
+  it("keeps the blind-only opening total at 75 while the BB excess is pending return", () => {
+    const result = buildLivePots([
+      { playerId: "sb", amount: 25 },
+      { playerId: "bb", amount: 50 },
+    ]);
+    expect(result.pots).toMatchObject([{ id: "main", kind: "main", amount: 75 }]);
+    expect(result.refunds).toEqual([{ playerId: "bb", amount: 25 }]);
+  });
+
   it("awards each side pot independently", () => {
     const pots = buildPots([
-      { playerId: "a", amount: 100 },
+      { playerId: "a", amount: 100, allIn: true },
       { playerId: "b", amount: 200 },
       { playerId: "c", amount: 200 },
     ]).pots;
@@ -116,4 +147,3 @@ describe("pot construction and resolution", () => {
     ).toEqual({ a: 33, b: 34, c: 34 });
   });
 });
-

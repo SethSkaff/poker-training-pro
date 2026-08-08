@@ -19,7 +19,7 @@ const projectRoot = path.resolve(
 );
 const unpackedDirectory = path.resolve(
   process.argv[2] ??
-    path.join(projectRoot, "outputs", "desktop", "win-unpacked"),
+    path.join(projectRoot, "outputs", "next", "win-unpacked"),
 );
 const executable = path.join(unpackedDirectory, "Poker Training Pro.exe");
 const archive = path.join(unpackedDirectory, "resources", "app.asar");

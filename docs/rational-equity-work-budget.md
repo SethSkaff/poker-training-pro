@@ -84,8 +84,6 @@ Before claiming the UI thread is fully protected:
 4. Make replay record the fixed work budget and seed, not elapsed time.
 5. Add packaged desktop measurements for input delay and long tasks at default
    and maximum work, including low-end supported hardware.
-6. Apply the same bounded protocol to the native mobile bridge before enabling
-   maximum-budget Rational decisions there.
 
 Until that integration is complete, the synchronous path is capped and
 measurable but can still occupy its calling thread for the bounded duration.

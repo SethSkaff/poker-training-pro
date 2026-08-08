@@ -4,12 +4,12 @@
   "generatedAtPolicy": "deterministic-no-timestamp",
   "inventoryRoots": [
     "build",
-    "ios",
     "public",
     "src"
   ],
   "runtimeAssetExtensions": [
     ".gif",
+    ".glb",
     ".ico",
     ".jpeg",
     ".jpg",
@@ -61,7 +61,7 @@
         "detail": "No commercial redistribution rights record for the parent generated mark."
       },
       "publisherMustProvide": [
-        "Clear the parent mark for commercial Windows and mobile distribution.",
+        "Clear the parent mark for commercial Windows and macOS desktop distribution.",
         "Archive the deterministic icon-generation recipe and tool version."
       ]
     },
@@ -96,7 +96,7 @@
         "detail": "No commercial redistribution rights record for the parent generated mark."
       },
       "publisherMustProvide": [
-        "Clear the parent mark for commercial Windows and mobile distribution.",
+        "Clear the parent mark for commercial Windows and macOS desktop distribution.",
         "Archive the deterministic resize recipe and tool version."
       ]
     },
@@ -207,7 +207,7 @@
       "publisherMustProvide": [
         "Archive the original generation request, exact output, account/receipt context, and applicable service terms version.",
         "Document human review for third-party likeness, trademark, and character/IP conflicts.",
-        "Record a publisher approval naming desktop and mobile commercial redistribution."
+        "Record a publisher approval naming Windows and macOS desktop commercial redistribution."
       ]
     },
     {
@@ -250,7 +250,7 @@
       "publisherMustProvide": [
         "Archive the original generation request, exact output, account/receipt context, and applicable service terms version.",
         "Complete trademark and confusing-similarity review for the product mark.",
-        "Record publisher approval for desktop/mobile commercial use and all derived icons."
+        "Record publisher approval for Windows/macOS desktop commercial use and all derived icons."
       ]
     },
     {
@@ -268,7 +268,7 @@
       "rightsStatus": "user-supplied-unverified",
       "sourceEvidence": {
         "releaseSufficient": false,
-        "detail": "Conversation history and TODOS.md call this user-supplied artwork, but repository evidence does not identify its creator, original source, or delivery receipt."
+        "detail": "Historical project notes call this user-supplied artwork, but repository evidence does not identify its creator, original source, or delivery receipt."
       },
       "masterEvidence": {
         "releaseSufficient": false,
@@ -280,7 +280,7 @@
       },
       "publisherMustProvide": [
         "Identify the creator and original source/master.",
-        "Provide a signed ownership statement or license covering commercial desktop/mobile redistribution, adaptation, and marketing.",
+        "Provide a signed ownership statement or license covering commercial Windows/macOS desktop redistribution, adaptation, and marketing.",
         "Clear all depicted characters, logos, cards, artwork, and other third-party elements."
       ]
     },
@@ -367,6 +367,36 @@
         "Archive generation request, output receipt, terms version, and designated master.",
         "Complete third-party IP review and record publisher commercial-use approval."
       ]
+    },
+    {
+      "path": "src/assets/table.glb",
+      "shippingRole": "authored-3d-table-card-and-chip-master-compiled-into-the-bundle",
+      "format": "GLB",
+      "bytes": 190976,
+      "sha256": "876a72cc8499e4f7829af400583aceb6f2075e2e1e91ce854d72ab7c847398cf",
+      "dimensions": "13 meshes, 6461 triangles",
+      "embeddedMetadata": {
+        "inspection": "glTF 2.0 binary; JSON + BIN chunks only; no materials, no textures, no images, no external URIs, no extensions."
+      },
+      "provenanceStatus": "generated-provenance-verified",
+      "rightsStatus": "approved-commercial-redistribution",
+      "derivationEvidence": {
+        "status": "recipe-archived-and-reproducible",
+        "detail": "Generated, not derived from any other declared asset. Exported by `blender --background --factory-startup --python tools/blender/build_table.py -- --out src/assets/table.glb`. That script is checked in, takes no external input, and builds every mesh arithmetically from the dimensions in src/scene3d/tableStations.ts. `tools/glb-to-geometry.mjs` compiles this file into src/scene3d/generated/tableGeometry.ts, which is what the bundle actually ships."
+      },
+      "sourceEvidence": {
+        "releaseSufficient": true,
+        "detail": "Original work with no external source asset: the mesh is generated arithmetically by a checked-in script from checked-in constants. Blender 2.93.5 is the tool, not a content source, and contributes no geometry, material, or texture to the output."
+      },
+      "masterEvidence": {
+        "releaseSufficient": true,
+        "detail": "This file is the master. It is byte-reproducible from tools/blender/build_table.py, and src/scene3d/tableGeometryLibrary.test.ts asserts the compiled geometry still matches the composition constants."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": true,
+        "detail": "Project-owned original work; no third-party licence applies. Blender's GPL covers the application, not files it exports."
+      },
+      "publisherMustProvide": []
     }
   ],
   "fontPackages": [

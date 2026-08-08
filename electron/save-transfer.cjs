@@ -48,6 +48,10 @@ const DEFAULT_SETTINGS = Object.freeze({
   tableMotion: "full",
   transitionMotion: "full",
   interfaceScale: "standard",
+  // Presentation-only 3D room (E09-001 M1). Mirrored from the renderer's
+  // `defaultSettings`; the two normalizers must agree or an imported save
+  // silently loses the field on its way through the main process.
+  spatialScene: false,
 });
 
 const DEFAULT_PROGRESS = Object.freeze({
@@ -63,6 +67,13 @@ const DEFAULT_PROGRESS = Object.freeze({
   totalDecisionMs: 0,
   results: [],
   unlockedCircuit: 1,
+  career: { normal: { results: [] }, rational: { results: [] } },
+  reviewTotals: {
+    roundsReviewed: 0,
+    decisions: 0,
+    bestDecisions: 0,
+    totalRegretBigBlinds: 0,
+  },
 });
 
 const ACTIONS = new Set(["fold", "check", "call", "raise", "all-in"]);
@@ -507,6 +518,10 @@ function validateCurrentSettings(value) {
       )
         ? value.interfaceScale
         : DEFAULT_SETTINGS.interfaceScale,
+      spatialScene:
+        typeof value.spatialScene === "boolean"
+          ? value.spatialScene
+          : DEFAULT_SETTINGS.spatialScene,
     },
   };
 }
@@ -550,6 +565,8 @@ function validateCurrentProgress(value) {
     if (!validated.ok) return validated;
     results.push(validated.value);
   }
+  const career = validateCareer(value.career);
+  if (!career.ok) return career;
   return {
     ok: true,
     value: {
@@ -565,8 +582,118 @@ function validateCurrentProgress(value) {
       totalDecisionMs: value.totalDecisionMs,
       results,
       unlockedCircuit: Math.max(1, value.unlockedCircuit),
+      career: career.value,
+      reviewTotals: validateReviewTotals(value.reviewTotals),
     },
   };
+}
+
+/**
+ * Rolling review aggregates. Optional, and clamped rather than rejected: a
+ * nonsensical total is a display problem, not a reason to refuse an import.
+ */
+function validateReviewTotals(value) {
+  const source = isRecord(value) ? value : {};
+  const int = (candidate) =>
+    Number.isInteger(candidate) && candidate >= 0 ? candidate : 0;
+  const decisions = int(source.decisions);
+  return {
+    roundsReviewed: int(source.roundsReviewed),
+    decisions,
+    bestDecisions: Math.min(decisions, int(source.bestDecisions)),
+    totalRegretBigBlinds:
+      Number.isFinite(source.totalRegretBigBlinds) &&
+      source.totalRegretBigBlinds >= 0
+        ? source.totalRegretBigBlinds
+        : 0,
+  };
+}
+
+const CAREER_TRACKS = ["normal", "rational"];
+
+function validateCareerResult(value) {
+  if (
+    !isRecord(value) ||
+    typeof value.eventId !== "string" ||
+    value.eventId.length === 0 ||
+    value.eventId.length > 64 ||
+    typeof value.qualified !== "boolean" ||
+    !Number.isFinite(value.tournamentEloDelta)
+  ) {
+    return failure("invalid-payload", "A career result is invalid.");
+  }
+  for (const key of [
+    "finishPlace",
+    "fieldSize",
+    "sourceFieldSize",
+    "qualifyingPlaces",
+  ]) {
+    if (!Number.isInteger(value[key]) || value[key] < 0) {
+      return failure("invalid-payload", `A career result's ${key} is invalid.`);
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      eventId: value.eventId,
+      finishPlace: value.finishPlace,
+      fieldSize: value.fieldSize,
+      sourceFieldSize: value.sourceFieldSize,
+      qualifyingPlaces: value.qualifyingPlaces,
+      qualified: value.qualified,
+      tournamentEloDelta: value.tournamentEloDelta,
+    },
+  };
+}
+
+function validateCareerTrack(value) {
+  const source = isRecord(value) ? value : {};
+  if (source.results !== undefined && !Array.isArray(source.results)) {
+    return failure("invalid-payload", "A career track is invalid.");
+  }
+  const entries = Array.isArray(source.results) ? source.results : [];
+  if (entries.length > 64) {
+    return failure("invalid-payload", "A career track has too many results.");
+  }
+  const results = [];
+  for (const entry of entries) {
+    const validated = validateCareerResult(entry);
+    if (!validated.ok) return validated;
+    results.push(validated.value);
+  }
+  if (
+    source.activeEventId !== undefined &&
+    (typeof source.activeEventId !== "string" ||
+      source.activeEventId.length === 0 ||
+      source.activeEventId.length > 64)
+  ) {
+    return failure("invalid-payload", "A career active event is invalid.");
+  }
+  return {
+    ok: true,
+    value: source.activeEventId
+      ? { results, activeEventId: source.activeEventId }
+      : { results },
+  };
+}
+
+/**
+ * Career state is optional: saves written before it existed must still import.
+ * Validated field-by-field like everything else here, because this runs in the
+ * main process on a file the user supplied.
+ */
+function validateCareer(value) {
+  if (value !== undefined && !isRecord(value)) {
+    return failure("invalid-payload", "The career state is invalid.");
+  }
+  const source = isRecord(value) ? value : {};
+  const career = {};
+  for (const track of CAREER_TRACKS) {
+    const validated = validateCareerTrack(source[track]);
+    if (!validated.ok) return validated;
+    career[track] = validated.value;
+  }
+  return { ok: true, value: career };
 }
 
 function validateTrainingResult(value) {
@@ -680,6 +807,15 @@ function normalizeLegacyProgress(value) {
       1,
       nonNegativeInteger(source.unlockedCircuit, 1),
     ),
+    // A legacy (pre-versioning) save predates career tracking entirely, so
+    // there is nothing to carry forward; empty tracks keep the shape valid.
+    career: { normal: { results: [] }, rational: { results: [] } },
+    reviewTotals: {
+      roundsReviewed: 0,
+      decisions: 0,
+      bestDecisions: 0,
+      totalRegretBigBlinds: 0,
+    },
   };
 }
 

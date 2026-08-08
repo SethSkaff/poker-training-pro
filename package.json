@@ -8,8 +8,11 @@
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "test": "vitest run",
+    "test:static-budgets": "node --test scripts/audit-static-budgets.test.mjs",
     "build": "tsc --noEmit && vite build",
-    "package:win": "npm run build && electron-builder --win nsis portable --x64 --config.electronDist=node_modules/electron/dist && npm run release:audit-packaged-licenses",
+    "assets:build-table": "blender --background --factory-startup --python tools/blender/build_table.py -- --out src/assets/table.glb && node tools/glb-to-geometry.mjs src/assets/table.glb src/scene3d/generated/tableGeometry.ts tableGeometry",
+    "assets:build-characters": "blender --background --factory-startup --python tools/blender/build_characters.py -- --out work/blender/characters.glb",
+    "package:win": "npm run build && electron-builder --win nsis portable --x64 --config.electronDist=node_modules/electron/dist && npm run release:audit-packaged-3d-scene && npm run release:audit-packaged-licenses",
     "release:verify": "node scripts/release/run-release-verification.mjs",
     "release:asset-rights": "node scripts/validate-asset-rights.mjs",
     "release:verify-fuses": "node scripts/verify-electron-fuses.mjs",
@@ -18,13 +21,22 @@
     "release:audit-packaged-input": "node scripts/audit-packaged-input-smoke.mjs",
     "release:audit-packaged-mode-completion": "node scripts/audit-packaged-mode-completion.mjs",
     "release:audit-packaged-recovery": "node scripts/audit-packaged-save-recovery-smoke.mjs",
+    "release:audit-packaged-presentation": "node scripts/audit-packaged-presentation-surfaces.mjs",
+    "release:audit-packaged-lifecycle-load": "node scripts/audit-packaged-lifecycle-load.mjs",
+    "release:audit-packaged-scene3d": "node scripts/audit-packaged-scene3d-fallback.mjs",
+    "release:audit-packaged-3d-scene": "node scripts/audit-packaged-3d-scene.mjs",
+    "release:audit-packaged-screen-layout": "node scripts/audit-packaged-screen-layout.mjs",
     "release:audit-packaged-lifecycle-security": "node scripts/audit-packaged-lifecycle-bridge-security.mjs",
     "release:audit-packaged-licenses": "node scripts/audit-packaged-license-sidecars.mjs",
     "release:verify-audio-rights": "node scripts/validate-audio-rights.mjs",
     "release:verify-runtime-video-policy": "node scripts/validate-runtime-video-policy.mjs",
-    "release:verify-ios-training-bank": "vite-node scripts/export-ios-training-bank.ts --check",
-    "release:verify-ios-tournament-engine": "node scripts/export-ios-tournament-engine.mjs --check",
-    "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs"
+    "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs",
+    "diagnose:motion": "node scripts/diagnose-motion.mjs",
+    "measure:ai": "vite-node -c scripts/vite-node.config.mjs scripts/report-ai-behavior.ts --",
+    "measure:exploitability": "vite-node -c scripts/vite-node.config.mjs scripts/report-exploitability.ts --",
+    "measure:critic": "vite-node -c scripts/vite-node.config.mjs scripts/report-critic-harness.ts --",
+    "release:audit-ai-behavior": "vite-node -c scripts/vite-node.config.mjs scripts/audit-ai-behavior-gates.ts",
+    "release:audit-exploitability": "vite-node -c scripts/vite-node.config.mjs scripts/audit-exploitability-gates.ts"
   },
   "engines": {
     "node": ">=22.12.0",
@@ -35,7 +47,8 @@
     "@fontsource/inter": "5.3.0",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@electron/fuses": "2.1.2",
@@ -43,6 +56,7 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "6.0.4",
     "concurrently": "^9.2.1",
     "electron": "43.2.0",
@@ -57,7 +71,7 @@
     "productName": "Poker Training Pro",
     "asar": true,
     "directories": {
-      "output": "outputs/desktop",
+      "output": "outputs/next",
       "buildResources": "build"
     },
     "files": [

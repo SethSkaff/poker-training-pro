@@ -24,6 +24,10 @@ export const defaultSettings: GameSettings = {
   tableMotion: "full",
   transitionMotion: "full",
   interfaceScale: "standard",
+  // The 3D room is off until the vertical slice is complete (E09-001 M1). It is
+  // presentation only, so this default changes what is drawn and never what the
+  // game does.
+  spatialScene: false,
   // No control remaps by default; the action map supplies built-in bindings.
 };
 
@@ -40,6 +44,13 @@ export const defaultProgress: PlayerProgress = {
   totalDecisionMs: 0,
   results: [],
   unlockedCircuit: 1,
+  career: { normal: { results: [] }, rational: { results: [] } },
+  reviewTotals: {
+    roundsReviewed: 0,
+    decisions: 0,
+    bestDecisions: 0,
+    totalRegretBigBlinds: 0,
+  },
 };
 
 function readValue<T>(key: string, fallback: T, legacyKey?: string): T {

@@ -1,5 +1,13 @@
-import { ArrowLeft, ArrowRight, LockKeyhole, Trophy } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  Check,
+  ChevronRight,
+  LockKeyhole,
+  Trophy,
+} from "lucide-react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { formatClock, formatChips } from "../lib/format";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import { useResilientAsset } from "../lib/useResilientAsset";
@@ -223,7 +231,7 @@ export function HomeView({
 
 interface ModeSelectProps {
   onBack: () => void;
-  onSelect: (mode: GameMode | "timed" | "tutorial") => void;
+  onSelect: (mode: GameMode | "timed" | "tutorial" | "reference") => void;
 }
 
 export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
@@ -322,15 +330,28 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
             <ArrowRight size={21} />
           </button>
         </div>
-        <button
-          className="mode-stage__tutorial-link"
-          type="button"
-          onClick={() => onSelect("tutorial")}
-        >
-          {formatMessage("dashboard.modeSelect.tutorialPrompt")}{" "}
-          <strong>{formatMessage("dashboard.modeSelect.tutorialCta")}</strong>
-          <ArrowRight size={16} aria-hidden="true" />
-        </button>
+        {/*
+          The beginner tutorial entry is gone (E21-001 / E27-010). The decision
+          was to remove the weak tutorial rather than keep advertising it, and
+          "New to the table? Learn the basics" was the last thing still doing so.
+
+          Poker Reference stays and takes the central place: it is not a
+          tutorial, it is a compact reference a player of any level wants
+          mid-thought, and it is now the single item here rather than the second
+          of two competing offers. The onboarding framing around it is gone too
+          -- it is simply what it is.
+        */}
+        <div className="mode-stage__secondary mode-stage__secondary--single">
+          <button
+            className="mode-stage__reference-link"
+            type="button"
+            onClick={() => onSelect("reference")}
+          >
+            <BookOpen size={17} aria-hidden="true" />
+            <strong>{formatMessage("dashboard.modeSelect.referenceCta")}</strong>
+            <ArrowRight size={16} aria-hidden="true" />
+          </button>
+        </div>
       </section>
     </main>
   );
@@ -425,6 +446,12 @@ function resultForEvent(
 interface TourLobbyProps {
   mode: TournamentPolicyMode;
   careerResults: readonly TournamentSessionCareerResult[];
+  /**
+   * The event the player left in progress, if any. Resuming it takes priority
+   * over recommending the next unqualified event, so a career picks up where
+   * it was rather than restarting at the first unlocked event.
+   */
+  activeEventId?: string;
   onBack: () => void;
   onStartEvent?: (eventId: string) => void;
 }
@@ -432,6 +459,7 @@ interface TourLobbyProps {
 export function TourLobby({
   mode,
   careerResults,
+  activeEventId,
   onBack,
   onStartEvent,
 }: TourLobbyProps) {
@@ -439,7 +467,13 @@ export function TourLobby({
     () => listTournamentSessionEvents(careerResults),
     [careerResults],
   );
+  // Priority: resume the active event -> continue the next required event ->
+  // fall back to anything unlocked.
+  const activeEvent = activeEventId
+    ? events.find((event) => event.id === activeEventId && event.unlocked)
+    : undefined;
   const initialEvent =
+    activeEvent ??
     events.find(
       (event) =>
         event.unlocked && !resultForEvent(careerResults, event.id)?.qualified,
@@ -448,6 +482,13 @@ export function TourLobby({
   const selected = events.find((event) => event.id === selectedId) ?? initialEvent;
   const selectedResult = resultForEvent(careerResults, selected.id);
   const openingLevel = selected.structure.levels[0];
+  // The marker sits on the current event's slot: with N events the slots are
+  // centred at (i + 0.5)/N of the route's width.
+  const currentIndex = Math.max(
+    0,
+    events.findIndex((event) => event.id === initialEvent.id),
+  );
+  const routeProgress = ((currentIndex + 0.5) / Math.max(1, events.length)) * 100;
 
   return (
     <main className="night-shell night-shell--tour" {...localeTextAttributes()}>
@@ -463,11 +504,40 @@ export function TourLobby({
               : formatMessage("modes.rationalTour")}
           </p>
           <h1>{formatMessage("dashboard.tour.title")}</h1>
+          {/* Career state made visible: how far this track has come, and
+              which event is waiting. Both read from the persisted save, so
+              they survive a relaunch. */}
+          <p className="tour-lobby__progress" role="status">
+            <strong>
+              {formatMessage("dashboard.tour.progressCount", {
+                qualified: careerResults.filter((result) => result.qualified)
+                  .length,
+                total: events.length,
+              })}
+            </strong>
+            <span>
+              {activeEvent
+                ? formatMessage("dashboard.tour.resuming", {
+                    eventName: activeEvent.name,
+                  })
+                : formatMessage("dashboard.tour.nextUp", {
+                    eventName: initialEvent.name,
+                  })}
+            </span>
+          </p>
         </header>
 
+        {/*
+          A horizontal route rather than a stacked list: the journey reads
+          left-to-right, with the marker sitting on the current event and the
+          connecting line filled up to it. Stage is conveyed by an explicit
+          text label and a distinct glyph as well as colour, so the states stay
+          distinguishable without it.
+        */}
         <ol
           className="event-route"
           aria-label={formatMessage("dashboard.tour.eventsAriaLabel")}
+          style={{ "--route-progress": `${routeProgress}%` } as CSSProperties}
         >
           {events.map((event, index) => {
             const result = resultForEvent(careerResults, event.id);
@@ -484,8 +554,15 @@ export function TourLobby({
                       fieldSize: result.fieldSize,
                     })
                   : formatMessage("dashboard.tour.available");
+            const stage = !event.unlocked
+              ? "future"
+              : result?.qualified
+                ? "complete"
+                : event.id === initialEvent.id
+                  ? "current"
+                  : "future";
             return (
-              <li key={event.id}>
+              <li key={event.id} data-stage={stage}>
                 <button
                   type="button"
                   disabled={!event.unlocked}
@@ -493,10 +570,21 @@ export function TourLobby({
                   aria-current={selected.id === event.id ? "true" : undefined}
                   onClick={() => setSelectedId(event.id)}
                 >
-                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <span className="event-route__index">
+                    {stage === "complete" ? (
+                      <Check size={15} aria-hidden="true" />
+                    ) : stage === "current" ? (
+                      <ChevronRight size={15} aria-hidden="true" />
+                    ) : (
+                      String(index + 1).padStart(2, "0")
+                    )}
+                  </span>
                   <div>
                     <strong>{event.name}</strong>
                     <small>{status}</small>
+                    <em className="event-route__stage">
+                      {formatMessage(`dashboard.tour.stage.${stage}`)}
+                    </em>
                   </div>
                   {!event.unlocked && <LockKeyhole size={15} />}
                 </button>
@@ -576,6 +664,12 @@ export function PlayerRecord({ progress, onBack }: PlayerRecordProps) {
     progress.trainingCompleted > 0
       ? progress.totalDecisionMs / progress.trainingCompleted
       : 0;
+  // Undefined rather than 0% until at least one round has been reviewed, so an
+  // untouched profile does not read as either perfect or failing.
+  const reviewAccuracy =
+    progress.reviewTotals && progress.reviewTotals.decisions > 0
+      ? progress.reviewTotals.bestDecisions / progress.reviewTotals.decisions
+      : undefined;
 
   return (
     <main className="night-shell night-shell--overlay" {...localeTextAttributes()}>
@@ -645,7 +739,14 @@ export function TournamentCeremony({
   return (
     <main className="night-shell night-shell--ceremony" {...localeTextAttributes()}>
       <NightCircuitScene quiet />
-      <section className="ceremony-board">
+      <section
+        className="ceremony-board"
+        data-outcome={result.qualified || result.finishPlace === 1 ? "win" : "out"}
+      >
+        {/* A restrained celebratory beat. Purely decorative: the placement,
+            qualification, and Elo change below carry the actual result, so
+            the payoff is additive rather than load-bearing. */}
+        <i className="ceremony-board__flare" aria-hidden="true" />
         <Trophy size={36} strokeWidth={1.5} />
         <p>{result.eventName}</p>
         <h1>{headline}</h1>
@@ -681,9 +782,29 @@ export function TournamentCeremony({
           </div>
         )}
 
+        {/* What happens next, always stated. Qualifying used to show a Next
+            button while a failed run showed only "Return to menu", which is
+            what made the career feel like it dead-ended into a menu. */}
+        <p className="ceremony-board__next" role="status">
+          {result.nextEventId
+            ? formatMessage("dashboard.ceremony.nextUp", {
+                eventName:
+                  eventNames.get(result.nextEventId) ?? result.nextEventId,
+              })
+            : result.qualified
+              ? formatMessage("dashboard.ceremony.journeyComplete")
+              : formatMessage("dashboard.ceremony.retryPath", {
+                  eventName: result.eventName,
+                })}
+        </p>
+
         <div className="ceremony-board__actions">
           {result.nextEventId && onNext && (
-            <button type="button" onClick={() => onNext(result.nextEventId!)}>
+            <button
+              className="ceremony-board__primary"
+              type="button"
+              onClick={() => onNext(result.nextEventId!)}
+            >
               {formatMessage("dashboard.ceremony.nextEvent")} <ArrowRight size={18} />
             </button>
           )}

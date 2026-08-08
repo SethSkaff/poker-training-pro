@@ -29,7 +29,13 @@ npm run build
 npm run package:win
 ```
 
-Installers and portable builds are written to `outputs/desktop`.
+The approved playable build is always in `outputs/current`. Packaging writes the
+candidate build to `outputs/next`; after approval, run
+`powershell -File scripts/promote-build.ps1 -Force` to replace `current` with it.
+No other versioned build folders should be created.
+
+See [APP_OVERVIEW.md](APP_OVERVIEW.md) for the current product and architecture
+brief, and [VERSION_POLICY.md](VERSION_POLICY.md) for the two-slot build rule.
 
 ## Research baseline
 

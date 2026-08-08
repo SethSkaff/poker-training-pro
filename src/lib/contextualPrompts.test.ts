@@ -10,6 +10,8 @@ import {
   resetContextualPromptState,
   type ContextualPromptId,
   type ContextualPromptSignals,
+  PROMPT_RECURRENCE,
+  type ContextualPromptState,
 } from "./contextualPrompts";
 
 function seat(overrides: Partial<SeatPlayer> = {}): SeatPlayer {
@@ -204,13 +206,15 @@ describe("detectContextualPromptOccurrences", () => {
 
 describe("first-occurrence, dismiss, and replay", () => {
   it("offers only the first unseen prompt for the current occurrences", () => {
-    const state = defaultContextualPromptState();
+    // Prompts are off by default now (E27-010); these tests exercise the
+    // prompt mechanics, so they opt in explicitly.
+    const state = { ...defaultContextualPromptState(), enabled: true };
     const prompt = nextContextualPrompt(state, ["all-in", "side-pot"]);
     expect(prompt?.id).toBe("all-in");
   });
 
   it("does not repeat a dismissed prompt (first occurrence only)", () => {
-    let state = defaultContextualPromptState();
+    let state = { ...defaultContextualPromptState(), enabled: true };
     const first = nextContextualPrompt(state, ["all-in"]);
     expect(first?.id).toBe("all-in");
 
@@ -227,7 +231,7 @@ describe("first-occurrence, dismiss, and replay", () => {
 
   it("marks seen idempotently", () => {
     const once = markContextualPromptSeen(
-      defaultContextualPromptState(),
+      { ...defaultContextualPromptState(), enabled: true },
       "elimination",
     );
     const twice = markContextualPromptSeen(once, "elimination");
@@ -238,6 +242,20 @@ describe("first-occurrence, dismiss, and replay", () => {
   it("suppresses all prompts while coaching is disabled", () => {
     const disabled = { enabled: false, seen: [] as ContextualPromptId[] };
     expect(nextContextualPrompt(disabled, ["all-in"])).toBeUndefined();
+  });
+
+  /*
+    E27-010. Tips fired for ordinary poker events -- blinds going up, stacks
+    shortening, waiting before acting -- so routine play arrived as paragraphs
+    of commentary beside a table that was showing none of it. They are opt-in
+    now, and a save that never expressed a preference gets the new default
+    rather than inheriting the old one.
+  */
+  it("is off by default, so ordinary play is not narrated", () => {
+    expect(defaultContextualPromptState().enabled).toBe(false);
+    expect(
+      nextContextualPrompt(defaultContextualPromptState(), ["blind-increase"]),
+    ).toBeUndefined();
   });
 
   it("replay clears seen history and re-enables coaching", () => {
@@ -254,5 +272,67 @@ describe("first-occurrence, dismiss, and replay", () => {
     );
     // The exhausted state proves replay is what re-opens them.
     expect(nextContextualPrompt(exhausted, ["elo-change"])).toBeUndefined();
+  });
+});
+
+describe("prompt recurrence", () => {
+  const dismissedEverything: ContextualPromptState = {
+    enabled: true,
+    seen: [
+      "all-in",
+      "side-pot",
+      "minimum-raise",
+      "blind-increase",
+      "elimination",
+      "qualification",
+      "elo-change",
+      "short-stack",
+      "decision-mistake",
+    ],
+  };
+
+  it("keeps a dismissed rule dismissed", () => {
+    // "This is what a side pot is" is true once and then known.
+    for (const id of ["all-in", "side-pot", "minimum-raise"] as const) {
+      expect(nextContextualPrompt(dismissedEverything, [id])).toBeUndefined();
+    }
+  });
+
+  it("brings a situational prompt back in a later session", () => {
+    // The original defect: a player who dismissed "you are short-stacked" in
+    // their first session never saw it again, so the advice switched itself
+    // off exactly when it started to matter.
+    for (const id of [
+      "short-stack",
+      "blind-increase",
+      "elimination",
+      "qualification",
+      "elo-change",
+      "decision-mistake",
+    ] as const) {
+      expect(nextContextualPrompt(dismissedEverything, [id])?.id).toBe(id);
+    }
+  });
+
+  it("does not repeat a situational prompt within one session", () => {
+    expect(
+      nextContextualPrompt(dismissedEverything, ["short-stack"], [
+        "short-stack",
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("still respects the coaching master switch", () => {
+    expect(
+      nextContextualPrompt({ enabled: false, seen: [] }, ["short-stack"]),
+    ).toBeUndefined();
+  });
+
+  it("classifies every prompt exactly once", () => {
+    const ids = Object.keys(CONTEXTUAL_PROMPTS) as ContextualPromptId[];
+    for (const id of ids) {
+      expect(["rule", "situation"]).toContain(PROMPT_RECURRENCE[id]);
+    }
+    expect(Object.keys(PROMPT_RECURRENCE).sort()).toEqual(ids.sort());
   });
 });
