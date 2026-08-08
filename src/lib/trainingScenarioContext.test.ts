@@ -28,7 +28,7 @@ describe("every scenario states the position it is asking about", () => {
   /*
     The reported case, resolved. The trainer recommended an all-in with ace-five
     suited and the screen gave no way to judge it. It is A-5 suited on the button
-    with 11,000 behind at 500/1,000 plus a 125 ante -- eleven big blinds, which
+    with 11,000 behind at 500/1,000 -- eleven big blinds, which
     is push/fold territory and makes the shove ordinary rather than exotic. The
     recommendation was correct; the context was missing.
   */
@@ -39,17 +39,15 @@ describe("every scenario states the position it is asking about", () => {
     expect(context.stackChips).toBe(11_000);
     expect(context.bigBlind).toBe(1_000);
     expect(context.stackBigBlinds).toBe(11);
-    expect(context.ante).toBe(125);
+    expect(context.ante).toBe(0);
     expect(context.shortStacked).toBe(true);
     expect(context.amountToCall).toBe(1_000);
   });
 
-  it("reports the ante, which changes what is worth contesting", () => {
-    // An ante is dead money in the pot; a scenario that hides it makes every
-    // marginal shove look worse than it is.
+  it("neutralizes legacy ante data in new training contexts", () => {
     expect(
       describeTrainingContext(byId("preflop-button-shove-fold-equity")).ante,
-    ).toBe(125);
+    ).toBe(0);
   });
 });
 

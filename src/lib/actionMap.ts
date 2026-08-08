@@ -9,7 +9,7 @@
  *
  * The module is intentionally free of DOM/React dependencies: it is pure data
  * plus pure functions, so it can be unit-tested in the Node/Vitest bundle and
- * imported by both the desktop renderer and the iOS bundle.
+ * imported by the desktop renderer and its test/runtime tooling.
  */
 
 import { formatMessage } from "./localeMessages";

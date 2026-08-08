@@ -23,7 +23,7 @@ const appPath = resolve(
   projectRoot,
   process.argv.includes("--app")
     ? process.argv[process.argv.indexOf("--app") + 1]
-    : "outputs/desktop/win-unpacked/Poker Training Pro.exe",
+    : "outputs/next/win-unpacked/Poker Training Pro.exe",
 );
 const reportPath = resolve(projectRoot, "work", "packaged-lifecycle-bridge-security.json");
 const profile = await mkdtemp(join(tmpdir(), "poker-training-pro-lifecycle-security-"));

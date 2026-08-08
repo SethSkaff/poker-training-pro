@@ -1,6 +1,5 @@
 /**
- * Pseudo-locale completeness sweep (TODOS.md: "pseudo-localization ...
- * layout tests").
+ * Pseudo-locale completeness sweep across the supported desktop screens.
  *
  * Renders each major screen with the deterministic pseudo locale
  * (`createPseudoLocale`, see src/lib/localeMessages.ts) forced as the active
@@ -68,7 +67,7 @@ import {
 } from "./Dashboard";
 import { PlayableTutorial } from "./PlayableTutorial";
 import { PlayChipAcknowledgment } from "./PlayChipAcknowledgment";
-import { PokerTable } from "./PokerTable";
+import { firstNameFor2DPlayer, PokerTable } from "./PokerTable";
 import { RecoveryScreen, type RecoveryScreenActions } from "./RecoveryScreen";
 import { RoomFlythrough } from "./RoomFlythrough";
 import { SaveDataControls } from "./SaveDataControls";
@@ -273,8 +272,8 @@ describe("pseudo-locale completeness sweep", () => {
       />,
     );
     // Career event names, tier labels, and qualification-requirement copy
-    // were migrated into the catalog this pass (see TODOS.md string-
-    // extraction verdict), so this screen now needs no data exemptions.
+    // were migrated into the catalog, so this screen now needs no data
+    // exemptions.
     expectScreenIsPseudoLocalized(markup, []);
   });
 
@@ -432,7 +431,7 @@ describe("pseudo-locale completeness sweep", () => {
       scenario.prompt,
       scenario.mathQuestion.prompt,
       mathTopicTitle,
-      ...scenario.players.filter((player) => player.id !== "hero").map((player) => player.name),
+      ...scenario.players.map((player) => firstNameFor2DPlayer(player.id)),
     ]);
   });
 

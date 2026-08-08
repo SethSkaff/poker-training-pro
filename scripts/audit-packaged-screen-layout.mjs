@@ -52,7 +52,7 @@ const VIEWPORTS = Object.freeze([
 const appPath = resolve(
   projectRoot,
   argumentValue("--app") ??
-    "outputs/desktop/win-unpacked/Poker Training Pro.exe",
+    "outputs/next/win-unpacked/Poker Training Pro.exe",
 );
 const outputDirectory = resolve(projectRoot, "work", "screen-layout");
 const reportPath = resolve(projectRoot, "work", "packaged-screen-layout.json");

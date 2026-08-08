@@ -3,7 +3,7 @@
 This policy gates images, icons, and font binaries in Poker Training Pro. It is
 an evidence and packaging control, not legal advice. A file being attractive,
 user-supplied, AI-generated, already checked in, or technically valid does not
-establish a right to redistribute it in a commercial desktop or mobile game.
+establish a right to redistribute it in a commercial desktop game.
 
 The machine-readable authority is
 `config/asset-rights-ledger.json`. Run:
@@ -35,7 +35,7 @@ Current release status is **blocked**:
 - four PNGs have embedded `caBX` C2PA/JUMBF payloads whose inspected claim text
   names the OpenAI Media Service API, GPT Image 2.0, and the IPTC
   `trainedAlgorithmicMedia` digital source type;
-- one background is identified by the task history and `TODOS.md` as
+- one background is identified by historical project notes as
   user-supplied, but no creator, original master, or rights instrument is
   archived;
 - four favicon/package-icon files are derived from the blocked generated mark;
@@ -78,7 +78,7 @@ of the following in a publisher-controlled release evidence location:
 3. The actual rights instrument and its version/date. This may be a signed
    creator assignment/license or archived service terms that demonstrably
    apply to the output and publisher.
-4. Written scope covering commercial Windows, iPhone, and iPad redistribution,
+4. Written scope covering commercial Windows and macOS desktop redistribution,
    adaptation, store screenshots/marketing, and continued distribution of
    already released versions.
 5. Human review of third-party characters, brands, logos, artwork, playing-card
@@ -129,7 +129,7 @@ copy. Exact hash-matching copies are checked in at:
 - `licenses/fonts/barlow-condensed-OFL-1.1.txt`
 
 The desktop package configuration includes `licenses/**/*`; the final desktop
-and mobile artifact audits must still verify these texts are present. If font
+artifact audits must still verify these texts are present. If font
 files are modified, renamed, subset differently, or replaced, re-review OFL
 reserved-name and modified-version obligations and refresh all hashes.
 

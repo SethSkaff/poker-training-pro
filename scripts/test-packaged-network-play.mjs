@@ -55,7 +55,7 @@ test("a mode the plan never reached fails the audit closed", () => {
     reachedModes: ["normal", "rational", "training"],
   });
   assert.equal(result.ok, false);
-  assert.match(result.failures.join("\n"), /missing: timed, tutorial/);
+  assert.match(result.failures.join("\n"), /missing: timed/);
 });
 
 test("launch and early-exit failures are reported", () => {

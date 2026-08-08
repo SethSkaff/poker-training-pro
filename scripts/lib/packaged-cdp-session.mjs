@@ -145,8 +145,9 @@ export class PackagedSession {
     return result.result?.value;
   }
 
-  async poll(expression, { intervalMs = 70 } = {}) {
-    while (Date.now() < this.deadline) {
+  async poll(expression, { intervalMs = 70, deadlineAt = this.deadline } = {}) {
+    const deadline = Math.min(this.deadline, deadlineAt);
+    while (Date.now() < deadline) {
       this.assertAlive();
       if (await this.evaluate(expression)) return true;
       await delay(intervalMs);

@@ -111,24 +111,6 @@ export const stages = (node) => [
     args: [join("scripts", "validate-runtime-video-policy.mjs")],
   },
   {
-    name: "iOS bundled Training bank parity gate",
-    command: node,
-    args: [
-      join("node_modules", "vite-node", "vite-node.mjs"),
-      "-c",
-      join("scripts", "vite-node.config.mjs"),
-      join("scripts", "export-ios-training-bank.ts"),
-      // vite-node passes everything after `--` through to the script.
-      "--",
-      "--check",
-    ],
-  },
-  {
-    name: "iOS bundled tournament-session engine parity gate",
-    command: node,
-    args: [join("scripts", "export-ios-tournament-engine.mjs"), "--check"],
-  },
-  {
     name: "Offline production bundle and CSP audit",
     command: node,
     args: [join("scripts", "audit-offline-build.mjs")],

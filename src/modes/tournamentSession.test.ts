@@ -145,14 +145,14 @@ describe("compressed career event selection", () => {
     for (const level of event.structure.levels.slice(0, 12)) {
       expect(level.smallBlind / level.bigBlind).toBeGreaterThanOrEqual(0.4);
       expect(level.smallBlind / level.bigBlind).toBeLessThanOrEqual(2 / 3);
-      expect(level.bigBlindAnte).toBe(level.bigBlind);
+      expect(level.bigBlindAnte).toBe(0);
     }
     expect(event.structure.maxSeats).toBe(SESSION_TABLE_SIZE);
   });
 });
 
 describe("six-seat tournament session", () => {
-  it("seats and deals deterministically, posting a big-blind ante and blinds", () => {
+  it("seats and deals deterministically, posting only the blinds", () => {
     const first = beginTournamentSessionHand(createSession());
     const replay = beginTournamentSessionHand(createSession());
     const hand = first.activeHand;
@@ -162,9 +162,12 @@ describe("six-seat tournament session", () => {
     expect(first.tournament.players).toHaveLength(6);
     expect(first.tournament.players).toEqual(replay.tournament.players);
     expect(hand.holeCards).toEqual(replay.activeHand?.holeCards);
-    expect(hand.information.pot).toBe(
-      level.bigBlindAnte + level.smallBlind + level.bigBlind,
-    );
+    expect(hand.information.pot).toBe(level.smallBlind + level.bigBlind);
+    expect(hand.information.pot).toBe(75);
+    expect(hand.information.actions.map((action) => action.type)).toEqual([
+      "small-blind",
+      "big-blind",
+    ]);
     expect(hand.information.actingPlayerId).toBe(nextToAct(hand.betting));
     expect(new Set(first.tournament.players.map((player) => player.seat)).size).toBe(
       6,

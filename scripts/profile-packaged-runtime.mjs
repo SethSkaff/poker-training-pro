@@ -59,7 +59,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_APP = join(
   projectRoot,
   "outputs",
-  "desktop",
+  "next",
   "win-unpacked",
   "Poker Training Pro.exe",
 );

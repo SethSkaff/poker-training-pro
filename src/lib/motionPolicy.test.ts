@@ -18,10 +18,12 @@ const boardEvent: TournamentPresentationEvent = {
 };
 
 describe("tiered motion policy", () => {
-  it("limits app and OS reduced motion to the explicit vestibular tier", () => {
+  it("limits reduced motion to the explicit app-resolved vestibular tier", () => {
     expect(styles).toContain(".motion-vestibular");
     expect(styles).toContain(".reduced-motion .motion-vestibular");
-    expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
+    // App.tsx resolves the live OS preference before it toggles the root class;
+    // a raw media-query rule here would defeat an explicit in-app full choice.
+    expect(styles).not.toContain("@media (prefers-reduced-motion: reduce) {\n  .motion-vestibular");
     expect(styles).not.toContain(".reduced-motion *,");
     expect(styles).not.toContain("@media (prefers-reduced-motion: reduce) {\n  *,");
   });

@@ -8,6 +8,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 
 | Package | Version | Declared license | Evidence |
 |---|---:|---|---|
+| @dimforge/rapier3d-compat | 0.12.0 | Apache-2.0 | node_modules/@dimforge/rapier3d-compat/package.json#license |
 | @electron-internal/extract-zip | 1.0.4 | BSD-2-Clause | node_modules/@electron-internal/extract-zip/package.json#license |
 | @electron/asar | 3.4.1 | MIT | node_modules/@electron/asar/package.json#license |
 | @electron/fuses | 1.8.0 | MIT | node_modules/app-builder-lib/node_modules/@electron/fuses/package.json#license |
@@ -142,6 +143,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | @sindresorhus/is | 4.6.0 | MIT | node_modules/got/node_modules/@sindresorhus/is/package.json#license |
 | @standard-schema/spec | 1.1.0 | MIT | node_modules/@standard-schema/spec/package.json#license |
 | @szmarczak/http-timer | 4.0.6 | MIT | node_modules/@szmarczak/http-timer/package.json#license |
+| @tweenjs/tween.js | 23.1.3 | MIT | node_modules/@tweenjs/tween.js/package.json#license |
 | @tybys/wasm-util | 0.10.3 | MIT | https://registry.npmjs.org/%40tybys%2Fwasm-util/0.10.3#license |
 | @types/cacheable-request | 6.0.3 | MIT | node_modules/@types/cacheable-request/package.json#license |
 | @types/chai | 5.2.3 | MIT | node_modules/@types/chai/package.json#license |
@@ -157,6 +159,9 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | @types/react | 19.2.14 | MIT | node_modules/@types/react/package.json#license |
 | @types/react-dom | 19.2.3 | MIT | node_modules/@types/react-dom/package.json#license |
 | @types/responselike | 1.0.3 | MIT | node_modules/@types/responselike/package.json#license |
+| @types/stats.js | 0.17.4 | MIT | node_modules/@types/stats.js/package.json#license |
+| @types/three | 0.185.0 | MIT | node_modules/@types/three/package.json#license |
+| @types/webxr | 0.5.24 | MIT | node_modules/@types/webxr/package.json#license |
 | @vitejs/plugin-react | 6.0.4 | MIT | node_modules/@vitejs/plugin-react/package.json#license |
 | @vitest/expect | 3.2.7 | MIT | node_modules/@vitest/expect/package.json#license |
 | @vitest/mocker | 3.2.7 | MIT | node_modules/vitest/node_modules/@vitest/mocker/package.json#license |
@@ -263,6 +268,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | fast-deep-equal | 3.1.3 | MIT | node_modules/fast-deep-equal/package.json#license |
 | fast-uri | 3.1.4 | BSD-3-Clause | node_modules/fast-uri/package.json#license |
 | fdir | 6.5.0 | MIT | node_modules/vitest/node_modules/fdir/package.json#license |
+| fflate | 0.8.3 | MIT | node_modules/fflate/package.json#license |
 | filelist | 1.0.6 | Apache-2.0 | node_modules/filelist/package.json#license |
 | follow-redirects | 1.16.0 | MIT | node_modules/follow-redirects/package.json#license |
 | form-data | 4.0.6 | MIT | node_modules/form-data/package.json#license |
@@ -350,6 +356,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | magic-string | 0.30.21 | MIT | node_modules/magic-string/package.json#license |
 | matcher | 3.0.0 | MIT | node_modules/matcher/package.json#license |
 | math-intrinsics | 1.1.0 | MIT | node_modules/math-intrinsics/package.json#license |
+| meshoptimizer | 1.1.1 | MIT | node_modules/meshoptimizer/package.json#license |
 | mime | 2.6.0 | MIT | node_modules/mime/package.json#license |
 | mime-db | 1.52.0 | MIT | node_modules/mime-types/node_modules/mime-db/package.json#license |
 | mime-types | 2.1.35 | MIT | node_modules/mime-types/package.json#license |
@@ -445,6 +452,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | temp | 0.9.4 | MIT | node_modules/temp/package.json#license |
 | temp-file | 3.4.0 | MIT | node_modules/temp-file/package.json#license |
 | terser | 5.47.1 | BSD-2-Clause | node_modules/terser/package.json#license |
+| three | 0.185.1 | MIT | node_modules/three/package.json#license |
 | tiny-async-pool | 1.3.0 | MIT | node_modules/tiny-async-pool/package.json#license |
 | tinybench | 2.9.0 | MIT | node_modules/tinybench/package.json#license |
 | tinyexec | 0.3.2 | MIT | node_modules/tinyexec/package.json#license |
@@ -461,7 +469,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | type-fest | 0.13.1 | (MIT OR CC0-1.0) | node_modules/type-fest/package.json#license |
 | typescript | 5.9.3 | Apache-2.0 | node_modules/typescript/package.json#license |
 | undici | 6.27.0 | MIT | node_modules/node-gyp/node_modules/undici/package.json#license |
-| undici | 7.28.0 | MIT | https://registry.npmjs.org/undici/7.28.0#license |
+| undici | 7.28.0 | MIT | node_modules/undici/package.json#license |
 | undici-types | 6.21.0 | MIT | node_modules/undici-types/package.json#license |
 | undici-types | 7.18.2 | MIT | node_modules/electron/node_modules/undici-types/package.json#license |
 | universalify | 0.1.2 | MIT | node_modules/universalify/package.json#license |
@@ -489,4 +497,4 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | yargs-parser | 21.1.1 | ISC | node_modules/yargs-parser/package.json#license |
 | yocto-queue | 0.1.0 | MIT | node_modules/yocto-queue/package.json#license |
 
-Locked paths: 544. Unique package/version identities: 480.
+Locked paths: 552. Unique package/version identities: 488.

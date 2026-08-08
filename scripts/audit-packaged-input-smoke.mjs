@@ -22,7 +22,7 @@ const PROFILE_PREFIX = "poker-training-pro-input-smoke-";
 const projectRoot = resolve(new URL("..", import.meta.url).pathname.slice(1));
 const appPath = resolve(
   projectRoot,
-  argumentValue("--app") ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
+  argumentValue("--app") ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
 );
 const reportPath = resolve(projectRoot, "work", "packaged-input-smoke.json");
 const TABLE_GEOMETRY_VIEWPORTS = [

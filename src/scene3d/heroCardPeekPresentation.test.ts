@@ -8,15 +8,15 @@ const scene = readFileSync(path.join(root, "tableScene.ts"), "utf8");
 const snapshot = readFileSync(path.join(root, "tableSceneSnapshot.ts"), "utf8");
 
 describe("hero card peek presentation", () => {
-  it("uses a two-hand shield and retires the old floating corner flap", () => {
+  it("uses asymmetric side-shield and rear-brace hands without legacy overlap props", () => {
     expect(scene).toContain("function buildHeroPeekHands");
-    expect(scene).toContain('role: "side-lift" | "rear-brace"');
-    expect(scene).toContain('addHand("peek-side-lift-hand", -0.074, -0.004, -0.10, 1, "side-lift");');
-    expect(scene).toContain('addHand("peek-rear-brace-hand", 0.018, -0.068, 0.08, -1, "rear-brace");');
-    expect(scene).toContain("They intentionally cannot cover either rank/suit window");
-    expect(scene).toContain("The old folded corner is intentionally retired during the full physical");
-    expect(scene).not.toContain("The folded-back corner of a card, as a flat triangle");
-    expect(scene).not.toContain("const positions = new Float32Array([...creaseA, ...creaseB, ...tip])");
+    expect(scene).toContain('leftPalm.name = "hero-left-palm-facing-right";');
+    expect(scene).toContain('rightPalm.name = "hero-right-palm-behind-cards";');
+    expect(scene).toContain('"hero-right-centre-thumb"');
+    expect(scene).toContain('hands.userData.rig = "left-side-shield/right-rear-brace/centre-thumb";');
+    expect(scene).not.toContain("buildHeroPeekHandsLegacy");
+    expect(scene).not.toContain("cornerFoldGeometry");
+    expect(scene).not.toContain('fold.name = "card-fold"');
   });
 
   it("keeps the real-card reveal private to an active hero peek", () => {
@@ -25,37 +25,29 @@ describe("hero card peek presentation", () => {
     expect(scene).toContain("const squeezing = seat.isHero && peeked && !folded");
   });
 
-  it("paints the hero's card faces while peeking, and retains card backs when no face code is authorised", () => {
-    /*
-      `publicCardCodes` is intentionally empty for a closed hero hand.  The
-      renderer must not add a second `!squeezing` condition here: that was the
-      regression which made the active private peek continue to show only two
-      card backs.  A code can only enter the snapshot for an active hero peek
-      or an engine-authorised public reveal, so it is safe and required to use
-      the face material directly.
-    */
-    expect(scene).toContain("mesh.material = code\n      ? resources.cardFaceMaterial(code)");
-    expect(scene).toContain(": resources.deckBackMaterial(deckColourForHand(handId ?? transition?.handId));");
-    expect(scene).not.toContain("mesh.material = code && !squeezing");
+  it("keeps the planted half backed and authorises a face only on the grouped bent half", () => {
+    expect(scene).toContain("mesh.geometry = squeezing ? resources.heroPeekCardGeometry : resources.cardGeometry;");
+    expect(scene).toContain("mesh.material = squeezing\n      ? [deckBack, code ? resources.heroPeekFaceMaterial(code) : resources.cardMaterial]");
+    expect(scene).toContain("mesh.userData.privateCodeAuthorised = squeezing && Boolean(code);");
+    expect(scene).toContain("geometry.addGroup(0, 6, 0);");
+    expect(scene).toContain("geometry.addGroup(6, rows * 6, 1);");
+    expect(scene).not.toContain('peekFace.name = "hero-peek-face";');
   });
 
-  it("uses an actual curved exposed half-card instead of rotating a full card", () => {
-    expect(scene).toContain("function heroPeekGeometry(): BufferGeometry");
+  it("bends only the upper half with the authored card UV orientation", () => {
+    expect(scene).toContain("function heroPeekCardGeometry(): BufferGeometry");
     expect(scene).toContain("const rows = 12;");
-    expect(scene).toContain("const hingeRadians = 24 * Math.PI / 180;");
-    expect(scene).toContain("fullCard: true");
-    expect(scene).toContain("const revealedEdge = 0.058;");
-    expect(scene).toContain("Math.sin(progress * Math.PI * 0.5) * 0.032");
-    expect(scene).toContain("const textureV = 0.58 + progress * 0.40;");
-    expect(scene).toContain("mesh.geometry = squeezing ? resources.heroPeekGeometry : resources.cardGeometry;");
-    expect(scene).toContain("card.scale.setScalar(1);");
+    expect(scene).toContain("const hingeRadians = HERO_PEEK_HINGE_DEGREES * Math.PI / 180;");
+    expect(scene).toContain("plantedFraction: HERO_PEEK_CARD_PLANTED_FRACTION");
+    expect(scene).toContain("exposedFraction: HERO_PEEK_CARD_EXPOSED_FRACTION");
+    expect(scene).toContain("const material = track(source.clone());");
+    expect(scene).toContain("material.emissiveIntensity = 0.32;");
+    expect(scene).toContain("fullCard: false");
+    expect(scene).not.toContain("fullCard: true");
+    expect(scene).toContain("uvs.push(...heroPeekFaceUvForLocalPoint(x, progress * HERO_PEEK_CARD_EXPOSED_FRACTION));");
+    expect(scene).toContain("indices.push(left, left + 1, left + 2, left + 1, left + 3, left + 2);");
+    expect(scene).not.toContain("indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);");
     expect(scene).toContain("card.rotation.x = 0;");
-    expect(scene).toContain("card.rotation.y = squeezing ? (index === 0 ? 0.025 : -0.025) : 0;");
     expect(scene).toContain("const spread = squeezing ? 0.040 : 0.055;");
-    expect(scene).toContain("local[1] + HERO_PEEK_HAND_ROOT_OFFSET.y");
-    expect(scene).toContain("local[2] + HERO_PEEK_HAND_ROOT_OFFSET.z");
-    expect(scene).toContain("palm.scale.set(side === \"left\" ? 0.024 : 0.022, 0.012, 0.030);");
-    expect(scene).not.toContain("hand.rotation.set(0, side === \"left\" ? -0.38 : 0.18");
-    expect(scene).toContain("fold.visible = false;");
   });
 });

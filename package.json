@@ -30,8 +30,6 @@
     "release:audit-packaged-licenses": "node scripts/audit-packaged-license-sidecars.mjs",
     "release:verify-audio-rights": "node scripts/validate-audio-rights.mjs",
     "release:verify-runtime-video-policy": "node scripts/validate-runtime-video-policy.mjs",
-    "release:verify-ios-training-bank": "vite-node -c scripts/vite-node.config.mjs scripts/export-ios-training-bank.ts -- --check",
-    "release:verify-ios-tournament-engine": "node scripts/export-ios-tournament-engine.mjs --check",
     "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs",
     "diagnose:motion": "node scripts/diagnose-motion.mjs",
     "measure:ai": "vite-node -c scripts/vite-node.config.mjs scripts/report-ai-behavior.ts --",

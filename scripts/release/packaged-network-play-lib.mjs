@@ -4,9 +4,9 @@
  * plan and the pass/fail evaluation are pure and unit-tested here so the audit's
  * intent is verified without a package build.
  *
- * Contract: ordinary offline play in every mode must contact zero network
- * endpoints. Any observed proxy connection, or any mode the plan failed to
- * reach, fails the audit closed.
+ * Contract: ordinary offline play in every public mode must contact zero
+ * network endpoints. Any observed proxy connection, or any mode the plan
+ * failed to reach, fails the audit closed.
  */
 
 export const REPRESENTATIVE_MODES = Object.freeze([
@@ -14,7 +14,6 @@ export const REPRESENTATIVE_MODES = Object.freeze([
   "rational",
   "training",
   "timed",
-  "tutorial",
 ]);
 
 /**
@@ -142,21 +141,6 @@ export function buildRepresentativePlayPlan() {
   settle("timed", "timed-act-settle", 500);
   pauseAndLeave("timed", true);
 
-  // Tutorial.
-  push("tutorial", { id: "tutorial-open-play", kind: "clickSelector", selector: 'button[aria-label="Play"]' });
-  settle("tutorial", "tutorial-play-settle");
-  push("tutorial", {
-    id: "tutorial-select",
-    kind: "clickSelector",
-    selector: ".mode-stage__tutorial-link",
-  });
-  push("tutorial", {
-    id: "tutorial-screen",
-    kind: "expectScreen",
-    screen: "tutorial",
-    expectedText: "Playable tutorial",
-  });
-
   return { schemaVersion: 1, modes: [...REPRESENTATIVE_MODES], steps };
 }
 
@@ -243,8 +227,8 @@ export function summarizeNetworkPlayAudit({
     ok: evaluation.ok,
     failures: evaluation.failures,
     scope:
-      "Deny-proxy launch plus scripted representative play through every mode " +
-      "(Normal, Rational, Training, Timed, tutorial) under CDP, asserting zero " +
+      "Deny-proxy launch plus scripted representative play through every public mode " +
+      "(Normal, Rational, Training, Timed) under CDP, asserting zero " +
       "network contact. Static source/CSP scans cover bundled runtime references separately.",
   };
 }

@@ -55,7 +55,7 @@ if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
   );
 }
 
-const DEFAULT_APP = join(projectRoot, "outputs", "desktop", "win-unpacked", "Poker Training Pro.exe");
+const DEFAULT_APP = join(projectRoot, "outputs", "next", "win-unpacked", "Poker Training Pro.exe");
 const PROFILE_PREFIX = "poker-training-pro-flash-capture-";
 const LAUNCH_TIMEOUT_MS = 30_000;
 const NAVIGATION_TIMEOUT_MS = 8_000;

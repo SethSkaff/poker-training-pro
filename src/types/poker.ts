@@ -182,7 +182,7 @@ export interface PlayerProgress {
 
 // Persisted per-device control remaps. Only differences from the built-in
 // defaults are stored; see `src/lib/actionMap.ts`. Optional so existing saves
-// (and the iOS bundle) remain valid without it.
+// remain valid without it.
 export type { ControlBindingOverrides } from "../lib/actionMap";
 import type { ControlBindingOverrides } from "../lib/actionMap";
 

@@ -5,9 +5,16 @@ import { test } from "node:test";
 import {
   assertCase,
   assertForcedFallbackRunoutParity,
+  chipCountForAmount,
 } from "./audit-packaged-3d-scene.mjs";
 
 const electronMainSource = readFileSync(resolve("electron/main.cjs"), "utf8");
+
+test("scene package audit follows the mixed 15K opening-rack contract", () => {
+  assert.equal(chipCountForAmount(15_000), 16);
+  assert.equal(chipCountForAmount(14_975), 14);
+  assert.equal(chipCountForAmount(14_950), 13);
+});
 
 function normalResult(overrides = {}) {
   const ready = {
@@ -171,9 +178,9 @@ test("scene package audit accepts two physical side-pot lanes from the determini
       ],
       sceneObjects: {
         potLanes: [
-          { id: "main-0", amount: 1800, chipCount: 13 },
-          { id: "side-1", amount: 900, chipCount: 12 },
-          { id: "side-2", amount: 450, chipCount: 11 },
+          { id: "main-0", amount: 1800, chipCount: 5 },
+          { id: "side-1", amount: 900, chipCount: 5 },
+          { id: "side-2", amount: 450, chipCount: 6 },
         ],
       },
       screenshotBytes: 100,
@@ -195,9 +202,9 @@ test("scene package audit rejects a side-pot lane whose physical amount diverges
       ],
       sceneObjects: {
         potLanes: [
-          { id: "main-0", amount: 1800, chipCount: 13 },
-          { id: "side-1", amount: 899, chipCount: 12 },
-          { id: "side-2", amount: 450, chipCount: 11 },
+          { id: "main-0", amount: 1800, chipCount: 5 },
+          { id: "side-1", amount: 899, chipCount: 5 },
+          { id: "side-2", amount: 450, chipCount: 6 },
         ],
       },
       screenshotBytes: 100,
@@ -239,7 +246,7 @@ test("scene package audit rejects an unclassified forced fallback", () => {
 
 test("scene package audit rejects a budget excess", () => {
   const result = normalResult();
-  result.before.diagnostics.drawCalls = 151;
+  result.before.diagnostics.drawCalls = 301;
   assert.throws(() => assertCase(result), /budget exceeded/);
 });
 

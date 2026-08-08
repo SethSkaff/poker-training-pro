@@ -5,7 +5,7 @@
  * long session.
  *
  * Everything is dependency-injected so the behavior is unit-testable without a
- * real DOM, and so it is safe to import in the iOS/Vitest bundles.
+ * real DOM, and so it is safe to import in the desktop/Vitest bundles.
  */
 
 export interface VisibilityDocumentLike {

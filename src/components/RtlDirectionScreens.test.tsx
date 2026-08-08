@@ -1,5 +1,5 @@
 /**
- * RTL direction-propagation sweep (TODOS.md: "... RTL layout tests").
+ * RTL direction-propagation sweep across the supported desktop screens.
  *
  * `localeTextAttributes()` (src/lib/localeMessages.ts) resolves a locale's
  * logical `{ lang, dir }` pair. This test forces an RTL resource (mirroring

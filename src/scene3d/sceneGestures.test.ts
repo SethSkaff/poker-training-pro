@@ -44,14 +44,18 @@ describe("scene gesture grammar", () => {
     expect(fold.elbowBend).toBeGreaterThan(0);
   });
 
-  it("uses one hand for a single check knock, then returns to rest", () => {
-    const approach = sceneGestureFor("check", 0.30, false, false);
+  it("uses the right hand for exactly two taps, then returns to rest", () => {
+    const firstTap = sceneGestureFor("check", 0.24, false, false);
+    const gap = sceneGestureFor("check", 0.36, false, false);
+    const secondTap = sceneGestureFor("check", 0.48, false, false);
     const settled = sceneGestureFor("check", 0.80, false, false);
 
-    expect(approach.movingArm).toBe("right");
-    expect(approach.handTap).toBeGreaterThan(0);
-    expect(approach.shoulderPitch).toBeGreaterThan(0);
-    expect(approach.elbowBend).toBeGreaterThan(0);
+    expect(firstTap.movingArm).toBe("right");
+    expect(firstTap.handTap).toBeGreaterThan(0);
+    expect(secondTap.handTap).toBeGreaterThan(0);
+    expect(gap.handTap).toBeCloseTo(0, 8);
+    expect(firstTap.shoulderPitch).toBeGreaterThan(0);
+    expect(firstTap.elbowBend).toBeGreaterThan(0);
     expect(settled.handTap).toBeCloseTo(0, 8);
     expect(settled.shoulderPitch).toBeCloseTo(0, 8);
     expect(settled.elbowBend).toBeCloseTo(0, 8);

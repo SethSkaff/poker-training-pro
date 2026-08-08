@@ -3,8 +3,7 @@
   "project": "Poker Training Pro",
   "verifiedAt": "2026-07-23",
   "scope": [
-    "paid Windows desktop application",
-    "paid iOS/iPadOS application",
+    "paid Windows/macOS desktop application",
     "commercial redistribution with audio embedded in the game",
     "instrumental background music only"
   ],
@@ -12,7 +11,7 @@
     "releaseReadyStatus": "accepted",
     "currentReleaseReadyTrackCount": 0,
     "notes": "A track is accepted only after the exact master, license evidence, project/platform scope, attribution or non-attribution route, Content ID posture, audio QA, and package behavior are archived. Source-page research alone is conditional.",
-    "preferredRoute": "Purchase and archive a project-specific proprietary license for selected tracks. This avoids relying on CC BY 4.0 inside DRM-protected iOS distribution, but cross-platform project scope still needs written confirmation.",
+    "preferredRoute": "Purchase and archive a project-specific proprietary license for selected tracks. This avoids relying on ambiguous technical restrictions in a signed desktop package, but cross-platform desktop scope still needs written confirmation.",
     "forbidStandaloneExtractionFeature": true,
     "forbidContentIdRegistrationByProject": true
   },
@@ -24,7 +23,7 @@
       "officialDeedUrl": "https://creativecommons.org/licenses/by/4.0/",
       "officialLegalCodeUrl": "https://creativecommons.org/licenses/by/4.0/legalcode.en",
       "officialTextSummary": "Permits reproduction, sharing, and adapted material in any medium, including commercial use, subject to attribution, change indication, license notice, and the prohibition on additional legal or effective technological restrictions.",
-      "appStoreRisk": "Needs legal review because CC BY 4.0 section 2(a)(5)(B) prohibits effective technological measures that restrict recipients. Apple distribution may apply FairPlay/DRM. Prefer a proprietary license or obtain written guidance and a compliant parallel-access strategy."
+      "distributionRisk": "Needs legal review because CC BY 4.0 section 2(a)(5)(B) prohibits effective technological measures that restrict recipients. Prefer a proprietary license or obtain written guidance for the signed desktop package."
     },
     "silverman-pro": {
       "name": "Silverman Sound Studios Pro License",
@@ -33,7 +32,7 @@
       "officialLicenseUrl": "https://www.silvermansound.com/pro-license",
       "officialRightsUrl": "https://www.silvermansound.com/licenses",
       "officialTextSummary": "Project-specific, non-exclusive, worldwide, perpetual right to incorporate a named asset in a named project and distribute, sell, market, exhibit, and otherwise exploit that project in any present or future media. No attribution. No standalone musical product, store/platform registration, ownership claim, or Content ID registration.",
-      "requiredEvidence": "Paid personalized license document naming the licensee, track, and Poker Training Pro project, plus written confirmation that the same project covers Windows, iPhone, and iPad distributions."
+      "requiredEvidence": "Paid personalized license document naming the licensee, track, and Poker Training Pro project, plus written confirmation that the same project covers Windows and macOS desktop distributions."
     },
     "incompetech-standard": {
       "name": "Incompetech Standard License",
@@ -42,7 +41,7 @@
       "officialLicenseUrl": "https://incompetech.com/music/royalty-free/licenses/",
       "officialRightsUrl": "https://incompetech.com/music/royalty-free/about_copyright.html",
       "officialTextSummary": "Project-specific right to incorporate the music in a production and exploit that production in perpetuity, worldwide, in present or future media, without attribution after payment.",
-      "requiredEvidence": "Generated paid license PDF naming the licensee, selected tracks, and Poker Training Pro, plus written confirmation that Windows and iOS/iPadOS releases are the same licensed production."
+      "requiredEvidence": "Generated paid license PDF naming the licensee, selected tracks, and Poker Training Pro, plus written confirmation that Windows and macOS releases are the same licensed production."
     }
   },
   "accepted": [],
@@ -512,7 +511,7 @@
       "redistributionBasis": "Commercial CC BY adaptation and project distribution; paid project license available.",
       "modificationLoopingPermission": "Yes; trimming and editing explicitly permitted.",
       "contentIdNotes": "Official Content ID workflow applies.",
-      "fileMasterStatus": "Not downloaded; mobile package-size impact must be measured.",
+      "fileMasterStatus": "Not downloaded; desktop package-size impact must be measured.",
       "verificationStatus": "conditional-license-and-source-verified"
     },
     {
@@ -547,7 +546,7 @@
       "libraryOrTrack": "YouTube Audio Library and Creator Music",
       "officialUrl": "https://support.google.com/youtube/answer/3376882",
       "decision": "rejected",
-      "reason": "Official help frames Audio Library music as music for videos and states YouTube cannot advise on off-platform issues. Creator Music licenses are explicitly non-transferable to other platforms. There is no adequate official grant for embedding and redistributing masters in a paid desktop/iOS game."
+      "reason": "Official help frames Audio Library music as music for videos and states YouTube cannot advise on off-platform issues. Creator Music licenses are explicitly non-transferable to other platforms. There is no adequate official grant for embedding and redistributing masters in a paid desktop game."
     },
     {
       "libraryOrTrack": "Pixabay music as a launch catalog",
@@ -587,9 +586,9 @@
     }
   ],
   "requiredWrittenPermissions": [
-    "Confirm in writing that a single Poker Training Pro proprietary project license covers the paid Windows desktop app plus iPhone and iPad versions, including updates and regional storefront distribution.",
+    "Confirm in writing that a single Poker Training Pro proprietary project license covers the paid Windows and macOS desktop apps, including updates and regional distribution.",
     "Confirm that embedding the selected audio master inside signed/encrypted application packages is permitted and is not treated as standalone redistribution.",
-    "If the free CC BY route is used on iOS, obtain legal review or licensor permission addressing App Store FairPlay/DRM and CC BY 4.0's no-effective-technological-measures clause.",
+    "If the free CC BY route is used in the signed desktop package, obtain legal review or licensor permission addressing CC BY 4.0's no-effective-technological-measures clause.",
     "If a Patreon or catalog-wide subscription supplies Pro licenses, archive a personalized perpetual license certificate for every selected track and confirm validity after subscription cancellation.",
     "Confirm whether marketing trailers, store previews, livestreams, and soundtrack excerpts are included in the same project license or need separate licenses."
   ]

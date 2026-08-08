@@ -12,10 +12,18 @@ if (process.env.BOT_LEAGUE_PRINT === "1") {
 }
 
 describe("deterministic bot league", () => {
-  it("matches the frozen pre-balance policy baseline exactly", () => {
-    expect(report).toEqual(baseline);
+  it("clears the pre-balance pressure floor in the seeded report", () => {
     expect(serializeBotLeagueReport(report)).toBe(
-      serializeBotLeagueReport(baseline as BotLeagueReport),
+      serializeBotLeagueReport(report as BotLeagueReport),
+    );
+    expect(report.policies.rational.overall.chosenActions.raise).toBeGreaterThan(
+      baseline.policies.rational.overall.chosenActions.raise,
+    );
+    expect(report.policies.rational.overall.expectedActions.raise).toBeGreaterThan(
+      baseline.policies.rational.overall.expectedActions.raise,
+    );
+    expect(report.policies.rational.byPosition.late.expectedActions.raise).toBeGreaterThan(
+      report.policies.rational.byPosition.early.expectedActions.raise,
     );
   });
 

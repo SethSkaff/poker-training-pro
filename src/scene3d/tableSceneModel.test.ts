@@ -467,6 +467,28 @@ describe("dealer and blind markers", () => {
     }
   });
 
+  it("renders the 15,000 opening stack as a playable multi-denomination rack", () => {
+    expect(chipInventoryForAmount(15_000)).toEqual([
+      25, 25, 25, 25,
+      100, 100, 100, 100,
+      500, 500, 500,
+      1_000, 1_000, 1_000,
+      5_000, 5_000,
+    ]);
+    const columns = chipColumnLayoutForAmount(15_000, 8);
+
+    expect(columns).toEqual([
+      { denomination: 25, count: 4, column: 0 },
+      { denomination: 100, count: 4, column: 1 },
+      { denomination: 500, count: 3, column: 2 },
+      { denomination: 1_000, count: 3, column: 3 },
+      { denomination: 5_000, count: 1, column: 4 },
+      { denomination: 5_000, count: 1, column: 5 },
+    ]);
+    expect(columns.reduce((total, column) => total + column.denomination * column.count, 0))
+      .toBe(15_000);
+  });
+
   it("projects stack and bet numerals for the hero and every rotated seat", () => {
     for (const heroIndex of [0, 1, 2, 3, 4, 5]) {
       for (const pan of [-2, 0, 2]) {

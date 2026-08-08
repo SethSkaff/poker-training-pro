@@ -16,7 +16,7 @@ const executable =
   path.join(
     projectRoot,
     "outputs",
-    "desktop",
+    "next",
     "win-unpacked",
     "Poker Training Pro.exe",
   );

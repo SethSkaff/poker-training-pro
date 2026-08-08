@@ -4,7 +4,6 @@
   "generatedAtPolicy": "deterministic-no-timestamp",
   "inventoryRoots": [
     "build",
-    "ios",
     "public",
     "src"
   ],
@@ -62,7 +61,7 @@
         "detail": "No commercial redistribution rights record for the parent generated mark."
       },
       "publisherMustProvide": [
-        "Clear the parent mark for commercial Windows and mobile distribution.",
+        "Clear the parent mark for commercial Windows and macOS desktop distribution.",
         "Archive the deterministic icon-generation recipe and tool version."
       ]
     },
@@ -97,7 +96,7 @@
         "detail": "No commercial redistribution rights record for the parent generated mark."
       },
       "publisherMustProvide": [
-        "Clear the parent mark for commercial Windows and mobile distribution.",
+        "Clear the parent mark for commercial Windows and macOS desktop distribution.",
         "Archive the deterministic resize recipe and tool version."
       ]
     },
@@ -208,7 +207,7 @@
       "publisherMustProvide": [
         "Archive the original generation request, exact output, account/receipt context, and applicable service terms version.",
         "Document human review for third-party likeness, trademark, and character/IP conflicts.",
-        "Record a publisher approval naming desktop and mobile commercial redistribution."
+        "Record a publisher approval naming Windows and macOS desktop commercial redistribution."
       ]
     },
     {
@@ -251,7 +250,7 @@
       "publisherMustProvide": [
         "Archive the original generation request, exact output, account/receipt context, and applicable service terms version.",
         "Complete trademark and confusing-similarity review for the product mark.",
-        "Record publisher approval for desktop/mobile commercial use and all derived icons."
+        "Record publisher approval for Windows/macOS desktop commercial use and all derived icons."
       ]
     },
     {
@@ -269,7 +268,7 @@
       "rightsStatus": "user-supplied-unverified",
       "sourceEvidence": {
         "releaseSufficient": false,
-        "detail": "Conversation history and TODOS.md call this user-supplied artwork, but repository evidence does not identify its creator, original source, or delivery receipt."
+        "detail": "Historical project notes call this user-supplied artwork, but repository evidence does not identify its creator, original source, or delivery receipt."
       },
       "masterEvidence": {
         "releaseSufficient": false,
@@ -281,7 +280,7 @@
       },
       "publisherMustProvide": [
         "Identify the creator and original source/master.",
-        "Provide a signed ownership statement or license covering commercial desktop/mobile redistribution, adaptation, and marketing.",
+        "Provide a signed ownership statement or license covering commercial Windows/macOS desktop redistribution, adaptation, and marketing.",
         "Clear all depicted characters, logos, cards, artwork, and other third-party elements."
       ]
     },

@@ -63,6 +63,25 @@ describe("scene transition", () => {
     }
   });
 
+  it("keeps payout metadata separate from the legacy inert seat-action contract", () => {
+    const event = {
+      id: "award-main",
+      kind: "pot-awarded" as const,
+      handId: "h1",
+      playerId: "hero",
+      amount: 125,
+      potId: "main",
+    };
+    expect(createSceneTransition(event, 0.4, false)).toMatchObject({
+      action: undefined,
+      playerIds: [],
+      payoutPlayerId: "hero",
+      payoutAmount: 125,
+      amount: 125,
+      potId: "main",
+    });
+  });
+
   it("keeps every non-seat presentation event except public collection inert in the scene", () => {
     const passiveEvents: readonly TournamentPresentationEvent[] = [
       { id: "button", kind: "button-moved", handId: "h1", buttonSeat: 0 },
@@ -123,5 +142,6 @@ describe("scene transition", () => {
       action: undefined,
       foldedPlayerIds: ["hero"],
     });
+    expect(retainSceneTerminalFoldedPlayers(retained, ["hero"])).toEqual(retained);
   });
 });

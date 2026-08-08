@@ -15,7 +15,7 @@ In plain terms: no public version is currently in a supported lifecycle.
 
 A lifecycle record applies to one named application version and distribution
 lane. Supporting a Windows installer does not automatically support a portable
-preview, iOS build, Windows on ARM, Windows 10, or another storefront.
+preview, a macOS build, Windows on ARM, Windows 10, or another storefront.
 
 An operating system leaving Microsoft's support does not silently rewrite a
 published Poker Training Pro lifecycle record. The release owner must update

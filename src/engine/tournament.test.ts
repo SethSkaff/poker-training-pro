@@ -42,7 +42,7 @@ describe("tournament director", () => {
     expect(AUTHENTIC_MAIN_EVENT_STRUCTURE.levels[0]).toMatchObject({
       smallBlind: 100,
       bigBlind: 200,
-      bigBlindAnte: 200,
+      bigBlindAnte: 0,
       durationMs: 120 * 60_000,
     });
     expect(AUTHENTIC_MAIN_EVENT_STRUCTURE.levels).toHaveLength(47);
@@ -60,21 +60,21 @@ describe("tournament director", () => {
           level: 1,
           smallBlind: 5,
           bigBlind: 10,
-          bigBlindAnte: 10,
+          bigBlindAnte: 0,
           durationMs: 1_000,
         },
         {
           level: 2,
           smallBlind: 10,
           bigBlind: 20,
-          bigBlindAnte: 20,
+          bigBlindAnte: 0,
           durationMs: 2_000,
         },
         {
           level: 3,
           smallBlind: 20,
           bigBlind: 40,
-          bigBlindAnte: 40,
+          bigBlindAnte: 0,
           durationMs: 3_000,
         },
       ],

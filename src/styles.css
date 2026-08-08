@@ -3068,21 +3068,15 @@ input[type="range"]::-webkit-slider-thumb {
 
 .camera-controls {
   position: absolute;
-  top: 13px;
-  right: 13px;
-  z-index: 35;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transform: none;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 4px;
-  color: var(--muted);
-  background: rgba(3, 10, 8, 0.68);
-  font-size: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .camera-controls button {
@@ -3453,6 +3447,11 @@ input[type="range"]::-webkit-slider-thumb {
   opacity: 0.78;
 }
 
+/* The first-name label belongs to the flat 2D portrait treatment only. */
+.poker-scene[data-spatial-scene="ready"] .player-seat .seat-name {
+  display: none;
+}
+
 /* The blinds/position pill is secondary information; keep it very small. */
 .poker-scene[data-spatial-scene="ready"] .player-seat:not(.player-seat--hero) .seat-position-marker {
   border: 0;
@@ -3553,6 +3552,139 @@ input[type="range"]::-webkit-slider-thumb {
 .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-button { min-height: 58px; }
 .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .action-context { right: max(16px, calc((100% - 760px) / 2)); bottom: 76px; left: max(16px, calc((100% - 760px) / 2)); }
 .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .spectator-dock { right: max(16px, calc((100% - 760px) / 2)); bottom: 10px; left: max(16px, calc((100% - 760px) / 2)); min-height: 44px; }
+
+/* -------------------------------------------------------------------------
+   2D table composition
+
+   The fallback is a deliberate flat table, not a reduced copy of the spatial
+   scene. Keep its table wide, remove the explanatory mode rail, and keep all
+   seat information in the seat itself. These selectors are scoped so enabling
+   the 3D scene cannot inherit any of the 2D presentation changes.
+--------------------------------------------------------------------------- */
+.table-screen--2d .table-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.table-screen--2d .mode-preview-panel {
+  display: none;
+}
+
+.table-screen--2d .poker-table {
+  width: min(78vw, 1120px);
+  height: min(35vw, 470px);
+}
+
+.table-screen--2d .skip-hand {
+  top: 12px;
+  right: 16px;
+  left: auto;
+  min-height: 44px;
+  padding: 0 17px;
+  transform: none;
+}
+
+.table-screen--2d .skip-hand:hover,
+.table-screen--2d .skip-hand:focus-visible {
+  transform: translateY(-1px);
+}
+
+/* 2D seats communicate stack depth with the number only. */
+.table-screen--2d .seat-chip-stack,
+.table-screen--2d .chip-travel,
+.table-screen--2d .seat-action-hand,
+.table-screen--2d .seat-position-marker,
+.table-screen--2d .seat-action-label,
+.table-screen--2d .thinking-ring {
+  display: none;
+}
+
+.table-screen--2d .seat-figure {
+  width: 92px;
+  height: 92px;
+  align-items: center;
+  transform: none;
+}
+
+.table-screen--2d .seat-figure-shadow,
+.table-screen--2d .seat-figure-chair,
+.table-screen--2d .seat-figure-torso,
+.table-screen--2d .seat-figure-hair,
+.table-screen--2d .seat-figure-accessory {
+  display: none;
+}
+
+.table-screen--2d .seat-figure .seat-avatar {
+  width: 82px;
+  height: 82px;
+  overflow: hidden;
+  border: 3px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  box-shadow: 0 9px 20px rgba(0, 0, 0, 0.42);
+}
+
+.table-screen--2d .seat-label {
+  min-width: 92px;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 4px;
+  padding: 4px 9px 5px;
+}
+
+.table-screen--2d .seat-name {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.table-screen--2d .seat-label strong {
+  color: var(--gold-soft);
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.hero-stack-readout {
+  display: none;
+}
+
+.table-screen--2d .hero-stack-readout {
+  position: absolute;
+  top: 18px;
+  left: calc(100% + 18px);
+  display: flex;
+  min-width: 106px;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9px;
+  padding: 7px 10px;
+  color: var(--text);
+  background: rgba(4, 12, 9, 0.9);
+  box-shadow: 0 7px 15px rgba(0, 0, 0, 0.3);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  text-align: left;
+}
+
+.table-screen--2d .hero-stack-readout > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.table-screen--2d .hero-stack-readout small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.table-screen--2d .hero-stack-readout b {
+  color: var(--gold-soft);
+  font-size: 12px;
+}
 
 @media (max-height: 800px) {
   .table-layout:has(.poker-scene[data-spatial-scene="ready"]) { height: calc(100vh - 54px); }

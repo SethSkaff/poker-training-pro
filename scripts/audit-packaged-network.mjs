@@ -23,7 +23,7 @@ const projectRoot = resolve(new URL("..", import.meta.url).pathname.slice(1));
 const appArgument = argumentValue("--app");
 const appPath = resolve(
   projectRoot,
-  appArgument ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
+  appArgument ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
 );
 const observationMs = numberArgument("--duration-ms", 45_000);
 const reportPath = resolve(projectRoot, "work", "packaged-network-audit.json");
@@ -129,11 +129,11 @@ try {
     if (ok) {
       completedStepIds.push(step.id);
       // Menu/home expectations prove routing, but only a real gameplay table
-      // or tutorial proves that a representative mode was actually exercised.
+        // proves that a representative mode was actually exercised.
       if (
         step.kind === "expectScreen" &&
         step.mode &&
-        ["poker-table", "tutorial"].includes(step.screen)
+        step.screen === "poker-table"
       ) {
         reachedModes.add(step.mode);
       }

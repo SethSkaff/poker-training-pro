@@ -89,6 +89,7 @@ import {
 import { PlayingCard } from "./PlayingCard";
 import { PokerReferenceContent } from "./PokerReference";
 import {
+  describeOpponentCharacter,
   describeOpponentAppearance,
   opponentAppearanceStyle,
 } from "../lib/opponentAppearance";
@@ -739,6 +740,52 @@ export function avatarVariantForPlayerId(playerId: string): number {
   return (hash >>> 0) % 6;
 }
 
+const TWO_D_FIRST_NAMES = {
+  male: ["Adrian", "Caleb", "Darius", "Elias", "Jonah", "Mateo", "Nolan", "Rafael"],
+  female: ["Amara", "Elena", "Isla", "Juno", "Lena", "Maya", "Nadia", "Talia"],
+} as const;
+
+/** Deterministic random-looking first name for the 2D portrait label. */
+export function firstNameFor2DPlayer(playerId: string, offset = 0): string {
+  const gender = describeOpponentCharacter(playerId).gender;
+  const names = TWO_D_FIRST_NAMES[gender];
+  const index = (avatarVariantForPlayerId(`${playerId}:name`) + offset) % names.length;
+  return names[index];
+}
+
+/** Resolve the six visible portrait cells without allowing a duplicate cell. */
+export function unique2DAvatarVariants(playerIds: readonly string[]): ReadonlyMap<string, number> {
+  const variants = new Map<string, number>();
+  const used = new Set<number>();
+  for (const playerId of [...playerIds].sort()) {
+    const preferred = avatarVariantForPlayerId(playerId);
+    let variant = preferred;
+    for (let step = 0; used.has(variant) && step < 6; step += 1) {
+      variant = (preferred + step + 1) % 6;
+    }
+    used.add(variant);
+    variants.set(playerId, variant);
+  }
+  return variants;
+}
+
+/** Give a visible 2D table a collision-free, gender-matched first-name roster. */
+export function unique2DDisplayNames(playerIds: readonly string[]): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  const used = new Set<string>();
+  for (const playerId of [...playerIds].sort()) {
+    for (let offset = 0; offset < TWO_D_FIRST_NAMES.male.length; offset += 1) {
+      const candidate = firstNameFor2DPlayer(playerId, offset);
+      if (!used.has(candidate)) {
+        used.add(candidate);
+        names.set(playerId, candidate);
+        break;
+      }
+    }
+  }
+  return names;
+}
+
 /**
  * Compact visual scale for the central pot; the numeric pot remains exact.
  * See docs/table-presentation-contract.md for the inclusive-pot convention
@@ -780,6 +827,8 @@ interface PlayerSeatProps {
   railAnchor?: { readonly xPercent: number; readonly yPercent: number };
   stackAnchor?: { readonly xPercent: number; readonly yPercent: number };
   betAnchor?: { readonly xPercent: number; readonly yPercent: number };
+  displayName?: string;
+  avatarVariant?: number;
 }
 
 /**
@@ -881,6 +930,8 @@ function PlayerSeat({
   railAnchor,
   stackAnchor,
   betAnchor,
+  displayName,
+  avatarVariant,
 }: PlayerSeatProps) {
   const appearance = describeOpponentAppearance(player.id);
   const isMucking = isSeatFoldedForPresentation(
@@ -1013,9 +1064,9 @@ function PlayerSeat({
         <i className="seat-figure-chair" />
         <i className="seat-figure-torso" />
         <div
-          className={`seat-avatar seat-avatar--variant-${appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
+          className={`seat-avatar seat-avatar--variant-${avatarVariant ?? appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
         >
-          <span>{player.name.slice(0, 1)}</span>
+          <span className="seat-avatar-name">{displayName ?? player.name.split(" ")[0]}</span>
           <i className={`seat-figure-hair seat-figure-hair--${appearance.hairStyle}`} />
           {appearance.accessory !== "none" && (
             <i
@@ -1040,6 +1091,7 @@ function PlayerSeat({
       */}
       <SeatChipStack stack={player.stack} bigBlind={bigBlind} />
       <div className="seat-label" aria-hidden="true">
+        <span className="seat-name">{displayName ?? player.name.split(" ")[0]}</span>
         <strong>{formatChips(player.stack)}</strong>
       </div>
       {/*
@@ -3013,6 +3065,13 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
+  const isTwoDMode = !settings.spatialScene;
+  const twoDAvatarVariants = unique2DAvatarVariants(
+    scenario.players.map((player) => player.id),
+  );
+  const twoDDisplayNames = unique2DDisplayNames(
+    scenario.players.map((player) => player.id),
+  );
 
   /*
     The 3D scene's view of the table, derived from exactly the same scenario the
@@ -3346,7 +3405,7 @@ export function PokerTable({
 
   return (
     <div
-      className="table-screen"
+      className={`table-screen ${isTwoDMode ? "table-screen--2d" : "table-screen--3d"}`}
       data-event-tier={tournament?.tier ?? "local"}
       data-camera-motion={settings.cameraMotion}
       data-table-motion={settings.tableMotion}
@@ -3800,7 +3859,11 @@ export function PokerTable({
             <i />
           </div>
 
-          {/* Camera is controlled by drag and keyboard; no scene-blocking overlay. */}
+          {/*
+            Camera is controlled by drag and keyboard. Keep the button controls
+            in the semantic DOM for assistive technology, but do not paint a
+            persistent top-right table-view HUD over the felt.
+          */}
           <div className="camera-controls" aria-label={formatMessage("table.camera.viewLabel")}>
             <button
               type="button"
@@ -3822,18 +3885,6 @@ export function PokerTable({
               disabled={effectiveCameraPan === 0}
               aria-label={formatMessage("table.camera.center")}
             >
-              <span>{formatMessage(`table.camera.view${"Label"}`)}</span>
-              <b>
-                {effectiveCameraPan === 0
-                  ? formatMessage("table.camera.centered")
-                  : formatMessage("table.camera.offset", {
-                      direction: formatMessage(
-                        effectiveCameraPan < 0
-                          ? "table.camera.directionLeft"
-                          : "table.camera.directionRight",
-                      ),
-                    })}
-              </b>
             </button>
             <button
               type="button"
@@ -4176,6 +4227,8 @@ export function PokerTable({
                           )
                       : undefined
                   }
+                  displayName={isTwoDMode ? twoDDisplayNames.get(player.id) : undefined}
+                  avatarVariant={isTwoDMode ? twoDAvatarVariants.get(player.id) : undefined}
                 />
               );
             })}
@@ -4245,6 +4298,16 @@ export function PokerTable({
                     )}
                   </span>
                 ))}
+              </span>
+              <span className="hero-stack-readout" aria-label={`Stack ${formatChips(heroStack)}. Bet ${formatChips(heroStreetCommitted)}.`}>
+                <span>
+                  <small>{formatMessage("table.context.stack")}</small>
+                  <b>{formatChips(heroStack)}</b>
+                </span>
+                <span>
+                  <small>{formatMessage("review.action.bet")}</small>
+                  <b>{formatChips(heroStreetCommitted)}</b>
+                </span>
               </span>
               {!action && (
                 <span className="peek-label">
@@ -4475,7 +4538,7 @@ export function PokerTable({
             onFocus={beginMath}
             onSubmit={submitMath}
           />
-        ) : (
+        ) : isTwoDMode ? null : (
           <ModeSidePanel
             mode={mode}
             scenario={scenario}

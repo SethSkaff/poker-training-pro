@@ -12,6 +12,10 @@ const table = readFileSync(
   path.join(sourceRoot, "components", "PokerTable.tsx"),
   "utf8",
 );
+const styles = readFileSync(
+  path.join(sourceRoot, "styles.css"),
+  "utf8",
+);
 const settingsPanel = readFileSync(
   path.join(sourceRoot, "components", "SettingsPanel.tsx"),
   "utf8",
@@ -36,14 +40,15 @@ describe("seated camera controls", () => {
     }
   });
 
-  it("makes recenter discoverable to a pointer player, not keyboard-only", () => {
-    // Recenter was previously bound to X with no on-screen affordance.
+  it("keeps camera controls accessible while removing the painted HUD", () => {
     expect(table).toContain('className="camera-controls__center"');
     expect(table).toContain("onClick={() => setCameraPan(0)}");
-    // It doubles as the readout of where the camera is pointing.
-    expect(table).toContain("table.camera.centered");
-    expect(table).toContain("table.camera.offset");
     expect(table).toContain("disabled={effectiveCameraPan === 0}");
+    expect(table).not.toContain("table.camera.centered");
+    expect(table).not.toContain("table.camera.offset");
+    const cameraRule = styles.match(/\.camera-controls\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(cameraRule).toContain("clip-path: inset(50%)");
+    expect(cameraRule).toContain("white-space: nowrap");
   });
 
   it("bounds the pan on every path, so normal play has no free camera", () => {

@@ -20,12 +20,12 @@ import {
   ACESFilmicToneMapping,
   AmbientLight,
   BufferGeometry,
-  DoubleSide,
   Float32BufferAttribute,
   CanvasTexture,
   CircleGeometry,
   CylinderGeometry,
   Color,
+  DoubleSide,
   Fog,
   Group,
   IcosahedronGeometry,
@@ -118,8 +118,12 @@ import {
   proceduralTableMarkerBytes,
 } from "./sceneCardFaces";
 import {
+  HERO_PEEK_CARD_EXPOSED_FRACTION,
+  HERO_PEEK_CARD_LENGTH,
+  HERO_PEEK_HINGE_DEGREES,
   HERO_PEEK_HAND_RIG,
   HERO_PEEK_HAND_ROOT_OFFSET,
+  HERO_PEEK_CARD_PLANTED_FRACTION,
   heroPeekFaceUvForLocalPoint,
 } from "./heroPeekPresentation";
 
@@ -325,8 +329,8 @@ const BOARD_CARD_SCALE = 1.5;
 interface TableSceneResources {
   readonly ledger: SceneResourceLedger;
   readonly cardGeometry: BufferGeometry;
-  /** The exposed, flexed half of a hero card during a private squeeze. */
-  readonly heroPeekGeometry: BufferGeometry;
+  /** One grouped mesh: planted back first, bent printed underside second. */
+  readonly heroPeekCardGeometry: BufferGeometry;
   readonly cardMaterial: MeshStandardMaterial;
   readonly cardBackMaterial: MeshStandardMaterial;
   deckBackMaterial(colour: DeckColour): MeshStandardMaterial;
@@ -341,8 +345,8 @@ interface TableSceneResources {
   chipMaterial(): MeshStandardMaterial;
   chipDenominationMaterial(denomination: number): MeshStandardMaterial;
   cardFaceMaterial(code: string): MeshStandardMaterial;
-  /** The index revealed by folding a card's top corner back. */
-  cardFoldMaterial(code: string): MeshStandardMaterial;
+  /** A restrained lift for the steep underside used only during a private peek. */
+  heroPeekFaceMaterial(code: string): MeshStandardMaterial;
   markerMaterial(label: "D" | "SB" | "BB", color: number): MeshLambertMaterial;
   /** Tiled surface maps for the felt, the carpet, and the panelled walls. */
   surfaceTexture(kind: "felt" | "carpet" | "wall", repeatX: number, repeatY: number): Texture | null;
@@ -352,7 +356,7 @@ interface TableSceneResources {
 }
 
 /**
- * The visible half of a squeezed card, modelled as a shallow physical flex.
+ * The concealed lower half of a squeezed card, still planted on the felt.
  *
  * A real player does not rotate an entire card through the air to read it.
  * They leave the concealed half flat beneath their thumbs and bow the far half
@@ -365,96 +369,67 @@ interface TableSceneResources {
  * edge.  The texture starts at its middle and ends at its printed top, so the
  * raised lip contains the card's rank rather than a full-card billboard.
  */
-function flexedHeroPeekGeometryLegacy(): BufferGeometry {
-  const strips = 8;
-  /*
-    This must retain the authored card's 88 mm width.  The former 176 mm
-    value silently doubled a card only while peeking, which is why a squeeze
-    filled the foreground like a billboard despite `card.scale` staying one.
-    Only the *length* is cropped: this is the printed half lifted off the
-    near edge, not a scaled-up replacement card.
-  */
+function heroPeekCardGeometry(): BufferGeometry {
   const width = 0.088;
-  const hiddenEdge = -0.010;
-  const revealedEdge = 0.058;
-  const positions: number[] = [];
-  const uvs: number[] = [];
-  const indices: number[] = [];
-
-  for (let row = 0; row <= strips; row += 1) {
-    const progress = row / strips;
-    const z = hiddenEdge + (revealedEdge - hiddenEdge) * progress;
-    // The first few millimetres stay on the felt under the fingers; the rank
-    // edge rises smoothly.  A sine curve avoids the old hard triangular kink.
-    const y = 0.002 + Math.sin(progress * Math.PI * 0.5) * 0.032;
-    /*
-      CanvasTexture is flipped vertically.  The exposed lip must include both
-      parts of a normal corner index: the rank sits at roughly 80% V and the
-      suit directly under it at roughly 65% V.  The old 0.74..0.98 range
-      clipped the suit away, so a player could only guess at a red or black
-      card.  This is still only the printed upper half, not the centre pip or
-      opposite corner of a full card.
-    */
-    const textureV = 0.58 + progress * 0.40;
-    for (const x of [-width / 2, width / 2]) {
-      positions.push(x, y, z);
-      uvs.push(x < 0 ? 0 : 1, textureV);
-    }
-  }
-  for (let row = 0; row < strips; row += 1) {
-    const left = row * 2;
-    indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);
-  }
-
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-/** A complete card with a shallow edge hinge; the body remains on the felt. */
-function heroPeekGeometry(): BufferGeometry {
+  const cardLength = HERO_PEEK_CARD_LENGTH;
+  const farEdge = 0.0615;
+  const hinge = farEdge - cardLength * HERO_PEEK_CARD_PLANTED_FRACTION;
+  const positions: number[] = [
+    -width / 2, 0.002, hinge,
+    width / 2, 0.002, hinge,
+    -width / 2, 0.002, farEdge,
+    width / 2, 0.002, farEdge,
+  ];
+  // This is the same orientation and crop as the far half of the authored
+  // card mesh; it stays face down while the player lifts the near index half.
+  const uvs: number[] = [1, 0.45, 0, 0.45, 1, 0.98, 0, 0.98];
+  const indices: number[] = [0, 2, 1, 1, 2, 3];
   const rows = 12;
-  const width = 0.088;
-  const length = 0.123;
-  const hingeStart = 0.74;
-  const hingeRadians = 24 * Math.PI / 180;
-  const positions: number[] = [];
-  const uvs: number[] = [];
-  const indices: number[] = [];
+  const exposedLength = cardLength * HERO_PEEK_CARD_EXPOSED_FRACTION;
+  const hingeRadians = HERO_PEEK_HINGE_DEGREES * Math.PI / 180;
+  const faceVertexOffset = 4;
   for (let row = 0; row <= rows; row += 1) {
     const progress = row / rows;
-    const baseZ = -length / 2 + progress * length;
-    const lifted = Math.max(0, (progress - hingeStart) / (1 - hingeStart));
-    const y = 0.002 + lifted * (length * (1 - hingeStart)) * Math.sin(hingeRadians);
-    const z = baseZ - lifted * (length * (1 - hingeStart)) * (1 - Math.cos(hingeRadians));
+    // Row zero is the near printed edge and row one is the centre hinge. This
+    // keeps the readable top-left index at the lifted edge while the hinge joins
+    // the planted card without a gap.
+    const distanceFromHinge = exposedLength * (1 - progress);
+    const angle = hingeRadians * (1 - progress);
+    // The hinge begins tangent to the felt and the flexible edge progressively
+    // reaches the authored lift angle. A circular arc uses half its stated
+    // tangent angle as its visual chord and collapsed to a thin line from the
+    // seated camera; this profile keeps the actual printed half readable.
+    const y = 0.002 + distanceFromHinge * Math.sin(angle);
+    const z = hinge - distanceFromHinge * Math.cos(angle);
     for (const x of [-width / 2, width / 2]) {
       positions.push(x, y, z);
-      // Keep the printed upper-left index in the player's upper-left corner.
-      // The helper documents the seated-camera axis convention and reverses V
-      // so the far edge samples the upright top index, not the rotated duplicate
-      // index painted at the bottom of the card canvas.
-      uvs.push(...heroPeekFaceUvForLocalPoint(x, progress));
+      // The helper accounts for the underside's required U flip, so the rank
+      // and suit read normally from the actual seated camera.
+      uvs.push(...heroPeekFaceUvForLocalPoint(x, progress * HERO_PEEK_CARD_EXPOSED_FRACTION));
     }
   }
   for (let row = 0; row < rows; row += 1) {
-    const left = row * 2;
-    indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);
+    const left = faceVertexOffset + row * 2;
+    // The player reads the underside of a face-down card when its near edge is
+    // lifted. Wind this dedicated face inward/downward toward the seated camera;
+    // using the board-card winding here culls the print and leaves only backs.
+    indices.push(left, left + 1, left + 2, left + 1, left + 3, left + 2);
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
   geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
+  geometry.addGroup(0, 6, 0);
+  geometry.addGroup(6, rows * 6, 1);
   geometry.computeVertexNormals();
   geometry.userData = {
-    ...geometry.userData,
     cardWidth: width,
-    cardLength: length,
-    hingeDegrees: 24,
-    hingeStart,
-    fullCard: true,
+    plantedFraction: HERO_PEEK_CARD_PLANTED_FRACTION,
+    faceDown: true,
+    exposedLength,
+    hingeDegrees: HERO_PEEK_HINGE_DEGREES,
+    exposedFraction: HERO_PEEK_CARD_EXPOSED_FRACTION,
+    fullCard: false,
   };
   return geometry;
 }
@@ -582,6 +557,10 @@ function createTableSceneResources(): TableSceneResources {
     texture.minFilter = LinearFilter;
     const material = track(new MeshStandardMaterial({
       map: texture,
+      // A private squeeze exposes the printed underside of the flexed half.
+      // Board cards still use the same authored UVs, while DoubleSide keeps
+      // that physically correct underside visible at the seated eye line.
+      side: DoubleSide,
       // Preserve the ivory ink values painted into the texture. This is still
       // a rough, fully light-reactive material (not a glow), but it avoids a
       // second grey multiplier making ranks disappear in the dimmer seats.
@@ -592,72 +571,29 @@ function createTableSceneResources(): TableSceneResources {
     faceMaterials.set(key, material);
     return material;
   };
-  /*
-    What a squeeze actually shows: one corner's index, read off the fold.
-
-    A player bends the top corner back over the card and reads the rank and suit
-    printed under it. That is the whole of it -- not the card turned over, not a
-    panel floating above the felt, and not the pair stood on edge. The card stays
-    face down on the cloth and one small triangle of its printed side comes into
-    view, which is why the gesture is safe to make in front of five opponents.
-  */
-  const foldMaterials = new Map<string, MeshStandardMaterial>();
-  const cardFoldMaterial = (code: string): MeshStandardMaterial => {
-    const face = parsePublicCardFace(code);
-    if (!face) return cardMaterial;
-    const key = `${face.rank}${face.glyph}`;
-    const cached = foldMaterials.get(key);
-    if (cached) return cached;
-    const canvas = document.createElement("canvas");
-    canvas.width = 128;
-    canvas.height = 128;
-    const context = canvas.getContext("2d");
-    if (!context) return cardMaterial;
-    context.fillStyle = "#e5ded1";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.strokeStyle = "#b9ad99";
-    context.lineWidth = 3;
-    context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
-    // The compact rectangle is fully visible between the shielding fingers.
-    context.fillStyle = face.red ? "#c8102e" : "#10161d";
-    context.textAlign = "center";
-    /*
-      Sized and placed against the triangle's inscribed circle, which is what
-      really bounds a block of text here: centre (0.71, 0.71) of the canvas,
-      radius 0.29. Everything past the anti-diagonal is cut away, and text laid
-      out for the whole square lands mostly in the half that is not drawn -- the
-      fold then renders as a blank cream wedge, which is exactly what it did.
-    */
-    context.font = "700 40px Georgia, serif";
-    context.fillText(face.rank, canvas.width * 0.50, canvas.height * 0.46);
-    context.font = "32px Georgia, serif";
-    context.fillText(face.glyph, canvas.width * 0.50, canvas.height * 0.83);
-    const texture = track(new CanvasTexture(canvas));
-    texture.colorSpace = SRGBColorSpace;
-    texture.generateMipmaps = PROCEDURAL_CARD_FACE_USE_MIPMAPS;
-    texture.minFilter = LinearFilter;
-    /*
-      Double sided, because a lifted flap is a physical piece of card and which
-      way its single triangle happens to be wound should not decide whether the
-      player can read their own hand. Wound one way it rendered; wound the
-      other, and after the tip was raised, it vanished -- a blank corner with no
-      error anywhere. One triangle costs nothing to draw twice.
-    */
-    const material = track(new MeshStandardMaterial({
-      map: texture,
-      color: 0xf1eadf,
-      roughness: 0.96,
-      metalness: 0,
-      side: DoubleSide,
-    }));
-    foldMaterials.set(key, material);
-    return material;
-  };
   const cardMaterial = track(new MeshStandardMaterial({
     color: 0xe1dacd,
     roughness: 0.96,
     metalness: 0,
   }));
+  const heroPeekFaceMaterials = new Map<string, MeshStandardMaterial>();
+  const heroPeekFaceMaterial = (code: string): MeshStandardMaterial => {
+    const cached = heroPeekFaceMaterials.get(code);
+    if (cached) return cached;
+    const source = cardFaceMaterial(code);
+    const material = track(source.clone());
+    material.name = `hero-peek-face-${code}`;
+    material.side = DoubleSide;
+    // The steep underside receives less direct key light than a horizontal
+    // flop. A small warm emissive lift places it halfway between those two
+    // real lighting conditions without turning the private card into UI.
+    material.color.set(0xf8f1e7);
+    material.emissive.set(0x9b6a42);
+    material.emissiveIntensity = 0.32;
+    material.roughness = 0.92;
+    heroPeekFaceMaterials.set(code, material);
+    return material;
+  };
   /*
     A patterned back, because a flat one is not a card.
 
@@ -873,7 +809,7 @@ function createTableSceneResources(): TableSceneResources {
   return {
     ledger,
     cardGeometry: track(tableMeshGeometry("card")),
-    heroPeekGeometry: track(heroPeekGeometry()),
+    heroPeekCardGeometry: track(heroPeekCardGeometry()),
     cardMaterial,
     cardBackMaterial: track(cardBackMaterial()),
     deckBackMaterial,
@@ -895,7 +831,7 @@ function createTableSceneResources(): TableSceneResources {
     chipEdgeMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 })),
     chipDenominationMaterial,
     cardFaceMaterial,
-    cardFoldMaterial,
+    heroPeekFaceMaterial,
     markerMaterial,
     potPlaqueMaterial,
     surfaceTexture,
@@ -2036,90 +1972,13 @@ function buildSeat(
 }
 
 /**
- * Two deliberately mundane hands for the hero's card squeeze.
+ * First-person asymmetric squeeze rig.
  *
- * The old exported `hand/peek` mesh read as a single angular wedge in the
- * foreground.  A private card peek is recognisable because both hands are
- * doing different jobs: the near hand braces the packet while the far hand
- * curls over its top edge.  These low-poly palms and fingers keep that
- * silhouette clear without putting a character body inside the first-person
- * camera.
+ * The left palm is a vertical side wall outside the left card. The right arm
+ * arrives around the right card and ends in a palm behind the raised packet;
+ * only its thumb reaches forward, low between the two cards. Nothing is laid
+ * across either printed corner.
  */
-function buildHeroPeekHandsLegacy(resources: TableSceneResources): Group {
-  const hands = new Group();
-  const skin = resources.ledger.track(new MeshLambertMaterial({ color: 0xd2a07b }));
-  const palmGeometry = resources.ledger.track(new SphereGeometry(1, 12, 8));
-  const fingerGeometry = resources.ledger.track(new CylinderGeometry(0.010, 0.012, 0.074, 8));
-  const thumbGeometry = resources.ledger.track(new CylinderGeometry(0.012, 0.014, 0.060, 8));
-  const addHand = (
-    name: string,
-    x: number,
-    z: number,
-    yaw: number,
-    mirror: number,
-    role: "side-lift" | "rear-brace",
-  ) => {
-    const hand = new Group();
-    hand.name = name;
-    hand.position.set(x, 0, z);
-    hand.rotation.y = yaw;
-    const palm = new Mesh(palmGeometry, skin);
-    // Keep the palms below the raised lip.  The first version was large enough
-    // to hide both ranks, which defeated the entire private-peek gesture.
-    // Neither hand crosses the raised far edge where the two rank/suit
-    // windows are printed.  One sits alongside the packet; the other braces
-    // it from the player-facing lower edge, as in a real two-card squeeze.
-    palm.scale.set(
-      role === "side-lift" ? 0.022 : 0.030,
-      0.010,
-      role === "side-lift" ? 0.030 : 0.024,
-    );
-    palm.position.set(0, 0, 0);
-    hand.add(palm);
-    // Four curled fingers cross the card's far edge. Their stagger is what
-    // prevents the silhouette from becoming the old single triangular flap.
-    for (let finger = 0; finger < 4; finger += 1) {
-      const segment = new Mesh(fingerGeometry, skin);
-      segment.scale.y = role === "side-lift" ? 0.70 : 0.58;
-      segment.position.set(
-        (finger - 1.5) * 0.010,
-        0.004,
-        mirror * (role === "side-lift" ? 0.020 : 0.018),
-      );
-      segment.rotation.set(Math.PI / 2.8, 0, (finger - 1.5) * 0.035);
-      hand.add(segment);
-    }
-    // The reference pose is a pinch, not four floating rods: the near hand's
-    // thumb applies the lift at the card corner while the other palm shields
-    // the packet. Keep the thumb below the printed index window.
-    const thumb = new Mesh(thumbGeometry, skin);
-    thumb.name = role === "side-lift" ? "peek-shield-thumb" : "peek-corner-lift-thumb";
-    thumb.position.set(
-      role === "side-lift" ? mirror * 0.018 : 0.006,
-      0.008,
-      role === "side-lift" ? 0.028 : 0.052,
-    );
-    thumb.rotation.set(Math.PI / 2.35, role === "side-lift" ? -0.22 : 0.12, mirror * 0.08);
-    thumb.scale.y = role === "side-lift" ? 0.72 : 0.82;
-    hand.add(thumb);
-    hands.add(hand);
-  };
-  /*
-    These are deliberately named roles instead of a mirrored pair.  The left
-    hand braces and bends the near edges upward; the right hand crosses the
-    packet lightly, with its thumb/fingers shielding the unexposed half.  The
-    roles are asymmetric on purpose: mirror-imaged palms looked like one hand
-    faced backward in first person.
-  */
-  // The side hand lightly lifts the outside corner. The rear hand remains
-  // below the player-facing edge, behind the cards from the camera's view.
-  // They intentionally cannot cover either rank/suit window at the far edge.
-  addHand("peek-side-lift-hand", -0.074, -0.004, -0.10, 1, "side-lift");
-  addHand("peek-rear-brace-hand", 0.018, -0.068, 0.08, -1, "rear-brace");
-  return hands;
-}
-
-/** First-person rig: both wrists have a visible forearm continuation off frame. */
 function buildHeroPeekHands(resources: TableSceneResources): Group {
   const hands = new Group();
   hands.name = "hero-peek-rig";
@@ -2145,80 +2004,101 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
     mesh.quaternion.setFromUnitVectors(up, direction.normalize());
     parent.add(mesh);
   };
-  const addArm = (
+  const addArmChain = (
     side: "left" | "right",
     shoulder: readonly [number, number, number],
     elbow: readonly [number, number, number],
     wrist: readonly [number, number, number],
-  ) => {
+  ): Group => {
     const arm = new Group();
     arm.name = `hero-${side}-arm-chain`;
-    segment(arm, `hero-${side}-upper-arm`, shoulder, elbow, 0.017);
-    segment(arm, `hero-${side}-forearm`, elbow, wrist, 0.014);
+    segment(arm, `hero-${side}-upper-arm`, shoulder, elbow, 0.019);
+    segment(arm, `hero-${side}-forearm`, elbow, wrist, 0.017);
     const elbowJoint = new Mesh(jointGeometry, skin);
     elbowJoint.name = `hero-${side}-elbow-joint`;
     elbowJoint.position.set(...elbow);
     elbowJoint.scale.setScalar(0.018);
     arm.add(elbowJoint);
-    const hand = new Group();
-    hand.name = `hero-${side}-wrist-hand`;
-    hand.position.set(...wrist);
-    const palm = new Mesh(jointGeometry, skin);
-    palm.name = `hero-${side}-palm`;
-    palm.scale.set(side === "left" ? 0.024 : 0.022, 0.012, 0.030);
-    hand.add(palm);
-    const fingerGeometry = resources.ledger.track(new CylinderGeometry(0.009, 0.011, 0.060, 8));
-    for (let finger = 0; finger < 3; finger += 1) {
-      const tip = new Mesh(fingerGeometry, skin);
-      tip.name = `hero-${side}-finger-${finger}`;
-      tip.position.set((finger - 1) * 0.010, 0.007, side === "left" ? 0.020 : 0.014);
-      tip.rotation.set(Math.PI / 2.7, side === "left" ? 0.12 : -0.10, (finger - 1) * 0.03);
-      hand.add(tip);
-    }
-    const thumb = new Mesh(
-      resources.ledger.track(new CylinderGeometry(0.011, 0.013, 0.054, 8)),
-      skin,
-    );
-    thumb.name = `hero-${side}-thumb`;
-    thumb.position.set(side === "left" ? 0.014 : -0.014, 0.006, 0.028);
-    thumb.rotation.set(Math.PI / 2.2, side === "left" ? -0.18 : 0.18, side === "left" ? 0.10 : -0.10);
-    hand.add(thumb);
-    arm.add(hand);
     hands.add(arm);
+    return arm;
   };
-  // Origins continue below the first-person frame; wrists arrive at opposite
-  // card edges, producing a real brace/lift gesture instead of floating props.
-  addArm(
+
+  const leftArm = addArmChain(
     "left",
     HERO_PEEK_HAND_RIG.left.shoulder,
     HERO_PEEK_HAND_RIG.left.elbow,
     HERO_PEEK_HAND_RIG.left.wrist,
   );
-  addArm(
+  const leftHand = new Group();
+  leftHand.name = "hero-left-wrist-hand";
+  leftHand.position.set(...HERO_PEEK_HAND_RIG.left.wrist);
+  leftHand.rotation.set(0.02, -0.08, -0.10);
+  const leftPalm = new Mesh(jointGeometry, skin);
+  leftPalm.name = "hero-left-palm-facing-right";
+  // Thin on X makes this palm stand vertically, facing toward local -X: the
+  // cards are to its right on screen while the palm stays outside their edge.
+  leftPalm.scale.set(0.011, 0.026, 0.032);
+  leftHand.add(leftPalm);
+  const sideFingerGeometry = resources.ledger.track(new CylinderGeometry(0.006, 0.007, 0.046, 8));
+  for (let finger = 0; finger < 3; finger += 1) {
+    const sideFinger = new Mesh(sideFingerGeometry, skin);
+    sideFinger.name = `hero-left-side-finger-${finger}`;
+    sideFinger.position.set(-0.002, (finger - 1) * 0.012, 0.010);
+    sideFinger.rotation.set(Math.PI / 2, 0, -0.05);
+    leftHand.add(sideFinger);
+  }
+  leftArm.add(leftHand);
+  segment(
+    leftArm,
+    "hero-left-edge-thumb",
+    HERO_PEEK_HAND_RIG.left.wrist,
+    [0.125, 0.020, 0.028],
+    0.007,
+  );
+
+  const rightArm = addArmChain(
     "right",
     HERO_PEEK_HAND_RIG.right.shoulder,
     HERO_PEEK_HAND_RIG.right.elbow,
     HERO_PEEK_HAND_RIG.right.wrist,
   );
-  hands.userData.rig = "shoulder-upper-arm-elbow-forearm-wrist-palm-fingers";
+  const rightHand = new Group();
+  rightHand.name = "hero-right-wrist-hand";
+  rightHand.position.set(...HERO_PEEK_HAND_RIG.right.wrist);
+  // Pitch the brace upward; its broad palm remains beyond the card edge and is
+  // depth-occluded by the raised faces from the hero's eye line.
+  rightHand.rotation.set(0.34, 0.08, 0.02);
+  const rightPalm = new Mesh(jointGeometry, skin);
+  rightPalm.name = "hero-right-palm-behind-cards";
+  rightPalm.position.set(0.045, 0, 0.004);
+  rightPalm.scale.set(0.055, 0.020, 0.030);
+  rightHand.add(rightPalm);
+  const rearFingerGeometry = resources.ledger.track(new CylinderGeometry(0.007, 0.008, 0.034, 8));
+  for (let finger = 0; finger < 3; finger += 1) {
+    const rearFinger = new Mesh(rearFingerGeometry, skin);
+    rearFinger.name = `hero-right-rear-finger-${finger}`;
+    rearFinger.position.set(0.022 + finger * 0.017, 0.006, -0.010);
+    rearFinger.rotation.set(Math.PI / 2, 0, 0);
+    rightHand.add(rearFinger);
+  }
+  rightArm.add(rightHand);
+  // The thumb terminates in the centre gap, below the printed windows. It is
+  // the only right-hand part that reaches the hinge. Its upper knuckle meets
+  // the raised edge while the palm supports both cards from behind.
+  segment(
+    rightArm,
+    "hero-right-centre-thumb",
+    [-0.035, 0.080, 0.072],
+    [0.002, 0.042, 0.012],
+    0.008,
+  );
+  hands.userData.elbowAnchors = {
+    left: HERO_PEEK_HAND_RIG.left.elbow,
+    right: HERO_PEEK_HAND_RIG.right.elbow,
+    tableClearance: 0.006,
+  };
+  hands.userData.rig = "left-side-shield/right-rear-brace/centre-thumb";
   return hands;
-}
-
-/** A narrow, rectangular window of a private card's printed corner. */
-let foldGeometry: BufferGeometry | null = null;
-function cornerFoldGeometry(): BufferGeometry {
-  if (foldGeometry) return foldGeometry;
-  const positions = new Float32Array([
-    -0.018, 0.001, 0.040, 0.018, 0.001, 0.040, 0.018, 0.001, 0.061,
-    -0.018, 0.001, 0.040, 0.018, 0.001, 0.061, -0.018, 0.001, 0.061,
-  ]);
-  const uvs = new Float32Array([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]);
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
-  geometry.computeVertexNormals();
-  foldGeometry = geometry;
-  return geometry;
 }
 
 /**
@@ -2380,26 +2260,17 @@ function applySeat(
     mesh.userData.cardPhase = holeFrame.phase;
     mesh.userData.cardOwnership = holeFrame.ownership;
     mesh.userData.cardQuaternion = [...holeFrame.quaternion];
-    mesh.geometry = squeezing ? resources.heroPeekGeometry : resources.cardGeometry;
-    // A private peek is the one moment the hero must be able to read both
-    // cards. The snapshot only supplies `code` for the hero while peeking (or
-    // at public showdown), so using the face here cannot expose a hand to any
-    // other seat while avoiding the old unreadable card-back regression.
-    mesh.material = code
-      ? resources.cardFaceMaterial(code)
-      : resources.deckBackMaterial(deckColourForHand(handId ?? transition?.handId));
-
-    // The old folded corner is intentionally retired during the full physical
-    // peek. The hands and shallow card roll now provide the concealment, not a
-    // floating index flap.
-    let fold = card.getObjectByName("card-fold") as Mesh | undefined;
-    if (!fold) {
-      fold = new Mesh(cornerFoldGeometry(), resources.cardMaterial);
-      fold.name = "card-fold";
-      card.add(fold);
-    }
-    fold.visible = false;
-    if (fold.visible && code) fold.material = resources.cardFoldMaterial(code);
+    const deckBack = resources.deckBackMaterial(deckColourForHand(handId ?? transition?.handId));
+    // One grouped geometry keeps the planted back and printed bent underside
+    // in the same render object. Material index zero can therefore never expose
+    // the planted half, while index one receives the authorised private face.
+    mesh.geometry = squeezing ? resources.heroPeekCardGeometry : resources.cardGeometry;
+    mesh.material = squeezing
+      ? [deckBack, code ? resources.heroPeekFaceMaterial(code) : resources.cardMaterial]
+      : code
+        ? resources.cardFaceMaterial(code)
+        : deckBack;
+    mesh.userData.privateCodeAuthorised = squeezing && Boolean(code);
   });
 
   view.hand.visible = squeezing;
@@ -2617,87 +2488,75 @@ const POT_HOLOGRAM_FORWARD = 0.02;
  */
 function setChipStack(group: Group, amount: number, resources: TableSceneResources): void {
   const layout = chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN);
-  const layoutByDenomination = new Map<number, typeof layout[number][]>();
-  for (const column of layout) {
-    const columns = layoutByDenomination.get(column.denomination) ?? [];
-    columns.push(column);
-    layoutByDenomination.set(column.denomination, columns);
-  }
-  const existing = new Map<number, Group>();
-  for (const child of [...group.children]) {
-    if (!child.name.startsWith("chip-denomination-")) continue;
-    const denomination = Number(child.userData.denomination);
-    if (Number.isFinite(denomination)) existing.set(denomination, child as Group);
-  }
+  const renderedCount = layout.reduce((total, column) => total + column.count, 0);
   const matrix = new Matrix4();
   const body = new Color();
   const edge = new Color();
+  const inlay = new Color();
   const cream = new Color(0xf4efe2);
   const paletteFor = (denomination: number) => CHIP_DENOMINATIONS.find(
     (candidate) => candidate.value === denomination,
   ) ?? CHIP_DENOMINATIONS[0];
-
-  for (const [denomination, columns] of layoutByDenomination) {
-    const rack = existing.get(denomination) ?? new Group();
-    rack.name = `chip-denomination-${denomination}`;
-    rack.userData.denomination = denomination;
-    const count = columns.reduce((total, column) => total + column.count, 0);
-    let stack = rack.getObjectByName("body") as InstancedMesh | undefined;
-    let spots = rack.getObjectByName("edge") as InstancedMesh | undefined;
-    let faces = rack.getObjectByName("face") as InstancedMesh | undefined;
-    if (!stack || stack.count < count) {
-      rack.clear();
-      stack = new InstancedMesh(resources.chipGeometry, resources.chipMaterial(), count);
-      stack.name = "body";
-      spots = new InstancedMesh(resources.chipEdgeGeometry, resources.chipEdgeMaterial(), count);
-      spots.name = "edge";
-      faces = new InstancedMesh(
-        resources.chipInlayGeometry,
-        resources.chipEdgeMaterial(),
-        count,
-      );
-      faces.name = "face";
-      rack.add(stack, spots, faces);
-    }
-    if (!stack || !spots || !faces) throw new Error("Chip denomination rack failed to initialize");
-    let instance = 0;
-    for (const column of columns) {
-      for (let height = 0; height < column.count; height += 1) {
-        matrix.makeRotationY(((instance * 37 + denomination) % 360) * (Math.PI / 180));
-        matrix.setPosition(
-          (column.column % 3) * CHIP_COLUMN_PITCH,
-          height * 0.0037,
-          Math.floor(column.column / 3) * CHIP_COLUMN_PITCH,
-        );
-        stack.setMatrixAt(instance, matrix);
-        spots.setMatrixAt(instance, matrix);
-        faces.setMatrixAt(instance, matrix);
-        const swatch = paletteFor(denomination);
-        body.setHex(swatch.color);
-        stack.setColorAt(instance, body);
-        edge.copy(body).lerp(cream, 0.55);
-        spots.setColorAt(instance, edge);
-        const inlay = edge.clone();
-        faces.setColorAt(instance, inlay);
-        instance += 1;
-      }
-    }
-    stack.count = instance;
-    spots.count = instance;
-    faces.count = instance;
-    stack.instanceMatrix.needsUpdate = true;
-    spots.instanceMatrix.needsUpdate = true;
-    faces.instanceMatrix.needsUpdate = true;
-    if (stack.instanceColor) stack.instanceColor.needsUpdate = true;
-    if (spots.instanceColor) spots.instanceColor.needsUpdate = true;
-    if (faces.instanceColor) faces.instanceColor.needsUpdate = true;
-    stack.computeBoundingSphere();
-    spots.computeBoundingSphere();
-    faces.computeBoundingSphere();
-    if (!rack.parent) group.add(rack);
-    existing.delete(denomination);
+  let stack = group.getObjectByName("instanced-chip-rack-body") as InstancedMesh | undefined;
+  let spots = group.getObjectByName("instanced-chip-rack-edge") as InstancedMesh | undefined;
+  let faces = group.getObjectByName("instanced-chip-rack-face") as InstancedMesh | undefined;
+  const capacity = Number(stack?.userData.capacity ?? stack?.count ?? 0);
+  if (!stack || !spots || !faces || capacity < renderedCount) {
+    if (stack) group.remove(stack);
+    if (spots) group.remove(spots);
+    if (faces) group.remove(faces);
+    const nextCapacity = Math.max(1, renderedCount);
+    stack = new InstancedMesh(resources.chipGeometry, resources.chipMaterial(), nextCapacity);
+    stack.name = "instanced-chip-rack-body";
+    stack.userData.capacity = nextCapacity;
+    spots = new InstancedMesh(resources.chipEdgeGeometry, resources.chipEdgeMaterial(), nextCapacity);
+    spots.name = "instanced-chip-rack-edge";
+    spots.userData.capacity = nextCapacity;
+    faces = new InstancedMesh(
+      resources.chipInlayGeometry,
+      resources.chipEdgeMaterial(),
+      nextCapacity,
+    );
+    faces.name = "instanced-chip-rack-face";
+    faces.userData.capacity = nextCapacity;
+    group.add(stack, spots, faces);
   }
-  for (const stale of existing.values()) group.remove(stale);
+  for (const child of [...group.children]) {
+    if (child.name.startsWith("chip-denomination-")) group.remove(child);
+  }
+  let instance = 0;
+  for (const column of layout) {
+    for (let height = 0; height < column.count; height += 1) {
+      matrix.makeRotationY(((instance * 37 + column.denomination) % 360) * (Math.PI / 180));
+      matrix.setPosition(
+        (column.column % 3) * CHIP_COLUMN_PITCH,
+        height * 0.0037,
+        Math.floor(column.column / 3) * CHIP_COLUMN_PITCH,
+      );
+      stack.setMatrixAt(instance, matrix);
+      spots.setMatrixAt(instance, matrix);
+      faces.setMatrixAt(instance, matrix);
+      body.setHex(paletteFor(column.denomination).color);
+      stack.setColorAt(instance, body);
+      edge.copy(body).lerp(cream, 0.55);
+      spots.setColorAt(instance, edge);
+      inlay.copy(edge);
+      faces.setColorAt(instance, inlay);
+      instance += 1;
+    }
+  }
+  stack.count = instance;
+  spots.count = instance;
+  faces.count = instance;
+  stack.instanceMatrix.needsUpdate = true;
+  spots.instanceMatrix.needsUpdate = true;
+  faces.instanceMatrix.needsUpdate = true;
+  if (stack.instanceColor) stack.instanceColor.needsUpdate = true;
+  if (spots.instanceColor) spots.instanceColor.needsUpdate = true;
+  if (faces.instanceColor) faces.instanceColor.needsUpdate = true;
+  stack.computeBoundingSphere();
+  spots.computeBoundingSphere();
+  faces.computeBoundingSphere();
 
   let shadows = group.getObjectByName("chip-rack-contact-shadows") as InstancedMesh | undefined;
   if (!shadows || shadows.count < layout.length) {
@@ -2718,7 +2577,6 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
   shadows.count = layout.length;
   shadows.instanceMatrix.needsUpdate = true;
   const renderedValue = layout.reduce((total, column) => total + column.denomination * column.count, 0);
-  const renderedCount = layout.reduce((total, column) => total + column.count, 0);
   group.userData.publicChipCount = renderedCount;
   group.userData.publicChipAmount = amount;
   group.userData.publicRenderedChipValue = renderedValue;

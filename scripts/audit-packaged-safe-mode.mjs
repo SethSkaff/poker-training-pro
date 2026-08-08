@@ -26,7 +26,7 @@ import { classifyCdpFailure, reportCdpOutcome } from "./lib/cdp-outcome.mjs";
 const APP = join(
   projectRoot,
   "outputs",
-  "desktop",
+    "next",
   "win-unpacked",
   "Poker Training Pro.exe",
 );

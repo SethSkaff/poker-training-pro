@@ -148,7 +148,7 @@ export function createRationalEquityService(
     nextToken += 1;
 
     if (!worker) {
-      // In-thread fallback (tests, iOS bundle, or no worker support). A newer
+      // In-thread fallback (tests or no worker support). A newer
       // request cannot arrive before this resolves, so no staleness is possible.
       supersede(() => new StaleEquityRequestError());
       try {
@@ -199,7 +199,7 @@ export function createRationalEquityService(
  * Constructs a worker-backed service for the desktop/browser renderer. The
  * worker is a Vite module worker served from the packaged custom protocol under
  * the strict CSP (`worker-src 'self' blob:`). Falls back to the in-thread
- * estimator when `Worker` is unavailable (tests, iOS bundle).
+ * estimator when `Worker` is unavailable (tests or packaged environments).
  */
 export function createDesktopEquityService(): RationalEquityService {
   // Electron's hardened renderer uses Chromium's sandbox. Its module Worker

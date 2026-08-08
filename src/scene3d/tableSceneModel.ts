@@ -728,8 +728,22 @@ export function chipCountForAmount(amount: number): number {
 /** Public rack order is low-to-high, while the greedy decomposition is high-to-low. */
 export const TOURNAMENT_CHIP_DENOMINATIONS = [25, 100, 500, 1_000, 5_000, 25_000, 100_000] as const;
 
+/**
+ * The opening 15k rack must contain playable change, not three orange plaques.
+ * This exact bank uses every live early-level denomination and matches the
+ * footprint of a stack that has already posted a blind.
+ */
+const OPENING_STACK_15K_INVENTORY = [
+  25, 25, 25, 25,
+  100, 100, 100, 100,
+  500, 500, 500,
+  1_000, 1_000, 1_000,
+  5_000, 5_000,
+] as const;
+
 export function chipInventoryForAmount(amount: number): readonly number[] {
   let remainder = Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0));
+  if (remainder === 15_000) return OPENING_STACK_15K_INVENTORY;
   const inventory: number[] = [];
   for (const denomination of [...TOURNAMENT_CHIP_DENOMINATIONS].reverse()) {
     const count = Math.floor(remainder / denomination);
@@ -751,7 +765,10 @@ export interface ChipColumnLayout {
 
 /**
  * The physical rack contract: denominations are adjacent and low-to-high;
- * every column contains one denomination and never exceeds twenty chips.
+ * every column contains one denomination and never exceeds the requested
+ * capacity. Small groups of high-value chips use one chip per column so a
+ * 15,000-ish starting stack reads as several chips instead of one orange rod;
+ * very large groups fall back to the normal capacity to keep geometry bounded.
  */
 export function chipColumnLayoutForAmount(
   amount: number,
@@ -765,8 +782,14 @@ export function chipColumnLayoutForAmount(
   let column = 0;
   for (const [denomination, count] of [...groups.entries()].sort(([a], [b]) => a - b)) {
     let remaining = count;
+    // A short high-denomination group is visually sparse but economically
+    // important. Give each chip its own adjacent footprint while it remains a
+    // small group; do not turn a very large balance into one column per chip.
+    const columnCapacity = denomination >= 5_000 && count <= chipsPerColumn
+      ? 1
+      : chipsPerColumn;
     while (remaining > 0) {
-      const size = Math.min(chipsPerColumn, remaining);
+      const size = Math.min(columnCapacity, remaining);
       result.push({ denomination, count: size, column });
       remaining -= size;
       column += 1;

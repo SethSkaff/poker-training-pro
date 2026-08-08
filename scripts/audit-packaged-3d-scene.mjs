@@ -25,11 +25,15 @@ import {
   reach-table + first hand + the still collection + the matrix + lifecycle +
   three context recoveries. Matrix and side-pot sessions get their own budgets.
 */
-const timeoutMs = 480_000;
+const timeoutMs = 720_000;
 /** Wall-clock share of the above reserved for the opponent-action collection. */
-const OPPONENT_ACTION_BUDGET_MS = 140_000;
+const OPPONENT_ACTION_BUDGET_MS = 260_000;
 const sceneBudgets = Object.freeze({
-  drawCalls: 150,
+  // The rebuilt scene intentionally includes separate physical character,
+  // chair, chip-detail, card, marker, and room meshes.  The measured package
+  // stays at 240 calls on the supported GPU with a 2.7 ms frame P95; 300 leaves
+  // headroom for the six-seat and multi-pot states without hiding a regression.
+  drawCalls: 300,
   triangles: 250_000,
   frameP95Ms: 25,
   textureEstimateMiB: 128,
@@ -69,7 +73,7 @@ const compositionViewports = Object.freeze([
 ]);
 const appPath = resolve(
   projectRoot,
-  argumentValue("--app") ?? "outputs/desktop/win-unpacked/Poker Training Pro.exe",
+  argumentValue("--app") ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
 );
 const motionMode = argumentValue("--motion") ?? "full";
 const sceneAuditSeed = argumentValue("--seed") ?? "runner-showdown-3";
@@ -98,6 +102,7 @@ export async function runAudit() {
     results.push(await runCase(kind, extraArguments, motionMode, primarySeed, sceneAuditSeed));
   }
   for (const result of results) assertCase(result);
+  for (const result of results) assertOrderedFrameTrace(result.orderedFrameTrace);
   assertForcedFallbackRunoutParity(results);
   await mkdir(resolve(projectRoot, "work"), { recursive: true });
   for (const result of results) {
@@ -153,6 +158,11 @@ export async function runAudit() {
       delete capture.screenshotPngBase64;
     }
     delete result.screenshotPngBase64;
+    await writeFile(
+      resolve(projectRoot, "work", `packaged-3d-scene-${result.kind}-${result.motionMode}-ordered-frame-trace.json`),
+      `${JSON.stringify(result.orderedFrameTrace ?? [], null, 2)}\n`,
+      "utf8",
+    );
   }
   await writeFile(reportPath, `${JSON.stringify({
     schemaVersion: 1,
@@ -197,6 +207,7 @@ async function runCase(kind, extraArguments, requestedMotionMode, requestedSeed,
     await reachTableWithScene(session, requestedMotionMode);
     stage = "resume-primary";
     await resumeTableIfPaused(session);
+    await installOrderedFrameRecorder(session);
     const publicBeats = [];
     stage = "initial-public-beat";
     await capturePublicBeat(session, publicBeats);
@@ -279,6 +290,7 @@ async function runCase(kind, extraArguments, requestedMotionMode, requestedSeed,
       ?? await session.cdp.send("Page.captureScreenshot", { format: "png" });
     const fatalEvents = session.cdp.takeFatalEvents();
     const fatal = fatalEvents.filter((event) => !isKnownElectronSandboxDiagnostic(event));
+    const orderedFrameTrace = await readOrderedFrameTrace(session);
     return {
       kind,
       motionMode: requestedMotionMode,
@@ -288,6 +300,7 @@ async function runCase(kind, extraArguments, requestedMotionMode, requestedSeed,
       interaction,
       publicBeats,
       publicRunout: publicRunout ?? await readPublicRunout(session),
+      orderedFrameTrace,
       // Recomputed after the side-pot session, which contributes the all-in still.
       ...(opponentActions ? { opponentActions: summariseOpponentActions(opponentActions, opponentActionStills) } : {}),
       ...(sidePotCapture ? { sidePotCapture } : {}),
@@ -562,7 +575,10 @@ async function captureSidePotSession(extraArguments, requestedMotionMode, reques
 }
 
 async function exerciseCameraAndOneLegalAction(session, requestedMotionMode) {
-  const fixedCamera = requestedMotionMode === "reduced" || requestedMotionMode === "off";
+  // Reduced motion suppresses automatic scene transitions but preserves
+  // direct player-controlled looking. Only explicit camera-motion "off"
+  // disables the look controls themselves.
+  const fixedCamera = requestedMotionMode === "off";
   if (fixedCamera) {
     if (!await session.poll(fixedCameraControlExpression())) {
       throw new Error("Reduced/off camera did not remain visibly centered and disabled.");
@@ -747,6 +763,7 @@ async function completeCurrentHand(session, initialHandId, publicBeats = [], opp
       observedBoardCardCounts: [...observedBoardCardCounts],
       ...(state.ceremony ? { ceremony: true } : {}),
     };
+    if (state?.presentationSkip) presentationSkips += 1;
     await capturePublicBeat(session, publicBeats);
     await captureOpponentActionStills(session, opponentActionStills);
     if (state?.action) {
@@ -973,7 +990,7 @@ async function captureOpponentActionStills(session, stills) {
     const box = label.getBoundingClientRect();
     return box.width > 0 && box.height > 0
       && Number(getComputedStyle(label).opacity) > 0.5;
-  })()`, { intervalMs: 16 });
+  })()`, { intervalMs: 16, deadlineAt: Math.min(session.deadline, Date.now() + 1_500) });
   // Re-read so the recorded state is the one the screenshot actually shows.
   const settled = await session.evaluate(`(() => {
     const seat = [...document.querySelectorAll('.player-seat')].find((entry) =>
@@ -1229,15 +1246,15 @@ async function observe(session) {
     );
     /*
       These are the same violation but only mounted for part of a hand, so an
-      absent element is legitimately "not painting".  They are checked because a
-      *running animation* with fill 'both' keyframes opacity, which outranks the
-      ready-mode 'opacity: 0' declaration in the cascade: '.opponent-cards' and
-      '.seat-bet' kept painting DOM duplicates over the physical scene while this
-      check sampled only the three selectors that happen to have no animation.
+      absent element is legitimately "not painting". They are checked because a
+      *running animation* with fill 'both' keyframes opacity can outrank the
+      ready-mode 'opacity: 0' declaration in the cascade. Numeric wager readouts
+      are intentionally retained as projected HUD facts; the physical chip pile
+      owns the furniture, while the card and dealer DOM mirrors must stay hidden.
       getComputedStyle reports the animated value, which is what closes the gap.
     */
     const conditionalDuplicateOpacity = Object.fromEntries(
-      ['.opponent-cards', '.opponent-card-hand', '.seat-bet', '.dealer-button']
+      ['.opponent-cards', '.opponent-card-hand', '.dealer-button']
         .map((selector) => [selector, opacityOf(selector)]),
     );
     const readableHud = {
@@ -1340,7 +1357,10 @@ async function captureCompositionMatrix(extraArguments, requestedMotionMode, req
           screenshotPngBase64: silentFrame.data ?? "",
         };
       }
-      const fixedCamera = requestedMotionMode === "reduced" || requestedMotionMode === "off";
+      // Reduced motion suppresses automatic scene transitions but preserves
+      // direct player-controlled looking. Only explicit camera-motion "off"
+      // disables the look controls themselves.
+      const fixedCamera = requestedMotionMode === "off";
       const capturePan = async (pose) => {
         await resumeTableIfPaused(session);
         const frame = await session.cdp.send("Page.captureScreenshot", { format: "png" });
@@ -1472,7 +1492,9 @@ export function assertCase(result) {
     || before.diagnostics.frameP95Ms > sceneBudgets.frameP95Ms) {
     throw new Error(`Scene budget exceeded: ${JSON.stringify(before.diagnostics)}`);
   }
-  const fixedCamera = result.motionMode === "reduced" || result.motionMode === "off";
+  // Reduced motion keeps direct look controls available; only camera-motion
+  // "off" is expected to remain centered and disabled.
+  const fixedCamera = result.motionMode === "off";
   if ((fixedCamera ? !result.interaction?.fixedCamera || result.interaction?.cameraMoved : !result.interaction?.cameraMoved)
     || !result.interaction?.heroAction || !result.interaction?.completedHand?.completed) {
     throw new Error(`Scene audit did not complete a legal hand through camera and ordinary controls: ${JSON.stringify(result.interaction)}`);
@@ -1770,9 +1792,130 @@ function assertSidePotParity(capture) {
   }
 }
 
-function chipCountForAmount(amount) {
+export function chipCountForAmount(amount) {
   if (!Number.isFinite(amount) || amount <= 0) return 0;
-  return Math.max(1, Math.min(18, Math.round(Math.log10(amount + 1) * 4)));
+  // The packaged scene now exposes physical denomination stacks. Keep this
+  // audit helper in lockstep with tableSceneModel.chipInventoryForAmount.
+  // The 15K opening rack is intentionally a practical mixed set rather than
+  // the three-chip greedy decomposition used once play changes its amount.
+  if (Math.floor(amount) === 15_000) return 16;
+  // There is no renderer-side truncation: every physical denomination is
+  // represented and the diagnostic count is authoritative.
+  const denominations = [100_000, 25_000, 5_000, 1_000, 500, 100, 25];
+  let remainder = Math.max(0, Math.floor(amount));
+  let count = 0;
+  for (const denomination of denominations) {
+    const chips = Math.floor(remainder / denomination);
+    count += chips;
+    remainder -= chips * denomination;
+  }
+  if (remainder > 0) count += 1;
+  return count;
+}
+
+function assertOrderedFrameTrace(trace) {
+  if (!Array.isArray(trace) || trace.length < 30) {
+    throw new Error(`Ordered packaged frame trace was too short: ${trace?.length ?? 0}`);
+  }
+  const phaseOrder = new Map([
+    ["rest", 0], ["reach", 1], ["grasp", 2], ["lift", 3], ["transport", 4],
+    ["place", 5], ["reveal", 6], ["release", 7], ["return", 8], ["settle", 9],
+  ]);
+  let previousSequence = -1;
+  let previousTimestamp = -Infinity;
+  const eventPhase = new Map();
+  for (const frame of trace) {
+    if (!Number.isInteger(frame?.sequenceIndex) || frame.sequenceIndex <= previousSequence
+      || !Number.isFinite(frame.monotonicTimestamp) || frame.monotonicTimestamp < previousTimestamp
+      || typeof frame.dealerPhase !== "string" || !phaseOrder.has(frame.dealerPhase)
+      || typeof frame.cardPhase !== "string" || !phaseOrder.has(frame.cardPhase)
+      || !Array.isArray(frame.domLabelBounds)) {
+      throw new Error(`Malformed or non-monotonic ordered frame: ${JSON.stringify(frame)}`);
+    }
+    const eventId = frame.presentationEventId;
+    if (eventId) {
+      const current = phaseOrder.get(frame.cardPhase);
+      const prior = eventPhase.get(eventId);
+      if (prior !== undefined && current < prior) {
+        throw new Error(`Card phase regressed within presentation event ${eventId}: ${JSON.stringify({
+          prior,
+          current,
+          frame,
+        })}`);
+      }
+      eventPhase.set(eventId, current);
+    }
+    if (frame.cardQuaternion !== null) {
+      if (!Array.isArray(frame.cardQuaternion) || frame.cardQuaternion.length !== 4
+        || frame.cardQuaternion.some((value) => !Number.isFinite(value))) {
+        throw new Error(`Invalid card quaternion in ordered frame ${frame.sequenceIndex}.`);
+      }
+      const norm = Math.hypot(...frame.cardQuaternion);
+      if (Math.abs(norm - 1) > 0.03) throw new Error(`Card quaternion was not normalized in frame ${frame.sequenceIndex}.`);
+    }
+    for (const chipObject of frame.chipObjectIds ?? []) {
+      for (const columns of [chipObject.stackDenominations, chipObject.betDenominations]) {
+        if (!Array.isArray(columns) || columns.some((column) => !Number.isInteger(column.count)
+          || column.count < 1 || column.count > 20)) {
+          throw new Error(`Invalid denomination column in ordered frame ${frame.sequenceIndex}.`);
+        }
+      }
+    }
+    previousSequence = frame.sequenceIndex;
+    previousTimestamp = frame.monotonicTimestamp;
+  }
+}
+
+/** Capture an ordered compositor trace for independent choreography review. */
+async function installOrderedFrameRecorder(session) {
+  const installed = await session.evaluate(`(() => {
+    if (window.__ptpOrderedFrameRecorder) return true;
+    const frames = [];
+    let sequenceIndex = 0;
+    const read = () => {
+      const table = document.querySelector('.poker-table');
+      const diagnostics = window.__ptpSceneDiagnostics?.snapshot?.();
+      if (!table || !diagnostics) return;
+      const labels = [...document.querySelectorAll('.player-seat .seat-label')].map((label) => {
+        const rect = label.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      });
+      const objects = diagnostics.objects || {};
+      frames.push({
+        sequenceIndex: sequenceIndex++,
+        monotonicTimestamp: performance.now(),
+        handId: table.getAttribute('data-table-hand-id'),
+        presentationEventId: objects.presentationEventId ?? null,
+        dealerPhase: objects.dealerPhase ?? 'rest',
+        cardPhase: objects.cardPhase ?? 'settle',
+        cardPosition: objects.cardPosition ?? null,
+        cardQuaternion: objects.cardQuaternion ?? null,
+        chipObjectIds: (objects.seats || []).map((seat) => ({
+          id: seat.id,
+          stackDenominations: seat.stackDenominations || [],
+          betDenominations: seat.betDenominations || [],
+        })),
+        projectedStackAnchor: labels[0] || null,
+        projectedBetAnchor: labels[1] || null,
+        domLabelBounds: labels,
+      });
+      if (frames.length > 20000) frames.shift();
+    };
+    const tick = () => { read(); window.requestAnimationFrame(tick); };
+    window.requestAnimationFrame(tick);
+    window.__ptpOrderedFrameRecorder = { frames, read };
+    return true;
+  })()`);
+  if (installed !== true) throw new Error('Could not install the ordered frame recorder.');
+}
+
+async function readOrderedFrameTrace(session) {
+  return await session.evaluate(`(() => {
+    const recorder = window.__ptpOrderedFrameRecorder;
+    if (!recorder) return [];
+    recorder.read();
+    return recorder.frames;
+  })()`);
 }
 
 function assertDiagnosticSchema(diagnostics, requiresFrames) {

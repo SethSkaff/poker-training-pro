@@ -846,8 +846,8 @@ export async function advanceTournamentRunnerOneStepAsync(
  * offloads the Rational equity Monte Carlo to `estimateEquity` (typically a
  * worker) so a large decision cannot block the UI thread. For a fixed seed and
  * work budget the resulting runner is bit-for-bit identical to the synchronous
- * loop. The sync loop is retained unchanged for replay, tests, and the iOS
- * bundle.
+ * loop. The sync loop is retained unchanged for replay, tests, and fallback
+ * execution.
  */
 export async function advanceTournamentRunnerToHeroAsync(
   source: TournamentRunner,

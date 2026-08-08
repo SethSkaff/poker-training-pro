@@ -22,9 +22,11 @@ describe("table UI restraint and card peek", () => {
 
   it("does not render the redundant bottom shortcut bar or floating camera menu", () => {
     expect(table).not.toContain('className="table-footer"');
-    expect(table).toContain('className="camera-controls__center"');
+    expect(table).toContain('className="camera-controls"');
+    expect(table).toContain('onPointerDownCapture={beginCameraDrag}');
+    expect(table).toContain('onWheelCapture={handleCameraWheel}');
     expect(table).not.toContain("table.footer.quickRaise");
-    expect(table).toContain("table.camera.viewLabel");
+    expect(table).not.toContain("table.camera.offset");
   });
 
   it("keeps decorative room depth behind camera controls and locks peek during an action", () => {

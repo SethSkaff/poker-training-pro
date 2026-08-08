@@ -27,7 +27,7 @@ import { isCdpTransportTimeout } from "./lib/cdp-outcome.mjs";
 const DEFAULT_APP = join(
   projectRoot,
   "outputs",
-  "desktop",
+    "next",
   "win-unpacked",
   "Poker Training Pro.exe",
 );
