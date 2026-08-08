@@ -16,7 +16,7 @@ describe("hero peek projected protected windows", () => {
     expect(heroPeekFaceUvForLocalPoint(0.044, 1)[1]).toBeCloseTo(0.02);
   });
 
-  it("keeps the left hand outside the left card and the right hand behind the far edge", () => {
+  it("restores the previous compact two-hand holding rig", () => {
     const layout = heroPeekProjectedLayout({
       pan: 0,
       cameraView: "standard",
@@ -24,9 +24,11 @@ describe("hero peek projected protected windows", () => {
       viewportHeight: 768,
       interfaceScale: "standard",
     });
-    expect(layout.handBounds[0].xMax).toBeLessThan(layout.cardBounds[0].xMin);
-    expect(layout.handDepths[1]).toBeGreaterThan(layout.cardFarEdgeDepth);
-    expect(HERO_PEEK_HAND_RIG.right.wrist[2]).toBeGreaterThan(HERO_PEEK_CARD_LENGTH / 2);
+    expect(HERO_PEEK_HAND_RIG.left.wrist).toEqual([-0.074, -0.002, -0.018]);
+    expect(HERO_PEEK_HAND_RIG.right.wrist).toEqual([0.054, 0.002, 0.038]);
+    expect(layout.handBounds).toHaveLength(2);
+    expect(layout.handDepths[1]).toBeLessThan(layout.cardFarEdgeDepth);
+    expect(HERO_PEEK_HAND_RIG.right.wrist[2]).toBeLessThan(HERO_PEEK_CARD_LENGTH / 2);
   });
 
   it("keeps both upper-left rank/suit windows clear across camera poses and UI scales", () => {

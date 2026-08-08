@@ -2163,16 +2163,15 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
     const hand = new Group();
     hand.name = `hero-${side}-wrist-hand`;
     hand.position.set(...wrist);
-    hand.rotation.set(0, side === "left" ? -0.38 : 0.18, side === "left" ? -0.12 : 0.08);
     const palm = new Mesh(jointGeometry, skin);
     palm.name = `hero-${side}-palm`;
-    palm.scale.set(side === "left" ? 0.018 : 0.028, side === "left" ? 0.010 : 0.014, side === "left" ? 0.024 : 0.032);
+    palm.scale.set(side === "left" ? 0.024 : 0.022, 0.012, 0.030);
     hand.add(palm);
     const fingerGeometry = resources.ledger.track(new CylinderGeometry(0.009, 0.011, 0.060, 8));
     for (let finger = 0; finger < 3; finger += 1) {
       const tip = new Mesh(fingerGeometry, skin);
       tip.name = `hero-${side}-finger-${finger}`;
-      tip.position.set((finger - 1) * 0.009, side === "left" ? 0.006 : 0.008, side === "left" ? 0.020 : 0.014);
+      tip.position.set((finger - 1) * 0.010, 0.007, side === "left" ? 0.020 : 0.014);
       tip.rotation.set(Math.PI / 2.7, side === "left" ? 0.12 : -0.10, (finger - 1) * 0.03);
       hand.add(tip);
     }
@@ -2181,7 +2180,7 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
       skin,
     );
     thumb.name = `hero-${side}-thumb`;
-    thumb.position.set(side === "left" ? -0.008 : -0.012, side === "left" ? 0.004 : 0.008, side === "left" ? 0.028 : 0.030);
+    thumb.position.set(side === "left" ? 0.014 : -0.014, 0.006, 0.028);
     thumb.rotation.set(Math.PI / 2.2, side === "left" ? -0.18 : 0.18, side === "left" ? 0.10 : -0.10);
     hand.add(thumb);
     arm.add(hand);
@@ -2654,7 +2653,7 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
       spots.name = "edge";
       faces = new InstancedMesh(
         resources.chipInlayGeometry,
-        resources.chipDenominationMaterial(denomination),
+        resources.chipEdgeMaterial(),
         count,
       );
       faces.name = "face";
@@ -2676,8 +2675,10 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
         const swatch = paletteFor(denomination);
         body.setHex(swatch.color);
         stack.setColorAt(instance, body);
-        edge.copy(body).lerp(cream, 0.28);
+        edge.copy(body).lerp(cream, 0.55);
         spots.setColorAt(instance, edge);
+        const inlay = edge.clone();
+        faces.setColorAt(instance, inlay);
         instance += 1;
       }
     }
@@ -2689,6 +2690,7 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
     faces.instanceMatrix.needsUpdate = true;
     if (stack.instanceColor) stack.instanceColor.needsUpdate = true;
     if (spots.instanceColor) spots.instanceColor.needsUpdate = true;
+    if (faces.instanceColor) faces.instanceColor.needsUpdate = true;
     stack.computeBoundingSphere();
     spots.computeBoundingSphere();
     faces.computeBoundingSphere();

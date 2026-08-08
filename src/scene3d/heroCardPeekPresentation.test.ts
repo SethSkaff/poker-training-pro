@@ -54,7 +54,8 @@ describe("hero card peek presentation", () => {
     expect(scene).toContain("const spread = squeezing ? 0.040 : 0.055;");
     expect(scene).toContain("local[1] + HERO_PEEK_HAND_ROOT_OFFSET.y");
     expect(scene).toContain("local[2] + HERO_PEEK_HAND_ROOT_OFFSET.z");
-    expect(scene).toContain("hand.rotation.set(0, side === \"left\" ? -0.38 : 0.18");
+    expect(scene).toContain("palm.scale.set(side === \"left\" ? 0.024 : 0.022, 0.012, 0.030);");
+    expect(scene).not.toContain("hand.rotation.set(0, side === \"left\" ? -0.38 : 0.18");
     expect(scene).toContain("fold.visible = false;");
   });
 });
