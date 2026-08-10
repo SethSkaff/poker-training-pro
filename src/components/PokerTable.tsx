@@ -3406,6 +3406,14 @@ export function PokerTable({
   return (
     <div
       className={`table-screen ${isTwoDMode ? "table-screen--2d" : "table-screen--3d"}`}
+      data-game-mode={mode}
+      data-training-step={
+        mode === "training"
+          ? gradedAttempt
+            ? "feedback"
+            : "question"
+          : undefined
+      }
       data-event-tier={tournament?.tier ?? "local"}
       data-camera-motion={settings.cameraMotion}
       data-table-motion={settings.tableMotion}

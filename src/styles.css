@@ -3237,6 +3237,43 @@ input[type="range"]::-webkit-slider-thumb {
   white-space: nowrap;
 }
 
+/*
+  Training is the one spatial mode whose side surface is gameplay, not a
+  dashboard. It contains the required numeric answer control before the move
+  and the durable result/Next controls after the move. The generic ready-scene
+  rule above clips secondary panels out of ordinary 3D play; restore only these
+  two Training surfaces as a scrollable, pointer-interactive table overlay.
+*/
+.table-screen--3d[data-game-mode="training"]
+  .table-layout:has(.poker-scene[data-spatial-scene="ready"])
+  > .training-panel,
+.table-screen--3d[data-game-mode="training"]
+  .table-layout:has(.poker-scene[data-spatial-scene="ready"])
+  > .feedback-panel {
+  position: absolute;
+  z-index: 70;
+  top: 64px;
+  right: 16px;
+  bottom: 46px;
+  width: min(360px, calc(100vw - 48px));
+  height: auto;
+  overflow: auto;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+  pointer-events: auto;
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.58);
+}
+
+.table-screen--3d[data-game-mode="training"]
+  .table-layout:has(.poker-scene[data-spatial-scene="ready"])
+  > .training-panel:focus-within,
+.table-screen--3d[data-game-mode="training"]
+  .table-layout:has(.poker-scene[data-spatial-scene="ready"])
+  > .feedback-panel:focus-within {
+  border-color: rgba(93, 228, 206, 0.46);
+}
+
 .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .poker-scene {
   inset: 0;
   transform: none;

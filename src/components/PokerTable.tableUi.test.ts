@@ -11,6 +11,7 @@ const table = readFileSync(
   path.join(sourceRoot, "components", "PokerTable.tsx"),
   "utf8",
 );
+const styles = readFileSync(path.join(sourceRoot, "styles.css"), "utf8");
 
 describe("table UI restraint and card peek", () => {
   it("applies stack and bet world projections independently of the rail plaque", () => {
@@ -58,5 +59,28 @@ describe("table UI restraint and card peek", () => {
     expect(table).toContain("event.stopPropagation();");
     expect(table).toContain("event.currentTarget.setPointerCapture(event.pointerId);");
     expect(table).toContain("if (shouldFold) {");
+  });
+
+  it("keeps the numeric question and post-move feedback interactive in ready 3D Training", () => {
+    const genericHiddenRule = styles.indexOf(
+      '.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .training-panel',
+    );
+    const trainingOverride = styles.indexOf(
+      '.table-screen--3d[data-game-mode="training"]',
+    );
+
+    expect(table).toContain("data-game-mode={mode}");
+    expect(table).toContain('"feedback"');
+    expect(table).toContain('"question"');
+    expect(genericHiddenRule).toBeGreaterThan(-1);
+    expect(trainingOverride).toBeGreaterThan(genericHiddenRule);
+
+    const override = styles.slice(trainingOverride, trainingOverride + 1_500);
+    expect(override).toContain("> .training-panel");
+    expect(override).toContain("> .feedback-panel");
+    expect(override).toContain("clip: auto");
+    expect(override).toContain("clip-path: none");
+    expect(override).toContain("pointer-events: auto");
+    expect(override).toContain("overflow: auto");
   });
 });
