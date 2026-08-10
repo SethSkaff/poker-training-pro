@@ -51,7 +51,6 @@ describe("player-facing notification persistence", () => {
         action="call"
         graded={graded}
         mathAttempted
-        scenario={scenario}
         onNext={() => undefined}
         onReview={() => undefined}
       />,

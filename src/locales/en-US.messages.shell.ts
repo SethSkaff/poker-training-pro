@@ -15,6 +15,14 @@
  * only the UI chrome around it is.
  */
 export const SHELL_MESSAGES = Object.freeze({
+  "dashboard.tableView.title": "Choose your table",
+  "dashboard.tableView.2d.label": "2D Table",
+  "dashboard.tableView.2d.description": "Classic overhead view",
+  "dashboard.tableView.2d.ariaLabel": "Play at a 2D table",
+  "dashboard.tableView.3d.label": "3D Table",
+  "dashboard.tableView.3d.description": "Immersive seated view",
+  "dashboard.tableView.3d.ariaLabel": "Play at a 3D table",
+  "dashboard.tableView.lastUsed": "Last used",
   // Shared shell/product copy, reused across several startup-gate screens.
   "shell.productName": "Poker Training Pro",
   "shell.action.exportSave": "Export save",
@@ -48,8 +56,8 @@ export const SHELL_MESSAGES = Object.freeze({
   "settings.audio.master.previewLabel": "Preview Master volume at {percent} percent",
   "settings.audio.music.label": "Music",
   "settings.audio.music.description":
-    "Preview unavailable — no approved licensed music masters are installed.",
-  "settings.audio.music.previewUnavailableLabel": "Music preview unavailable",
+    "Controls the shuffled background playlist. Changes are heard during playback.",
+  "settings.audio.music.previewUnavailableLabel": "Music plays automatically",
   "settings.audio.effects.label": "Table effects",
   "settings.audio.effects.description":
     "Controls card, chip, fold, and result cues.",
@@ -294,13 +302,9 @@ export const SHELL_MESSAGES = Object.freeze({
     "bundled copies, shown offline; nothing is fetched.",
   "credits.section.music.title": "Music",
   "credits.section.music.note":
-    "No instrumental soundtrack is included yet. When licensed tracks " +
-    "ship, each track's title, author, source, and license will appear " +
-    "here.",
+    "Ten instrumental tracks are bundled for offline background playback.",
   "credits.musicStatus":
-    "No licensed music ships in this build. Background music stays disabled " +
-    "until instrumental masters are licensed, loudness-normalised, and " +
-    "attributed here.",
+    "Music by Kevin MacLeod (incompetech.com), licensed under Creative Commons Attribution 4.0 International.",
 
   // About & support (src/components/AboutSupport.tsx) — UI chrome only.
   "about.heading": "About & support",

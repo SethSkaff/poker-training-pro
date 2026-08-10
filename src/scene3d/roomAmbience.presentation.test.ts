@@ -22,7 +22,8 @@ describe("tournament-room ambience", () => {
     expect(source).toContain("A fourth wall closes the player-facing side");
     expect(source).toContain("const nearWall = new Mesh(");
     expect(source).toContain("const ceiling = new Mesh(");
-    expect(source).toContain("new PlaneGeometry(34, 34)");
-    expect(source).toContain("[-8.7, 7.8], [8.7, 7.8], [0, 10.6]");
+    expect(source).toContain("new PlaneGeometry(12, 12)");
+    expect(source).toContain('door.name = "card-room-exit-door"');
+    expect(source).toContain("[-3.65, -3.75], [3.65, -3.75]");
   });
 });

@@ -30,6 +30,8 @@ export interface RationalTournamentContext {
   placesToQualification?: number;
   averageStack?: number;
   handForHand?: boolean;
+  /** True when this player will post the big blind on the next hand. */
+  imminentBigBlind?: boolean;
   /** Explicit chip-EV risk premium, from 0 to 0.3. */
   riskPremium?: number;
 }
@@ -129,6 +131,9 @@ export interface RationalDecisionAudit {
   };
   adjustments: {
     tournamentRiskPremium: number;
+    blindUrgency: number;
+    tournamentPressure: number;
+    imminentBigBlind: boolean;
     positionAdjustment: number;
     stackDepthAdjustment: number;
     sprAdjustment: number;
@@ -185,7 +190,7 @@ interface PublicOpponent {
   seat: number;
 }
 
-const POLICY_VERSION = "rational-v1";
+const POLICY_VERSION = "rational-v2";
 const DEFAULT_SIMULATIONS = 700;
 export const MAX_EQUITY_SIMULATIONS_PER_DECISION = 1_200;
 export const MAX_EQUITY_SIMULATIONS_PER_SLICE = 32;
@@ -1017,13 +1022,35 @@ function pressureOpportunity(context: PublicPressureContext): number {
   return clamp(opportunity, 0, 1.8);
 }
 
-function tournamentRiskPremium(
+export interface TournamentPressureAdjustment {
+  riskPremium: number;
+  blindUrgency: number;
+  tournamentPressure: number;
+  imminentBigBlind: boolean;
+}
+
+/** Separates survival/ICM caution from the urgency of a stack being blinded away. */
+export function tournamentPressureAdjustment(
   context: RationalTournamentContext | undefined,
   heroStack: number,
-): number {
-  if (!context) return 0;
+  bigBlind: number,
+): TournamentPressureAdjustment {
+  if (!context) {
+    return {
+      riskPremium: 0,
+      blindUrgency: 0,
+      tournamentPressure: 0,
+      imminentBigBlind: false,
+    };
+  }
   if (context.riskPremium !== undefined) {
-    return clamp(context.riskPremium, 0, 0.3);
+    const riskPremium = clamp(context.riskPremium, 0, 0.3);
+    return {
+      riskPremium,
+      blindUrgency: 0,
+      tournamentPressure: riskPremium,
+      imminentBigBlind: Boolean(context.imminentBigBlind),
+    };
   }
 
   let premium = context.handForHand ? 0.055 : 0;
@@ -1039,11 +1066,25 @@ function tournamentRiskPremium(
     if (context.placesToQualification <= 1) premium += 0.07;
     else if (context.placesToQualification <= 3) premium += 0.04;
   }
+  const stackBigBlinds = heroStack / Math.max(1, bigBlind);
+  const shortStackUrgency = clamp((8 - stackBigBlinds) / 7, 0, 1);
+  const blindUrgency = clamp(
+    shortStackUrgency * (context.imminentBigBlind ? 1 : 0.58),
+    0,
+    1,
+  );
   if (context.averageStack && heroStack < context.averageStack * 0.6) {
-    // Very short stacks cannot wait forever; reduce excessive bubble folding.
-    premium *= 0.72;
+    // Very short stacks cannot wait forever; survival risk must not turn into
+    // a recommendation to fold until the forced bets consume the stack.
+    premium *= 1 - blindUrgency * 0.52;
   }
-  return clamp(premium, 0, 0.22);
+  const riskPremium = clamp(premium, 0, 0.22);
+  return {
+    riskPremium,
+    blindUrgency,
+    tournamentPressure: clamp(riskPremium + blindUrgency * 0.12, 0, 0.3),
+    imminentBigBlind: Boolean(context.imminentBigBlind),
+  };
 }
 
 /**
@@ -1285,11 +1326,20 @@ function scoreCandidates(
   blockers: number,
   ranges: readonly OpponentRangeSummary[],
   pressure: PublicPressureContext,
+  tournamentPressure: TournamentPressureAdjustment,
 ): Array<Omit<RationalActionOption, "probability">> {
   const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
   const spr = effectiveStack / Math.max(1, informationSet.pot);
   const equityEdge = equity - requiredEquity;
   const aggression = streetAggressionCount(informationSet);
+  const aggressionCommitment =
+    clamp((potOdds - 0.2) / 0.22, 0, 1) * clamp(aggression / 2, 0, 1);
+  const continuationSignal = clamp(
+    (equity - (requiredEquity - 0.1)) / 0.25,
+    0,
+    1,
+  );
+  const boardVolatility = clamp(draw * 1.35 + (informationSet.board.length < 5 ? 0.12 : 0), 0, 1);
 
   return candidates.map((candidate) => {
     const type = candidate.command.type;
@@ -1305,6 +1355,10 @@ function scoreCandidates(
     if (type === "fold") {
       chipUtility = 0;
       if (informationSet.currentBet === 0) chipUtility -= bigBlind * 2;
+      if (informationSet.street === "preflop") {
+        chipUtility -=
+          bigBlind * tournamentPressure.blindUrgency * continuationSignal * 0.7;
+      }
     } else if (type === "check") {
       chipUtility =
         equity * informationSet.pot +
@@ -1317,6 +1371,13 @@ function scoreCandidates(
         call -
         riskPremium * call * 1.8 +
         position * bigBlind * 0.08;
+      // Large aggression is often polarized. Strong bluff-catchers and value
+      // hands can retain the opponent's bluffs by calling, especially on less
+      // volatile boards; marginal hands receive no such reward.
+      const strongDefense = clamp((equity - requiredEquity - 0.08) / 0.24, 0, 1);
+      chipUtility +=
+        bigBlind * strongDefense * aggressionCommitment *
+        (0.38 + (1 - boardVolatility) * 0.3);
     } else {
       const wager = candidate.additionalRisk;
       const calledEquity = clamp(
@@ -1346,6 +1407,24 @@ function scoreCandidates(
 
       chipUtility -= riskPremium * wager * (1.4 + Math.min(1, wager / Math.max(1, effectiveStack)));
       chipUtility += position * bigBlind * 0.1;
+      const strongValue = clamp((equity - requiredEquity - 0.12) / 0.24, 0, 1);
+      // Once a large aggressor has committed chips, robust value can punish
+      // that commitment. Dynamic boards favor raising now; dry boards retain
+      // more trapping weight in the call branch above.
+      chipUtility +=
+        bigBlind * strongValue * aggressionCommitment *
+        (0.28 + boardVolatility * 0.5);
+      chipUtility -=
+        bigBlind * aggressionCommitment *
+        clamp((requiredEquity + 0.04 - equity) / 0.2, 0, 1) * 0.48;
+      if (
+        informationSet.street === "preflop" &&
+        equity >= requiredEquity - 0.06
+      ) {
+        chipUtility +=
+          bigBlind * tournamentPressure.blindUrgency *
+          (role === "value" ? 0.62 : 0.24);
+      }
       if (role === "bluff") {
         chipUtility += blockers * bigBlind * 0.8 + draw * bigBlind * 0.5;
       }
@@ -1583,7 +1662,12 @@ function assembleRationalDecision(
       ? legalActions.toCall /
         Math.max(1, informationSet.pot + legalActions.toCall)
       : 0;
-  const riskPremium = tournamentRiskPremium(input.tournament, hero.stack);
+  const tournamentPressure = tournamentPressureAdjustment(
+    input.tournament,
+    hero.stack,
+    input.bigBlind,
+  );
+  const riskPremium = tournamentPressure.riskPremium;
   const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
   const effectiveStack = Math.min(
     hero.stack,
@@ -1618,6 +1702,7 @@ function assembleRationalDecision(
     blockers,
     equity.opponentRanges,
     pressure,
+    tournamentPressure,
   );
   const distribution = normalizedDistribution(
     scored,
@@ -1665,6 +1750,9 @@ function assembleRationalDecision(
       },
       adjustments: {
         tournamentRiskPremium: riskPremium,
+        blindUrgency: tournamentPressure.blindUrgency,
+        tournamentPressure: tournamentPressure.tournamentPressure,
+        imminentBigBlind: tournamentPressure.imminentBigBlind,
         positionAdjustment: (position - 0.5) * 0.04,
         stackDepthAdjustment:
           effectiveStackBigBlinds <= 12

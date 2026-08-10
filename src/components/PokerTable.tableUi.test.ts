@@ -83,4 +83,30 @@ describe("table UI restraint and card peek", () => {
     expect(override).toContain("pointer-events: auto");
     expect(override).toContain("overflow: auto");
   });
+
+  it("bounds 3D gameplay to the viewport without changing document overflow elsewhere", () => {
+    expect(styles).toContain("body:has(.table-screen--3d)");
+    expect(styles).toContain("overflow-y: hidden");
+
+    const spatialScreenRule = styles.slice(
+      styles.indexOf(".table-screen--3d {"),
+      styles.indexOf(".table-screen--3d {") + 320,
+    );
+    expect(spatialScreenRule).toContain("height: 100dvh");
+    expect(spatialScreenRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+
+    const readyLayoutRule = styles.slice(
+      styles.indexOf(
+        '.table-screen--3d\n  > .table-layout:has(.poker-scene[data-spatial-scene="ready"])',
+      ),
+      styles.indexOf(
+        '.table-screen--3d\n  > .table-layout:has(.poker-scene[data-spatial-scene="ready"])',
+      ) + 240,
+    );
+    expect(readyLayoutRule).toContain("height: auto");
+
+    // Non-spatial table screens retain the normal page overflow contract.
+    expect(styles).not.toContain("body {\n  overflow-y: hidden");
+    expect(styles).not.toContain(".table-screen--2d {\n  overflow-y: hidden");
+  });
 });

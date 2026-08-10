@@ -18,6 +18,7 @@ import {
   createTournamentSession,
   listTournamentSessionEvents,
   progressTournamentSessionHand,
+  tournamentPolicyContextForSession,
   type TournamentSession,
   type TournamentSessionCareerResult,
   type TournamentSessionEntrant,
@@ -152,6 +153,18 @@ describe("compressed career event selection", () => {
 });
 
 describe("six-seat tournament session", () => {
+  it("derives qualification distance and the next big blind from live seats", () => {
+    const session = beginTournamentSessionHand(createSession());
+    const contexts = session.tournament.players
+      .filter((player) => player.status === "active")
+      .map((player) => ({
+        player,
+        context: tournamentPolicyContextForSession(session, player.id),
+      }));
+    expect(contexts[0].context.placesToQualification).toBe(4);
+    expect(contexts.filter((entry) => entry.context.imminentBigBlind)).toHaveLength(1);
+  });
+
   it("seats and deals deterministically, posting only the blinds", () => {
     const first = beginTournamentSessionHand(createSession());
     const replay = beginTournamentSessionHand(createSession());

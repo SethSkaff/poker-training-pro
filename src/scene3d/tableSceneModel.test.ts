@@ -16,6 +16,7 @@ import {
   callChipPosition,
   chipInventoryForAmount,
   chipColumnLayoutForAmount,
+  chipRackLayoutBounds,
   chipCountForAmount,
   committedAmountPosition,
   collectChipPosition,
@@ -427,20 +428,20 @@ describe("resting chip stacks stay in their owner's safe play lane", () => {
 });
 
 describe("dealer and blind markers", () => {
-  it("sit between each owner's rack and the centre with a real gap", () => {
+  it("sit in their own side pocket, clear of cards and the chip rack", () => {
     for (const pose of seatPoses(6)) {
       const stack = restingChipStackPosition(pose);
       const marker = tableMarkerPosition(pose);
       const gap = distance(marker, stack);
-      // Pucks remain in the same radial seat lane, leave air around the rack,
-      // and move toward the felt centre rather than behind the chips.
+      const stackLocal = seatLocalPoint(pose, stack);
+      const markerLocal = seatLocalPoint(pose, marker);
       expect(gap, `seat ${pose.seat}`).toBeGreaterThanOrEqual(
-        TABLE_MARKER_GAP + TABLE_MARKER_RADIUS,
+        CHIP_STACK_FOOTPRINT_RADIUS + TABLE_MARKER_RADIUS,
       );
-      expect(gap).toBeLessThan(
-        CHIP_STACK_FOOTPRINT_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS + 0.01,
+      expect(stackLocal[0] - markerLocal[0]).toBeGreaterThan(0.2);
+      expect(distance(marker, pose.feltPosition)).toBeGreaterThan(
+        CARD_ZONE_WIDTH / 2 + TABLE_MARKER_GAP,
       );
-      expect(Math.hypot(marker[0], marker[2])).toBeLessThan(Math.hypot(stack[0], stack[2]));
     }
   });
 
@@ -448,7 +449,8 @@ describe("dealer and blind markers", () => {
     for (const pose of seatPoses(6)) {
       const stack = stackAmountPosition(pose);
       const bet = committedAmountPosition(pose);
-      expect(Math.hypot(stack[0] - restingChipStackPosition(pose)[0], stack[2] - restingChipStackPosition(pose)[2])).toBeCloseTo(STACK_AMOUNT_OUTWARD_GAP, 8);
+      const bounds = chipRackLayoutBounds(15_000);
+      expect(Math.hypot(stack[0] - restingChipStackPosition(pose)[0], stack[2] - restingChipStackPosition(pose)[2])).toBeCloseTo(Math.abs(bounds.minZ - STACK_AMOUNT_OUTWARD_GAP), 8);
       expect(Math.hypot(bet[0] - betCirclePosition(pose)[0], bet[2] - betCirclePosition(pose)[2])).toBeCloseTo(0.04, 8);
       expect(stack[1]).toBeCloseTo(TABLE_HEIGHT + 0.002, 8);
       expect(bet[1]).toBeCloseTo(TABLE_HEIGHT + 0.006, 8);

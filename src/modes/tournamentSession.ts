@@ -56,6 +56,7 @@ import {
   type RationalActionRole,
   type RationalDecision,
   type RationalPolicyInput,
+  type RationalTournamentContext,
 } from "./rational";
 
 export const SESSION_TABLE_SIZE = 6;
@@ -1175,6 +1176,50 @@ interface SessionPolicyContext {
   level: BlindLevel;
 }
 
+/** Public tournament facts shared by live bots and post-round review. */
+export function tournamentPolicyContextForSession(
+  session: TournamentSession,
+  playerId: string,
+): RationalTournamentContext {
+  const active = session.tournament.players.filter(
+    (player) => player.status === "active",
+  );
+  const occupied = active.map((player) => player.seat as number);
+  const currentButton =
+    session.activeHand?.buttonSeat ?? session.tournament.tables[0]?.buttonSeat ?? 1;
+  let imminentBigBlind = false;
+  if (occupied.length >= 2) {
+    const nextButton = nextOccupiedSeat(occupied, currentButton);
+    const nextSmallBlind =
+      occupied.length === 2
+        ? nextButton
+        : nextOccupiedSeat(occupied, nextButton);
+    const nextBigBlind = nextOccupiedSeat(occupied, nextSmallBlind);
+    imminentBigBlind = active.some(
+      (player) => player.id === playerId && player.seat === nextBigBlind,
+    );
+  }
+  const qualifyingPlaces = Math.max(0, session.event.qualifyingPlaces ?? 0);
+  const placesToQualification =
+    qualifyingPlaces > 0
+      ? Math.max(0, active.length - qualifyingPlaces)
+      : undefined;
+
+  return {
+    playersRemaining: active.length,
+    // Career events award qualification rather than cash. Do not feed the
+    // same boundary into both `paidPlaces` and `placesToQualification`, which
+    // would double-count one bubble as two independent risk premiums.
+    placesToQualification,
+    averageStack:
+      active.reduce((sum, player) => sum + player.stack, 0) /
+      Math.max(1, active.length),
+    handForHand:
+      qualifyingPlaces > 0 && active.length === qualifyingPlaces + 1,
+    imminentBigBlind,
+  };
+}
+
 function sessionPolicyContext(
   session: TournamentSession,
   playerId: string,
@@ -1184,9 +1229,6 @@ function sessionPolicyContext(
     session,
     playerId,
   );
-  const active = session.tournament.players.filter(
-    (player) => player.status === "active",
-  );
   const rationalInput: RationalPolicyInput = {
     informationSet,
     legalActions,
@@ -1194,13 +1236,7 @@ function sessionPolicyContext(
     seed: deriveSeed(session.seed, hand.handId, playerId, "rational-policy"),
     simulations: options.simulations,
     temperature: options.temperature,
-    tournament: {
-      playersRemaining: active.length,
-      placesToQualification: session.event.qualifyingPlaces,
-      averageStack:
-        active.reduce((sum, player) => sum + player.stack, 0) /
-        Math.max(1, active.length),
-    },
+    tournament: tournamentPolicyContextForSession(session, playerId),
   };
   return { rationalInput, hand, informationSet, legalActions, level };
 }

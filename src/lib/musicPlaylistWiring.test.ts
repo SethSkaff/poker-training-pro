@@ -109,17 +109,19 @@ function wireLikeApp(
   };
 }
 
-describe("dormancy contract (production manifest)", () => {
-  it("ships an empty manifest, so the wiring is dormant", () => {
-    expect(productionMusicManifest.tracks).toHaveLength(0);
-    expect(musicPlaylistAvailable).toBe(false);
+describe("production and fallback manifests", () => {
+  const emptyManifest: PlaylistManifest = { version: 1, crossfadeSec: 0, tracks: [] };
+
+  it("ships a live production library", () => {
+    expect(productionMusicManifest.tracks.length).toBeGreaterThan(5);
+    expect(musicPlaylistAvailable).toBe(true);
   });
 
-  it("never constructs an audio graph or voice through real GameAudio feedback and focus events", () => {
+  it("keeps an explicitly empty fallback graph-free", () => {
     const sink = spySink();
     let now = 0;
     const { audio, playlist, teardown } = wireLikeApp(
-      productionMusicManifest,
+      emptyManifest,
       sink,
       () => now,
     );
@@ -149,7 +151,7 @@ describe("dormancy contract (production manifest)", () => {
   it("never throws across mount/unmount even under rapid focus churn", () => {
     const sink = spySink();
     const { audio, teardown } = wireLikeApp(
-      productionMusicManifest,
+      emptyManifest,
       sink,
       () => 0,
     );

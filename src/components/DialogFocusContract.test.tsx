@@ -56,7 +56,7 @@ describe("modal dialog inventory", () => {
     {
       name: "custom raise composer",
       src: pokerTable,
-      trapMarker: /active: raiseOpen && !action,\s*containerRef: raiseComposerRef/s,
+      trapMarker: /active: raiseOpen && !action && Boolean\(settings\.spatialScene\),\s*containerRef: raiseComposerRef/s,
     },
     {
       name: "hand-history popover",
@@ -77,9 +77,11 @@ describe("modal dialog inventory", () => {
   }
 
   it("declares aria-modal dialogs for all four table/remap modals", () => {
-    // Pause, bet composer, hand history each declare the modal role.
+    // Pause and history are always modal. The raise composer is modal in 3D,
+    // but is an in-dock region in the flat-table layout.
     const tableModals = pokerTable.match(/aria-modal="true"/g) ?? [];
-    expect(tableModals.length).toBeGreaterThanOrEqual(3);
+    expect(tableModals.length).toBeGreaterThanOrEqual(2);
+    expect(pokerTable).toContain('role={isTwoDMode ? "region" : "dialog"}');
     expect(remap).toContain('role="dialog"');
     expect(remap).toContain('aria-modal="true"');
   });

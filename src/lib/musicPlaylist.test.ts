@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createMusicPlaylist,
   createPlaylistOrder,
+  MUSIC_RECENT_TRACK_WINDOW,
   musicVolumeFromSettings,
   shuffleTrackIds,
   type PlaylistAudioSink,
@@ -12,6 +13,7 @@ import {
 } from "./musicPlaylist";
 import {
   musicPlaylistAvailable,
+  productionMusicDurationSec,
   productionMusicManifest,
 } from "../data/musicPlaylistManifest";
 
@@ -107,6 +109,24 @@ describe("createPlaylistOrder", () => {
     }
   });
 
+  it("keeps every next choice outside the prior five in a large library", () => {
+    const ids = Array.from({ length: 12 }, (_, index) => `t${index}`);
+    const prior = ["t0", "t1", "t2", "t3", "t4"];
+    const order = createPlaylistOrder(ids, seededRandom(9), prior);
+    const played = [...prior];
+
+    for (const id of order) {
+      const recent = played.slice(-MUSIC_RECENT_TRACK_WINDOW);
+      const unplayedAlternatives = ids.filter(
+        (candidate) => !order.slice(0, played.length - prior.length).includes(candidate),
+      );
+      if (unplayedAlternatives.some((candidate) => !recent.includes(candidate))) {
+        expect(recent).not.toContain(id);
+      }
+      played.push(id);
+    }
+  });
+
   it("returns the single track unchanged when only one exists", () => {
     expect(createPlaylistOrder(["solo"], seededRandom(1), "solo")).toEqual([
       "solo",
@@ -115,20 +135,26 @@ describe("createPlaylistOrder", () => {
 });
 
 describe("production manifest", () => {
-  it("ships no licensed tracks and stays dormant", () => {
-    expect(productionMusicManifest.tracks).toHaveLength(0);
-    expect(musicPlaylistAvailable).toBe(false);
+  it("ships an attributed, roughly one-hour offline library", () => {
+    expect(productionMusicManifest.tracks).toHaveLength(10);
+    expect(productionMusicDurationSec).toBeGreaterThan(55 * 60);
+    expect(productionMusicDurationSec).toBeLessThan(65 * 60);
+    expect(
+      productionMusicManifest.tracks.every((track) =>
+        track.assetPath?.startsWith("/audio/"),
+      ),
+    ).toBe(true);
+    expect(musicPlaylistAvailable).toBe(true);
     const { controller, sink } = controllerWithClock(productionMusicManifest);
-    expect(controller.dormant).toBe(true);
+    expect(controller.dormant).toBe(false);
     controller.start();
     controller.tick(10_000);
     controller.setDucking(true);
     controller.pause();
     controller.resume();
-    // Dormant engine constructs no voices at all.
-    expect(sink.voices).toHaveLength(0);
-    expect(controller.currentTrackId()).toBeUndefined();
-    expect(controller.history).toHaveLength(0);
+    expect(sink.voices).toHaveLength(1);
+    expect(controller.currentTrackId()).toBeDefined();
+    expect(controller.history).toHaveLength(1);
   });
 });
 
@@ -173,7 +199,7 @@ describe("playback scheduling", () => {
   });
 
   it("plays a full multi-cycle run with no immediate repeats", () => {
-    const env = controllerWithClock(manifest(4), 123);
+    const env = controllerWithClock(manifest(8), 123);
     env.controller.start();
     // Step through ~12 tracks in coarse ticks.
     for (let t = 0; t <= 12 * 100_000; t += 5_000) {
@@ -182,7 +208,7 @@ describe("playback scheduling", () => {
     const history = env.controller.history;
     expect(history.length).toBeGreaterThan(8);
     for (let i = 1; i < history.length; i += 1) {
-      expect(history[i]).not.toBe(history[i - 1]);
+      expect(history.slice(Math.max(0, i - 5), i)).not.toContain(history[i]);
     }
   });
 });

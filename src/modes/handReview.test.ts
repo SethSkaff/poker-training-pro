@@ -12,10 +12,12 @@ import {
 import { createInformationSet } from "../engine/tournament";
 import {
   assertReviewIsRedacted,
+  canonicalReviewResult,
   deriveHandReview,
   filterDecisions,
   HandReviewCancelledError,
   notableDecisions,
+  GOOD_MOVE_MAX_EV_LOSS_BB,
 } from "./handReview";
 
 const hero = { id: "hero", name: "Player", rating: 1_000 };
@@ -46,6 +48,25 @@ function playRound(seed: string, handLimit = 6): TournamentRunnerReplay {
 }
 
 describe("hand review derivation", () => {
+  it("uses one canonical EV ranking for recommendation, regret, badge, and good score", () => {
+    const result = canonicalReviewResult(
+      [
+        { id: "fold", type: "fold", expectedValueBigBlinds: 0, foldEquity: 0, role: "fold", rationale: "Preserve chips" },
+        { id: "raise:900", type: "raise", to: 900, expectedValueBigBlinds: -0.14, foldEquity: 0.3, role: "bluff", rationale: "Pressure" },
+        { id: "call", type: "call", expectedValueBigBlinds: -0.6, foldEquity: 0, role: "showdown", rationale: "Defend" },
+      ],
+      { type: "raise", to: 900 },
+    );
+
+    expect(result.best.type).toBe("fold");
+    expect(result.best.expectedValueBigBlinds).toBe(0);
+    expect(result.played.id).toBe("raise:900");
+    expect(result.regretBigBlinds).toBeCloseTo(0.14, 8);
+    expect(result.quality).toBe("close");
+    expect(result.good).toBe(true);
+    expect(result.regretBigBlinds).toBeLessThanOrEqual(GOOD_MOVE_MAX_EV_LOSS_BB);
+  });
+
   it("annotates every hero decision in the replay", async () => {
     const replay = playRound("review-basic");
     const review = await deriveHandReview(replay, {
@@ -56,12 +77,21 @@ describe("hand review derivation", () => {
     expect(review.decisions.length).toBeGreaterThan(0);
     expect(review.decisions.length).toBeLessThanOrEqual(replay.actions.length);
     expect(review.eventId).toBe(replay.eventId);
+    expect(review.goodAccuracy).toBeGreaterThanOrEqual(review.accuracy);
+    expect(review.goodAccuracy).toBeLessThanOrEqual(1);
     for (const decision of review.decisions) {
       expect(decision.math.actionValues.length).toBeGreaterThan(0);
       expect(decision.math.evRegretBigBlinds).toBeGreaterThanOrEqual(0);
       expect(decision.math.simulations).toBe(60);
       expect(["preflop", "flop", "turn", "river"]).toContain(decision.street);
       expect(decision.recommended.type).toBeTruthy();
+      const best = [...decision.math.actionValues].sort(
+        (left, right) => right.expectedValueBigBlinds - left.expectedValueBigBlinds,
+      )[0];
+      expect(decision.recommended).toMatchObject({
+        type: best.type,
+        ...(best.to === undefined ? {} : { to: best.to }),
+      });
     }
   }, 60_000);
 

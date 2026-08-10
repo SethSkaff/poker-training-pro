@@ -37,7 +37,7 @@ describe("accessible Settings audio controls", () => {
     preview.mockRestore();
   });
 
-  it("keeps music preview visibly unavailable while preserving its slider", () => {
+  it("keeps the live playlist volume slider available", () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         settings={defaultSettings}
@@ -48,10 +48,10 @@ describe("accessible Settings audio controls", () => {
     );
 
     expect(markup).toContain('id="music-volume"');
-    expect(markup).toContain("no approved licensed music masters are installed");
-    expect(markup).toContain('aria-label="Music preview unavailable"');
+    expect(markup).toContain("Controls the shuffled background playlist");
+    expect(markup).toContain('aria-label="Music plays automatically"');
     expect(markup).toMatch(
-      /<button[^>]*disabled=""[^>]*aria-label="Music preview unavailable"/,
+      /<button[^>]*disabled=""[^>]*aria-label="Music plays automatically"/,
     );
     expect(markup).toContain(">Unavailable</button>");
   });

@@ -911,7 +911,7 @@ export async function applyHeroTournamentActionAsync(
 
 export const CURRENT_ENGINE_VERSION = "tournament-session-v1";
 export const CURRENT_CONTENT_VERSION = "career-events-v1";
-export const CURRENT_POLICY_VERSION = "normal-rational-v1";
+export const CURRENT_POLICY_VERSION = "normal-rational-v2";
 
 /** Thrown when a replay was produced by a build that would reconstruct differently. */
 export class TournamentReplayVersionError extends Error {

@@ -11,6 +11,7 @@ import {
   ModeSelect,
   NightCircuitScene,
   PlayerRecord,
+  TableViewSelect,
   TimedSetup,
   TournamentCeremony,
   TourLobby,
@@ -151,6 +152,7 @@ const CareerTravel = lazyWithPreload(() =>
 
 type DesktopScreen =
   | "home"
+  | "table-view-select"
   | "play"
   | "tour"
   | "profile"
@@ -632,12 +634,9 @@ export default function App() {
     };
   }, [safeMode?.active]);
 
-  // Background music playlist engine. DORMANT: the production manifest ships no
-  // licensed masters, so `createMusicPlaylist` builds no audio graph and makes
-  // no sound. The duck-under-feedback bridge and focus/volume wiring below are
-  // connected eagerly (a dormant controller's methods all no-op), so the very
-  // moment a licensed manifest lands, playback, ducking, pause/focus, and the
-  // player's saved Music volume are already correct with no further wiring.
+  // Licensed offline background playlist. An empty-manifest controller remains
+  // a safe no-op fallback for development and fault cases; production ships ten
+  // attributed CC BY tracks through the same focus, ducking, and volume path.
   const playlistRef = useRef<MusicPlaylistController | null>(null);
   useEffect(() => {
     const playlist = createMusicPlaylist(productionMusicManifest, {
@@ -648,6 +647,7 @@ export default function App() {
     });
     playlistRef.current = playlist;
     const disconnectDucking = connectFeedbackDucking(gameAudio, playlist);
+    const playlistClock = window.setInterval(() => playlist.tick(), 250);
     // The table (while mounted) and the desktop lifecycle hook (elsewhere) both
     // funnel through `gameAudio`'s focus-mute state, so subscribing here keeps
     // the music bed's pause/resume in lockstep with whichever surface currently
@@ -670,6 +670,7 @@ export default function App() {
       }
     });
     return () => {
+      window.clearInterval(playlistClock);
       unsubscribeFocus();
       disconnectDucking();
       playlist.stop();
@@ -729,7 +730,7 @@ export default function App() {
     gameAudio.setEffectsVolume(effectiveSettings.effectsVolume);
     // Mirror the same Master x Music (and Mute) computation into the playlist
     // engine's own [0, 1] gain, so the player's saved Music slider and mute
-    // toggle already apply the instant a licensed manifest makes it non-dormant.
+    // toggle apply to the live licensed playlist and to any future library.
     playlistRef.current?.setMusicVolume(
       musicVolumeFromSettings(effectiveSettings),
     );
@@ -813,6 +814,8 @@ export default function App() {
         setScreen("play");
       } else if (screen === "timed-setup") {
         setScreen("play");
+      } else if (screen === "play") {
+        setScreen("table-view-select");
       } else if (screen !== "home") {
         setScreen("home");
       }
@@ -833,7 +836,7 @@ export default function App() {
       gameAudio.play("click");
       return;
     }
-    navigate("play");
+    navigate("table-view-select");
   };
 
   const openCredits = (from: DesktopScreen) => {
@@ -1988,7 +1991,7 @@ export default function App() {
           const nextProgress = acknowledgePlayChips(progress);
           setProgress(nextProgress);
           persistBoundary("settings", settings, nextProgress);
-          navigate("play");
+          navigate("table-view-select");
         }}
         onBack={() => navigate("home")}
       />
@@ -1999,10 +2002,23 @@ export default function App() {
     return <CreditsScreen onBack={() => navigate(creditsReturn)} />;
   }
 
+  if (screen === "table-view-select") {
+    return (
+      <TableViewSelect
+        initialSpatialScene={settings.spatialScene ?? false}
+        onBack={() => navigate("home")}
+        onSelect={(spatialScene) => {
+          updateSettings({ ...settings, spatialScene });
+          navigate("play");
+        }}
+      />
+    );
+  }
+
   if (screen === "play") {
     return (
       <ModeSelect
-        onBack={() => navigate("home")}
+        onBack={() => navigate("table-view-select")}
         onSelect={(mode) => {
           if (mode === "tutorial") {
             void PlayableTutorial.preload();

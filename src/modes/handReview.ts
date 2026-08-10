@@ -27,6 +27,7 @@ import type { Street } from "../types/poker";
 import {
   applyHeroTournamentAction,
   advanceTournamentRunnerToHero,
+  CURRENT_POLICY_VERSION,
   createCareerTournamentRunner,
   createTimedTournamentRunner,
   heroTournamentLegalActions,
@@ -35,6 +36,7 @@ import {
   type TournamentRunnerReplay,
 } from "./tournamentRunner";
 import { decideRationalAction, type RationalActionOption } from "./rational";
+import { tournamentPolicyContextForSession } from "./tournamentSession";
 import type { PokerAction } from "../types/poker";
 
 /** Thrown when the caller abandons a derivation at a slice boundary. */
@@ -83,12 +85,15 @@ export interface ReviewMath {
   stackToPotRatio: number;
   effectiveStackBigBlinds: number;
   tournamentPressure: number;
+  blindUrgency: number;
+  imminentBigBlind: boolean;
   /** EV in big blinds for each action the policy considered. */
   actionValues: Array<{
     id: string;
     type: ReviewDecisionType;
     to?: number;
     expectedValueBigBlinds: number;
+    foldEquity: number;
     role: RationalActionOption["role"];
     rationale: string;
   }>;
@@ -143,6 +148,8 @@ export interface HandReview {
   decisions: ReviewDecision[];
   /** Share of decisions that matched the policy's highest-rated action. */
   accuracy: number;
+  /** Share within the transparent close-to-best EV-loss threshold. */
+  goodAccuracy: number;
   meanRegretBigBlinds: number;
   segments: {
     street: ReviewSegmentScore[];
@@ -171,6 +178,8 @@ const DEFAULT_SIMULATIONS = 120;
 const DEFAULT_MAX_DECISIONS = 400;
 /** Below this many samples a segment average is noise, not a finding. */
 const MIN_RELIABLE_SAMPLE = 8;
+export const MODEL_BEST_MAX_EV_LOSS_BB = 0.02;
+export const GOOD_MOVE_MAX_EV_LOSS_BB = 0.35;
 
 function commandType(type: string): ReviewDecisionType {
   switch (type) {
@@ -190,12 +199,58 @@ function commandType(type: string): ReviewDecisionType {
  * Quality bands in big blinds of forgone EV. These are the game's own model,
  * not a claim of GTO correctness — `labelledApproximation` in the UI says so.
  */
-function qualityFor(regretBigBlinds: number): ReviewQuality {
-  if (regretBigBlinds <= 0.02) return "best";
-  if (regretBigBlinds <= 0.35) return "close";
+export function qualityFor(regretBigBlinds: number): ReviewQuality {
+  if (regretBigBlinds <= MODEL_BEST_MAX_EV_LOSS_BB) return "best";
+  if (regretBigBlinds <= GOOD_MOVE_MAX_EV_LOSS_BB) return "close";
   if (regretBigBlinds <= 1.2) return "inaccuracy";
   if (regretBigBlinds <= 4) return "mistake";
   return "blunder";
+}
+
+type CanonicalActionValue = ReviewMath["actionValues"][number];
+
+/** One source of truth for headline recommendation, regret, badge, and score. */
+export function canonicalReviewResult(
+  actionValues: readonly CanonicalActionValue[],
+  played: { type: ReviewDecisionType; to?: number },
+): {
+  best: CanonicalActionValue;
+  played: CanonicalActionValue;
+  regretBigBlinds: number;
+  quality: ReviewQuality;
+  good: boolean;
+} {
+  if (actionValues.length === 0) throw new Error("Review requires action values");
+  const ranked = [...actionValues].sort(
+    (left, right) =>
+      right.expectedValueBigBlinds - left.expectedValueBigBlinds ||
+      left.id.localeCompare(right.id),
+  );
+  const best = ranked[0];
+  const compatible = actionValues.filter(
+    (option) =>
+      option.type === played.type ||
+      (played.type === "all-in" &&
+        played.to !== undefined &&
+        option.to === played.to &&
+        (option.type === "raise" || option.type === "bet")),
+  );
+  const matched = [...compatible].sort(
+    (left, right) =>
+      Math.abs((left.to ?? 0) - (played.to ?? left.to ?? 0)) -
+      Math.abs((right.to ?? 0) - (played.to ?? right.to ?? 0)),
+  )[0] ?? ranked[ranked.length - 1];
+  const regretBigBlinds = Math.max(
+    0,
+    best.expectedValueBigBlinds - matched.expectedValueBigBlinds,
+  );
+  return {
+    best,
+    played: matched,
+    regretBigBlinds,
+    quality: qualityFor(regretBigBlinds),
+    good: regretBigBlinds <= GOOD_MOVE_MAX_EV_LOSS_BB,
+  };
 }
 
 function phaseFor(
@@ -322,7 +377,7 @@ function assertSupported(replay: TournamentRunnerReplay): void {
   if (
     replay.engineVersion !== "tournament-session-v1" ||
     replay.contentVersion !== "career-events-v1" ||
-    replay.policyVersion !== "normal-rational-v1"
+    replay.policyVersion !== CURRENT_POLICY_VERSION
   ) {
     throw new TournamentReplayVersionError(
       "This replay was recorded by a different build and cannot be reviewed faithfully.",
@@ -399,6 +454,7 @@ export async function deriveHandReview(
       seed: `review:${replay.eventId}:${hand.handId}:${decisions.length}`,
       simulations,
       temperature: 0.48,
+      tournament: tournamentPolicyContextForSession(runner.session, heroId),
     });
 
     const chosenType = commandType(
@@ -406,29 +462,24 @@ export async function deriveHandReview(
         ? "raise"
         : entry.request.action,
     );
-    const chosenTo = entry.request.raiseTo;
+    const chosenTo =
+      entry.request.action === "all-in"
+        ? legal.allInTo
+        : entry.request.raiseTo;
     const actionValues = evaluation.distribution.map((option) => ({
       id: option.id,
       type: commandType(option.command.type),
       to: option.command.to,
       expectedValueBigBlinds: option.utilityBigBlinds,
+      foldEquity: option.foldEquity,
       role: option.role,
       rationale: option.rationale,
     }));
-    const bestValue = Math.max(
-      ...actionValues.map((option) => option.expectedValueBigBlinds),
-    );
-    // Match the player's action to the closest candidate the policy scored.
-    const playedValue =
-      actionValues
-        .filter((option) => option.type === chosenType)
-        .sort(
-          (left, right) =>
-            Math.abs((left.to ?? 0) - (chosenTo ?? left.to ?? 0)) -
-            Math.abs((right.to ?? 0) - (chosenTo ?? right.to ?? 0)),
-        )[0]?.expectedValueBigBlinds ??
-      Math.min(...actionValues.map((option) => option.expectedValueBigBlinds));
-    const evRegretBigBlinds = Math.max(0, bestValue - playedValue);
+    const canonical = canonicalReviewResult(actionValues, {
+      type: chosenType,
+      ...(chosenTo === undefined ? {} : { to: chosenTo }),
+    });
+    const evRegretBigBlinds = canonical.regretBigBlinds;
 
     const metrics = evaluation.audit.metrics;
     const costToCall = legal.callAmount ?? 0;
@@ -448,10 +499,12 @@ export async function deriveHandReview(
       potOdds: metrics.potOdds,
       requiredEquity: metrics.requiredEquity,
       estimatedEquity: metrics.equity,
-      foldEquity: evaluation.chosen.foldEquity,
+      foldEquity: canonical.played.foldEquity,
       stackToPotRatio: metrics.stackToPotRatio,
       effectiveStackBigBlinds: metrics.effectiveStackBigBlinds,
-      tournamentPressure: evaluation.audit.adjustments.tournamentRiskPremium,
+      tournamentPressure: evaluation.audit.adjustments.tournamentPressure,
+      blindUrgency: evaluation.audit.adjustments.blindUrgency,
+      imminentBigBlind: evaluation.audit.adjustments.imminentBigBlind,
       actionValues,
       evRegretBigBlinds,
       simulations,
@@ -473,12 +526,12 @@ export async function deriveHandReview(
         ? { type: chosenType }
         : { type: chosenType, to: chosenTo },
       recommended: {
-        type: commandType(evaluation.chosen.command.type),
-        ...(evaluation.chosen.command.to === undefined
+        type: canonical.best.type,
+        ...(canonical.best.to === undefined
           ? {}
-          : { to: evaluation.chosen.command.to }),
+          : { to: canonical.best.to }),
       },
-      quality: qualityFor(evRegretBigBlinds),
+      quality: canonical.quality,
       playersRemaining,
       blindLevel: runner.session.tournament.levelIndex,
       math,
@@ -503,12 +556,16 @@ export async function deriveHandReview(
     (sum, decision) => sum + decision.math.evRegretBigBlinds,
     0,
   );
+  const good = decisions.filter(
+    (decision) => decision.math.evRegretBigBlinds <= GOOD_MOVE_MAX_EV_LOSS_BB,
+  ).length;
 
   return {
     eventId: replay.eventId,
     mode: replay.mode,
     decisions,
     accuracy: decisions.length ? best / decisions.length : 0,
+    goodAccuracy: decisions.length ? good / decisions.length : 0,
     meanRegretBigBlinds: decisions.length ? regret / decisions.length : 0,
     segments: {
       street: groupSegments(

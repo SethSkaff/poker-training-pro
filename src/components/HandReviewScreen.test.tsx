@@ -35,6 +35,7 @@ describe("hand review screen", () => {
 
   it("states that its numbers are estimates rather than solved play", () => {
     expect(screen).toContain("review.approximationNotice");
+    expect(screen).toContain("review.goodAccuracy");
     expect(screen).toContain("review.basis");
   });
 
@@ -70,6 +71,7 @@ describe("hand review screen", () => {
       expect(screen).toContain(`review.math.${key}`);
     }
     expect(screen).toContain("review.actionValues");
+    expect(screen).toContain("review.math.blindUrgency");
   });
 
   it("marks small samples instead of presenting them as findings", () => {

@@ -199,15 +199,21 @@ export const BET_CIRCLE_RADIUS = 0.040;
 export const CHIP_STACK_SAFE_RADIUS = 0.13;
 
 /** Chip racks sit beside the cards, slightly toward their owner. */
-export const CHIP_STACK_LOCAL_SIDE_OFFSET = 0.145;
-export const CHIP_STACK_LOCAL_OWNER_OFFSET = -0.018;
+export const CHIP_STACK_LOCAL_SIDE_OFFSET = 0.150;
+export const CHIP_STACK_LOCAL_OWNER_OFFSET = -0.110;
+
+/** Shared physical rack dimensions used by both placement and rendering. */
+export const CHIPS_PER_COLUMN = 8;
+export const CHIP_COLUMN_PITCH = 0.052;
+export const CHIP_PHYSICAL_RADIUS = 0.035;
+export const CHIP_RACK_COLUMNS_PER_ROW = 3;
 
 /** Radius of the physical dealer/blind marker mesh in the renderer. */
 export const TABLE_MARKER_RADIUS = 0.028;
 /** Visible air between a chip rack and the marker that describes its seat. */
 export const TABLE_MARKER_GAP = 0.024;
 /** Conservative radius of the rendered rack footprint, excluding the height. */
-export const CHIP_STACK_FOOTPRINT_RADIUS = 0.052;
+export const CHIP_STACK_FOOTPRINT_RADIUS = 0.105;
 
 /**
  * Clear table-space gap from the outside edge of a rack to its numeral.
@@ -217,7 +223,40 @@ export const CHIP_STACK_FOOTPRINT_RADIUS = 0.052;
  * camera changes lens or yaw, while leaving the committed-bet numeral on its
  * own inward betting circle.
  */
-export const STACK_AMOUNT_OUTWARD_GAP = 0.085;
+export const STACK_AMOUNT_OUTWARD_GAP = 0.014;
+
+/** A centred local coordinate for one denomination-pure rack column. */
+export function chipRackColumnPosition(
+  column: number,
+  totalColumns: number,
+): readonly [number, number] {
+  const safeTotal = Math.max(1, Math.floor(totalColumns));
+  const safeColumn = Math.max(0, Math.min(safeTotal - 1, Math.floor(column)));
+  const columnsWide = Math.min(CHIP_RACK_COLUMNS_PER_ROW, safeTotal);
+  const rowsDeep = Math.ceil(safeTotal / CHIP_RACK_COLUMNS_PER_ROW);
+  return [
+    (safeColumn % CHIP_RACK_COLUMNS_PER_ROW - (columnsWide - 1) / 2) * CHIP_COLUMN_PITCH,
+    (Math.floor(safeColumn / CHIP_RACK_COLUMNS_PER_ROW) - (rowsDeep - 1) / 2) * CHIP_COLUMN_PITCH,
+  ];
+}
+
+/** Actual local footprint for a denomination-grouped rack. */
+export function chipRackLayoutBounds(amount: number): {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+} {
+  const columns = chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN);
+  if (columns.length === 0) return { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+  const points = columns.map((column) => chipRackColumnPosition(column.column, columns.length));
+  return {
+    minX: Math.min(...points.map(([x]) => x)) - CHIP_PHYSICAL_RADIUS,
+    maxX: Math.max(...points.map(([x]) => x)) + CHIP_PHYSICAL_RADIUS,
+    minZ: Math.min(...points.map(([, z]) => z)) - CHIP_PHYSICAL_RADIUS,
+    maxZ: Math.max(...points.map(([, z]) => z)) + CHIP_PHYSICAL_RADIUS,
+  };
+}
 
 /**
  * Project a point into the inset capsule that remains after reserving room for
@@ -226,9 +265,10 @@ export const STACK_AMOUNT_OUTWARD_GAP = 0.085;
  */
 function clampToSafeFelt(
   point: readonly [number, number, number],
+  footprintRadius = CHIP_STACK_SAFE_RADIUS,
 ): readonly [number, number, number] {
   const straightHalfLength = TABLE_WIDTH / 2 - TABLE_DEPTH / 2;
-  const safeRadius = TABLE_DEPTH / 2 - CHIP_STACK_SAFE_RADIUS;
+  const safeRadius = TABLE_DEPTH / 2 - footprintRadius;
   const centreX = Math.min(straightHalfLength, Math.max(-straightHalfLength, point[0]));
   const offsetX = point[0] - centreX;
   const offsetZ = point[2];
@@ -262,7 +302,7 @@ export function restingChipStackPosition(
 }
 
 /**
- * Place a dealer/blind marker between its rack and the table centre.
+ * Place a dealer/blind marker in its own side pocket beside the card lane.
  *
  * The old owner offset was a fixed local-Z nudge that happened to put every
  * puck farther from the centre than its rack. That made the marker read as a
@@ -273,27 +313,26 @@ export function restingChipStackPosition(
 export function tableMarkerPosition(
   pose: SeatPose,
 ): readonly [number, number, number] {
-  const stack = restingChipStackPosition(pose);
-  const radialLength = Math.hypot(stack[0], stack[2]) || 1;
-  const towardCentre = [-stack[0] / radialLength, -stack[2] / radialLength] as const;
-  const advance = CHIP_STACK_FOOTPRINT_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS;
-  return clampToSafeFelt([
-    stack[0] + towardCentre[0] * advance,
+  const cardLocal = seatLocalPoint(pose, pose.feltPosition);
+  return clampToSafeFelt(seatWorldPoint(pose, [
+    cardLocal[0] - (CARD_ZONE_WIDTH / 2 + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS),
     TABLE_HEIGHT + 0.012,
-    stack[2] + towardCentre[1] * advance,
-  ]);
+    cardLocal[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
+  ]), TABLE_MARKER_RADIUS);
 }
 
 /** World anchor for the exact number that describes a player's remaining rack. */
 export function stackAmountPosition(
   pose: SeatPose,
+  amount = 15_000,
 ): readonly [number, number, number] {
   const stack = restingChipStackPosition(pose);
   const local = seatLocalPoint(pose, stack);
+  const bounds = chipRackLayoutBounds(amount);
   return seatWorldPoint(pose, [
-    local[0],
+    local[0] + (bounds.minX + bounds.maxX) / 2,
     TABLE_HEIGHT + 0.002,
-    local[2] - STACK_AMOUNT_OUTWARD_GAP,
+    local[2] + bounds.minZ - STACK_AMOUNT_OUTWARD_GAP,
   ]);
 }
 
@@ -400,13 +439,14 @@ export function seatStackAmountViewportAnchor(
   heroIndex = 0,
   cameraZoom = 0,
   cameraView: SceneCameraView = "standard",
+  amount = 15_000,
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
   if (!Number.isInteger(relativeSeat) || relativeSeat < 0) return undefined;
   if (relativeSeat >= PLAYER_STATION_COUNT || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose) return undefined;
   const projected = projectToViewport(
-    stackAmountPosition(pose),
+    stackAmountPosition(pose, amount),
     cameraPose(cameraPan, heroIndex, viewportWidth / viewportHeight, cameraLensZoom(cameraView, cameraZoom)),
     viewportWidth,
     viewportHeight,
@@ -446,13 +486,14 @@ export function seatStackAmountViewportAnchorFromCamera(
   viewportHeight: number,
   heroIndex: number,
   activeCamera: ReturnType<typeof cameraPose>,
+  amount = 15_000,
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
   if (!Number.isInteger(relativeSeat) || relativeSeat < 0 || relativeSeat >= PLAYER_STATION_COUNT) {
     return undefined;
   }
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
-  const projected = projectToViewport(stackAmountPosition(pose), activeCamera, viewportWidth, viewportHeight);
+  const projected = projectToViewport(stackAmountPosition(pose, amount), activeCamera, viewportWidth, viewportHeight);
   return projected.behind ? undefined : { xPercent: projected.xPercent, yPercent: projected.yPercent };
 }
 

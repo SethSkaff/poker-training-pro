@@ -14,6 +14,8 @@ describe("CreditsScreen", () => {
     expect(markup).toContain("Barlow Condensed — SIL Open Font License 1.1");
     expect(markup).toContain("npm package notices");
     expect(markup).toContain("Bundled runtime notices");
-    expect(markup).toContain("No licensed music ships in this build.");
+    expect(markup).toContain("Music by Kevin MacLeod");
+    expect(markup).toContain("Ambiment");
+    expect(markup).toContain("Creative Commons Attribution 4.0 International");
   });
 });

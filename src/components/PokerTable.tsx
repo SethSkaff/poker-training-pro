@@ -11,11 +11,8 @@ import {
   Gauge,
   HandCoins,
   History,
-  Info,
-  Lightbulb,
   Pause,
   RotateCcw,
-  Sigma,
   Sparkles,
   Volume2,
   X,
@@ -144,6 +141,8 @@ import {
   FreezableDelay,
   realFreezableDelayHost,
 } from "../lib/freezableDelay";
+import { shouldCancelQueuedActionShortcut } from "../lib/queuedActionShortcut";
+import { snapRaiseSliderToAmount } from "../lib/raiseSlider";
 import {
   DelayFreezeGroup,
   LifecyclePauseCoordinator,
@@ -1139,6 +1138,109 @@ interface MathPanelProps {
   onSubmit: () => void;
 }
 
+export interface PokerMathGlossaryEntry {
+  term: string;
+  definition: string;
+}
+
+const POKER_MATH_GLOSSARY: readonly PokerMathGlossaryEntry[] = [
+  {
+    term: "minimum defense frequency",
+    definition: "How often your range should continue. Pot ÷ (pot + bet).",
+  },
+  {
+    term: "stack-to-pot ratio",
+    definition: "Effective stack divided by the current pot.",
+  },
+  {
+    term: "clean-equivalent outs",
+    definition: "Full outs plus the fractional value of uncertain outs.",
+  },
+  {
+    term: "clean outs",
+    definition: "Unseen cards likely to make your hand a winner.",
+  },
+  {
+    term: "risk premium",
+    definition: "Extra equity needed because losing chips hurts more in a tournament.",
+  },
+  {
+    term: "set-mining",
+    definition: "Calling with a pair mainly to flop three of a kind.",
+  },
+  {
+    term: "chip-EV",
+    definition: "Expected chip gain or loss, without payout pressure.",
+  },
+  {
+    term: "equity",
+    definition: "Your share of the pot based on how often you expect to win.",
+  },
+  {
+    term: "outs",
+    definition: "Unseen cards that can improve your hand.",
+  },
+  {
+    term: "EV",
+    definition: "Expected value: outcomes multiplied by their probabilities, then added.",
+  },
+  {
+    term: "ICM",
+    definition: "A model that converts tournament chips into payout value.",
+  },
+];
+
+export interface PokerMathQuestionSegment {
+  text: string;
+  glossary?: PokerMathGlossaryEntry;
+}
+
+/** Splits authored copy without changing it so recognized terms can open help. */
+export function pokerMathQuestionSegments(
+  prompt: string,
+): PokerMathQuestionSegment[] {
+  const segments: PokerMathQuestionSegment[] = [];
+  const lowerPrompt = prompt.toLocaleLowerCase("en-US");
+  let cursor = 0;
+
+  while (cursor < prompt.length) {
+    let nextEntry: PokerMathGlossaryEntry | undefined;
+    let nextIndex = -1;
+
+    for (const entry of POKER_MATH_GLOSSARY) {
+      const candidateIndex = lowerPrompt.indexOf(
+        entry.term.toLocaleLowerCase("en-US"),
+        cursor,
+      );
+      if (
+        candidateIndex >= 0 &&
+        (nextIndex < 0 ||
+          candidateIndex < nextIndex ||
+          (candidateIndex === nextIndex &&
+            entry.term.length > (nextEntry?.term.length ?? 0)))
+      ) {
+        nextEntry = entry;
+        nextIndex = candidateIndex;
+      }
+    }
+
+    if (!nextEntry || nextIndex < 0) {
+      segments.push({ text: prompt.slice(cursor) });
+      break;
+    }
+    if (nextIndex > cursor) {
+      segments.push({ text: prompt.slice(cursor, nextIndex) });
+    }
+    segments.push({
+      text: prompt.slice(nextIndex, nextIndex + nextEntry.term.length),
+      glossary: nextEntry,
+    });
+    cursor = nextIndex + nextEntry.term.length;
+  }
+
+  return segments;
+}
+
 function MathPanel({
   scenario,
   answer,
@@ -1150,12 +1252,7 @@ function MathPanel({
   onSubmit,
 }: MathPanelProps) {
   const question = scenario.mathQuestion;
-  const lower = question.correctValue - question.tolerance;
-  const upper = question.correctValue + question.tolerance;
-  const title = question.topic
-    .split("-")
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(" ");
+  const [activeGlossary, setActiveGlossary] = useState<PokerMathGlossaryEntry>();
   const resultClass = result?.correct ? "correct" : "incorrect";
   const answerPlaceholder =
     question.unit === "%"
@@ -1166,32 +1263,66 @@ function MathPanel({
           ? formatMessage("table.math.placeholder.outs")
           : formatMessage("table.math.placeholder.chips");
 
+  useEffect(() => setActiveGlossary(undefined), [scenario.id]);
+
   return (
-    <aside className="training-panel" aria-label={formatMessage("table.math.ariaLabel")}>
-      <div className="training-panel__heading">
-        <span className="training-panel__icon">
-          <Sigma size={20} />
-        </span>
-        <div>
-          <p className="eyebrow">{formatMessage("table.math.eyebrow")}</p>
-          <h2>{title}</h2>
+    <aside
+      className="training-panel training-panel--math"
+      aria-label={formatMessage("table.math.ariaLabel")}
+      data-math-elo={mathElo}
+    >
+      <p className="math-question">
+        {pokerMathQuestionSegments(question.prompt).map((segment, index) =>
+          segment.glossary ? (
+            <button
+              className="math-vocab-term"
+              type="button"
+              key={`${segment.glossary.term}-${index}`}
+              aria-expanded={activeGlossary?.term === segment.glossary.term}
+              aria-controls="math-vocabulary-popover"
+              onClick={() =>
+                setActiveGlossary((current) =>
+                  current?.term === segment.glossary?.term
+                    ? undefined
+                    : segment.glossary,
+                )
+              }
+            >
+              {segment.text}
+            </button>
+          ) : (
+            segment.text
+          ),
+        )}
+      </p>
+
+      {activeGlossary ? (
+        <div
+          className="math-vocab-popover"
+          id="math-vocabulary-popover"
+          role="status"
+        >
+          <span>
+            <strong>{activeGlossary.term}</strong>
+            {activeGlossary.definition}
+          </span>
+          <button
+            type="button"
+            onClick={() => setActiveGlossary(undefined)}
+            aria-label={`Close ${activeGlossary.term} definition`}
+          >
+            <X size={14} />
+          </button>
         </div>
-        <span className="xp-chip">
-          {formatMessage("table.math.eloChip", { mathElo })}
-        </span>
-      </div>
+      ) : null}
 
-      <div className="question-context">
-        <span>
-          <Info size={14} /> {formatMessage("table.math.useEstimate")}
-        </span>
-        <p>{scenario.prompt}</p>
-      </div>
-
-      <label className="math-input">
-        <span>{question.prompt}</span>
-        <div>
+      <div className="math-answer-row">
+        <label className="visually-hidden" htmlFor="training-math-answer">
+          {formatMessage("table.math.answerLabel")}
+        </label>
+        <div className="math-answer-field">
           <input
+            id="training-math-answer"
             type="text"
             inputMode="decimal"
             value={answer}
@@ -1207,7 +1338,17 @@ function MathPanel({
           />
           <b>{question.unit}</b>
         </div>
-      </label>
+        {!result ? (
+          <button
+            className="secondary-button math-submit"
+            type="button"
+            onClick={onSubmit}
+            disabled={answer.trim() === ""}
+          >
+            {formatMessage("table.math.checkEstimate")}
+          </button>
+        ) : null}
+      </div>
 
       {error ? (
         <p className="math-input-error" role="alert">
@@ -1229,36 +1370,9 @@ function MathPanel({
                   ? formatMessage("table.math.result.close")
                   : formatMessage("table.math.result.incorrect")}
             </strong>
-            <small>
-              {formatMessage("table.math.acceptedEstimate", {
-                lower: formatFixedDecimal(lower, 2),
-                upper: formatFixedDecimal(upper, 2),
-                unit: question.unit,
-              })}
-            </small>
           </div>
         </div>
-      ) : (
-        <button
-          className="secondary-button secondary-button--wide"
-          type="button"
-          onClick={onSubmit}
-          disabled={answer.trim() === ""}
-        >
-          {formatMessage("table.math.checkEstimate")}
-        </button>
-      )}
-
-      <div className="training-hint">
-        <Lightbulb size={16} />
-        <span>
-          <strong>{formatMessage("table.math.hintTitle")}</strong>
-          {formatMessage("table.math.tolerance", {
-            tolerance: question.tolerance,
-            unit: question.unit,
-          })}
-        </span>
-      </div>
+      ) : null}
     </aside>
   );
 }
@@ -1267,7 +1381,6 @@ export interface FeedbackPanelProps {
   action: PokerAction;
   graded: GradedTrainingAttempt;
   mathAttempted: boolean;
-  scenario: RatedTrainingScenario;
   onNext: () => void;
   onReview: () => void;
 }
@@ -1316,18 +1429,11 @@ export function FeedbackPanel({
   action,
   graded,
   mathAttempted,
-  scenario,
   onNext,
   onReview,
 }: FeedbackPanelProps) {
   const actionCorrect = graded.action.correct;
   const actionPositive = actionCorrect || graded.action.close;
-  const decisionDelta = graded.decisionEloDelta;
-  const mathDelta = mathAttempted ? graded.mathEloDelta : 0;
-  const mathEloAfter = mathAttempted
-    ? graded.mathEloAfter
-    : graded.mathEloAfter - graded.mathEloDelta;
-  const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
   const mathLabel = !mathAttempted
     ? formatMessage("table.feedback.math.skipped")
     : graded.math.correct
@@ -1335,60 +1441,9 @@ export function FeedbackPanel({
       : graded.math.close
         ? formatMessage("table.feedback.math.nearMiss")
         : formatMessage("table.feedback.math.incorrect");
-  const math = trainingFeedbackMath(scenario);
-  const actionGap = Number.isFinite(graded.action.regret)
-    ? `${formatFixedDecimal(graded.action.regret, 2)} bb`
-    : formatMessage("table.feedback.notAvailable");
-  const closeDecision =
-    graded.action.close ||
-    (graded.action.regret > Number.EPSILON &&
-      graded.action.regret <= scenario.training.partialCreditRegret);
-  const assumptionCopy = math.requiredEquity !== undefined
-    ? formatMessage("table.feedback.assumptionCall", {
-        requiredEquity: formatFixedDecimal(math.requiredEquity, 1),
-      })
-    : formatMessage("table.feedback.assumptionAggression");
-
-  // Why the recommended line wins, stated from the numbers rather than only
-  // from the authored prose -- and shown whether or not the answer was right.
-  const bestEv = math.actionEvs.find(
-    ([candidate]) => candidate === graded.action.bestAction,
-  )?.[1];
-  const runnerUp = math.actionEvs
-    .filter(([candidate]) => candidate !== graded.action.bestAction)
-    .sort(([, left], [, right]) => right - left)[0];
-  const whyCopy =
-    bestEv !== undefined && runnerUp
-      ? formatMessage("table.feedback.whyBest", {
-          bestAction: graded.action.bestAction,
-          bestEv: formatFixedDecimal(bestEv, 2),
-          runnerUpAction: runnerUp[0],
-          runnerUpEv: formatFixedDecimal(runnerUp[1], 2),
-          margin: formatFixedDecimal(bestEv - runnerUp[1], 2),
-        })
-      : undefined;
-
-  // How the conclusion moves if the assumption moves. A learner needs to know
-  // whether a decision was marginal or comfortable, not just its verdict.
-  const equityMargin =
-    math.requiredEquity === undefined || math.equitySimulations === 0
-      ? undefined
-      : math.estimatedEquity - math.requiredEquity;
-  const sensitivityCopy =
-    equityMargin === undefined
-      ? formatMessage("table.feedback.sensitivityNoCall")
-      : formatMessage("table.feedback.sensitivityCall", {
-          margin: formatFixedDecimal(Math.abs(equityMargin), 1),
-          direction: formatMessage(
-            equityMargin >= 0
-              ? "table.feedback.sensitivityAbove"
-              : "table.feedback.sensitivityBelow",
-          ),
-          swing: formatFixedDecimal(Math.abs(equityMargin) / 2 + 2.5, 1),
-        });
 
   return (
-    <aside className="feedback-panel" aria-live="polite">
+    <aside className="feedback-panel feedback-panel--compact" aria-live="polite">
       <div className="feedback-grade">
         <span className={actionPositive ? "is-correct" : "is-wrong"}>
           {actionPositive ? <Check size={24} /> : <X size={24} />}
@@ -1405,130 +1460,16 @@ export function FeedbackPanel({
         </div>
       </div>
 
-      <div className="rating-delta">
-        <span>{formatMessage("table.feedback.decisionEloLabel")}</span>
-        <strong>{signed(decisionDelta)}</strong>
-        <small>
-          {formatMessage("table.feedback.eloSummary", {
-            decisionEloAfter: graded.decisionEloAfter,
-            mathEloAfter,
-            mathDelta: signed(mathDelta),
-          })}
-        </small>
-      </div>
-
-      <p className="feedback-lead">
-        {actionCorrect || graded.action.close
-          ? scenario.actionReason
-          : formatMessage("table.feedback.chooseRegret", {
-              action: action.replace("-", " "),
-              regret: formatFixedDecimal(graded.action.regret, 2),
-              bestAction: graded.action.bestAction,
-            })}
-      </p>
-
-      <div className="feedback-math">
-        <span className="feedback-math__formula">
-          <b>{formatFixedDecimal(scenario.mathQuestion.correctValue, 2)}</b>
-          <i>±</i>
-          <strong>
-            {scenario.mathQuestion.tolerance}
-            {scenario.mathQuestion.unit}
-          </strong>
-        </span>
-        <p>{scenario.mathQuestion.explanation}</p>
-      </div>
-
-      <section
-        className="feedback-analysis"
-        aria-label={formatMessage("table.feedback.analysisAriaLabel")}
-      >
-        <h3>{formatMessage("table.feedback.analysisHeading")}</h3>
-        <dl>
-          <div>
-            <dt>{formatMessage("table.feedback.potBefore")}</dt>
-            <dd>{formatChips(math.potBefore)}</dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.costToCall")}</dt>
-            <dd>{formatChips(math.costToCall)}</dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.potAfter")}</dt>
-            <dd>{formatChips(math.potAfterCall)}</dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.potOdds")}</dt>
-            <dd>
-              {math.potOdds === undefined
-                ? formatMessage("table.feedback.notApplicable")
-                : `${formatFixedDecimal(math.potOdds, 1)}%`}
-            </dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.requiredEquity")}</dt>
-            <dd>
-              {math.requiredEquity === undefined
-                ? formatMessage("table.feedback.notApplicable")
-                : `${formatFixedDecimal(math.requiredEquity, 1)}%`}
-            </dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.estimatedEquity")}</dt>
-            <dd>
-              {math.equitySimulations === 0
-                ? formatMessage("table.feedback.notAvailable")
-                : `${formatFixedDecimal(math.estimatedEquity, 1)}%`}
-            </dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.chosenAction")}</dt>
-            <dd>{action}</dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.recommendedAction")}</dt>
-            <dd>{graded.action.bestAction}</dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.evRegret")}</dt>
-            <dd>{actionGap}</dd>
-          </div>
-          <div>
-            <dt>{formatMessage("table.feedback.closeDecisionLabel")}</dt>
-            <dd>{closeDecision ? formatMessage("table.feedback.yes") : formatMessage("table.feedback.no")}</dd>
-          </div>
-        </dl>
-        <h4>{formatMessage("table.feedback.actionEvs")}</h4>
-        <ul className="feedback-analysis__evs">
-          {math.actionEvs.map(([candidateAction, ev]) => (
-            <li key={candidateAction}>
-              <span>{candidateAction}</span>
-              <b>{formatFixedDecimal(ev, 2)} bb</b>
-            </li>
-          ))}
-        </ul>
-        {whyCopy ? (
-          <p className="feedback-analysis__why">{whyCopy}</p>
-        ) : null}
-        <p className="feedback-analysis__assumption">{assumptionCopy}</p>
-        <p className="feedback-analysis__assumption">{sensitivityCopy}</p>
-        <p className="feedback-analysis__assumption">
-          {formatMessage("table.feedback.equityBasis", {
-            simulations: math.equitySimulations,
-          })}
-        </p>
-      </section>
-
-      <div className="feedback-tags">
+      <div className="feedback-summary">
         <span>
           {formatMessage("table.feedback.actionLabel")} <b>{action}</b>
         </span>
         <span>
-          {formatMessage("table.feedback.mathLabel")} <b>{mathLabel}</b>
+          {formatMessage("table.feedback.recommendedAction")}:{" "}
+          <b>{graded.action.bestAction}</b>
         </span>
         <span>
-          {formatMessage("table.feedback.timeLabel")}{" "}
-          <b>{formatFixedDecimal(graded.timing.totalMs / 1000, 1)}s</b>
+          {formatMessage("table.feedback.mathLabel")} <b>{mathLabel}</b>
         </span>
       </div>
 
@@ -2141,7 +2082,7 @@ export function PokerTable({
   // The custom raise panel and hand-history popover follow the same modal focus
   // contract (initial focus, wraparound trap, restore) as the pause dialog.
   useModalFocusTrap({
-    active: raiseOpen && !action,
+    active: raiseOpen && !action && Boolean(settings.spatialScene),
     containerRef: raiseComposerRef,
   });
   useModalFocusTrap({ active: historyOpen, containerRef: historyRef });
@@ -2760,13 +2701,37 @@ export function PokerTable({
         return;
       }
       const target = event.target;
-      if (
+      const isEditableTarget =
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable);
+
+      if (
+        shouldCancelQueuedActionShortcut({
+          key: event.key,
+          hasQueuedAction: Boolean(pendingTournamentAction.current?.isPending),
+          isEditableTarget,
+          paused,
+          trainingMode: mode === "training",
+        })
       ) {
+        const queuedAction = pendingTournamentAction.current;
+        // The reference is cleared by the delay callback immediately before
+        // `onAction`, so this branch can only retract a move that has not yet
+        // crossed into authoritative tournament state.
+        if (!queuedAction) return;
+        event.preventDefault();
+        queuedAction.cancel();
+        freezeGroupRef.current.remove(queuedAction);
+        pendingTournamentAction.current = null;
+        setAction(null);
+        setActionError(undefined);
+        actionGateRef.current.release();
         return;
       }
+
+      if (isEditableTarget) return;
       if (paused) return;
 
       const actionId = resolveKeyboardAction(bindings, "game", event);
@@ -2980,12 +2945,6 @@ export function PokerTable({
         tournament.legalActions.bet?.min ??
         tournament.legalActions.allInTo)
       : scenario.minimumRaise;
-  const maximumRaise =
-    mode !== "training" && tournament
-      ? (tournament.legalActions.raise?.maxTo ??
-        tournament.legalActions.bet?.max ??
-        tournament.legalActions.allInTo)
-      : heroStack;
   const allInAmount =
     mode !== "training" && tournament
       ? tournament.legalActions.allInTo
@@ -2999,13 +2958,11 @@ export function PokerTable({
         scenario.pot,
         allInAmount,
       ].map((amount) =>
-        Math.max(
-          minimumRaise,
-          Math.min(
-            maximumRaise,
-            Math.round(amount / scenario.blinds[1]) * scenario.blinds[1],
-          ),
-        ),
+        snapRaiseSliderToAmount(amount, {
+          minimumRaiseTo: minimumRaise,
+          allInTo: allInAmount,
+          chipStep: scenario.blinds[1],
+        }),
       ),
     ),
   );
@@ -3463,7 +3420,7 @@ export function PokerTable({
         </button>
         <div className="table-session">
           <p className="eyebrow">{modeTitle}</p>
-          <strong>{scenario.title}</strong>
+          {mode !== "training" && <strong>{scenario.title}</strong>}
           <span>
             {/*
               The scenario counter is gone from the player interface
@@ -4202,6 +4159,7 @@ export function PokerTable({
                             projectionHeight,
                             heroStationIndexForTable,
                             activeCameraFrame,
+                            player.stack,
                           )
                         : seatStackAmountViewportAnchor(
                             seatSceneSeat.relativeSeat,
@@ -4211,6 +4169,7 @@ export function PokerTable({
                             heroStationIndexForTable,
                             cameraZoom,
                             settings.cameraView,
+                            player.stack,
                           )
                       : undefined
                   }
@@ -4417,7 +4376,10 @@ export function PokerTable({
                 onClick={() => setRaiseOpen((value) => !value)}
               >
                 <span>R</span>
-                <strong>{formatMessage("table.action.raiseTo")}</strong>
+                <strong>
+                  {formatMessage("table.action.raiseTo")}
+                  <small>{formatChips(minimumRaise)}</small>
+                </strong>
               </button>
             </div>
           ) : (
@@ -4448,8 +4410,8 @@ export function PokerTable({
           {raiseOpen && !action && (
             <div
               className="bet-composer"
-              role="dialog"
-              aria-modal="true"
+              role={isTwoDMode ? "region" : "dialog"}
+              aria-modal={isTwoDMode ? undefined : true}
               aria-label={formatMessage("table.raise.heading")}
               tabIndex={-1}
               ref={raiseComposerRef as React.RefObject<HTMLDivElement>}
@@ -4491,10 +4453,18 @@ export function PokerTable({
                 <input
                   type="range"
                   min={minimumRaise}
-                  max={maximumRaise}
-                  step={scenario.blinds[1]}
+                  max={allInAmount}
+                  step="any"
                   value={raiseAmount}
-                  onChange={(event) => setRaiseAmount(Number(event.target.value))}
+                  onChange={(event) =>
+                    setRaiseAmount(
+                      snapRaiseSliderToAmount(Number(event.target.value), {
+                        minimumRaiseTo: minimumRaise,
+                        allInTo: allInAmount,
+                        chipStep: scenario.blinds[1],
+                      }),
+                    )
+                  }
                   aria-label={formatMessage("table.raise.amountAriaLabel")}
                 />
                 <output>
@@ -4528,7 +4498,6 @@ export function PokerTable({
             action={action}
             graded={gradedAttempt}
             mathAttempted={gradedAttempt.result.mathAnswer !== undefined}
-            scenario={ratedScenario}
             onNext={() => onNextScenario(scenario.id)}
             onReview={resetHand}
           />
