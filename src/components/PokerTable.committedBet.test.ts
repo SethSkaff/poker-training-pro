@@ -26,4 +26,14 @@ describe("committed wager presentation", () => {
     expect(styles).toMatch(/\.seat-bet[\s\S]*font-variant-numeric:\s*tabular-nums/);
     expect(styles).toMatch(/\.seat-bet\s*\{[\s\S]*?z-index:\s*3/);
   });
+
+  it("uses the total all-in-to amount for both the slider value domain and action", () => {
+    expect(source).toContain("max={allInAmount}");
+    expect(source).toContain('step="any"');
+    expect(source).toContain("snapRaiseSliderToAmount(Number(event.target.value)");
+    expect(source).toContain("allInTo: allInAmount");
+    expect(source).toContain("snapRaiseSliderToAmount(amount, {");
+    expect(source).toContain('handleAction(raiseAmount >= allInAmount ? "all-in" : "raise")');
+    expect(source).not.toContain("max={maximumRaise}");
+  });
 });

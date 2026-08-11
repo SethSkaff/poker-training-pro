@@ -24,10 +24,31 @@ describe("table UI restraint and card peek", () => {
   it("does not render the redundant bottom shortcut bar or floating camera menu", () => {
     expect(table).not.toContain('className="table-footer"');
     expect(table).toContain('className="camera-controls"');
-    expect(table).toContain('onPointerDownCapture={beginCameraDrag}');
-    expect(table).toContain('onWheelCapture={handleCameraWheel}');
+    expect(table).toContain('onPointerDownCapture={isTwoDMode ? undefined : beginCameraDrag}');
+    expect(table).toContain('onWheelCapture={isTwoDMode ? undefined : handleCameraWheel}');
     expect(table).not.toContain("table.footer.quickRaise");
     expect(table).not.toContain("table.camera.offset");
+  });
+
+  it("keeps the unopened raise action neutral and reveals amounts in the composer", () => {
+    expect(table).toContain('<strong>{formatMessage("table.action.raiseTo")}</strong>');
+    expect(table).not.toContain('<small>{formatChips(minimumRaise)}</small>');
+    expect(table).toContain("min={minimumRaise}");
+    expect(table).toContain("value={raiseAmount}");
+  });
+
+  it("keeps folded 2D cards transient without fading or moving stack and bet identity", () => {
+    expect(table.indexOf('<div className="hero-stack-readout"')).toBeGreaterThan(
+      table.indexOf("</button>"),
+    );
+    const folded2d = styles.match(/\.table-screen--2d \.player-seat\.is-folded\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+    expect(folded2d).toContain("opacity: 1");
+    expect(folded2d).toContain("filter: none");
+    expect(styles).toContain(".table-screen--2d .player-seat.is-folded .seat-figure");
+    expect(styles).not.toContain(".table-screen--2d .player-seat.is-folded .seat-label");
+    expect(styles).not.toContain(".table-screen--2d .player-seat.is-folded .seat-bet");
+    expect(table).toContain("if (!update.changed && !update.handChanged) return;");
+    expect(table).toContain("setFoldProgress(0);");
   });
 
   it("keeps decorative room depth behind camera controls and locks peek during an action", () => {
@@ -82,5 +103,31 @@ describe("table UI restraint and card peek", () => {
     expect(override).toContain("clip-path: none");
     expect(override).toContain("pointer-events: auto");
     expect(override).toContain("overflow: auto");
+  });
+
+  it("bounds 3D gameplay to the viewport without changing document overflow elsewhere", () => {
+    expect(styles).toContain("body:has(.table-screen--3d)");
+    expect(styles).toContain("overflow-y: hidden");
+
+    const spatialScreenRule = styles.slice(
+      styles.indexOf(".table-screen--3d {"),
+      styles.indexOf(".table-screen--3d {") + 320,
+    );
+    expect(spatialScreenRule).toContain("height: 100dvh");
+    expect(spatialScreenRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+
+    const readyLayoutRule = styles.slice(
+      styles.indexOf(
+        '.table-screen--3d\n  > .table-layout:has(.poker-scene[data-spatial-scene="ready"])',
+      ),
+      styles.indexOf(
+        '.table-screen--3d\n  > .table-layout:has(.poker-scene[data-spatial-scene="ready"])',
+      ) + 240,
+    );
+    expect(readyLayoutRule).toContain("height: auto");
+
+    // Non-spatial table screens retain the normal page overflow contract.
+    expect(styles).not.toContain("body {\n  overflow-y: hidden");
+    expect(styles).not.toContain(".table-screen--2d {\n  overflow-y: hidden");
   });
 });

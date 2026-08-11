@@ -10,7 +10,9 @@ export const defaultSettings: GameSettings = {
   muted: false,
   musicVolume: 35,
   effectsVolume: 70,
-  fullscreen: false,
+  // Mode selection is a user gesture, so fullscreen can be requested there.
+  // Browsers may still reject it; the app continues in a normal window.
+  fullscreen: true,
   reducedMotion: false,
   reducedMotionExplicit: false,
   dealSpeed: "standard",

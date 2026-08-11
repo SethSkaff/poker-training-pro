@@ -57,7 +57,10 @@ import {
   betCirclePosition,
   cameraLensZoom,
   cameraPose,
+  CHIP_COLUMN_PITCH,
+  CHIPS_PER_COLUMN,
   chipColumnLayoutForAmount,
+  chipRackColumnPosition,
   callChipPosition,
   collectChipPosition,
   CAMERA_PITCH_DEGREES,
@@ -100,6 +103,7 @@ import {
   surfaceTextureBytes,
 } from "./sceneSurfaceTextures";
 import { sceneGestureFor } from "./sceneGestures";
+import { animationBeatFor } from "./sceneAnimationBeats";
 import { buildCharacter, buildChair, buildDealer } from "./sceneCharacters";
 import { describeOpponentCharacter } from "../lib/opponentAppearance";
 import type { SceneFrameCallbacks, WebGlProbeResult } from "./sceneAvailability";
@@ -108,7 +112,7 @@ import { createSceneActionTimingState, reconcileSceneActionTiming } from "./scen
 import { createSceneRenderLifecycle } from "./sceneLifecycle";
 import { createSceneResourceLedger, type SceneResourceLedger } from "./sceneResources";
 import { createSceneFrameTelemetry } from "./sceneDiagnostics";
-import { boardDealPose, burnCardPose, deckColourForHand, inactiveDeckColour, muckCardCount, type DeckColour } from "./dealerPresentation";
+import { boardDealPose, boardStreetRequiresBurn, burnCardPose, deckColourForHand, inactiveDeckColour, muckCardCount, type DeckColour } from "./dealerPresentation";
 import {
   parsePublicCardFace,
   PROCEDURAL_CARD_FACE_SIZE,
@@ -343,7 +347,6 @@ interface TableSceneResources {
   readonly chipShadowMaterial: MeshBasicMaterial;
   chipEdgeMaterial(): MeshStandardMaterial;
   chipMaterial(): MeshStandardMaterial;
-  chipDenominationMaterial(denomination: number): MeshStandardMaterial;
   cardFaceMaterial(code: string): MeshStandardMaterial;
   /** A restrained lift for the steep underside used only during a private peek. */
   heroPeekFaceMaterial(code: string): MeshStandardMaterial;
@@ -444,42 +447,6 @@ function createTableSceneResources(): TableSceneResources {
   const potPlaqueCanvases = new Map<"main" | "side", HTMLCanvasElement>();
   const potPlaqueTextures = new Map<"main" | "side", CanvasTexture>();
   const potPlaqueLabels = new Map<"main" | "side", string>();
-  const chipDenominationMaterials = new Map<number, MeshStandardMaterial>();
-  const chipDenominationMaterial = (denomination: number): MeshStandardMaterial => {
-    const cached = chipDenominationMaterials.get(denomination);
-    if (cached) return cached;
-    const canvas = document.createElement("canvas");
-    canvas.width = 128;
-    canvas.height = 128;
-    const context = canvas.getContext("2d");
-    if (!context) return track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }));
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "#f4efe2";
-    context.beginPath();
-    context.arc(64, 64, 56, 0, Math.PI * 2);
-    context.fill();
-    context.strokeStyle = "#6f5945";
-    context.lineWidth = 4;
-    context.stroke();
-    context.fillStyle = "#17191f";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.font = `800 ${denomination >= 100000 ? 24 : denomination >= 10000 ? 27 : 32}px Inter, Arial, sans-serif`;
-    context.fillText(String(denomination), 64, 64);
-    const texture = track(new CanvasTexture(canvas));
-    texture.colorSpace = SRGBColorSpace;
-    texture.generateMipmaps = false;
-    texture.minFilter = LinearFilter;
-    const material = track(new MeshStandardMaterial({
-      color: 0xffffff,
-      map: texture,
-      transparent: true,
-      roughness: 0.72,
-      metalness: 0,
-    }));
-    chipDenominationMaterials.set(denomination, material);
-    return material;
-  };
   const cardFaceMaterial = (code: string): MeshStandardMaterial => {
     const face = parsePublicCardFace(code);
     if (!face) return cardMaterial;
@@ -829,7 +796,6 @@ function createTableSceneResources(): TableSceneResources {
     // while a very rough dielectric surface keeps the highlights soft.
     chipMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0 })),
     chipEdgeMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 })),
-    chipDenominationMaterial,
     cardFaceMaterial,
     heroPeekFaceMaterial,
     markerMaterial,
@@ -887,7 +853,7 @@ export function createTableScene(
     MeshBasicMaterial, so fog was the only thing darkening it. Starting further
     out keeps the architecture legible while still separating depth.
   */
-  scene.fog = new Fog(ROOM, 9, 34);
+  scene.fog = new Fog(ROOM, 4.5, 11);
 
   const camera = new PerspectiveCamera(52, 16 / 9, 0.05, 45);
 
@@ -954,21 +920,12 @@ export function createTableScene(
     photograph rather than a surface behind the table.
   */
   const roomLight = new PointLight(0xffcf9a, 8.0, 16, 2);
-  roomLight.position.set(0, 3.1, -4.2);
+  roomLight.position.set(0, 3.1, -2.45);
   scene.add(roomLight);
-  // Broad house lights deliberately illuminate the room wings, not the hero
-  // table. They give the background tables a warm, occupied glow without
-  // bleaching cards, chips, or the green baize in the foreground.
-  for (const [x, z] of [[-7.4, -4.8], [7.4, -4.8]] as const) {
-    const houseLight = new PointLight(0xffc779, 3.3, 8.5, 2);
-    houseLight.position.set(x, 2.7, z);
-    scene.add(houseLight);
-  }
-  // Complete the house-light circuit around the enclosed venue. These lights
-  // are deliberately farther from the felt than the pendant, keeping the main
-  // table as the focus while making every camera direction read as a real room.
-  for (const [x, z] of [[-9.8, 7.6], [9.8, 7.6], [0, 11.2], [0, -11.2]] as const) {
-    const houseLight = new PointLight(0xffc779, 2.5, 9.5, 2);
+  // A compact four-light room envelope: enough wall modelling for free-look,
+  // without implying that more poker tables exist outside the player's game.
+  for (const [x, z] of [[-2.65, -2.4], [2.65, -2.4], [-2.65, 2.4], [2.65, 2.4]] as const) {
+    const houseLight = new PointLight(0xffc779, 2.2, 5.5, 2);
     houseLight.position.set(x, 3.3, z);
     scene.add(houseLight);
   }
@@ -1313,9 +1270,9 @@ export function createTableScene(
         nowMs,
         resources,
       );
-      placeMarker(buttonMarker, state.buttonPlayerId, seatViews);
-      placeMarker(smallBlindMarker, state.smallBlindPlayerId, seatViews);
-      placeMarker(bigBlindMarker, state.bigBlindPlayerId, seatViews);
+      placeMarker(buttonMarker, "D", state.buttonPlayerId, seatViews, state.seats.find((seat) => seat.id === state.buttonPlayerId)?.stack);
+      placeMarker(smallBlindMarker, "SB", state.smallBlindPlayerId, seatViews, state.seats.find((seat) => seat.id === state.smallBlindPlayerId)?.stack);
+      placeMarker(bigBlindMarker, "BB", state.bigBlindPlayerId, seatViews, state.seats.find((seat) => seat.id === state.bigBlindPlayerId)?.stack);
       placeTurnIndicator(turnIndicator, state.seats, seatViews);
       const payoutWinner = renderTransition?.kind === "pot-awarded"
         ? seatViews.get(renderTransition.payoutPlayerId ?? "")?.pose
@@ -1548,6 +1505,9 @@ function wallMaterial(
 
 function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   const resources = bundle.ledger;
+  const roomSize = 6.4;
+  const roomHalf = roomSize / 2;
+  const wallHeight = 3.5;
   /*
     A warm carpet rather than near-black. At 0x141a17 the foreground floor -- a
     real 2 m of room between the hero's seat and the near rail, and up to 30% of
@@ -1556,7 +1516,7 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
     the felt dominant.
   */
   const floorMaterial = resources.track(new MeshLambertMaterial({ color: CARPET }));
-  const carpetTexture = bundle.surfaceTexture("carpet", 13, 13);
+  const carpetTexture = bundle.surfaceTexture("carpet", 6, 6);
   if (carpetTexture) {
     floorMaterial.map = carpetTexture;
     floorMaterial.color.setHex(0xffffff);
@@ -1564,7 +1524,7 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   // Free-look is available from every seat, including back toward the hero's
   // own side of the room. Keep the carpet larger than the visible stage so the
   // peripheral view never finds a hard edge.
-  const floor = new Mesh(resources.track(new PlaneGeometry(34, 34)), floorMaterial);
+  const floor = new Mesh(resources.track(new PlaneGeometry(roomSize, roomSize)), floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
@@ -1575,7 +1535,7 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
     patterned floor only produced visible banding.
   */
   const inlay = new Mesh(
-    resources.track(new CircleGeometry(3.1, 48)),
+    resources.track(new CircleGeometry(2.15, 48)),
     resources.track(new MeshLambertMaterial({ color: CARPET_PATTERN })),
   );
   inlay.rotation.x = -Math.PI / 2;
@@ -1590,10 +1550,10 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
     // the edge of the frustum and exposed a black void. The wide continuous
     // architectural wall keeps both room wings present without moving the
     // table, seats, or camera laterally.
-    resources.track(new PlaneGeometry(30, 7.4)),
-    wallMaterial(bundle, 14, 3),
+    resources.track(new PlaneGeometry(roomSize, wallHeight)),
+    wallMaterial(bundle, 6, 2),
   );
-  horizon.position.set(0, 3.4, -14.2);
+  horizon.position.set(0, wallHeight / 2, -roomHalf);
   scene.add(horizon);
 
   // The eye-level cove is an intentional architectural horizon, not a HUD
@@ -1601,13 +1561,13 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   // horizon band with the fixed −16° seated gaze, while the physical
   // wall/floor junction remains naturally lower in the room.
   const horizonBand = new Mesh(
-    resources.track(new PlaneGeometry(30, 0.10)),
+    resources.track(new PlaneGeometry(roomSize, 0.10)),
     // Dimmed from full brass. Unlit at 0xc9a227 the cove was a fluorescent
     // stripe across the room and the brightest thing in a frame whose subject
     // is a table 1 m away.
     resources.track(new MeshBasicMaterial({ color: 0x7d6220 })),
   );
-  horizonBand.position.set(0, 1.1, -14.17);
+  horizonBand.position.set(0, 1.1, -roomHalf + 0.02);
   scene.add(horizonBand);
 
   /*
@@ -1618,17 +1578,17 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   */
   for (const side of [-1, 1]) {
     const sideWall = new Mesh(
-      resources.track(new PlaneGeometry(28, 7.4)),
-      wallMaterial(bundle, 11, 3),
+      resources.track(new PlaneGeometry(roomSize, wallHeight)),
+      wallMaterial(bundle, 6, 2),
     );
-    sideWall.position.set(side * 14.2, 3.4, 0);
+    sideWall.position.set(side * roomHalf, wallHeight / 2, 0);
     sideWall.rotation.y = side * -Math.PI / 2;
     scene.add(sideWall);
     const sideCove = new Mesh(
-      resources.track(new PlaneGeometry(28, 0.10)),
+      resources.track(new PlaneGeometry(roomSize, 0.10)),
       resources.track(new MeshBasicMaterial({ color: 0x7d6220 })),
     );
-    sideCove.position.set(side * 14.17, 1.1, 0);
+    sideCove.position.set(side * (roomHalf - 0.02), 1.1, 0);
     sideCove.rotation.y = side * -Math.PI / 2;
     scene.add(sideCove);
   }
@@ -1636,27 +1596,27 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   // A fourth wall closes the player-facing side of the venue. It stays in world
   // space rather than following the camera, so it works at all randomized seats.
   const nearWall = new Mesh(
-    resources.track(new PlaneGeometry(30, 7.4)),
-    wallMaterial(bundle, 14, 3),
+    resources.track(new PlaneGeometry(roomSize, wallHeight)),
+    wallMaterial(bundle, 6, 2),
   );
-  nearWall.position.set(0, 3.4, 14.2);
+  nearWall.position.set(0, wallHeight / 2, roomHalf);
   nearWall.rotation.y = Math.PI;
   scene.add(nearWall);
   const nearCove = new Mesh(
-    resources.track(new PlaneGeometry(30, 0.10)),
+    resources.track(new PlaneGeometry(roomSize, 0.10)),
     resources.track(new MeshBasicMaterial({ color: 0x7d6220 })),
   );
-  nearCove.position.set(0, 1.1, 14.17);
+  nearCove.position.set(0, 1.1, roomHalf - 0.02);
   nearCove.rotation.y = Math.PI;
   scene.add(nearCove);
 
   // Close the volume above the room too. The plane faces downward into the
   // interior, avoiding double-sided materials while preserving the ceiling.
   const ceiling = new Mesh(
-    resources.track(new PlaneGeometry(30, 30)),
-    wallMaterial(bundle, 12, 7),
+    resources.track(new PlaneGeometry(roomSize, roomSize)),
+    wallMaterial(bundle, 6, 6),
   );
-  ceiling.position.set(0, 7.05, 0);
+  ceiling.position.set(0, wallHeight, 0);
   ceiling.rotation.x = Math.PI / 2;
   scene.add(ceiling);
 
@@ -1672,78 +1632,35 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
   */
   const sconceGeometry = resources.track(new PlaneGeometry(0.16, 0.30));
   const sconceMaterial = resources.track(new MeshBasicMaterial({ color: 0xa8813f }));
-  for (const x of [-10.5, -6.3, -2.1, 2.1, 6.3, 10.5]) {
+  for (const x of [-1.9, -0.65, 0.65]) {
     const sconce = new Mesh(sconceGeometry, sconceMaterial);
-    sconce.position.set(x, 1.62, -14.17);
+    sconce.position.set(x, 1.62, -roomHalf + 0.02);
     scene.add(sconce);
   }
 
-  // Background tournament tables have small seated silhouettes. Their shared
-  // geometry and muted colours make the floor feel occupied at a negligible
-  // scene cost, while keeping the hero table the only readable game surface.
-  //
-  // Pushed wide and back off the forward arc. At (-4.4,-5.2)/(4.6,-5.8) they
-  // projected directly behind the two near-side opponents, so a background
-  // table appeared to grow out of a player's shoulder at recenter. These sit
-  // outside the seated frame at recenter and populate the room wings instead.
-  const backgroundTableTop = resources.track(new CylinderGeometry(0.88, 0.88, 0.09, 18));
-  const backgroundTableBase = resources.track(new CylinderGeometry(0.26, 0.36, TABLE_HEIGHT, 10));
-  const backgroundHead = resources.track(new SphereGeometry(0.105, 10, 8));
-  const backgroundTorso = resources.track(new CylinderGeometry(0.13, 0.17, 0.34, 8));
-  const backgroundFelt = resources.track(new MeshLambertMaterial({ color: FELT_EDGE }));
-  const backgroundRail = resources.track(new MeshLambertMaterial({ color: RAIL }));
-  const backgroundSkin = resources.track(new MeshLambertMaterial({ color: 0x9d755b }));
-  const backgroundClothes = [
-    resources.track(new MeshLambertMaterial({ color: 0x253f50 })),
-    resources.track(new MeshLambertMaterial({ color: 0x573234 })),
-    resources.track(new MeshLambertMaterial({ color: 0x3b4931 })),
-  ];
-  const backgroundSeats = [
-    [-0.96, 0], [0.96, 0], [0, -0.96], [0, 0.96],
-  ] as const;
-
-  for (const [tableIndex, [x, z]] of ([
-    [-9.7, -9.2], [9.7, -9.2], [0, -11.2],
-    // Two more sit inside the ±32° wings specifically, so looking left or right
-    // reveals other tables rather than empty floor.
-    [-10.2, -1.8], [10.2, -1.8],
-    // The near side is just as populated as the dealer-facing side. That is
-    // what prevents a free camera look from exposing a sparse stage wing.
-    [-8.7, 7.8], [8.7, 7.8], [0, 10.6],
-  ] as const).entries()) {
-    const distant = new Group();
-    const top = new Mesh(
-      backgroundTableTop,
-      backgroundFelt,
-    );
-    top.position.y = TABLE_HEIGHT;
-    distant.add(top);
-    const base = new Mesh(
-      backgroundTableBase,
-      backgroundRail,
-    );
-    base.position.y = TABLE_HEIGHT / 2;
-    distant.add(base);
-    // Seated bodies are intentionally simple: a shoulder/torso mass plus head
-    // is enough to read as another live table at this distance.  No face detail
-    // or animation competes with the players at the primary table.
-    for (const [guestIndex, [guestX, guestZ]] of backgroundSeats.entries()) {
-      const guest = new Group();
-      const torso = new Mesh(backgroundTorso, backgroundClothes[(tableIndex + guestIndex) % backgroundClothes.length]);
-      torso.position.y = TABLE_HEIGHT * 0.72;
-      guest.add(torso);
-      const head = new Mesh(backgroundHead, backgroundSkin);
-      head.position.y = TABLE_HEIGHT * 0.72 + 0.25;
-      guest.add(head);
-      guest.position.set(guestX, 0, guestZ);
-      // A small variation prevents a repeated mannequin ring while preserving
-      // the low-detail background read.
-      guest.rotation.y = (guestIndex % 2 === 0 ? 0.15 : -0.15);
-      distant.add(guest);
-    }
-    distant.position.set(x, 0, z);
-    scene.add(distant);
-  }
+  // A visible way out makes the compact room read as architecture instead of
+  // a sealed scene box. It is real wall geometry, not a camera-facing decal.
+  const doorFrame = new Mesh(
+    resources.track(new PlaneGeometry(1.30, 2.40)),
+    resources.track(new MeshBasicMaterial({ color: 0x8a6a2d })),
+  );
+  doorFrame.name = "card-room-exit-frame";
+  doorFrame.position.set(2.25, 1.2, -roomHalf + 0.035);
+  scene.add(doorFrame);
+  const door = new Mesh(
+    resources.track(new PlaneGeometry(1.15, 2.25)),
+    resources.track(new MeshLambertMaterial({ color: 0x241b16 })),
+  );
+  door.name = "card-room-exit-door";
+  door.position.set(2.25, 1.14, -roomHalf + 0.055);
+  scene.add(door);
+  const exitSign = new Mesh(
+    resources.track(new PlaneGeometry(0.62, 0.18)),
+    resources.track(new MeshBasicMaterial({ color: 0x7bbf86 })),
+  );
+  exitSign.name = "card-room-exit-sign";
+  exitSign.position.set(2.25, 2.52, -roomHalf + 0.065);
+  scene.add(exitSign);
 }
 
 /**
@@ -1790,7 +1707,17 @@ function buildTable(stations: readonly Station[], scene: TableSceneResources): G
   else feltMaterial.color.setHex(FELT);
   zone("table/print", FELT_PRINT, "table-print");
   zone("table/ledge", LEDGE, "table-ledge");
-  zone("table/rail", RAIL, "table-rail");
+  const rail = zone("table/rail", RAIL, "table-rail");
+  const railMaterial = rail.material as MeshLambertMaterial;
+  // The authored rail is viewed from both its inner and outer faces at seated
+  // camera angles. Keep it a fully opaque depth-writing object so the felt,
+  // ledge, or room can never ghost through the wood.
+  railMaterial.transparent = false;
+  railMaterial.opacity = 1;
+  railMaterial.depthTest = true;
+  railMaterial.depthWrite = true;
+  railMaterial.side = DoubleSide;
+  rail.renderOrder = 3;
   zone("table/trim", BRASS, "table-trim");
   zone("table/pedestal", PEDESTAL, "table-pedestal");
 
@@ -1849,15 +1776,17 @@ function buildTableMarker(
 
 function placeMarker(
   marker: Mesh,
+  label: "D" | "SB" | "BB",
   playerId: string | undefined,
   seatViews: ReadonlyMap<string, { pose: SeatPose; view: SeatView }>,
+  stackAmount = 15_000,
 ): void {
   const pose = playerId === undefined ? undefined : seatViews.get(playerId)?.pose;
   marker.visible = Boolean(pose);
   marker.userData.publicPlayerId = pose ? playerId : null;
   if (!pose) return;
   // Share the stack's lateral column, but leave a clear foreground gap.
-  marker.position.set(...tableMarkerPosition(pose));
+  marker.position.set(...tableMarkerPosition(pose, label, stackAmount));
 }
 
 /**
@@ -2166,6 +2095,8 @@ function applySeat(
     seatLocalPoint(pose, world);
 
   const folded = seat.folded || transition?.foldedPlayerIds.includes(seat.id) === true;
+  const beat = animationBeatFor(transition, seat.id);
+  const objectProgress = beat?.objectProgress ?? progress;
   const gesture = sceneGestureFor(seat.action, progress, seat.acting, folded);
   view.cards.visible = !folded || progress < 1;
   const allInReveal = transition?.kind === "all-in-reveal" && !folded;
@@ -2204,7 +2135,7 @@ function applySeat(
       )
       : progress;
     const target = folded
-      ? muckedCardPosition(pose, progress)
+      ? muckedCardPosition(pose, objectProgress)
       : gesture.cardMotion === "deal"
         ? dealtCardPosition(pose, dealProgress)
         : pose.feltPosition;
@@ -2313,6 +2244,25 @@ function applySeat(
   const rightShoulder = view.arm.getObjectByName("right-shoulder");
   const leftElbow = view.arm.getObjectByName("left-elbow");
   const rightElbow = view.arm.getObjectByName("right-elbow");
+  const actionTargetWorld = (() => {
+    if (!beat) return undefined;
+    if (beat.destination === "wager") {
+      const from = restingChipStackPosition(pose, chipCommitment?.stackBefore ?? seat.stack);
+      const to = betCirclePosition(pose);
+      return [
+        from[0] + (to[0] - from[0]) * beat.objectProgress,
+        TABLE_HEIGHT,
+        from[2] + (to[2] - from[2]) * beat.objectProgress,
+      ] as const;
+    }
+    if (beat.destination === "muck") return muckedCardPosition(pose, beat.objectProgress);
+    if (beat.destination === "felt") return betCirclePosition(pose);
+    return undefined;
+  })();
+  const actionTargetLocal = actionTargetWorld ? seatLocalPoint(pose, actionTargetWorld) : undefined;
+  const actionReachWeight = beat && !["recover", "settle"].includes(beat.phase)
+    ? 1
+    : beat?.phase === "recover" ? 1 - beat.phaseProgress : 0;
   for (const [shoulder, elbow, side] of [
     [leftShoulder, leftElbow, -1],
     [rightShoulder, rightElbow, 1],
@@ -2323,9 +2273,15 @@ function applySeat(
       (gesture.movingArm === "left" && side === -1) ||
       (gesture.movingArm === "right" && side === 1);
     const armWeight = armIsMoving ? 1 : 0;
-    shoulder.rotation.x = -gesture.shoulderPitch * armWeight;
-    shoulder.rotation.y = side * gesture.shoulderYaw * armWeight;
-    elbow.rotation.x = gesture.elbowBend * armWeight;
+    const targetYaw = actionTargetLocal
+      ? Math.max(-0.55, Math.min(0.55, Math.atan2(actionTargetLocal[0], Math.abs(actionTargetLocal[2]) + 0.12)))
+      : 0;
+    const targetPitch = actionTargetLocal
+      ? Math.max(0, Math.min(0.34, Math.hypot(actionTargetLocal[0], actionTargetLocal[2]) * 0.2))
+      : 0;
+    shoulder.rotation.x = -(gesture.shoulderPitch + targetPitch * actionReachWeight) * armWeight;
+    shoulder.rotation.y = (side * gesture.shoulderYaw + targetYaw * actionReachWeight) * armWeight;
+    elbow.rotation.x = (gesture.elbowBend + 0.18 * actionReachWeight) * armWeight;
     // The palms land below the crest at the knock's midpoint, then recover.
     // Store the authored elbow height once; mutating relative to last frame
     // would slowly sink arms through the table.
@@ -2342,13 +2298,13 @@ function applySeat(
   if (settledBet > 0) {
     const local = seatLocalPoint(pose, isCommitting
       ? betCirclePosition(pose)
-      : chipPositionForGesture(pose, gesture.chipMotion, progress));
+      : chipPositionForGesture(pose, gesture.chipMotion, progress, chipCommitment?.stackBefore));
     view.betChips.position.set(local[0], local[1], local[2]);
   }
 
   if (isCommitting && chipCommitment) {
-    const t = Math.min(1, Math.max(0, progress));
-    const from = restingChipStackPosition(pose);
+    const t = Math.min(1, Math.max(0, objectProgress));
+    const from = restingChipStackPosition(pose, chipCommitment.stackBefore);
     const to = betCirclePosition(pose);
     // The chips travel rack -> hand height -> betting circle.  They never use
     // the pot as an intermediate destination, so the centre stays empty until
@@ -2371,7 +2327,7 @@ function applySeat(
   // During the visible push, the rack steadily loses exactly the amount in
   // flight.  At rest the engine's authoritative balance is shown untouched.
   const displayedStack = isCommitting && chipCommitment
-    ? Math.max(0, Math.round(chipCommitment.stackBefore - chipCommitment.amount * progress))
+    ? Math.max(0, Math.round(chipCommitment.stackBefore - chipCommitment.amount * objectProgress))
     : chipAward !== undefined && chipAward.transitionId === transition?.id
       ? Math.max(0, Math.round(chipAward.stackBefore + chipAward.amount * progress))
       : seat.stack;
@@ -2388,7 +2344,7 @@ function applySeat(
     between two players. A fixed offset in the seat's local frame puts every
     stack in the same place relative to the person it belongs to.
   */
-  const stackWorld = restingChipStackPosition(pose);
+  const stackWorld = restingChipStackPosition(pose, displayedStack);
   const stackLocal = seatLocalPoint(pose, stackWorld);
   view.stackChips.position.set(
     stackLocal[0],
@@ -2406,12 +2362,13 @@ function chipPositionForGesture(
   pose: SeatPose,
   motion: ReturnType<typeof sceneGestureFor>["chipMotion"],
   progress: number,
+  rackAmount = 15_000,
 ): readonly [number, number, number] {
   switch (motion) {
-    case "call": return callChipPosition(pose, progress);
-    case "raise": return raiseChipPosition(pose, progress);
-    case "all-in": return allInChipPosition(pose, progress);
-    case "bet": return betChipPosition(pose, progress);
+    case "call": return callChipPosition(pose, progress, rackAmount);
+    case "raise": return raiseChipPosition(pose, progress, rackAmount);
+    case "all-in": return allInChipPosition(pose, progress, rackAmount);
+    case "bet": return betChipPosition(pose, progress, rackAmount);
     // The dealer raking the street in is the one motion that ends at the pot.
     case "collect": return collectChipPosition(pose, progress);
     // At rest a wager sits on its owner's betting line, not in the middle of
@@ -2474,9 +2431,6 @@ function sameCameraPose(
  * two or three columns, which is both what players actually do and what makes
  * the size of a holding readable across the table.
  */
-const CHIPS_PER_COLUMN = 8;
-/** Slightly wider than the 0.035 chip radius so columns read as separate. */
-const CHIP_COLUMN_PITCH = 0.052;
 /* Projected light, not a rope: the readout stays anchored to its chip pile. */
 const POT_HOLOGRAM_FORWARD = 0.02;
 
@@ -2526,12 +2480,13 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
   }
   let instance = 0;
   for (const column of layout) {
+    const [columnX, columnZ] = chipRackColumnPosition(column.column, layout.length);
     for (let height = 0; height < column.count; height += 1) {
       matrix.makeRotationY(((instance * 37 + column.denomination) % 360) * (Math.PI / 180));
       matrix.setPosition(
-        (column.column % 3) * CHIP_COLUMN_PITCH,
-        height * 0.0037,
-        Math.floor(column.column / 3) * CHIP_COLUMN_PITCH,
+        columnX,
+        height * 0.0045,
+        columnZ,
       );
       stack.setMatrixAt(instance, matrix);
       spots.setMatrixAt(instance, matrix);
@@ -2566,11 +2521,12 @@ function setChipStack(group: Group, amount: number, resources: TableSceneResourc
     group.add(shadows);
   }
   for (const column of layout) {
+    const [columnX, columnZ] = chipRackColumnPosition(column.column, layout.length);
     matrix.makeRotationX(-Math.PI / 2);
     matrix.setPosition(
-      (column.column % 3) * CHIP_COLUMN_PITCH,
+      columnX,
       -0.0004,
-      Math.floor(column.column / 3) * CHIP_COLUMN_PITCH,
+      columnZ,
     );
     shadows.setMatrixAt(column.column, matrix);
   }
@@ -2839,7 +2795,7 @@ function setDealerCardEquipment(
   heldCard.userData.cardOwnership = heldFrame.ownership;
 
   const isBoardDeal = transition?.kind === "board-card-dealt";
-  if (isBoardDeal) {
+  if (isBoardDeal && boardStreetRequiresBurn(transition.cardIndex ?? -1)) {
     const burnProgress = Math.min(1, transition.progress / 0.36);
     const burn = burnCardPose(transition.progress);
     const burnFrame = dealerCardFrame("burn-card", burnProgress);
@@ -2901,7 +2857,8 @@ function setBoardCards(
       && Boolean(codes[index] && transition.winningCardCodes?.includes(codes[index]));
     if (isDealingThisCard) {
       const pose = boardDealPose(index, transition.progress);
-      const boardProgress = Math.max(0, Math.min(1, (transition.progress - 0.36) / 0.64));
+      const dealStart = boardStreetRequiresBurn(index) ? 0.36 : 0.08;
+      const boardProgress = Math.max(0, Math.min(1, (transition.progress - dealStart) / (1 - dealStart)));
       const cardFrame = dealerCardFrame("board-card", boardProgress);
       mesh.position.set(
         pose.position[0] - TABLE_ANCHORS.board[0],

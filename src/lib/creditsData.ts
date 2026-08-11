@@ -64,7 +64,7 @@ export interface CreditsSection {
 export interface CreditsModel {
   readonly appName: string;
   readonly sections: readonly CreditsSection[];
-  /** Truthful music status; there are no licensed masters yet. */
+  /** Truthful music license and attribution summary. */
   readonly musicStatus: string;
 }
 

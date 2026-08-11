@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { trainingScenarios } from "../data/trainingScenarios";
-import { formatChips } from "../lib/format";
 import { gradeTrainingAttempt } from "../lib/trainingEngine";
+import type { PokerAction } from "../types/poker";
 import { FeedbackPanel, trainingFeedbackMath } from "./PokerTable";
 
 function scenario(id: string) {
@@ -11,7 +11,7 @@ function scenario(id: string) {
   return found;
 }
 
-function renderFeedback(id: string, action: "call" | "fold") {
+function renderFeedback(id: string, action: PokerAction) {
   const selected = scenario(id);
   const graded = gradeTrainingAttempt({
     scenario: selected,
@@ -27,7 +27,6 @@ function renderFeedback(id: string, action: "call" | "fold") {
       action={action}
       graded={graded}
       mathAttempted
-      scenario={selected}
       onNext={() => undefined}
       onReview={() => undefined}
     />,
@@ -56,41 +55,26 @@ describe("training feedback mathematics", () => {
     );
   });
 
-  it("renders decision math for correct, close, and wrong actions", () => {
+  it("keeps grading concise for correct, close, and wrong actions", () => {
     const correct = renderFeedback("preflop-pot-odds-ak", "call");
     const close = renderFeedback("turn-close-flush-price", "fold");
-    const wrong = renderFeedback("flop-dirty-straight-outs", "call");
+    const wrong = renderFeedback("flop-dirty-straight-outs", "raise");
 
     for (const markup of [correct, close, wrong]) {
-      expect(markup).toContain("Decision mathematics");
-      expect(markup).toContain("Pot before your action");
-      expect(markup).toContain("Cost to call");
-      expect(markup).toContain("Required equity");
       expect(markup).toContain("Recommended action");
-      expect(markup).toContain("EV regret");
-      expect(markup).toContain("Modeled action EVs");
-      expect(markup).toContain("If your range estimate");
-      // E17: the maths must appear on correct answers too, not only mistakes.
-      expect(markup).toContain("Pot odds");
-      expect(markup).toContain("Your equity (vs a random hand)");
-      // Why the recommendation wins, from the numbers.
-      expect(markup).toContain("wins because it is worth");
-      // How far the conclusion is from flipping.
-      expect(markup).toMatch(/equity you needed|fold equity and position/);
-      // The assumption behind the equity figure is stated, not implied.
-      expect(markup).toContain("uniformly random opponent hand");
+      expect(markup).toContain("Math:");
+      expect(markup).not.toContain("Decision mathematics");
+      expect(markup).not.toContain("Pot before your action");
+      expect(markup).not.toContain("uniformly random opponent hand");
     }
-    expect(correct).toContain(formatChips(2700));
-    expect(correct).toContain("40.0%");
-    expect(close).toContain("Yes");
-    expect(wrong).toContain("0.58 bb");
+    expect(correct).toContain("correct");
+    expect(close).toContain("Strong decision");
+    expect(wrong).toContain("Needs another look");
   });
 
-  it("keeps the explanation available to assistive technology", () => {
+  it("keeps the compact result available to assistive technology", () => {
     const markup = renderFeedback("preflop-pot-odds-ak", "call");
-    // The panel is a polite live region and stays mounted until the player
-    // moves on -- it is not a transient toast.
     expect(markup).toContain('aria-live="polite"');
-    expect(markup).toContain('aria-label="Decision mathematics"');
+    expect(markup).toContain("feedback-panel--compact");
   });
 });

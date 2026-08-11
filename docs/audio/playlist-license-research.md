@@ -2,7 +2,7 @@
 
 Verified: 2026-07-23  
 Scope: paid Windows/macOS desktop application
-Status: research complete; **zero audio tracks are release-approved**
+Status: research complete; **ten Incompetech tracks acquired and accepted**
 
 ## Decision
 
@@ -11,7 +11,7 @@ The safest short list comes from two composer-owned catalogs:
 - **Silverman Sound Studios (Shane Ivers):** its official catalog expressly lists commercial products, video games, and apps. Its paid Pro License grants project-specific worldwide, perpetual distribution and sale rights without attribution.
 - **Incompetech (Kevin MacLeod):** every shortlisted track has an official CC BY 4.0 declaration. The official FAQ specifically describes a game credits screen as appropriate attribution, permits extensive edits, and offers a paid worldwide project license when attribution is not desired.
 
-Nineteen conditional candidates are recorded in [`config/audio-candidate-manifest.json`](../../config/audio-candidate-manifest.json). None is marked accepted because no exact master, proof of acquisition, personalized license, checksum, loudness result, loop test, or platform-scope confirmation has been archived.
+Ten Incompetech tracks are now accepted in [`config/audio-candidate-manifest.json`](../../config/audio-candidate-manifest.json). Their exact local masters, SHA-256 checksums, official source pages, bundled CC BY 4.0 legal code, encode report, and in-app attribution are archived. The other researched candidates remain conditional and are not bundled.
 
 The recommended route is to audition first, then buy and archive proprietary project licenses for the final 8–12 tracks. Free CC BY 4.0 use is commercially possible, but its prohibition on effective technological measures still needs legal review before placing CC BY masters in a signed desktop package.
 

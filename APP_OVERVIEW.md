@@ -118,7 +118,7 @@ The engine is independent of React and Electron. The main pieces are in
 - pairwise tournament, decision, and math rating calculations.
 
 The current replay identifiers are `tournament-session-v1`,
-`career-events-v1`, and `normal-rational-v1`. A replay records the engine/content
+`career-events-v1`, and `normal-rational-v2`. A replay records the engine/content
 and policy identifiers, seed, public action log, blind structure, simulation
 settings, and public entrant data. It does not store opponent hidden cards as a
 player-visible or exported public fact. Engine invariants and deterministic

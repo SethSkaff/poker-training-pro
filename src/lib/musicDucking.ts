@@ -29,8 +29,8 @@ const defaultTimers: DuckingTimers = {
  * Each feedback cue ducks the bed and schedules a release; overlapping cues keep
  * the bed ducked until the last one releases. Returns an unsubscribe function.
  *
- * This is inert until a licensed music manifest makes the controller non-dormant
- * (a dormant controller's `setDucking` no-ops), so it is safe to wire eagerly.
+ * An empty-manifest controller remains inert (`setDucking` no-ops), so this is
+ * safe to wire eagerly for both production and fallback configurations.
  */
 export function connectFeedbackDucking(
   audio: FeedbackObservable,

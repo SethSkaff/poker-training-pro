@@ -1,11 +1,9 @@
 /**
  * Shuffled background-music playlist engine.
  *
- * This module is deliberately DORMANT in production: it only ever creates audio
- * voices when a manifest with at least one licensed track is supplied. The
- * shipping production manifest (`src/data/musicPlaylistManifest.ts`) is empty
- * because no licensed masters exist yet, so every method below no-ops without a
- * manifest and constructs no audio graph.
+ * It creates voices only when a rights-accepted manifest contains packaged
+ * tracks. Production supplies ten licensed masters; an empty manifest remains
+ * a safe dormant fallback that constructs no audio graph.
  *
  * The engine is pure of any Web Audio dependency: time, randomness, and audio
  * output are injected so the scheduling, shuffle, crossfade, ducking, and
@@ -96,23 +94,29 @@ export function shuffleTrackIds(
 }
 
 /**
- * Produce a fresh shuffled cycle. When more than one track exists the first
- * entry is guaranteed to differ from `previousLast`, so a reshuffle never
- * repeats the track that just finished. Bounded retries keep it deterministic.
+ * Produces a shuffled cycle while keeping each choice outside the prior five
+ * whenever the library has enough alternatives. Small libraries fall back to
+ * the first shuffled candidate only when every remaining id is blocked.
  */
 export function createPlaylistOrder(
   ids: readonly string[],
   random: PlaylistRandom,
-  previousLast?: string,
+  recentHistory: string | readonly string[] = [],
 ): string[] {
-  if (ids.length <= 1) return [...ids];
-  let order = shuffleTrackIds(ids, random);
-  for (let attempt = 0; attempt < 8 && order[0] === previousLast; attempt += 1) {
-    order = shuffleTrackIds(ids, random);
-  }
-  if (order[0] === previousLast) {
-    // Deterministic fallback: rotate the repeated head to the back.
-    order = [...order.slice(1), order[0]];
+  const remaining = shuffleTrackIds(ids, random);
+  const recent = (typeof recentHistory === "string"
+    ? [recentHistory]
+    : [...recentHistory]
+  ).slice(-MUSIC_RECENT_TRACK_WINDOW);
+  const order: string[] = [];
+
+  while (remaining.length > 0) {
+    const blocked = new Set(recent.slice(-MUSIC_RECENT_TRACK_WINDOW));
+    const safeIndex = remaining.findIndex((id) => !blocked.has(id));
+    const selectedIndex = safeIndex >= 0 ? safeIndex : 0;
+    const [selected] = remaining.splice(selectedIndex, 1);
+    order.push(selected);
+    recent.push(selected);
   }
   return order;
 }
@@ -127,7 +131,13 @@ interface EngineDeps {
   readonly random: PlaylistRandom;
   /** Monotonic clock in milliseconds. */
   now(): number;
+  /** Most recent tracks from this player/session, oldest first. */
+  readonly initialRecentTrackIds?: readonly string[];
+  /** Persists the bounded recent-track window after each track begins. */
+  readonly onRecentTrackIdsChange?: (ids: readonly string[]) => void;
 }
+
+export const MUSIC_RECENT_TRACK_WINDOW = 5;
 
 export interface MusicPlaylistController {
   /** True when no manifest track is available; every method is inert. */
@@ -176,7 +186,19 @@ export function createMusicPlaylist(
   let nextStartMs = 0;
   let pausedAt = 0;
 
-  const history: string[] = [];
+  const history: string[] = (deps.initialRecentTrackIds ?? [])
+    .filter((id) => sources.has(id))
+    .slice(-MUSIC_RECENT_TRACK_WINDOW);
+
+  function recordTrack(id: string): void {
+    history.push(id);
+    const recent = history.slice(-MUSIC_RECENT_TRACK_WINDOW);
+    try {
+      deps.onRecentTrackIdsChange?.(recent);
+    } catch {
+      // Persistence is supplementary; storage denial must not stop playback.
+    }
+  }
 
   function clamp01(value: number): number {
     if (!Number.isFinite(value)) return 0;
@@ -195,8 +217,14 @@ export function createMusicPlaylist(
     if (index + 1 < order.length) {
       return { order, index: index + 1 };
     }
-    const last = order[index];
-    return { order: createPlaylistOrder(ids, deps.random, last), index: 0 };
+    return {
+      order: createPlaylistOrder(
+        ids,
+        deps.random,
+        history.slice(-MUSIC_RECENT_TRACK_WINDOW),
+      ),
+      index: 0,
+    };
   }
 
   function beginTrack(cycle: string[], at: number, startMs: number): void {
@@ -205,7 +233,7 @@ export function createMusicPlaylist(
     index = at;
     currentStartMs = startMs;
     currentVoice = source ? deps.sink.createVoice(source) : null;
-    if (source) history.push(source.id);
+    if (source) recordTrack(source.id);
     currentVoice?.setGain(0);
   }
 
@@ -225,7 +253,7 @@ export function createMusicPlaylist(
       index = nextPlan.index;
       currentStartMs = nextStartMs;
       const promotedId = order[index];
-      if (promotedId) history.push(promotedId);
+      if (promotedId) recordTrack(promotedId);
       nextVoice = null;
       nextPlan = null;
     } else {
@@ -286,7 +314,15 @@ export function createMusicPlaylist(
       paused = false;
       nextVoice = null;
       nextPlan = null;
-      beginTrack(createPlaylistOrder(ids, deps.random), 0, deps.now());
+      beginTrack(
+        createPlaylistOrder(
+          ids,
+          deps.random,
+          history.slice(-MUSIC_RECENT_TRACK_WINDOW),
+        ),
+        0,
+        deps.now(),
+      );
       tick(deps.now());
     },
     tick,

@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { projectRoot } from "./release/shared.mjs";
 
 const candidatePath = resolve(projectRoot, "config", "audio-candidate-manifest.json");
@@ -43,6 +44,15 @@ for (const track of accepted) {
       errors.push(`accepted track ${track.id} evidence is missing: ${relative}`);
     }
   }
+  const masterPath = resolve(projectRoot, track.masterPath ?? "");
+  if (existsSync(masterPath)) {
+    const actualSha256 = createHash("sha256")
+      .update(readFileSync(masterPath))
+      .digest("hex");
+    if (actualSha256 !== String(track.masterSha256).toLowerCase()) {
+      errors.push(`accepted track ${track.id} master checksum does not match`);
+    }
+  }
   if (!source.includes(`id: "${track.id}"`)) {
     errors.push(`accepted track ${track.id} is not listed in the production playlist manifest`);
   }
@@ -54,6 +64,12 @@ if (accepted.length === 0 && !/tracks:\s*\[\s*\]/s.test(source)) {
 const runtimeAudio = resolve(projectRoot, "public", "audio");
 if (accepted.length === 0 && existsSync(runtimeAudio) && readdirSync(runtimeAudio).length > 0) {
   errors.push("runtime audio files exist without an accepted rights record");
+}
+if (accepted.length > 0 && existsSync(runtimeAudio)) {
+  const runtimeFiles = readdirSync(runtimeAudio).filter((name) => !name.startsWith("."));
+  if (runtimeFiles.length !== accepted.length) {
+    errors.push(`runtime audio count ${runtimeFiles.length} does not match accepted count ${accepted.length}`);
+  }
 }
 if (errors.length > 0) throw new Error(`Audio rights validation failed:\n- ${errors.join("\n- ")}`);
 

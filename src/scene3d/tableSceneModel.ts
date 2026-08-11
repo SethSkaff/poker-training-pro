@@ -181,11 +181,21 @@ export function turnIndicatorPosition(pose: SeatPose): readonly [number, number,
  * resting chips can sit beside them, and a committed wager has one unambiguous
  * landing spot toward the middle of the felt.
  */
-export const CARD_ZONE_WIDTH = 0.25;
-export const CARD_ZONE_DEPTH = 0.16;
+// These are the authored `table/play-zone` mesh bounds, not estimates around
+// its origin. The print extends farther toward the betting line than toward
+// the owner, so a symmetric 160 mm proxy allowed racks to cover the visible
+// green rectangle even while the old centre-only assertion passed.
+export const CARD_ZONE_WIDTH = 0.256;
+export const CARD_ZONE_LOCAL_MIN_Z = -0.083;
+export const CARD_ZONE_LOCAL_MAX_Z = 0.170;
+export const CARD_ZONE_DEPTH = CARD_ZONE_LOCAL_MAX_Z - CARD_ZONE_LOCAL_MIN_Z;
+export const CARD_ZONE_LOCAL_CENTER_Z = (CARD_ZONE_LOCAL_MIN_Z + CARD_ZONE_LOCAL_MAX_Z) / 2;
 /** Distance from a seat's card lane to its printed bet circle; see build_table.py. */
-export const BET_CIRCLE_FORWARD = 0.125;
 export const BET_CIRCLE_RADIUS = 0.040;
+/** Visible felt between the protected card rectangle and every other object. */
+export const CARD_ZONE_OBJECT_GAP = 0.040;
+/** The wager line sits beyond a complete multi-column rack, not just a chip. */
+export const BET_CIRCLE_FORWARD = 0.31;
 
 /**
  * Conservative footprint for the deepest rendered chip rack.
@@ -199,15 +209,21 @@ export const BET_CIRCLE_RADIUS = 0.040;
 export const CHIP_STACK_SAFE_RADIUS = 0.13;
 
 /** Chip racks sit beside the cards, slightly toward their owner. */
-export const CHIP_STACK_LOCAL_SIDE_OFFSET = 0.145;
+/** Rack depth bias toward its owner; lateral separation is solved from bounds. */
 export const CHIP_STACK_LOCAL_OWNER_OFFSET = -0.018;
+
+/** Shared physical rack dimensions used by both placement and rendering. */
+export const CHIPS_PER_COLUMN = 8;
+export const CHIP_COLUMN_PITCH = 0.052;
+export const CHIP_PHYSICAL_RADIUS = 0.035;
+export const CHIP_RACK_COLUMNS_PER_ROW = 3;
 
 /** Radius of the physical dealer/blind marker mesh in the renderer. */
 export const TABLE_MARKER_RADIUS = 0.028;
 /** Visible air between a chip rack and the marker that describes its seat. */
 export const TABLE_MARKER_GAP = 0.024;
 /** Conservative radius of the rendered rack footprint, excluding the height. */
-export const CHIP_STACK_FOOTPRINT_RADIUS = 0.052;
+export const CHIP_STACK_FOOTPRINT_RADIUS = 0.105;
 
 /**
  * Clear table-space gap from the outside edge of a rack to its numeral.
@@ -217,7 +233,49 @@ export const CHIP_STACK_FOOTPRINT_RADIUS = 0.052;
  * camera changes lens or yaw, while leaving the committed-bet numeral on its
  * own inward betting circle.
  */
-export const STACK_AMOUNT_OUTWARD_GAP = 0.085;
+export const STACK_AMOUNT_OUTWARD_GAP = 0.014;
+
+export interface SeatOccupancyLayout {
+  readonly rackOrigin: readonly [number, number, number];
+  readonly rackSide: -1 | 0 | 1;
+  readonly markerBase: readonly [number, number, number];
+  readonly wager: readonly [number, number, number];
+  readonly stackLabel: readonly [number, number, number];
+  readonly rackBounds: ReturnType<typeof chipRackLayoutBounds>;
+}
+
+/** A centred local coordinate for one denomination-pure rack column. */
+export function chipRackColumnPosition(
+  column: number,
+  totalColumns: number,
+): readonly [number, number] {
+  const safeTotal = Math.max(1, Math.floor(totalColumns));
+  const safeColumn = Math.max(0, Math.min(safeTotal - 1, Math.floor(column)));
+  const columnsWide = Math.min(CHIP_RACK_COLUMNS_PER_ROW, safeTotal);
+  const rowsDeep = Math.ceil(safeTotal / CHIP_RACK_COLUMNS_PER_ROW);
+  return [
+    (safeColumn % CHIP_RACK_COLUMNS_PER_ROW - (columnsWide - 1) / 2) * CHIP_COLUMN_PITCH,
+    (Math.floor(safeColumn / CHIP_RACK_COLUMNS_PER_ROW) - (rowsDeep - 1) / 2) * CHIP_COLUMN_PITCH,
+  ];
+}
+
+/** Actual local footprint for a denomination-grouped rack. */
+export function chipRackLayoutBounds(amount: number): {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+} {
+  const columns = chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN);
+  if (columns.length === 0) return { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+  const points = columns.map((column) => chipRackColumnPosition(column.column, columns.length));
+  return {
+    minX: Math.min(...points.map(([x]) => x)) - CHIP_PHYSICAL_RADIUS,
+    maxX: Math.max(...points.map(([x]) => x)) + CHIP_PHYSICAL_RADIUS,
+    minZ: Math.min(...points.map(([, z]) => z)) - CHIP_PHYSICAL_RADIUS,
+    maxZ: Math.max(...points.map(([, z]) => z)) + CHIP_PHYSICAL_RADIUS,
+  };
+}
 
 /**
  * Project a point into the inset capsule that remains after reserving room for
@@ -226,9 +284,10 @@ export const STACK_AMOUNT_OUTWARD_GAP = 0.085;
  */
 function clampToSafeFelt(
   point: readonly [number, number, number],
+  footprintRadius = CHIP_STACK_SAFE_RADIUS,
 ): readonly [number, number, number] {
   const straightHalfLength = TABLE_WIDTH / 2 - TABLE_DEPTH / 2;
-  const safeRadius = TABLE_DEPTH / 2 - CHIP_STACK_SAFE_RADIUS;
+  const safeRadius = TABLE_DEPTH / 2 - footprintRadius;
   const centreX = Math.min(straightHalfLength, Math.max(-straightHalfLength, point[0]));
   const offsetX = point[0] - centreX;
   const offsetZ = point[2];
@@ -242,6 +301,186 @@ function clampToSafeFelt(
   ] as const;
 }
 
+function capsuleDistance(point: readonly [number, number, number]): number {
+  const straightHalfLength = TABLE_WIDTH / 2 - TABLE_DEPTH / 2;
+  const centreX = Math.min(straightHalfLength, Math.max(-straightHalfLength, point[0]));
+  return Math.hypot(point[0] - centreX, point[2]);
+}
+
+function orientedRackFits(
+  pose: SeatPose,
+  originLocal: readonly [number, number, number],
+  bounds: ReturnType<typeof chipRackLayoutBounds>,
+): boolean {
+  const insetRadius = TABLE_DEPTH / 2 - 0.008;
+  for (const x of [bounds.minX, bounds.maxX]) {
+    for (const z of [bounds.minZ, bounds.maxZ]) {
+      const corner = seatWorldPoint(pose, [originLocal[0] + x, TABLE_HEIGHT, originLocal[2] + z]);
+      if (capsuleDistance(corner) > insetRadius) return false;
+    }
+  }
+  return true;
+}
+
+function pointInStationFrame(
+  station: ReturnType<typeof playerStations>[number],
+  world: readonly [number, number, number],
+): readonly [number, number] {
+  const dx = world[0] - station.position[0];
+  const dz = world[2] - station.position[2];
+  const cos = Math.cos(station.facing);
+  const sin = Math.sin(station.facing);
+  return [dx * cos - dz * sin, dx * sin + dz * cos] as const;
+}
+
+function stationCardRect(station: ReturnType<typeof playerStations>[number], gap = 0) {
+  const origin = pointInStationFrame(station, station.feltPosition);
+  return {
+    minX: origin[0] - CARD_ZONE_WIDTH / 2 - gap,
+    maxX: origin[0] + CARD_ZONE_WIDTH / 2 + gap,
+    minZ: origin[1] + CARD_ZONE_LOCAL_MIN_Z - gap,
+    maxZ: origin[1] + CARD_ZONE_LOCAL_MAX_Z + gap,
+  };
+}
+
+function rackClearsAllCardZones(
+  pose: SeatPose,
+  origin: readonly [number, number, number],
+  bounds: ReturnType<typeof chipRackLayoutBounds>,
+): boolean {
+  const corners = [
+    [bounds.minX, bounds.minZ],
+    [bounds.minX, bounds.maxZ],
+    [bounds.maxX, bounds.minZ],
+    [bounds.maxX, bounds.maxZ],
+  ].map(([x, z]) => seatWorldPoint(pose, [origin[0] + x, TABLE_HEIGHT, origin[2] + z]));
+  return playerStations().every((station) => {
+    const points = corners.map((corner) => pointInStationFrame(station, corner));
+    const rackRect = {
+      minX: Math.min(...points.map(([x]) => x)),
+      maxX: Math.max(...points.map(([x]) => x)),
+      minZ: Math.min(...points.map(([, z]) => z)),
+      maxZ: Math.max(...points.map(([, z]) => z)),
+    };
+    const card = stationCardRect(station, CARD_ZONE_OBJECT_GAP);
+    return rackRect.maxX <= card.minX || rackRect.minX >= card.maxX
+      || rackRect.maxZ <= card.minZ || rackRect.minZ >= card.maxZ;
+  });
+}
+
+/**
+ * One collision-aware owner lane for every live object around a seat.
+ *
+ * The protected card rectangle is immutable. The rack is positioned from its
+ * actual denomination-column bounds plus a physical gap, then tried on both
+ * owner-relative sides. This is deliberately solved after the final table
+ * transform: a centre-only capsule clamp can keep an anchor on the felt while
+ * its outer chip columns still cross the card rectangle or rail.
+ */
+export function seatOccupancyLayout(
+  pose: SeatPose,
+  amount = 15_000,
+): SeatOccupancyLayout {
+  const cardOrigin = seatLocalPoint(pose, pose.feltPosition);
+  const card = [
+    cardOrigin[0],
+    cardOrigin[1],
+    cardOrigin[2] + CARD_ZONE_LOCAL_CENTER_Z,
+  ] as const;
+  const bounds = chipRackLayoutBounds(amount);
+  const rackCentreX = (bounds.minX + bounds.maxX) / 2;
+  const rackCentreZ = (bounds.minZ + bounds.maxZ) / 2;
+  const rackHalfX = Math.max(CHIP_PHYSICAL_RADIUS, (bounds.maxX - bounds.minX) / 2);
+  const rackHalfZ = Math.max(CHIP_PHYSICAL_RADIUS, (bounds.maxZ - bounds.minZ) / 2);
+  const lateral = CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + rackHalfX;
+  const ownerDepth = CARD_ZONE_DEPTH / 2 + CARD_ZONE_OBJECT_GAP + rackHalfZ;
+  const preferredSide = card[0] >= 0 ? 1 as const : -1 as const;
+  const slotCandidates: Array<{
+    side: -1 | 0 | 1;
+    desiredCentreX: number;
+    desiredCentreZ: number;
+    markerSide: -1 | 1;
+  }> = [
+    // Owner-side lane first: this is visually associated with the player's
+    // hands and remains clear of the printed card rectangle's long inward tail.
+    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] - ownerDepth, markerSide: preferredSide },
+    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] + ownerDepth, markerSide: preferredSide },
+    { side: preferredSide, desiredCentreX: card[0] + preferredSide * lateral, desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET, markerSide: -preferredSide as -1 | 1 },
+    { side: -preferredSide as -1 | 1, desiredCentreX: card[0] - preferredSide * lateral, desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET, markerSide: preferredSide },
+  ];
+  // Curved end seats have less room than side seats, and high-value stacks can
+  // change the rack's aspect ratio. Search a deterministic seat-local grid
+  // after the preferred owner slots so final, post-clamp bounds—not a magic
+  // offset—choose the first physically valid alternate.
+  for (const dz of [-0.28, -0.22, -0.16, -0.10, 0, 0.10, 0.16, 0.22, 0.28]) {
+    for (const dx of [0.18, -0.18, 0.24, -0.24, 0.30, -0.30, 0.36, -0.36]) {
+      const side = (dx < 0 ? -1 : 1) as -1 | 1;
+      slotCandidates.push({
+        side,
+        desiredCentreX: card[0] + dx,
+        desiredCentreZ: card[2] + dz,
+        markerSide: side === preferredSide ? -preferredSide as -1 | 1 : preferredSide,
+      });
+    }
+  }
+  const candidates = slotCandidates.map(({ side, desiredCentreX, desiredCentreZ, markerSide }) => {
+    const origin = [
+      desiredCentreX - rackCentreX,
+      TABLE_HEIGHT,
+      desiredCentreZ - rackCentreZ,
+    ] as const;
+    const markerX = card[0] + markerSide * (CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + TABLE_MARKER_RADIUS);
+    const wagerLocal = seatLocalPoint(pose, betCirclePosition(pose));
+    const nearestRackX = Math.max(
+      origin[0] + bounds.minX,
+      Math.min(origin[0] + bounds.maxX, wagerLocal[0]),
+    );
+    const nearestRackZ = Math.max(
+      origin[2] + bounds.minZ,
+      Math.min(origin[2] + bounds.maxZ, wagerLocal[2]),
+    );
+    const rackClearsWager = Math.hypot(
+      wagerLocal[0] - nearestRackX,
+      wagerLocal[2] - nearestRackZ,
+    ) >= BET_CIRCLE_RADIUS + CARD_ZONE_OBJECT_GAP;
+    return {
+      side,
+      origin,
+      markerX,
+      fits: orientedRackFits(pose, origin, bounds)
+        && rackClearsWager
+        && rackClearsAllCardZones(pose, origin, bounds),
+    };
+  });
+  const selected = candidates.find((candidate) => candidate.fits) ?? candidates
+    .sort((left, right) => {
+      const clearance = (candidate: typeof left) => {
+        const centre = seatWorldPoint(pose, candidate.origin);
+        return TABLE_DEPTH / 2 - capsuleDistance(centre);
+      };
+      return clearance(right) - clearance(left);
+    })[0];
+  const rackOrigin = seatWorldPoint(pose, selected.origin);
+  const markerBase = seatWorldPoint(pose, [
+    selected.markerX,
+    TABLE_HEIGHT + 0.012,
+    card[2],
+  ]);
+  const stackLabel = seatWorldPoint(pose, [
+    selected.origin[0] + rackCentreX,
+    TABLE_HEIGHT + 0.002,
+    selected.origin[2] + bounds.minZ - STACK_AMOUNT_OUTWARD_GAP,
+  ]);
+  return {
+    rackOrigin,
+    rackSide: selected.side,
+    markerBase,
+    wager: betCirclePosition(pose),
+    stackLabel,
+    rackBounds: bounds,
+  };
+}
+
 /**
  * Resting stack for one seat, safely inside that same seat's play lane.
  *
@@ -251,18 +490,13 @@ function clampToSafeFelt(
  */
 export function restingChipStackPosition(
   pose: SeatPose,
+  amount = 15_000,
 ): readonly [number, number, number] {
-  const cardLocal = seatLocalPoint(pose, pose.feltPosition);
-  const desired = seatWorldPoint(pose, [
-    cardLocal[0] + CHIP_STACK_LOCAL_SIDE_OFFSET,
-    TABLE_HEIGHT,
-    cardLocal[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
-  ]);
-  return clampToSafeFelt(desired);
+  return seatOccupancyLayout(pose, amount).rackOrigin;
 }
 
 /**
- * Place a dealer/blind marker between its rack and the table centre.
+ * Place a dealer/blind marker in its own side pocket beside the card lane.
  *
  * The old owner offset was a fixed local-Z nudge that happened to put every
  * puck farther from the centre than its rack. That made the marker read as a
@@ -272,29 +506,27 @@ export function restingChipStackPosition(
  */
 export function tableMarkerPosition(
   pose: SeatPose,
+  label: "D" | "SB" | "BB" = "D",
+  amount = 15_000,
 ): readonly [number, number, number] {
-  const stack = restingChipStackPosition(pose);
-  const radialLength = Math.hypot(stack[0], stack[2]) || 1;
-  const towardCentre = [-stack[0] / radialLength, -stack[2] / radialLength] as const;
-  const advance = CHIP_STACK_FOOTPRINT_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS;
-  return clampToSafeFelt([
-    stack[0] + towardCentre[0] * advance,
+  const layout = seatOccupancyLayout(pose, amount);
+  const base = seatLocalPoint(pose, layout.markerBase);
+  // Heads-up poker gives one player both D and SB. Distinct local-Z pockets
+  // prevent those physical pucks from occupying each other.
+  const slotOffset = label === "D" ? -0.065 : label === "SB" ? 0.065 : 0;
+  return seatWorldPoint(pose, [
+    base[0],
     TABLE_HEIGHT + 0.012,
-    stack[2] + towardCentre[1] * advance,
+    base[2] + slotOffset,
   ]);
 }
 
 /** World anchor for the exact number that describes a player's remaining rack. */
 export function stackAmountPosition(
   pose: SeatPose,
+  amount = 15_000,
 ): readonly [number, number, number] {
-  const stack = restingChipStackPosition(pose);
-  const local = seatLocalPoint(pose, stack);
-  return seatWorldPoint(pose, [
-    local[0],
-    TABLE_HEIGHT + 0.002,
-    local[2] - STACK_AMOUNT_OUTWARD_GAP,
-  ]);
+  return seatOccupancyLayout(pose, amount).stackLabel;
 }
 
 /** World anchor for the exact number that describes chips pushed forward. */
@@ -400,13 +632,14 @@ export function seatStackAmountViewportAnchor(
   heroIndex = 0,
   cameraZoom = 0,
   cameraView: SceneCameraView = "standard",
+  amount = 15_000,
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
   if (!Number.isInteger(relativeSeat) || relativeSeat < 0) return undefined;
   if (relativeSeat >= PLAYER_STATION_COUNT || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose) return undefined;
   const projected = projectToViewport(
-    stackAmountPosition(pose),
+    stackAmountPosition(pose, amount),
     cameraPose(cameraPan, heroIndex, viewportWidth / viewportHeight, cameraLensZoom(cameraView, cameraZoom)),
     viewportWidth,
     viewportHeight,
@@ -446,13 +679,14 @@ export function seatStackAmountViewportAnchorFromCamera(
   viewportHeight: number,
   heroIndex: number,
   activeCamera: ReturnType<typeof cameraPose>,
+  amount = 15_000,
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
   if (!Number.isInteger(relativeSeat) || relativeSeat < 0 || relativeSeat >= PLAYER_STATION_COUNT) {
     return undefined;
   }
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
-  const projected = projectToViewport(stackAmountPosition(pose), activeCamera, viewportWidth, viewportHeight);
+  const projected = projectToViewport(stackAmountPosition(pose, amount), activeCamera, viewportWidth, viewportHeight);
   return projected.behind ? undefined : { xPercent: projected.xPercent, yPercent: projected.yPercent };
 }
 
@@ -544,8 +778,9 @@ export const POT_POSITION: readonly [number, number, number] = [0, TABLE_HEIGHT,
 export function betChipPosition(
   pose: SeatPose,
   progress: number,
+  rackAmount = 15_000,
 ): readonly [number, number, number] {
-  return chipPositionAlongPush(pose, progress, 0.06);
+  return chipPositionAlongPush(pose, progress, 0.06, rackAmount);
 }
 
 /**
@@ -557,8 +792,9 @@ export function betChipPosition(
 export function callChipPosition(
   pose: SeatPose,
   progress: number,
+  rackAmount = 15_000,
 ): readonly [number, number, number] {
-  return chipPositionAlongPush(pose, progress, 0.035);
+  return chipPositionAlongPush(pose, progress, 0.035, rackAmount);
 }
 
 /**
@@ -569,9 +805,10 @@ export function callChipPosition(
 export function raiseChipPosition(
   pose: SeatPose,
   progress: number,
+  rackAmount = 15_000,
 ): readonly [number, number, number] {
   const t = actionEase(progress);
-  const [x, y, z] = pose.feltPosition;
+  const [x, y, z] = restingChipStackPosition(pose, rackAmount);
   const circle = betCirclePosition(pose);
   if (t === 1) return circle;
   /*
@@ -590,7 +827,7 @@ export function raiseChipPosition(
     z - Math.cos(pose.facing) * 0.045,
   ];
   const segment = t < 0.34 ? t / 0.34 : (t - 0.34) / 0.66;
-  const from = t < 0.34 ? pose.feltPosition : gather;
+  const from = t < 0.34 ? [x, y, z] as const : gather;
   const to = t < 0.34 ? gather : circle;
   const lift = Math.sin(Math.PI * t) * 0.085;
   return [
@@ -604,8 +841,9 @@ export function raiseChipPosition(
 export function allInChipPosition(
   pose: SeatPose,
   progress: number,
+  rackAmount = 15_000,
 ): readonly [number, number, number] {
-  return chipPositionAlongPush(pose, progress, 0.11);
+  return chipPositionAlongPush(pose, progress, 0.11, rackAmount);
 }
 
 /**
@@ -646,9 +884,10 @@ function chipPositionAlongPush(
   pose: SeatPose,
   progress: number,
   maxLift: number,
+  rackAmount: number,
 ): readonly [number, number, number] {
   const t = actionEase(progress);
-  const [x, y, z] = pose.feltPosition;
+  const [x, y, z] = restingChipStackPosition(pose, rackAmount);
   const circle = betCirclePosition(pose);
   if (t === 1) return circle;
   const lift = Math.sin(Math.PI * t) * maxLift;
@@ -782,12 +1021,10 @@ export function chipColumnLayoutForAmount(
   let column = 0;
   for (const [denomination, count] of [...groups.entries()].sort(([a], [b]) => a - b)) {
     let remaining = count;
-    // A short high-denomination group is visually sparse but economically
-    // important. Give each chip its own adjacent footprint while it remains a
-    // small group; do not turn a very large balance into one column per chip.
-    const columnCapacity = denomination >= 5_000 && count <= chipsPerColumn
-      ? 1
-      : chipsPerColumn;
+    // One coherent denomination group per column. Only split when the normal
+    // physical height limit is actually reached; two orange chips must be one
+    // two-chip orange stack, never two duplicate orange racks.
+    const columnCapacity = chipsPerColumn;
     while (remaining > 0) {
       const size = Math.min(columnCapacity, remaining);
       result.push({ denomination, count: size, column });

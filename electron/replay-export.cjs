@@ -163,7 +163,7 @@ function validateAndCanonicalizeReplay(source) {
     source.version !== 1 ||
     source.engineVersion !== "tournament-session-v1" ||
     source.contentVersion !== "career-events-v1" ||
-    source.policyVersion !== "normal-rational-v1" ||
+    source.policyVersion !== "normal-rational-v2" ||
     !boundedInteger(source.policySimulations, 1, 10_000) ||
     !KINDS.has(source.kind) ||
     !validIdentifier(source.eventId) ||

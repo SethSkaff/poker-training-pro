@@ -234,7 +234,84 @@ interface ModeSelectProps {
   onSelect: (mode: GameMode | "timed" | "tutorial" | "reference") => void;
 }
 
+interface TableViewSelectProps {
+  initialSpatialScene: boolean;
+  onBack: () => void;
+  onSelect: (spatialScene: boolean) => void;
+}
+
+/** Explicit table-view choice shown in the Play path, before game selection. */
+export function TableViewSelect({
+  initialSpatialScene,
+  onBack,
+  onSelect,
+}: TableViewSelectProps) {
+  return (
+    <main
+      className="night-shell night-shell--table-view-select"
+      aria-labelledby="table-view-select-title"
+      {...localeTextAttributes()}
+    >
+      <NightCircuitScene quiet />
+      <section className="table-view-stage">
+        <header>
+          <button className="night-back" type="button" onClick={onBack}>
+            <ArrowLeft size={18} /> {formatMessage("dashboard.nav.backToMenu")}
+          </button>
+          <div>
+            <p className="night-section-label">{formatMessage("common.play")}</p>
+            <h1 id="table-view-select-title">
+              {formatMessage("dashboard.tableView.title")}
+            </h1>
+          </div>
+        </header>
+        <div className="table-view-choices">
+          <button
+            type="button"
+            className={!initialSpatialScene ? "is-preferred" : ""}
+            aria-label={formatMessage("dashboard.tableView.2d.ariaLabel")}
+            onClick={() => onSelect(false)}
+          >
+            <span className="table-view-preview table-view-preview--2d" aria-hidden="true">
+              <i className="table-view-preview__felt" />
+              <i className="table-view-preview__board" />
+              <i className="table-view-preview__hand"><b /><b /></i>
+              <i className="table-view-preview__seats"><b /><b /><b /><b /><b /></i>
+              <i className="table-view-preview__dock" />
+            </span>
+            <strong>{formatMessage("dashboard.tableView.2d.label")}</strong>
+            <small>{formatMessage("dashboard.tableView.2d.description")}</small>
+            {!initialSpatialScene && <em>{formatMessage("dashboard.tableView.lastUsed")}</em>}
+          </button>
+          <button
+            type="button"
+            className={initialSpatialScene ? "is-preferred" : ""}
+            aria-label={formatMessage("dashboard.tableView.3d.ariaLabel")}
+            onClick={() => onSelect(true)}
+          >
+            <span className="table-view-preview table-view-preview--3d" aria-hidden="true">
+              <i className="table-view-preview__felt" />
+              <i className="table-view-preview__board" />
+              <i className="table-view-preview__seats"><b /><b /><b /><b /><b /></i>
+              <i className="table-view-preview__dock" />
+            </span>
+            <strong>{formatMessage("dashboard.tableView.3d.label")}</strong>
+            <small>{formatMessage("dashboard.tableView.3d.description")}</small>
+            {initialSpatialScene && <em>{formatMessage("dashboard.tableView.lastUsed")}</em>}
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
+  const [fullscreenFallback] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const notice = window.sessionStorage.getItem("poker-fullscreen-fallback") ?? "";
+    window.sessionStorage.removeItem("poker-fullscreen-fallback");
+    return notice;
+  });
   return (
     <main
       className="night-shell night-shell--mode-select"
@@ -252,6 +329,9 @@ export function ModeSelect({ onBack, onSelect }: ModeSelectProps) {
             <h1 id="mode-select-title">{formatMessage("dashboard.modeSelect.title")}</h1>
           </div>
         </header>
+        {fullscreenFallback && (
+          <p className="mode-stage__notice" role="status">{fullscreenFallback}</p>
+        )}
 
         <div className="mode-stage__choices">
           <button

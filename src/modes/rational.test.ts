@@ -10,8 +10,46 @@ import {
   estimateRangeEquitySliced,
   MAX_EQUITY_SIMULATIONS_PER_DECISION,
   MAX_EQUITY_SIMULATIONS_PER_SLICE,
+  tournamentPressureAdjustment,
   type RationalPolicyInput,
 } from "./rational";
+
+describe("tournament pressure context", () => {
+  it("makes an imminent big blind visible without treating it as pure survival risk", () => {
+    const adjustment = tournamentPressureAdjustment(
+      {
+        playersRemaining: 6,
+        paidPlaces: 2,
+        placesToQualification: 4,
+        averageStack: 12_000,
+        imminentBigBlind: true,
+      },
+      3_000,
+      2_000,
+    );
+    expect(adjustment.blindUrgency).toBeGreaterThan(0.8);
+    expect(adjustment.tournamentPressure).toBeGreaterThan(0.09);
+    expect(adjustment.imminentBigBlind).toBe(true);
+    expect(adjustment.riskPremium).toBeGreaterThan(0);
+    expect(adjustment.riskPremium).toBeLessThan(0.03);
+  });
+
+  it("keeps bubble survival pressure distinct from blind urgency", () => {
+    const adjustment = tournamentPressureAdjustment(
+      {
+        playersRemaining: 3,
+        paidPlaces: 2,
+        placesToQualification: 1,
+        averageStack: 10_000,
+        handForHand: true,
+      },
+      20_000,
+      1_000,
+    );
+    expect(adjustment.riskPremium).toBeGreaterThan(0.1);
+    expect(adjustment.blindUrgency).toBe(0);
+  });
+});
 
 const suits: Record<string, Suit> = {
   c: "clubs",
@@ -588,6 +626,29 @@ describe("escalating raise wars", () => {
       probabilityByType(decision, "all-in");
 
     expect(probabilityByType(decision, "call")).toBeGreaterThan(aggressive);
+  });
+
+  it("lets robust value punish committed aggression on a dynamic board", () => {
+    const spot = makeSpot({
+      heroCards: cards("Ah", "Ad"),
+      board: cards("Ac", "Jh", "Th"),
+      pot: 2_000,
+      currentBet: 500,
+      heroStack: 8_000,
+      villainStack: 8_000,
+      actions: warActions(3),
+    });
+    const decision = decideRationalAction(
+      input(spot, facingBetLegal(spot), { simulations: 240, temperature: 0.3 }),
+    );
+    const fold = decision.distribution.find((option) => option.command.type === "fold");
+    const bestAggression = decision.distribution
+      .filter((option) => option.command.type === "raise" || option.command.type === "all-in")
+      .sort((left, right) => right.utilityBigBlinds - left.utilityBigBlinds)[0];
+
+    expect(bestAggression).toBeDefined();
+    expect(bestAggression?.utilityBigBlinds).toBeGreaterThan(fold?.utilityBigBlinds ?? 0);
+    expect(probabilityByType(decision, "fold")).toBeLessThan(0.01);
   });
 
   it("does not shove a deep stack without a commanding edge", () => {

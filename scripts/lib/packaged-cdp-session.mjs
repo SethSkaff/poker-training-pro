@@ -226,7 +226,7 @@ export class PackagedSession {
   async describeScreen() {
     try {
       const description = await this.evaluate(`(() => {
-        const marks = ['.home-reference', '.mode-stage', '.room-flight', '.poker-table',
+        const marks = ['.home-reference', '.table-view-stage', '.mode-stage', '.room-flight', '.poker-table',
           '.ceremony-board', '.night-settings', '.review-shell', '.career-travel',
           '.recovery-shell', '.startup-gate', '.scene-loading'];
         const present = marks.filter((mark) => document.querySelector(mark) !== null);

@@ -20,6 +20,7 @@ import {
   trainingScenarioSimilarity,
   rejectUnsuitableScenarios,
   NEAR_DUPLICATE_SIMILARITY,
+  TRAINING_SCENARIO_REPEAT_WINDOW,
 } from "./trainingEngine";
 import { defaultProgress, defaultSettings } from "./storage";
 import { createSaveEnvelope, restoreSaveBackup } from "./saveMigration";
@@ -329,7 +330,7 @@ describe("near-transfer selection", () => {
     for (const start of trainingScenarios) {
       const ids = [start.id];
       let current = start;
-      for (let draw = 0; draw < 100; draw += 1) {
+      for (let draw = 0; draw < trainingScenarios.length * 2; draw += 1) {
         const next = selectNearTransferScenario(current, {
           completedScenarioIds: ids,
           recentScenarioIds: ids,
@@ -348,6 +349,30 @@ describe("near-transfer selection", () => {
         ).size,
       ).toBeGreaterThan(2);
     }
+  });
+
+  it("never repeats any of the prior 50 ids when a fresh scenario exists", () => {
+    const base = scenario("preflop-pot-odds-ak");
+    const pool = Array.from(
+      { length: TRAINING_SCENARIO_REPEAT_WINDOW + 2 },
+      (_, index): RatedTrainingScenario => ({
+        ...base,
+        id: `repeat-window-${index}`,
+      }),
+    );
+    const current = pool[TRAINING_SCENARIO_REPEAT_WINDOW];
+    const recentScenarioIds = pool
+      .slice(0, TRAINING_SCENARIO_REPEAT_WINDOW)
+      .map((item) => item.id);
+
+    const next = selectNearTransferScenario(
+      current,
+      { recentScenarioIds },
+      pool,
+    );
+
+    expect(next?.id).toBe(`repeat-window-${TRAINING_SCENARIO_REPEAT_WINDOW + 1}`);
+    expect(recentScenarioIds).not.toContain(next?.id);
   });
 
   it("tracks the poker features needed to avoid near-duplicate recent prompts", () => {

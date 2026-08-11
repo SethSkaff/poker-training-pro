@@ -45,6 +45,10 @@ vi.mock("../lib/localeMessages", async (importOriginal) => {
 
 import { trainingScenarios } from "../data/trainingScenarios";
 import {
+  productionMusicCredits,
+  productionMusicLicense,
+} from "../data/musicPlaylistManifest";
+import {
   DurablePersistence as DurablePersistenceCtor,
   type DesktopPersistenceBridge,
   type DurablePersistence,
@@ -67,7 +71,11 @@ import {
 } from "./Dashboard";
 import { PlayableTutorial } from "./PlayableTutorial";
 import { PlayChipAcknowledgment } from "./PlayChipAcknowledgment";
-import { firstNameFor2DPlayer, PokerTable } from "./PokerTable";
+import {
+  firstNameFor2DPlayer,
+  PokerTable,
+  pokerMathQuestionSegments,
+} from "./PokerTable";
 import { RecoveryScreen, type RecoveryScreenActions } from "./RecoveryScreen";
 import { RoomFlythrough } from "./RoomFlythrough";
 import { SaveDataControls } from "./SaveDataControls";
@@ -232,6 +240,14 @@ describe("pseudo-locale completeness sweep", () => {
 
   it("credits screen", () => {
     const markup = renderToStaticMarkup(<CreditsScreen onBack={() => undefined} />);
+    const musicExemptions = [
+      ...productionMusicCredits.flatMap((credit) => [
+        credit.title,
+        `— ${credit.author}`,
+        credit.isrc,
+      ]),
+      productionMusicLicense.name,
+    ];
     // src/lib/creditsData.ts (assembleCredits) now resolves every section
     // title, note, version-row label, and non-font document label through
     // the message catalog. The only remaining raw literals are the two font
@@ -239,6 +255,7 @@ describe("pseudo-locale completeness sweep", () => {
     // ("Inter — SIL Open Font License 1.1") -- proper nouns/license
     // identifiers, not composed UI prose, deliberately left untranslated.
     expectScreenIsPseudoLocalized(markup, [
+      ...musicExemptions,
       "Inter — SIL Open Font License 1.1",
       "Barlow Condensed — SIL Open Font License 1.1",
     ]);
@@ -429,7 +446,9 @@ describe("pseudo-locale completeness sweep", () => {
     expectScreenIsPseudoLocalized(markup, [
       scenario.title,
       scenario.prompt,
-      scenario.mathQuestion.prompt,
+      ...pokerMathQuestionSegments(scenario.mathQuestion.prompt).map(
+        (segment) => segment.text.trim(),
+      ),
       mathTopicTitle,
       ...scenario.players.map((player) => firstNameFor2DPlayer(player.id)),
     ]);

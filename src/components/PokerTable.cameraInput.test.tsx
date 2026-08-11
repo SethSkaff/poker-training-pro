@@ -9,17 +9,23 @@ const css = () => readFileSync(path.join(sourceRoot, "styles.css"), "utf8");
 describe("table camera input contract", () => {
   it("captures an open lower-table pointer drag before DOM overlays can stop it", () => {
     const source = tableSource();
-    expect(source).toContain("onPointerDownCapture={beginCameraDrag}");
-    expect(source).toContain("onPointerMoveCapture={updateCameraDrag}");
+    expect(source).toContain("onPointerDownCapture={isTwoDMode ? undefined : beginCameraDrag}");
+    expect(source).toContain("onPointerMoveCapture={isTwoDMode ? undefined : updateCameraDrag}");
     expect(source).toContain("event.currentTarget.setPointerCapture(event.pointerId)");
     expect(source).toContain("event.preventDefault();");
   });
 
   it("captures wheel zoom on the whole scene and suppresses native page behaviour", () => {
     const source = tableSource();
-    expect(source).toContain("onWheelCapture={handleCameraWheel}");
+    expect(source).toContain("onWheelCapture={isTwoDMode ? undefined : handleCameraWheel}");
     expect(source).toContain("cameraZoomFromWheel(current, event.deltaY, event.deltaMode)");
     expect(source).toContain("event.preventDefault();");
+  });
+
+  it("never attaches pan or zoom handlers in the fixed 2D client", () => {
+    const source = tableSource();
+    expect(source).toContain("onPointerDownCapture={isTwoDMode ? undefined : beginCameraDrag}");
+    expect(source).toContain("onWheelCapture={isTwoDMode ? undefined : handleCameraWheel}");
   });
 
   it("prevents HUD selection while retaining editable text controls", () => {

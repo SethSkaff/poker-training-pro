@@ -130,6 +130,9 @@ export interface TrainingStartOptions {
   mathElo?: number;
 }
 
+/** Exact scenarios are withheld for this many completed plays when the bank permits. */
+export const TRAINING_SCENARIO_REPEAT_WINDOW = 50;
+
 /**
  * Parses the compact answers players commonly use at a poker table.
  *
@@ -557,7 +560,9 @@ export function selectNearTransferScenario(
   if (!current) return undefined;
 
   const completed = new Set(options.completedScenarioIds ?? []);
-  const recent = [...(options.recentScenarioIds ?? [])].slice(-6);
+  const recent = [...(options.recentScenarioIds ?? [])].slice(
+    -TRAINING_SCENARIO_REPEAT_WINDOW,
+  );
   const recentSet = new Set([...recent, current.id]);
   const recentScenarios = recent
     .map((id) => pool.find((scenario) => scenario.id === id))
@@ -583,8 +588,20 @@ export function selectNearTransferScenario(
       ? pool.filter((scenario) => !rejectedIds.has(scenario.id))
       : pool;
 
-  const candidates = eligible
-    .filter((scenario) => scenario.id !== current.id)
+  const eligibleCandidates = eligible.filter(
+    (scenario) => scenario.id !== current.id,
+  );
+  const outsideRepeatWindow = eligibleCandidates.filter(
+    (scenario) => !recentSet.has(scenario.id),
+  );
+  // With the intended 100+ scenario bank this is a hard no-repeat contract.
+  // The current small curated bank eventually exhausts all choices, so only
+  // then do we fall back to the scored least-recent option instead of stalling.
+  const repeatSafeCandidates = outsideRepeatWindow.length
+    ? outsideRepeatWindow
+    : eligibleCandidates;
+
+  const candidates = repeatSafeCandidates
     .map((scenario) => {
       let score = 0;
       // A fresh scenario always wins over a superficially similar repeat. This

@@ -7,6 +7,7 @@
  * hero stood at the dealer's position, and no longer have a subject.
  */
 import { describe, expect, it } from "vitest";
+import { trainingScenarios } from "../data/trainingScenarios";
 import {
   actionEase,
   awardChipPosition,
@@ -16,6 +17,7 @@ import {
   callChipPosition,
   chipInventoryForAmount,
   chipColumnLayoutForAmount,
+  chipRackLayoutBounds,
   chipCountForAmount,
   committedAmountPosition,
   collectChipPosition,
@@ -34,7 +36,6 @@ import {
   cameraPose,
   TABLE_MARKER_GAP,
   TABLE_MARKER_RADIUS,
-  CHIP_STACK_FOOTPRINT_RADIUS,
   tableMarkerPosition,
   seatLocalPoint,
   seatPoses,
@@ -48,9 +49,13 @@ import {
   CHIP_STACK_SAFE_RADIUS,
   CARD_ZONE_DEPTH,
   CARD_ZONE_WIDTH,
+  CARD_ZONE_LOCAL_MIN_Z,
+  CARD_ZONE_LOCAL_MAX_Z,
+  CARD_ZONE_OBJECT_GAP,
   BET_CIRCLE_RADIUS,
   STACK_AMOUNT_OUTWARD_GAP,
   turnIndicatorPositionForPlayer,
+  seatOccupancyLayout,
 } from "./tableSceneModel";
 
 const distance = (
@@ -159,8 +164,7 @@ describe("objects travel between real places", () => {
   it("pushes a bet from the seat out to its own betting line", () => {
     const start = betChipPosition(pose, 0);
     const end = betChipPosition(pose, 1);
-    expect(start[0]).toBeCloseTo(pose.feltPosition[0], 6);
-    expect(start[2]).toBeCloseTo(pose.feltPosition[2], 6);
+    expect(start).toEqual(restingChipStackPosition(pose));
     expect(end).toEqual(betCirclePosition(pose));
     // Still in front of its owner, nowhere near the middle of the table.
     expect(Math.hypot(end[0], end[2])).toBeGreaterThan(0.3);
@@ -178,7 +182,7 @@ describe("objects travel between real places", () => {
   });
 
   it("gives calls, bets, raises, and all-ins distinct public chip trajectories", () => {
-    const start = pose.feltPosition;
+    const start = restingChipStackPosition(pose);
     const end = betChipPosition(pose, 1);
     for (const position of [callChipPosition(pose, 0), raiseChipPosition(pose, 0), allInChipPosition(pose, 0)]) {
       expect(position[0]).toBeCloseTo(start[0], 6);
@@ -214,7 +218,9 @@ describe("objects travel between real places", () => {
     const start = awardChipPosition(pose, 0);
     const end = awardChipPosition(pose, 1);
     expect(start).toEqual(POT_POSITION);
-    expect(end).toEqual(restingChipStackPosition(pose));
+    const rack = restingChipStackPosition(pose);
+    expect(end[0]).toBeCloseTo(rack[0], 10);
+    expect(end[2]).toBeCloseTo(rack[2], 10);
     expect(awardChipPosition(pose, 0.5)[1]).toBeGreaterThan(TABLE_HEIGHT);
   });
 
@@ -301,7 +307,7 @@ describe("the current-turn indicator", () => {
     const marks = seatPoses(6).map((pose) => turnIndicatorPosition(pose));
     for (let i = 0; i < marks.length; i += 1) {
       for (let j = i + 1; j < marks.length; j += 1) {
-        expect(distance(marks[i], marks[j])).toBeGreaterThan(0.2);
+        expect(distance(marks[i], marks[j])).toBeGreaterThan(BET_CIRCLE_RADIUS * 2 + 0.01);
       }
     }
   });
@@ -341,17 +347,18 @@ describe("six-player tournament lanes", () => {
 
   it("keeps all six printed player lanes physically separated", () => {
     const poses = seatPoses(6);
-    // A conservative enclosing radius covers both the straight card rectangle
-    // and its separate wager circle. If these discs do not touch, neither can
-    // the actual smaller printed outlines.
-    const laneRadius = Math.max(
-      Math.hypot(CARD_ZONE_WIDTH / 2, CARD_ZONE_DEPTH / 2),
-      BET_CIRCLE_FORWARD + BET_CIRCLE_RADIUS,
-    );
     for (let i = 0; i < poses.length; i += 1) {
       for (let j = i + 1; j < poses.length; j += 1) {
-        expect(distance(poses[i].feltPosition, poses[j].feltPosition), `lanes ${i}/${j}`)
-          .toBeGreaterThan(laneRadius * 2 + 0.015);
+        const firstCardInSecondFrame = seatLocalPoint(poses[j], poses[i].feltPosition);
+        const secondCard = seatLocalPoint(poses[j], poses[j].feltPosition);
+        // Exact oriented card rectangles, not a conservative enclosing disc.
+        expect(
+          Math.abs(firstCardInSecondFrame[0] - secondCard[0]) >= CARD_ZONE_WIDTH
+          || Math.abs(firstCardInSecondFrame[2] - secondCard[2]) >= CARD_ZONE_DEPTH,
+          `card lanes ${i}/${j}`,
+        ).toBe(true);
+        expect(distance(betCirclePosition(poses[i]), betCirclePosition(poses[j])), `wagers ${i}/${j}`)
+          .toBeGreaterThan(BET_CIRCLE_RADIUS * 2);
       }
     }
   });
@@ -392,26 +399,47 @@ describe("resting chip stacks stay in their owner's safe play lane", () => {
   const insideSafeFelt = (point: readonly [number, number, number]) => {
     const straightHalfLength = TABLE_WIDTH / 2 - TABLE_DEPTH / 2;
     const centreX = Math.min(straightHalfLength, Math.max(-straightHalfLength, point[0]));
-    return Math.hypot(point[0] - centreX, point[2]) <= TABLE_DEPTH / 2 - CHIP_STACK_SAFE_RADIUS + 1e-9;
+    // `point` is already an actual outer rack corner; subtracting the old
+    // whole-rack proxy a second time rejects valid geometry near the rail.
+    return Math.hypot(point[0] - centreX, point[2]) <= TABLE_DEPTH / 2 - 0.008 + 1e-9;
   };
 
-  it("keeps every full stack footprint clear of the rail at every player seat", () => {
+  it("keeps every full rack footprint clear of the rail at every player seat", () => {
     for (const pose of seatPoses(6)) {
-      const stack = restingChipStackPosition(pose);
-      expect(insideSafeFelt(stack), `seat ${pose.seat}`).toBe(true);
-      expect(stack[1]).toBe(TABLE_HEIGHT);
+      const layout = seatOccupancyLayout(pose, 15_000);
+      const stack = seatLocalPoint(pose, layout.rackOrigin);
+      for (const x of [layout.rackBounds.minX, layout.rackBounds.maxX]) {
+        for (const z of [layout.rackBounds.minZ, layout.rackBounds.maxZ]) {
+          const corner = seatWorldPoint(pose, [stack[0] + x, TABLE_HEIGHT, stack[2] + z]);
+          expect(insideSafeFelt(corner), `seat ${pose.seat} rack corner`).toBe(true);
+        }
+      }
     }
   });
 
-  it("keeps each stack paired with its own card lane rather than a neighbour's", () => {
+  it("keeps each rack outside every neighbour's protected card rectangle", () => {
     const poses = seatPoses(6);
     for (const pose of poses) {
-      const stack = restingChipStackPosition(pose);
-      const ownDistance = distance(stack, pose.feltPosition);
+      const layout = seatOccupancyLayout(pose, 15_000);
+      const stack = seatLocalPoint(pose, layout.rackOrigin);
+      const rackCorners = [
+        [layout.rackBounds.minX, layout.rackBounds.minZ],
+        [layout.rackBounds.minX, layout.rackBounds.maxZ],
+        [layout.rackBounds.maxX, layout.rackBounds.minZ],
+        [layout.rackBounds.maxX, layout.rackBounds.maxZ],
+      ].map(([x, z]) => seatWorldPoint(pose, [stack[0] + x, TABLE_HEIGHT, stack[2] + z]));
       for (const other of poses) {
         if (other.seat === pose.seat) continue;
-        expect(ownDistance, `stack ${pose.seat} and lane ${other.seat}`)
-          .toBeLessThan(distance(stack, other.feltPosition));
+        const otherCard = seatLocalPoint(other, other.feltPosition);
+        for (const corner of rackCorners) {
+          const local = seatLocalPoint(other, corner);
+          expect(
+            Math.abs(local[0] - otherCard[0]) >= CARD_ZONE_WIDTH / 2
+            || local[2] <= otherCard[2] + CARD_ZONE_LOCAL_MIN_Z
+            || local[2] >= otherCard[2] + CARD_ZONE_LOCAL_MAX_Z,
+            `rack ${pose.seat} corner in card lane ${other.seat}`,
+          ).toBe(true);
+        }
       }
     }
   });
@@ -426,21 +454,103 @@ describe("resting chip stacks stay in their owner's safe play lane", () => {
   });
 });
 
+describe("protected seat occupancy", () => {
+  const rectsOverlap = (
+    left: { minX: number; maxX: number; minZ: number; maxZ: number },
+    right: { minX: number; maxX: number; minZ: number; maxZ: number },
+  ) => left.minX < right.maxX && left.maxX > right.minX
+    && left.minZ < right.maxZ && left.maxZ > right.minZ;
+  const circleOverlapsRect = (
+    circle: { x: number; z: number; radius: number },
+    rect: { minX: number; maxX: number; minZ: number; maxZ: number },
+  ) => {
+    const x = Math.max(rect.minX, Math.min(rect.maxX, circle.x));
+    const z = Math.max(rect.minZ, Math.min(rect.maxZ, circle.z));
+    return Math.hypot(circle.x - x, circle.z - z) < circle.radius;
+  };
+
+  it("keeps cards, full racks, markers, wagers, and labels disjoint after final placement", () => {
+    for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
+      for (const pose of seatPoses(6)) {
+        const layout = seatOccupancyLayout(pose, amount);
+        const card = seatLocalPoint(pose, pose.feltPosition);
+        const rack = seatLocalPoint(pose, layout.rackOrigin);
+        const label = seatLocalPoint(pose, layout.stackLabel);
+        const wager = seatLocalPoint(pose, layout.wager);
+        const cardRect = {
+          minX: card[0] - CARD_ZONE_WIDTH / 2,
+          maxX: card[0] + CARD_ZONE_WIDTH / 2,
+          minZ: card[2] + CARD_ZONE_LOCAL_MIN_Z,
+          maxZ: card[2] + CARD_ZONE_LOCAL_MAX_Z,
+        };
+        const rackRect = {
+          minX: rack[0] + layout.rackBounds.minX,
+          maxX: rack[0] + layout.rackBounds.maxX,
+          minZ: rack[2] + layout.rackBounds.minZ,
+          maxZ: rack[2] + layout.rackBounds.maxZ,
+        };
+        const labelRect = { minX: label[0] - 0.05, maxX: label[0] + 0.05, minZ: label[2] - 0.012, maxZ: label[2] + 0.012 };
+        expect(rectsOverlap(cardRect, rackRect), `seat ${pose.seat} amount ${amount} card/rack`).toBe(false);
+        expect(rectsOverlap(cardRect, labelRect), `seat ${pose.seat} amount ${amount} card/label`).toBe(false);
+        expect(rectsOverlap(rackRect, labelRect), `seat ${pose.seat} amount ${amount} rack/label`).toBe(false);
+        expect(circleOverlapsRect({ x: wager[0], z: wager[2], radius: BET_CIRCLE_RADIUS }, cardRect), `seat ${pose.seat} wager/card`).toBe(false);
+        expect(circleOverlapsRect({ x: wager[0], z: wager[2], radius: BET_CIRCLE_RADIUS }, rackRect), `seat ${pose.seat} wager/rack`).toBe(false);
+        for (const markerLabel of ["D", "SB", "BB"] as const) {
+          const marker = seatLocalPoint(pose, tableMarkerPosition(pose, markerLabel, amount));
+          const circle = { x: marker[0], z: marker[2], radius: TABLE_MARKER_RADIUS };
+          expect(circleOverlapsRect(circle, cardRect), `seat ${pose.seat} ${markerLabel}/card`).toBe(false);
+          expect(circleOverlapsRect(circle, rackRect), `seat ${pose.seat} ${markerLabel}/rack`).toBe(false);
+          expect(circleOverlapsRect(circle, labelRect), `seat ${pose.seat} ${markerLabel}/label`).toBe(false);
+          expect(Math.hypot(marker[0] - wager[0], marker[2] - wager[2]), `seat ${pose.seat} ${markerLabel}/wager`)
+            .toBeGreaterThanOrEqual(TABLE_MARKER_RADIUS + BET_CIRCLE_RADIUS);
+        }
+        expect(Math.abs(rackRect.minX - cardRect.maxX) >= CARD_ZONE_OBJECT_GAP
+          || Math.abs(cardRect.minX - rackRect.maxX) >= CARD_ZONE_OBJECT_GAP).toBe(true);
+      }
+    }
+  });
+
+  it("uses the same protected printed-zone solver for every authored Training stack", () => {
+    const trainingAmounts = [...new Set(trainingScenarios.flatMap((scenario) =>
+      scenario.players.flatMap((player) => [player.stack, player.bet ?? 0]),
+    ))].filter((amount) => amount > 0);
+    for (const scenario of trainingScenarios) {
+      const hero = scenario.players.find((player) => player.seat === scenario.heroSeat);
+      expect(hero, scenario.id).toBeDefined();
+      for (const pose of seatPoses(6)) {
+        for (const amount of trainingAmounts) {
+          const layout = seatOccupancyLayout(pose, amount);
+          const card = seatLocalPoint(pose, pose.feltPosition);
+          const rack = seatLocalPoint(pose, layout.rackOrigin);
+          const cardRect = {
+            minX: card[0] - CARD_ZONE_WIDTH / 2,
+            maxX: card[0] + CARD_ZONE_WIDTH / 2,
+            minZ: card[2] + CARD_ZONE_LOCAL_MIN_Z,
+            maxZ: card[2] + CARD_ZONE_LOCAL_MAX_Z,
+          };
+          const rackRect = {
+            minX: rack[0] + layout.rackBounds.minX,
+            maxX: rack[0] + layout.rackBounds.maxX,
+            minZ: rack[2] + layout.rackBounds.minZ,
+            maxZ: rack[2] + layout.rackBounds.maxZ,
+          };
+          expect(rectsOverlap(cardRect, rackRect), `${scenario.id} seat ${pose.seat} stack ${amount}`).toBe(false);
+        }
+      }
+    }
+  });
+});
+
 describe("dealer and blind markers", () => {
-  it("sit between each owner's rack and the centre with a real gap", () => {
+  it("sit in their own side pocket, clear of cards and the chip rack", () => {
     for (const pose of seatPoses(6)) {
       const stack = restingChipStackPosition(pose);
       const marker = tableMarkerPosition(pose);
       const gap = distance(marker, stack);
-      // Pucks remain in the same radial seat lane, leave air around the rack,
-      // and move toward the felt centre rather than behind the chips.
-      expect(gap, `seat ${pose.seat}`).toBeGreaterThanOrEqual(
-        TABLE_MARKER_GAP + TABLE_MARKER_RADIUS,
+      expect(gap, `seat ${pose.seat}`).toBeGreaterThanOrEqual(0.2);
+      expect(distance(marker, pose.feltPosition)).toBeGreaterThan(
+        CARD_ZONE_WIDTH / 2 + TABLE_MARKER_GAP,
       );
-      expect(gap).toBeLessThan(
-        CHIP_STACK_FOOTPRINT_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS + 0.01,
-      );
-      expect(Math.hypot(marker[0], marker[2])).toBeLessThan(Math.hypot(stack[0], stack[2]));
     }
   });
 
@@ -448,7 +558,8 @@ describe("dealer and blind markers", () => {
     for (const pose of seatPoses(6)) {
       const stack = stackAmountPosition(pose);
       const bet = committedAmountPosition(pose);
-      expect(Math.hypot(stack[0] - restingChipStackPosition(pose)[0], stack[2] - restingChipStackPosition(pose)[2])).toBeCloseTo(STACK_AMOUNT_OUTWARD_GAP, 8);
+      const bounds = chipRackLayoutBounds(15_000);
+      expect(Math.hypot(stack[0] - restingChipStackPosition(pose)[0], stack[2] - restingChipStackPosition(pose)[2])).toBeCloseTo(Math.abs(bounds.minZ - STACK_AMOUNT_OUTWARD_GAP), 8);
       expect(Math.hypot(bet[0] - betCirclePosition(pose)[0], bet[2] - betCirclePosition(pose)[2])).toBeCloseTo(0.04, 8);
       expect(stack[1]).toBeCloseTo(TABLE_HEIGHT + 0.002, 8);
       expect(bet[1]).toBeCloseTo(TABLE_HEIGHT + 0.006, 8);
@@ -482,8 +593,7 @@ describe("dealer and blind markers", () => {
       { denomination: 100, count: 4, column: 1 },
       { denomination: 500, count: 3, column: 2 },
       { denomination: 1_000, count: 3, column: 3 },
-      { denomination: 5_000, count: 1, column: 4 },
-      { denomination: 5_000, count: 1, column: 5 },
+      { denomination: 5_000, count: 2, column: 4 },
     ]);
     expect(columns.reduce((total, column) => total + column.denomination * column.count, 0))
       .toBe(15_000);

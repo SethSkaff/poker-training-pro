@@ -8,11 +8,13 @@ const source = readFileSync(path.join(directory, "PokerTable.tsx"), "utf8");
 const styles = readFileSync(path.join(directory, "..", "styles.css"), "utf8");
 
 describe("public chip travel", () => {
-  it("maps public wager, collection, and award events to a renderer-only travel token", () => {
+  it("keeps DOM travel only as the non-WebGL fallback", () => {
     expect(source).toContain('event.kind === "action"');
     expect(source).toContain('event.kind === "bets-collected"');
     expect(source).toContain('event.kind === "pot-awarded"');
     expect(source).toContain('className={`chip-travel chip-travel--${chipTravel.direction}`}');
+    expect(source).toContain("{chipTravel && !sceneReadyForPlaques && (");
+    expect(source).toContain("{dealerMoveEvent && !sceneReadyForPlaques && (");
   });
 
   it("uses table-relative start and destination coordinates", () => {

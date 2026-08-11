@@ -9,9 +9,9 @@
   ],
   "releasePolicy": {
     "releaseReadyStatus": "accepted",
-    "currentReleaseReadyTrackCount": 0,
+    "currentReleaseReadyTrackCount": 10,
     "notes": "A track is accepted only after the exact master, license evidence, project/platform scope, attribution or non-attribution route, Content ID posture, audio QA, and package behavior are archived. Source-page research alone is conditional.",
-    "preferredRoute": "Purchase and archive a project-specific proprietary license for selected tracks. This avoids relying on ambiguous technical restrictions in a signed desktop package, but cross-platform desktop scope still needs written confirmation.",
+    "preferredRoute": "Current accepted route: CC BY 4.0 with in-app attribution, bundled legal text, source links, and no project-added DRM or standalone export. A paid project license is optional if a future distributor requires restrictive DRM.",
     "forbidStandaloneExtractionFeature": true,
     "forbidContentIdRegistrationByProject": true
   },
@@ -23,7 +23,7 @@
       "officialDeedUrl": "https://creativecommons.org/licenses/by/4.0/",
       "officialLegalCodeUrl": "https://creativecommons.org/licenses/by/4.0/legalcode.en",
       "officialTextSummary": "Permits reproduction, sharing, and adapted material in any medium, including commercial use, subject to attribution, change indication, license notice, and the prohibition on additional legal or effective technological restrictions.",
-      "distributionRisk": "Needs legal review because CC BY 4.0 section 2(a)(5)(B) prohibits effective technological measures that restrict recipients. Prefer a proprietary license or obtain written guidance for the signed desktop package."
+      "distributionRisk": "Accepted only for distributions that preserve CC BY rights and do not add effective technological measures restricting the licensed audio. Reassess or buy a project license if a future store/package adds such restrictions."
     },
     "silverman-pro": {
       "name": "Silverman Sound Studios Pro License",
@@ -44,7 +44,79 @@
       "requiredEvidence": "Generated paid license PDF naming the licensee, selected tracks, and Poker Training Pro, plus written confirmation that Windows and macOS releases are the same licensed production."
     }
   },
-  "accepted": [],
+  "accepted": [
+    {
+      "id": "ambiment", "trackTitle": "Ambiment", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100630",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/ambiment.ogg", "masterSha256": "c39fab308fb71c4d6841600a4aef2a05c5e3f6fa6ba286a7b2e030d8883349c1",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen, title/source per track and CC BY 4.0 composer credit",
+      "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "space-jazz", "trackTitle": "Space Jazz", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN2100030",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/space-jazz.ogg", "masterSha256": "3e0e89f9377e5909ab5040c6984e2e12e8725050f297284f945038a17b905016",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "water-prelude", "trackTitle": "Water Prelude", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100017",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/water-prelude.ogg", "masterSha256": "bab2861b19025ba267234815e7ccd284e479ac15ef0f0cfc54de88a8d3dadd23",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "study-and-relax", "trackTitle": "Study And Relax", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1900030",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/study-and-relax.ogg", "masterSha256": "04876c361f9debff6cb5d5ced597704aa6e9996d132c0ac3a5734d9b1f9c7e69",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "poppers-and-prosecco", "trackTitle": "Poppers and Prosecco", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1700014",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/poppers-and-prosecco.ogg", "masterSha256": "94d5914395bf4d6c9c47513b4f1e42207180dbab21337e94a0d4d763f938aeb2",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "night-on-the-docks-sax", "trackTitle": "Night on the Docks - Sax", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100137",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/night-on-the-docks-sax.ogg", "masterSha256": "42aeb1e89e22bef4d0ba53d3ff85cbae9db75f22f2a80111d23b608777bb8ff8",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "george-street-shuffle", "trackTitle": "George Street Shuffle", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1300035",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/george-street-shuffle.ogg", "masterSha256": "e6a795ca6f595f8cbbf36e8570cff07ab7fdd17a122260f5781a42e3eae8e7c4",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "cool-vibes", "trackTitle": "Cool Vibes", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100863",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/cool-vibes.ogg", "masterSha256": "6624a2c542e7c94e8ae543f23d1afc892f4b31a3a9a08297ccb9bcb43b216826",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "local-forecast-elevator", "trackTitle": "Local Forecast - Elevator", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1300012",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/local-forecast-elevator.ogg", "masterSha256": "595cd5d71f6ac097635a1155fdf512de1c465790ef75695665cad50b0d2e4a3a",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    },
+    {
+      "id": "dances-and-dames", "trackTitle": "Dances and Dames", "author": "Kevin MacLeod",
+      "officialTrackUrl": "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100595",
+      "licenseReceiptPath": "docs/audio/production-music-rights.md", "licenseTextPath": "licenses/audio/CC-BY-4.0.txt",
+      "masterPath": "public/audio/dances-and-dames.ogg", "masterSha256": "f6634a381eece5b291a3350794481f88461ca63756c8c856fe761a684acc402e",
+      "platformScopeConfirmationPath": "docs/audio/production-music-rights.md", "attributionRoute": "In-app Credits screen", "loudnessReportPath": "docs/audio/production-music-qa.md", "loopQaReportPath": "docs/audio/production-music-qa.md"
+    }
+  ],
   "conditional": [
     {
       "id": "silverman-opening-move",

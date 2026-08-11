@@ -3,6 +3,10 @@ import { assembleCredits, type CreditsDocument } from "../lib/creditsData";
 import { useCreditsResources } from "../lib/useCreditsResources";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import { NightCircuitScene } from "./Dashboard";
+import {
+  productionMusicCredits,
+  productionMusicLicense,
+} from "../data/musicPlaylistManifest";
 
 interface CreditsScreenProps {
   onBack: () => void;
@@ -48,7 +52,27 @@ export function CreditsScreen({ onBack }: CreditsScreenProps) {
             <h2>{section.title}</h2>
             {section.note ? <p>{section.note}</p> : null}
             {section.id === "music" ? (
-              <p className="credits-music-status">{model.musicStatus}</p>
+              <>
+                <p className="credits-music-status">{model.musicStatus}</p>
+                <ul className="credits-music-list">
+                  {productionMusicCredits.map((credit) => (
+                    <li key={credit.id}>
+                      <a href={credit.sourceUrl} target="_blank" rel="noreferrer">
+                        {credit.title}
+                      </a>{" "}
+                      — {credit.author} <small>{credit.isrc}</small>
+                    </li>
+                  ))}
+                </ul>
+                <a
+                  className="credits-music-license"
+                  href={productionMusicLicense.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {productionMusicLicense.name}
+                </a>
+              </>
             ) : null}
             {section.versions ? (
               <dl className="credits-versions">

@@ -7,7 +7,8 @@ const scene = readFileSync(resolve(process.cwd(), "src/scene3d/tableScene.ts"), 
 describe("chip ownership choreography", () => {
   it("keeps a separate travelling pile between the owner rack and betting circle", () => {
     expect(scene).toContain('chips-moving-from-stack');
-    expect(scene).toContain('restingChipStackPosition(pose)');
+    expect(scene).toContain('restingChipStackPosition(pose, chipCommitment?.stackBefore ?? seat.stack)');
+    expect(scene).toContain('restingChipStackPosition(pose, chipCommitment.stackBefore)');
     expect(scene).toContain('betCirclePosition(pose)');
     expect(scene).toContain('view.travellingChips.visible = true');
   });

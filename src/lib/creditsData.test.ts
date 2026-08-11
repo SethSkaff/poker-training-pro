@@ -55,9 +55,9 @@ describe("assembleCredits", () => {
     expect(barlow?.text).toBeUndefined();
   });
 
-  it("truthfully reports that no licensed music ships yet", () => {
+  it("truthfully reports the bundled music attribution", () => {
     const model = assembleCredits({ appInfo });
-    expect(model.musicStatus.toLowerCase()).toContain("no licensed music");
+    expect(model.musicStatus).toContain("Kevin MacLeod");
     const music = model.sections.find((s) => s.id === "music");
     expect(music).toBeDefined();
     expect(music?.documents).toBeUndefined();

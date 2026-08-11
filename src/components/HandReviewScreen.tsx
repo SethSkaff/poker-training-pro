@@ -242,6 +242,11 @@ export function HandReviewScreen({
                 accuracy: formatFixedDecimal(review.accuracy * 100, 0),
               })}
             </strong>
+            <strong>
+              {formatMessage("review.goodAccuracy", {
+                accuracy: formatFixedDecimal(review.goodAccuracy * 100, 0),
+              })}
+            </strong>
             <span>
               {formatMessage("review.decisionCount", {
                 count: review.decisions.length,
@@ -451,6 +456,15 @@ export function HandReviewScreen({
                       1,
                     )}
                     %
+                  </dd>
+                </div>
+                <div>
+                  <dt>{formatMessage("review.math.blindUrgency")}</dt>
+                  <dd>
+                    {formatFixedDecimal(decision.math.blindUrgency * 100, 1)}%
+                    {decision.math.imminentBigBlind
+                      ? ` · ${formatMessage("review.math.bigBlindNext")}`
+                      : ""}
                   </dd>
                 </div>
                 <div>

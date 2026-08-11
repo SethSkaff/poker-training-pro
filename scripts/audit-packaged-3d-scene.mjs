@@ -1205,6 +1205,19 @@ async function reachTableWithScene(session, requestedMotionMode = "full") {
   await session.clickSelector(".night-back", "settings back");
   await session.clickSelector('button[aria-label="Play"]', "play");
   await session.clickIfPresent("#play-chip-ack-title ~ .startup-gate__actions button");
+  await session.waitFor(".table-view-stage", "table-view selection");
+  await session.clickSelector(
+    ".table-view-choices > button:nth-of-type(2)",
+    "3D table view",
+  );
+  const leftFullscreenForViewportAudit = await session.evaluate(`(async () => {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    if (window.desktop?.setFullscreen) await window.desktop.setFullscreen(false);
+    return document.fullscreenElement === null;
+  })()`);
+  if (!leftFullscreenForViewportAudit) {
+    throw new Error("Could not leave user-selected fullscreen for viewport composition audit.");
+  }
   await session.waitFor(".mode-stage", "mode selection");
   await session.clickSelector(".mode-stage__choice--normal", "normal mode");
   await session.waitForButton("Enter event", "event lobby");

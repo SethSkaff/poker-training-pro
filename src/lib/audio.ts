@@ -58,7 +58,7 @@ export class GameAudio {
   }
 
   /**
-   * Observe focus-mute transitions so the (dormant) music playlist can freeze
+   * Observe focus-mute transitions so the music playlist can freeze
    * or resume its own timeline in lockstep with whichever surface currently
    * owns focus muting (the desktop lifecycle hook off the table, or the table's
    * own pause effect while it is mounted). The listener fires immediately with
@@ -134,7 +134,7 @@ export class GameAudio {
   }
 
   /**
-   * Observe feedback sounds so the (dormant) music bed can duck under card,
+   * Observe feedback sounds so the music bed can duck under card,
    * chip, fold, and result cues. Returns an unsubscribe function.
    */
   observeFeedback(listener: (sound: SoundName) => void): () => void {

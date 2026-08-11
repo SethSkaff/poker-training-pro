@@ -35,13 +35,17 @@ export function presentationEventDelayMs(
         // equity figures before any card lands on the board.
         1_500
       : event.kind === "hole-cards-dealt"
-        ? 720
+        ? 1_600
         : event.kind === "board-card-dealt"
           ? context.allInRunout
-            ? 1_250
-            : 520
+            ? 1_500
+            : 1_050
           : event.kind === "action"
-            ? 980
+            ? event.command.type === "check"
+              ? 650
+              : event.command.type === "fold"
+                ? 800
+                : 950
             : event.kind === "pot-awarded" ||
                 event.kind === "showdown" ||
                 event.kind === "hand-result"

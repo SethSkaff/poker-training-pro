@@ -54,19 +54,19 @@ describe("tournament presentation clock", () => {
       reducedMotion: false,
       transitionMotion: "full",
     });
-    expect(full).toBe(980);
+    expect(full).toBe(950);
     expect(
       presentationEventDelayMs(actionEvent, 2, {
         reducedMotion: false,
         transitionMotion: "full",
       }),
-    ).toBe(490);
+    ).toBe(475);
     expect(
       presentationEventDelayMs(actionEvent, 1, {
         reducedMotion: true,
         transitionMotion: "full",
       }),
-    ).toBe(441);
+    ).toBe(428);
   });
 
   it("runs an all-in board out more slowly than a live betting street", () => {
@@ -84,8 +84,8 @@ describe("tournament presentation clock", () => {
     const runout = presentationEventDelayMs(boardEvent, 1, settings, {
       allInRunout: true,
     });
-    expect(live).toBe(520);
-    expect(runout).toBe(1_250);
+    expect(live).toBe(1_050);
+    expect(runout).toBe(1_500);
     expect(runout).toBeGreaterThan(live);
 
     // The reveal itself gets its own beat, long enough to read the hands and
@@ -103,7 +103,7 @@ describe("tournament presentation clock", () => {
     // not an unskippable one.
     expect(
       presentationEventDelayMs(boardEvent, 4, settings, { allInRunout: true }),
-    ).toBe(313);
+    ).toBe(375);
     expect(
       presentationEventDelayMs(
         boardEvent,
@@ -111,7 +111,7 @@ describe("tournament presentation clock", () => {
         { reducedMotion: true, transitionMotion: "off" },
         { allInRunout: true },
       ),
-    ).toBe(563);
+    ).toBe(675);
   });
 
   /*
@@ -181,7 +181,7 @@ describe("tournament presentation clock", () => {
           reducedMotion: false,
           transitionMotion: "full",
         }),
-      ).toBe(245);
+      ).toBe(238);
     });
   });
 
@@ -200,7 +200,7 @@ describe("tournament presentation clock", () => {
     clock.advance(5_000);
     expect(completions).toBe(0);
     delay.resume();
-    clock.advance(579);
+    clock.advance(549);
     expect(completions).toBe(0);
     clock.advance(1);
     expect(completions).toBe(1);

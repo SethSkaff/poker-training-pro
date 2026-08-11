@@ -41,6 +41,10 @@ export function inactiveDeckColour(handId: string | undefined): DeckColour {
 export const MUCK_POSITION = TABLE_ANCHORS.muck;
 
 /** A board card comes from the shoe, pitches, then turns face-up on the felt. */
+export function boardStreetRequiresBurn(cardIndex: number): boolean {
+  return cardIndex === 0 || cardIndex === 3 || cardIndex === 4;
+}
+
 export function boardDealPose(cardIndex: number, progress: number): {
   readonly position: readonly [number, number, number];
   readonly rotationX: number;
@@ -58,7 +62,10 @@ export function boardDealPose(cardIndex: number, progress: number): {
    * public presentation queue only has one event for the resulting board card,
    * so this function owns the latter portion of that same beat.
    */
-  const dealStart = 0.36;
+  // One burn per street: before the flop, turn, and river. The second and
+  // third flop cards continue directly from the shoe instead of inventing two
+  // extra burns.
+  const dealStart = boardStreetRequiresBurn(cardIndex) ? 0.36 : 0.08;
   const deal = Math.max(0, Math.min(1, (t - dealStart) / (1 - dealStart)));
   const arc = Math.sin(Math.PI * deal) * 0.11;
   return {
@@ -74,7 +81,7 @@ export function boardDealPose(cardIndex: number, progress: number): {
   };
 }
 
-/** The face-down burn card, shoe to dealer-side muck before every board card. */
+/** The face-down burn card, shoe to dealer-side muck once per board street. */
 export function burnCardPose(progress: number): {
   readonly position: readonly [number, number, number];
   readonly visible: boolean;
