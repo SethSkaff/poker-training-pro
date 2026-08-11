@@ -54,6 +54,9 @@ import {
   CARD_ZONE_OBJECT_GAP,
   BET_CIRCLE_RADIUS,
   STACK_AMOUNT_OUTWARD_GAP,
+  CHIP_STACK_LOCAL_RIGHT_SIDE,
+  STACK_LABEL_HALF_DEPTH,
+  STACK_LABEL_HALF_WIDTH,
   turnIndicatorPositionForPlayer,
   seatOccupancyLayout,
 } from "./tableSceneModel";
@@ -468,11 +471,108 @@ describe("protected seat occupancy", () => {
     const z = Math.max(rect.minZ, Math.min(rect.maxZ, circle.z));
     return Math.hypot(circle.x - x, circle.z - z) < circle.radius;
   };
+  type TablePoint = readonly [number, number];
+  const tablePoints = (
+    corners: readonly (readonly [number, number, number])[],
+  ): readonly TablePoint[] => corners.map(([x, , z]) => [x, z]);
+  const polygonAxes = (polygon: readonly TablePoint[]) => polygon.map((point, index) => {
+    const next = polygon[(index + 1) % polygon.length];
+    const edgeX = next[0] - point[0];
+    const edgeZ = next[1] - point[1];
+    return [-edgeZ, edgeX] as const;
+  });
+  const polygonsOverlap = (left: readonly TablePoint[], right: readonly TablePoint[]) => {
+    for (const [axisX, axisZ] of [...polygonAxes(left), ...polygonAxes(right)]) {
+      const leftProjection = left.map(([x, z]) => x * axisX + z * axisZ);
+      const rightProjection = right.map(([x, z]) => x * axisX + z * axisZ);
+      if (Math.max(...leftProjection) <= Math.min(...rightProjection)
+        || Math.max(...rightProjection) <= Math.min(...leftProjection)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const distanceToSegment = (point: TablePoint, start: TablePoint, end: TablePoint) => {
+    const dx = end[0] - start[0];
+    const dz = end[1] - start[1];
+    const lengthSquared = dx * dx + dz * dz;
+    const progress = lengthSquared === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dz) / lengthSquared));
+    return Math.hypot(point[0] - (start[0] + progress * dx), point[1] - (start[1] + progress * dz));
+  };
+  const circleOverlapsPolygon = (
+    circle: { centre: TablePoint; radius: number },
+    polygon: readonly TablePoint[],
+  ) => polygon.some((point, index) => distanceToSegment(
+    circle.centre,
+    point,
+    polygon[(index + 1) % polygon.length],
+  ) < circle.radius) || (() => {
+    const signs = polygon.map((point, index) => {
+      const next = polygon[(index + 1) % polygon.length];
+      return (next[0] - point[0]) * (circle.centre[1] - point[1])
+        - (next[1] - point[1]) * (circle.centre[0] - point[0]);
+    });
+    return signs.every((sign) => sign >= 0) || signs.every((sign) => sign <= 0);
+  })();
+  const rackWorldCorners = (
+    pose: ReturnType<typeof seatPoses>[number],
+    layout: ReturnType<typeof seatOccupancyLayout>,
+  ) => {
+    const rack = seatLocalPoint(pose, layout.rackOrigin);
+    return [
+      [layout.rackBounds.minX, layout.rackBounds.minZ],
+      [layout.rackBounds.maxX, layout.rackBounds.minZ],
+      [layout.rackBounds.maxX, layout.rackBounds.maxZ],
+      [layout.rackBounds.minX, layout.rackBounds.maxZ],
+    ].map(([x, z]) => seatWorldPoint(pose, [rack[0] + x, TABLE_HEIGHT, rack[2] + z]));
+  };
+  const labelWorldCorners = (
+    pose: ReturnType<typeof seatPoses>[number],
+    layout: ReturnType<typeof seatOccupancyLayout>,
+  ) => {
+    const label = seatLocalPoint(pose, layout.stackLabel);
+    return [
+      [label[0] - STACK_LABEL_HALF_WIDTH, label[2] - STACK_LABEL_HALF_DEPTH],
+      [label[0] + STACK_LABEL_HALF_WIDTH, label[2] - STACK_LABEL_HALF_DEPTH],
+      [label[0] + STACK_LABEL_HALF_WIDTH, label[2] + STACK_LABEL_HALF_DEPTH],
+      [label[0] - STACK_LABEL_HALF_WIDTH, label[2] + STACK_LABEL_HALF_DEPTH],
+    ].map(([x, z]) => seatWorldPoint(pose, [x, TABLE_HEIGHT, z]));
+  };
+  const cardWorldCorners = (pose: ReturnType<typeof seatPoses>[number]) => {
+    const card = seatLocalPoint(pose, pose.feltPosition);
+    return [
+      [card[0] - CARD_ZONE_WIDTH / 2, card[2] + CARD_ZONE_LOCAL_MIN_Z],
+      [card[0] + CARD_ZONE_WIDTH / 2, card[2] + CARD_ZONE_LOCAL_MIN_Z],
+      [card[0] + CARD_ZONE_WIDTH / 2, card[2] + CARD_ZONE_LOCAL_MAX_Z],
+      [card[0] - CARD_ZONE_WIDTH / 2, card[2] + CARD_ZONE_LOCAL_MAX_Z],
+    ].map(([x, z]) => seatWorldPoint(pose, [x, TABLE_HEIGHT, z]));
+  };
+
+  it("prefers a collision-free rack behind and on the player's right", () => {
+    // This representative side seat has enough felt for the preferred semantic
+    // slot even for the widest authored rack. Tight end seats are intentionally
+    // allowed to choose a collision fallback rather than clip a neighbouring
+    // card lane; the six-seat matrix below proves those fallbacks stay safe.
+    const pose = seatPoses(6)[3];
+    const card = seatLocalPoint(pose, pose.feltPosition);
+    const cardCentreZ = card[2] + (CARD_ZONE_LOCAL_MIN_Z + CARD_ZONE_LOCAL_MAX_Z) / 2;
+    for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
+      const layout = seatOccupancyLayout(pose, amount);
+      const rack = seatLocalPoint(pose, layout.rackOrigin);
+      expect(layout.rackSide, `seat ${pose.seat} amount ${amount}`).toBe(CHIP_STACK_LOCAL_RIGHT_SIDE);
+      expect(rack[0], `seat ${pose.seat} amount ${amount} right of cards`).toBeLessThan(card[0]);
+      expect(rack[2], `seat ${pose.seat} amount ${amount} behind cards`).toBeLessThan(cardCentreZ);
+    }
+  });
 
   it("keeps cards, full racks, markers, wagers, and labels disjoint after final placement", () => {
     for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
-      for (const pose of seatPoses(6)) {
-        const layout = seatOccupancyLayout(pose, amount);
+      const poses = seatPoses(6);
+      const layouts = poses.map((pose) => seatOccupancyLayout(pose, amount));
+      for (const [poseIndex, pose] of poses.entries()) {
+        const layout = layouts[poseIndex];
         const card = seatLocalPoint(pose, pose.feltPosition);
         const rack = seatLocalPoint(pose, layout.rackOrigin);
         const label = seatLocalPoint(pose, layout.stackLabel);
@@ -489,7 +589,7 @@ describe("protected seat occupancy", () => {
           minZ: rack[2] + layout.rackBounds.minZ,
           maxZ: rack[2] + layout.rackBounds.maxZ,
         };
-        const labelRect = { minX: label[0] - 0.05, maxX: label[0] + 0.05, minZ: label[2] - 0.012, maxZ: label[2] + 0.012 };
+        const labelRect = { minX: label[0] - STACK_LABEL_HALF_WIDTH, maxX: label[0] + STACK_LABEL_HALF_WIDTH, minZ: label[2] - STACK_LABEL_HALF_DEPTH, maxZ: label[2] + STACK_LABEL_HALF_DEPTH };
         expect(rectsOverlap(cardRect, rackRect), `seat ${pose.seat} amount ${amount} card/rack`).toBe(false);
         expect(rectsOverlap(cardRect, labelRect), `seat ${pose.seat} amount ${amount} card/label`).toBe(false);
         expect(rectsOverlap(rackRect, labelRect), `seat ${pose.seat} amount ${amount} rack/label`).toBe(false);
@@ -506,6 +606,38 @@ describe("protected seat occupancy", () => {
         }
         expect(Math.abs(rackRect.minX - cardRect.maxX) >= CARD_ZONE_OBJECT_GAP
           || Math.abs(cardRect.minX - rackRect.maxX) >= CARD_ZONE_OBJECT_GAP).toBe(true);
+      }
+      for (let first = 0; first < poses.length; first += 1) {
+        for (let second = first + 1; second < poses.length; second += 1) {
+          const firstRack = tablePoints(rackWorldCorners(poses[first], layouts[first]));
+          const firstLabel = tablePoints(labelWorldCorners(poses[first], layouts[first]));
+          const secondRack = tablePoints(rackWorldCorners(poses[second], layouts[second]));
+          const secondLabel = tablePoints(labelWorldCorners(poses[second], layouts[second]));
+          const firstCard = tablePoints(cardWorldCorners(poses[first]));
+          const secondCard = tablePoints(cardWorldCorners(poses[second]));
+          expect(polygonsOverlap(firstRack, secondCard), `${amount} rack ${first}/card ${second}`).toBe(false);
+          expect(polygonsOverlap(firstLabel, secondCard), `${amount} label ${first}/card ${second}`).toBe(false);
+          expect(polygonsOverlap(secondRack, firstCard), `${amount} rack ${second}/card ${first}`).toBe(false);
+          expect(polygonsOverlap(secondLabel, firstCard), `${amount} label ${second}/card ${first}`).toBe(false);
+          expect(polygonsOverlap(firstRack, secondRack), `${amount} rack ${first}/rack ${second}`).toBe(false);
+          expect(polygonsOverlap(firstRack, secondLabel), `${amount} rack ${first}/label ${second}`).toBe(false);
+          expect(polygonsOverlap(firstLabel, secondRack), `${amount} label ${first}/rack ${second}`).toBe(false);
+          expect(polygonsOverlap(firstLabel, secondLabel), `${amount} label ${first}/label ${second}`).toBe(false);
+          const secondWager = tablePoints([betCirclePosition(poses[second])])[0];
+          const firstWager = tablePoints([betCirclePosition(poses[first])])[0];
+          expect(circleOverlapsPolygon({ centre: secondWager, radius: BET_CIRCLE_RADIUS }, firstRack), `${amount} wager ${second}/rack ${first}`).toBe(false);
+          expect(circleOverlapsPolygon({ centre: secondWager, radius: BET_CIRCLE_RADIUS }, firstLabel), `${amount} wager ${second}/label ${first}`).toBe(false);
+          expect(circleOverlapsPolygon({ centre: firstWager, radius: BET_CIRCLE_RADIUS }, secondRack), `${amount} wager ${first}/rack ${second}`).toBe(false);
+          expect(circleOverlapsPolygon({ centre: firstWager, radius: BET_CIRCLE_RADIUS }, secondLabel), `${amount} wager ${first}/label ${second}`).toBe(false);
+          for (const markerLabel of ["D", "SB", "BB"] as const) {
+            const firstMarker = tablePoints([tableMarkerPosition(poses[first], markerLabel, amount)])[0];
+            const secondMarker = tablePoints([tableMarkerPosition(poses[second], markerLabel, amount)])[0];
+            expect(circleOverlapsPolygon({ centre: firstMarker, radius: TABLE_MARKER_RADIUS }, secondRack), `${amount} marker ${first}/rack ${second}`).toBe(false);
+            expect(circleOverlapsPolygon({ centre: firstMarker, radius: TABLE_MARKER_RADIUS }, secondLabel), `${amount} marker ${first}/label ${second}`).toBe(false);
+            expect(circleOverlapsPolygon({ centre: secondMarker, radius: TABLE_MARKER_RADIUS }, firstRack), `${amount} marker ${second}/rack ${first}`).toBe(false);
+            expect(circleOverlapsPolygon({ centre: secondMarker, radius: TABLE_MARKER_RADIUS }, firstLabel), `${amount} marker ${second}/label ${first}`).toBe(false);
+          }
+        }
       }
     }
   });
@@ -534,7 +666,16 @@ describe("protected seat occupancy", () => {
             minZ: rack[2] + layout.rackBounds.minZ,
             maxZ: rack[2] + layout.rackBounds.maxZ,
           };
+          const label = seatLocalPoint(pose, layout.stackLabel);
+          const labelRect = {
+            minX: label[0] - STACK_LABEL_HALF_WIDTH,
+            maxX: label[0] + STACK_LABEL_HALF_WIDTH,
+            minZ: label[2] - STACK_LABEL_HALF_DEPTH,
+            maxZ: label[2] + STACK_LABEL_HALF_DEPTH,
+          };
           expect(rectsOverlap(cardRect, rackRect), `${scenario.id} seat ${pose.seat} stack ${amount}`).toBe(false);
+          expect(rectsOverlap(cardRect, labelRect), `${scenario.id} seat ${pose.seat} label ${amount}`).toBe(false);
+          expect(rectsOverlap(rackRect, labelRect), `${scenario.id} seat ${pose.seat} rack/label ${amount}`).toBe(false);
         }
       }
     }

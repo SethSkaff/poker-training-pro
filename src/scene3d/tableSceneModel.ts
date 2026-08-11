@@ -67,6 +67,14 @@ import {
   TABLE_WIDTH,
 } from "./tableStations";
 
+// The authored six-station ring is immutable. Reusing these pure snapshots is
+// important because Training exercises the solver for every stack amount and
+// seat, and candidate evaluation must not rebuild the ring thousands of times.
+const AUTHORED_PLAYER_STATIONS = playerStations();
+const AUTHORED_STATION_POSES = AUTHORED_PLAYER_STATIONS.map((station, index) =>
+  stationAsPose(station, index)
+);
+
 /** Retained name for older object-motion helpers. */
 export const TABLE_RADIUS = TABLE_WIDTH / 2;
 /** The active-turn cue sits on the felt, below every card. */
@@ -193,7 +201,7 @@ export const CARD_ZONE_LOCAL_CENTER_Z = (CARD_ZONE_LOCAL_MIN_Z + CARD_ZONE_LOCAL
 /** Distance from a seat's card lane to its printed bet circle; see build_table.py. */
 export const BET_CIRCLE_RADIUS = 0.040;
 /** Visible felt between the protected card rectangle and every other object. */
-export const CARD_ZONE_OBJECT_GAP = 0.040;
+export const CARD_ZONE_OBJECT_GAP = 0.020;
 /** The wager line sits beyond a complete multi-column rack, not just a chip. */
 export const BET_CIRCLE_FORWARD = 0.31;
 
@@ -225,6 +233,9 @@ export const TABLE_MARKER_GAP = 0.024;
 /** Conservative radius of the rendered rack footprint, excluding the height. */
 export const CHIP_STACK_FOOTPRINT_RADIUS = 0.105;
 
+/** The renderer's station frame has +Z toward the table; -X is the player's right. */
+export const CHIP_STACK_LOCAL_RIGHT_SIDE: -1 = -1;
+
 /**
  * Clear table-space gap from the outside edge of a rack to its numeral.
  *
@@ -234,6 +245,9 @@ export const CHIP_STACK_FOOTPRINT_RADIUS = 0.105;
  * own inward betting circle.
  */
 export const STACK_AMOUNT_OUTWARD_GAP = 0.014;
+/** Physical footprint reserved for the projected stack amount label. */
+export const STACK_LABEL_HALF_WIDTH = 0.05;
+export const STACK_LABEL_HALF_DEPTH = 0.012;
 
 export interface SeatOccupancyLayout {
   readonly rackOrigin: readonly [number, number, number];
@@ -343,28 +357,183 @@ function stationCardRect(station: ReturnType<typeof playerStations>[number], gap
   };
 }
 
+type OccupancyRect = {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+};
+
+function rectsDisjoint(left: OccupancyRect, right: OccupancyRect): boolean {
+  return left.maxX <= right.minX || left.minX >= right.maxX
+    || left.maxZ <= right.minZ || left.minZ >= right.maxZ;
+}
+
+function localRectCorners(
+  centreX: number,
+  centreZ: number,
+  bounds: OccupancyRect,
+): readonly (readonly [number, number])[] {
+  return [
+    [centreX + bounds.minX, centreZ + bounds.minZ],
+    [centreX + bounds.maxX, centreZ + bounds.minZ],
+    [centreX + bounds.maxX, centreZ + bounds.maxZ],
+    [centreX + bounds.minX, centreZ + bounds.maxZ],
+  ];
+}
+
+function worldRectCorners(
+  pose: SeatPose,
+  centreX: number,
+  centreZ: number,
+  bounds: OccupancyRect,
+): readonly (readonly [number, number, number])[] {
+  return localRectCorners(centreX, centreZ, bounds)
+    .map(([x, z]) => seatWorldPoint(pose, [x, TABLE_HEIGHT, z]));
+}
+
+function worldRectInStationFrame(
+  station: ReturnType<typeof playerStations>[number],
+  corners: readonly (readonly [number, number, number])[],
+): OccupancyRect {
+  const points = corners.map((corner) => pointInStationFrame(station, corner));
+  return {
+    minX: Math.min(...points.map(([x]) => x)),
+    maxX: Math.max(...points.map(([x]) => x)),
+    minZ: Math.min(...points.map(([, z]) => z)),
+    maxZ: Math.max(...points.map(([, z]) => z)),
+  };
+}
+
+function circleClearsRect(
+  circle: readonly [number, number],
+  radius: number,
+  rect: OccupancyRect,
+  gap = 0,
+): boolean {
+  const x = Math.max(rect.minX, Math.min(rect.maxX, circle[0]));
+  const z = Math.max(rect.minZ, Math.min(rect.maxZ, circle[1]));
+  return Math.hypot(circle[0] - x, circle[1] - z) >= radius + gap;
+}
+
+type PlanarPoint = readonly [number, number];
+
+function planarCorners(
+  corners: readonly (readonly [number, number, number])[],
+): readonly PlanarPoint[] {
+  return corners.map(([x, , z]) => [x, z] as const);
+}
+
+function polygonAxes(polygon: readonly PlanarPoint[]): readonly PlanarPoint[] {
+  return polygon.map((point, index) => {
+    const next = polygon[(index + 1) % polygon.length];
+    const edgeX = next[0] - point[0];
+    const edgeZ = next[1] - point[1];
+    return [-edgeZ, edgeX] as const;
+  });
+}
+
+/** Exact overlap test for the oriented rectangles around rotated stations. */
+function polygonsOverlap(left: readonly PlanarPoint[], right: readonly PlanarPoint[]): boolean {
+  for (const [axisX, axisZ] of [...polygonAxes(left), ...polygonAxes(right)]) {
+    const leftProjection = left.map(([x, z]) => x * axisX + z * axisZ);
+    const rightProjection = right.map(([x, z]) => x * axisX + z * axisZ);
+    if (Math.max(...leftProjection) <= Math.min(...rightProjection)
+      || Math.max(...rightProjection) <= Math.min(...leftProjection)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+let authoredWagerCircles: readonly {
+  readonly centre: readonly [number, number, number];
+  readonly radius: number;
+}[] | undefined;
+
+function protectedWagerCircles(): readonly {
+  readonly centre: readonly [number, number, number];
+  readonly radius: number;
+}[] {
+  authoredWagerCircles ??= AUTHORED_STATION_POSES.map((pose) => ({
+    centre: betCirclePosition(pose),
+    radius: BET_CIRCLE_RADIUS,
+  }));
+  return authoredWagerCircles;
+}
+
+function markerPocketCentres(
+  pose: SeatPose,
+  markerSide: -1 | 1,
+): readonly (readonly [number, number, number])[] {
+  const cardOrigin = seatLocalPoint(pose, pose.feltPosition);
+  const markerX = cardOrigin[0] + markerSide * (
+    CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + TABLE_MARKER_RADIUS
+  );
+  return [-0.065, 0.065, 0].map((slotOffset) => seatWorldPoint(pose, [
+    markerX,
+    TABLE_HEIGHT + 0.012,
+    cardOrigin[2] + slotOffset,
+  ]));
+}
+
+function protectedMarkerCircles(
+  pose: SeatPose,
+  markerSide: -1 | 1,
+): readonly {
+  readonly centre: readonly [number, number, number];
+  readonly radius: number;
+}[] {
+  return markerPocketCentres(pose, markerSide).map((centre) => ({
+    centre,
+    radius: TABLE_MARKER_RADIUS,
+  }));
+}
+
+type SeatOccupancyCandidate = {
+  readonly side: -1 | 0 | 1;
+  readonly origin: readonly [number, number, number];
+  readonly labelCentre: readonly [number, number];
+  readonly markerSide: -1 | 1;
+  readonly preferred: boolean;
+  readonly fits: boolean;
+  readonly rackCorners: readonly PlanarPoint[];
+  readonly labelCorners: readonly PlanarPoint[];
+};
+
+type SeatOccupancyCandidateSet = {
+  readonly bounds: ReturnType<typeof chipRackLayoutBounds>;
+  readonly candidates: readonly SeatOccupancyCandidate[];
+};
+
 function rackClearsAllCardZones(
   pose: SeatPose,
   origin: readonly [number, number, number],
   bounds: ReturnType<typeof chipRackLayoutBounds>,
+  labelCentre: readonly [number, number],
 ): boolean {
-  const corners = [
-    [bounds.minX, bounds.minZ],
-    [bounds.minX, bounds.maxZ],
-    [bounds.maxX, bounds.minZ],
-    [bounds.maxX, bounds.maxZ],
-  ].map(([x, z]) => seatWorldPoint(pose, [origin[0] + x, TABLE_HEIGHT, origin[2] + z]));
-  return playerStations().every((station) => {
-    const points = corners.map((corner) => pointInStationFrame(station, corner));
-    const rackRect = {
-      minX: Math.min(...points.map(([x]) => x)),
-      maxX: Math.max(...points.map(([x]) => x)),
-      minZ: Math.min(...points.map(([, z]) => z)),
-      maxZ: Math.max(...points.map(([, z]) => z)),
-    };
+  const rackCorners = worldRectCorners(
+    pose,
+    origin[0] + (bounds.minX + bounds.maxX) / 2,
+    origin[2] + (bounds.minZ + bounds.maxZ) / 2,
+    bounds,
+  );
+  const labelCorners = worldRectCorners(
+    pose,
+    labelCentre[0],
+    labelCentre[1],
+    {
+      minX: -STACK_LABEL_HALF_WIDTH,
+      maxX: STACK_LABEL_HALF_WIDTH,
+      minZ: -STACK_LABEL_HALF_DEPTH,
+      maxZ: STACK_LABEL_HALF_DEPTH,
+    },
+  );
+  return AUTHORED_PLAYER_STATIONS.every((station) => {
+    const rackRect = worldRectInStationFrame(station, rackCorners);
+    const labelRect = worldRectInStationFrame(station, labelCorners);
     const card = stationCardRect(station, CARD_ZONE_OBJECT_GAP);
-    return rackRect.maxX <= card.minX || rackRect.minX >= card.maxX
-      || rackRect.maxZ <= card.minZ || rackRect.minZ >= card.maxZ;
+    return rectsDisjoint(rackRect, card) && rectsDisjoint(labelRect, card);
   });
 }
 
@@ -377,10 +546,10 @@ function rackClearsAllCardZones(
  * transform: a centre-only capsule clamp can keep an anchor on the felt while
  * its outer chip columns still cross the card rectangle or rail.
  */
-export function seatOccupancyLayout(
+function seatOccupancyCandidateSet(
   pose: SeatPose,
   amount = 15_000,
-): SeatOccupancyLayout {
+): SeatOccupancyCandidateSet {
   const cardOrigin = seatLocalPoint(pose, pose.feltPosition);
   const card = [
     cardOrigin[0],
@@ -392,84 +561,188 @@ export function seatOccupancyLayout(
   const rackCentreZ = (bounds.minZ + bounds.maxZ) / 2;
   const rackHalfX = Math.max(CHIP_PHYSICAL_RADIUS, (bounds.maxX - bounds.minX) / 2);
   const rackHalfZ = Math.max(CHIP_PHYSICAL_RADIUS, (bounds.maxZ - bounds.minZ) / 2);
-  const lateral = CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + rackHalfX;
-  const ownerDepth = CARD_ZONE_DEPTH / 2 + CARD_ZONE_OBJECT_GAP + rackHalfZ;
-  const preferredSide = card[0] >= 0 ? 1 as const : -1 as const;
+  // The number sits outside the rack and is wider than a one- or two-column
+  // rack. Reserve that real footprint before solving the rack, otherwise a
+  // geometrically safe pile can still put its projected amount over a card or
+  // an adjacent station.
+  const lateralHalfWidth = Math.max(rackHalfX, STACK_LABEL_HALF_WIDTH);
+  const ownerDepth = CARD_ZONE_DEPTH / 2 + CARD_ZONE_OBJECT_GAP + Math.max(
+    rackHalfZ,
+    STACK_LABEL_HALF_DEPTH,
+  );
+  const lateral = CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + lateralHalfWidth;
+  const playerRight = CHIP_STACK_LOCAL_RIGHT_SIDE;
   const slotCandidates: Array<{
     side: -1 | 0 | 1;
     desiredCentreX: number;
     desiredCentreZ: number;
     markerSide: -1 | 1;
+    preferred: boolean;
   }> = [
-    // Owner-side lane first: this is visually associated with the player's
-    // hands and remains clear of the printed card rectangle's long inward tail.
-    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] - ownerDepth, markerSide: preferredSide },
-    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] + ownerDepth, markerSide: preferredSide },
-    { side: preferredSide, desiredCentreX: card[0] + preferredSide * lateral, desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET, markerSide: -preferredSide as -1 | 1 },
-    { side: -preferredSide as -1 | 1, desiredCentreX: card[0] - preferredSide * lateral, desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET, markerSide: preferredSide },
+    // Semantic owner slot first. A rack belongs behind and to the player's
+    // right of the hole cards; depth-only and opposite-side slots are
+    // collision fallbacks, never the preferred placement.
+    {
+      side: playerRight,
+      desiredCentreX: card[0] + playerRight * lateral,
+      desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
+      markerSide: -playerRight as -1 | 1,
+      preferred: true,
+    },
+    {
+      side: playerRight,
+      desiredCentreX: card[0] + playerRight * lateral,
+      desiredCentreZ: card[2] - ownerDepth,
+      markerSide: -playerRight as -1 | 1,
+      preferred: true,
+    },
+    ...[0.018, 0.036, 0.054].map((extraLateral) => ({
+      side: playerRight,
+      desiredCentreX: card[0] + playerRight * (lateral + extraLateral),
+      desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
+      markerSide: -playerRight as -1 | 1,
+      preferred: true,
+    })),
+    ...[0.018, 0.036, 0.054].map((extraLateral) => ({
+      side: playerRight,
+      desiredCentreX: card[0] + playerRight * (lateral + extraLateral),
+      desiredCentreZ: card[2] - ownerDepth,
+      markerSide: -playerRight as -1 | 1,
+      preferred: true,
+    })),
+    // Preserve the old rear lane as a safe fallback for curved seats.
+    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] - ownerDepth, markerSide: -playerRight as -1 | 1, preferred: false },
+    { side: -playerRight as -1 | 1, desiredCentreX: card[0] - playerRight * lateral, desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET, markerSide: playerRight, preferred: false },
+    { side: -playerRight as -1 | 1, desiredCentreX: card[0] - playerRight * lateral, desiredCentreZ: card[2] - ownerDepth, markerSide: playerRight, preferred: false },
+    ...[0.018, 0.036, 0.054].map((extraLateral) => ({
+      side: -playerRight as -1 | 1,
+      desiredCentreX: card[0] - playerRight * (lateral + extraLateral),
+      desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
+      markerSide: playerRight,
+      preferred: false,
+    })),
+    ...[0.018, 0.036, 0.054].map((extraLateral) => ({
+      side: -playerRight as -1 | 1,
+      desiredCentreX: card[0] - playerRight * (lateral + extraLateral),
+      desiredCentreZ: card[2] - ownerDepth,
+      markerSide: playerRight,
+      preferred: false,
+    })),
+    // An inward slot is deliberately last among authored placements. It keeps
+    // the collision solver useful at the tight end seats without recreating the
+    // screenshot regression where stacks read as a second row of bets.
+    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] + ownerDepth, markerSide: -playerRight as -1 | 1, preferred: false },
   ];
   // Curved end seats have less room than side seats, and high-value stacks can
   // change the rack's aspect ratio. Search a deterministic seat-local grid
   // after the preferred owner slots so final, post-clamp bounds—not a magic
   // offset—choose the first physically valid alternate.
-  for (const dz of [-0.28, -0.22, -0.16, -0.10, 0, 0.10, 0.16, 0.22, 0.28]) {
-    for (const dx of [0.18, -0.18, 0.24, -0.24, 0.30, -0.30, 0.36, -0.36]) {
+  for (const dz of [-0.28, -0.22, -0.16, -0.10, -0.06, 0, 0.10, 0.16, 0.22, 0.28]) {
+    for (const dx of [-0.18, 0.18, -0.24, 0.24, -0.30, 0.30, -0.36, 0.36]) {
       const side = (dx < 0 ? -1 : 1) as -1 | 1;
       slotCandidates.push({
         side,
         desiredCentreX: card[0] + dx,
         desiredCentreZ: card[2] + dz,
-        markerSide: side === preferredSide ? -preferredSide as -1 | 1 : preferredSide,
+        markerSide: side === playerRight ? -playerRight as -1 | 1 : playerRight,
+        preferred: side === playerRight && dz < 0,
       });
     }
   }
-  const candidates = slotCandidates.map(({ side, desiredCentreX, desiredCentreZ, markerSide }) => {
+  const candidates = slotCandidates.map(({ side, desiredCentreX, desiredCentreZ, markerSide, preferred }) => {
     const origin = [
       desiredCentreX - rackCentreX,
       TABLE_HEIGHT,
       desiredCentreZ - rackCentreZ,
     ] as const;
-    const markerX = card[0] + markerSide * (CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + TABLE_MARKER_RADIUS);
-    const wagerLocal = seatLocalPoint(pose, betCirclePosition(pose));
-    const nearestRackX = Math.max(
-      origin[0] + bounds.minX,
-      Math.min(origin[0] + bounds.maxX, wagerLocal[0]),
-    );
-    const nearestRackZ = Math.max(
-      origin[2] + bounds.minZ,
-      Math.min(origin[2] + bounds.maxZ, wagerLocal[2]),
-    );
-    const rackClearsWager = Math.hypot(
-      wagerLocal[0] - nearestRackX,
-      wagerLocal[2] - nearestRackZ,
-    ) >= BET_CIRCLE_RADIUS + CARD_ZONE_OBJECT_GAP;
+    const labelCentre = [
+      desiredCentreX,
+      desiredCentreZ - rackCentreZ + bounds.minZ - STACK_AMOUNT_OUTWARD_GAP,
+    ] as const;
+    const rackRect = {
+      minX: desiredCentreX + bounds.minX,
+      maxX: desiredCentreX + bounds.maxX,
+      minZ: desiredCentreZ + bounds.minZ,
+      maxZ: desiredCentreZ + bounds.maxZ,
+    };
+    const labelRect = {
+      minX: labelCentre[0] - STACK_LABEL_HALF_WIDTH,
+      maxX: labelCentre[0] + STACK_LABEL_HALF_WIDTH,
+      minZ: labelCentre[1] - STACK_LABEL_HALF_DEPTH,
+      maxZ: labelCentre[1] + STACK_LABEL_HALF_DEPTH,
+    };
+    const markerCentres = protectedMarkerCircles(pose, markerSide);
+    const allWagersClear = protectedWagerCircles().every(({ centre, radius }) => {
+      const localPoint = seatLocalPoint(pose, centre);
+      const local: readonly [number, number] = [localPoint[0], localPoint[2]];
+      return circleClearsRect(
+        local,
+        radius,
+        rackRect,
+        CARD_ZONE_OBJECT_GAP,
+      ) && circleClearsRect(
+        local,
+        radius,
+        labelRect,
+        CARD_ZONE_OBJECT_GAP,
+      );
+    });
+    const markerClear = markerCentres.every(({ centre, radius }) => {
+      const localPoint = seatLocalPoint(pose, centre);
+      const local: readonly [number, number] = [localPoint[0], localPoint[2]];
+      return circleClearsRect(local, radius, rackRect, CARD_ZONE_OBJECT_GAP)
+        && circleClearsRect(local, radius, labelRect, CARD_ZONE_OBJECT_GAP);
+    });
+    const rackFits = orientedRackFits(pose, origin, bounds);
+    const cardsFit = rackClearsAllCardZones(pose, origin, bounds, labelCentre);
     return {
       side,
       origin,
-      markerX,
-      fits: orientedRackFits(pose, origin, bounds)
-        && rackClearsWager
-        && rackClearsAllCardZones(pose, origin, bounds),
+      labelCentre,
+      markerSide,
+      preferred,
+      fits: rackFits
+        && cardsFit
+        && allWagersClear
+        && markerClear,
+      rackCorners: planarCorners(worldRectCorners(
+        pose,
+        desiredCentreX,
+        desiredCentreZ,
+        bounds,
+      )),
+      labelCorners: planarCorners(worldRectCorners(
+        pose,
+        labelCentre[0],
+        labelCentre[1],
+        {
+          minX: -STACK_LABEL_HALF_WIDTH,
+          maxX: STACK_LABEL_HALF_WIDTH,
+          minZ: -STACK_LABEL_HALF_DEPTH,
+          maxZ: STACK_LABEL_HALF_DEPTH,
+        },
+      )),
     };
   });
-  const selected = candidates.find((candidate) => candidate.fits) ?? candidates
-    .sort((left, right) => {
-      const clearance = (candidate: typeof left) => {
-        const centre = seatWorldPoint(pose, candidate.origin);
-        return TABLE_DEPTH / 2 - capsuleDistance(centre);
-      };
-      return clearance(right) - clearance(left);
-    })[0];
+  return { bounds, candidates };
+}
+
+function seatOccupancyLayoutFromCandidate(
+  pose: SeatPose,
+  bounds: ReturnType<typeof chipRackLayoutBounds>,
+  card: readonly [number, number, number],
+  selected: SeatOccupancyCandidate,
+): SeatOccupancyLayout {
   const rackOrigin = seatWorldPoint(pose, selected.origin);
   const markerBase = seatWorldPoint(pose, [
-    selected.markerX,
+    card[0] + selected.markerSide * (CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + TABLE_MARKER_RADIUS),
     TABLE_HEIGHT + 0.012,
     card[2],
   ]);
   const stackLabel = seatWorldPoint(pose, [
-    selected.origin[0] + rackCentreX,
+    selected.labelCentre[0],
     TABLE_HEIGHT + 0.002,
-    selected.origin[2] + bounds.minZ - STACK_AMOUNT_OUTWARD_GAP,
+    selected.labelCentre[1],
   ]);
   return {
     rackOrigin,
@@ -479,6 +752,153 @@ export function seatOccupancyLayout(
     stackLabel,
     rackBounds: bounds,
   };
+}
+
+function seatOccupancyFallback(
+  pose: SeatPose,
+  candidateSet: SeatOccupancyCandidateSet,
+): SeatOccupancyCandidate {
+  return candidateSet.candidates
+    .filter((candidate) => candidate.fits)
+    .sort((left, right) => {
+      const clearance = (candidate: SeatOccupancyCandidate) => {
+        const centre = seatWorldPoint(pose, candidate.origin);
+        return TABLE_DEPTH / 2 - capsuleDistance(centre);
+      };
+      return clearance(right) - clearance(left);
+    })[0] ?? candidateSet.candidates[0];
+}
+
+function seatOccupancyLayoutSingle(
+  pose: SeatPose,
+  amount: number,
+): SeatOccupancyLayout {
+  const cardOrigin = seatLocalPoint(pose, pose.feltPosition);
+  const card = [
+    cardOrigin[0],
+    cardOrigin[1],
+    cardOrigin[2] + CARD_ZONE_LOCAL_CENTER_Z,
+  ] as const;
+  const candidateSet = seatOccupancyCandidateSet(pose, amount);
+  const selected = candidateSet.candidates.find((candidate) => candidate.fits)
+    ?? seatOccupancyFallback(pose, candidateSet);
+  return seatOccupancyLayoutFromCandidate(pose, candidateSet.bounds, card, selected);
+}
+
+function occupancyCandidatesClear(
+  left: SeatOccupancyCandidate,
+  right: SeatOccupancyCandidate,
+): boolean {
+  const leftPolygons = [left.rackCorners, left.labelCorners];
+  const rightPolygons = [right.rackCorners, right.labelCorners];
+  return leftPolygons.every((leftPolygon) => rightPolygons.every((rightPolygon) => (
+    !polygonsOverlap(leftPolygon, rightPolygon)
+  )));
+}
+
+const authoredOccupancyLayoutCache = new Map<number, readonly SeatOccupancyLayout[]>();
+
+function authoredStationIndexForPose(pose: SeatPose): number {
+  return AUTHORED_STATION_POSES.findIndex((stationPose) => (
+    stationPose.position[0] === pose.position[0]
+      && stationPose.position[2] === pose.position[2]
+  ));
+}
+
+function authoredSeatOccupancyLayouts(amount: number): readonly SeatOccupancyLayout[] {
+  const cached = authoredOccupancyLayoutCache.get(amount);
+  if (cached) return cached;
+
+  const candidateSets = AUTHORED_STATION_POSES.map((pose) => seatOccupancyCandidateSet(pose, amount));
+  const fallbackSelection = candidateSets.map((candidateSet, index) => (
+    candidateSet.candidates.find((candidate) => candidate.fits)
+      ?? seatOccupancyFallback(AUTHORED_STATION_POSES[index], candidateSet)
+  ));
+
+  const candidateIndex = (seatIndex: number, candidate: SeatOccupancyCandidate) => (
+    candidateSets[seatIndex].candidates.indexOf(candidate)
+  );
+  const fittingCandidates = candidateSets.map((candidateSet, seatIndex) => (
+    candidateSet.candidates
+      .filter((candidate) => candidate.fits)
+      .sort((left, right) => Number(right.preferred) - Number(left.preferred)
+        || candidateIndex(seatIndex, left) - candidateIndex(seatIndex, right))
+  ));
+  // Assign the most constrained semantic lanes first. A local greedy repair can
+  // strand a valid rear candidate behind a neighbouring rack that was itself
+  // moved later; the bounded objective search keeps the maximum number of
+  // preferred slots when a joint assignment exists and still proves every
+  // selected rack and label disjoint globally.
+  const seatOrder = Array.from({ length: AUTHORED_STATION_POSES.length }, (_, index) => index)
+    .sort((left, right) => {
+      const preferredLeft = fittingCandidates[left].filter((candidate) => candidate.preferred).length;
+      const preferredRight = fittingCandidates[right].filter((candidate) => candidate.preferred).length;
+      return preferredLeft - preferredRight
+        || fittingCandidates[left].length - fittingCandidates[right].length
+        || left - right;
+    });
+  const assignment: Array<SeatOccupancyCandidate | undefined> = Array.from(
+    { length: AUTHORED_STATION_POSES.length },
+    () => undefined,
+  );
+  const maximumPreferred = fittingCandidates.filter((candidates) => (
+    candidates.some((candidate) => candidate.preferred)
+  )).length;
+  let bestPreferred = -1;
+  let bestAssignment: SeatOccupancyCandidate[] | undefined;
+  const findAssignment = (depth: number, preferredCount: number): void => {
+    if (bestPreferred === maximumPreferred) return;
+    const remainingPreferredCapacity = preferredCount + seatOrder
+      .slice(depth)
+      .filter((seatIndex) => fittingCandidates[seatIndex].some((candidate) => candidate.preferred))
+      .length;
+    if (remainingPreferredCapacity < bestPreferred) return;
+    if (depth === seatOrder.length) {
+      if (preferredCount > bestPreferred) {
+        bestPreferred = preferredCount;
+        bestAssignment = assignment.slice() as SeatOccupancyCandidate[];
+      }
+      return;
+    }
+    const seatIndex = seatOrder[depth];
+    for (const candidate of fittingCandidates[seatIndex]) {
+      const clearAssigned = assignment.every((other) => (
+        other === undefined || occupancyCandidatesClear(candidate, other)
+      ));
+      if (!clearAssigned) continue;
+      assignment[seatIndex] = candidate;
+      findAssignment(depth + 1, preferredCount + Number(candidate.preferred));
+      assignment[seatIndex] = undefined;
+    }
+  };
+  findAssignment(0, 0);
+  const selected = bestAssignment ?? fallbackSelection;
+
+  const layouts = candidateSets.map((candidateSet, index) => {
+    const pose = AUTHORED_STATION_POSES[index];
+    const candidate = selected[index]
+      ?? candidateSet.candidates.find((next) => next.fits)
+      ?? seatOccupancyFallback(pose, candidateSet);
+    const cardOrigin = seatLocalPoint(pose, pose.feltPosition);
+    const card = [
+      cardOrigin[0],
+      cardOrigin[1],
+      cardOrigin[2] + CARD_ZONE_LOCAL_CENTER_Z,
+    ] as const;
+    return seatOccupancyLayoutFromCandidate(pose, candidateSet.bounds, card, candidate);
+  });
+  authoredOccupancyLayoutCache.set(amount, layouts);
+  return layouts;
+}
+
+/** Resolve authored seats together so neighboring rack footprints cannot overlap. */
+export function seatOccupancyLayout(
+  pose: SeatPose,
+  amount = 15_000,
+): SeatOccupancyLayout {
+  const stationIndex = authoredStationIndexForPose(pose);
+  if (stationIndex < 0) return seatOccupancyLayoutSingle(pose, amount);
+  return authoredSeatOccupancyLayouts(amount)[stationIndex];
 }
 
 /**
