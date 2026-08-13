@@ -49,6 +49,26 @@ class FakeClock implements FreezableDelayHost {
 }
 
 describe("tournament presentation clock", () => {
+  it("allocates the full physical deal and fold timelines at standard speed", () => {
+    const settings = { reducedMotion: false, transitionMotion: "full" } as const;
+    const deal: TournamentPresentationEvent = {
+      id: "3:hand-1:hole-cards-dealt:0",
+      kind: "hole-cards-dealt",
+      handId: "hand-1",
+      playerIds: ["hero", "opponent"],
+    };
+    const fold: TournamentPresentationEvent = {
+      id: "3:hand-1:action:1",
+      kind: "action",
+      handId: "hand-1",
+      playerId: "opponent",
+      command: { type: "fold" },
+    };
+
+    expect(presentationEventDelayMs(deal, 1, settings)).toBe(2_000);
+    expect(presentationEventDelayMs(fold, 1, settings)).toBe(1_960);
+  });
+
   it("uses a deterministic rate without feeding presentation speed into the engine", () => {
     const full = presentationEventDelayMs(actionEvent, 1, {
       reducedMotion: false,

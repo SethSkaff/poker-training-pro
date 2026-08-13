@@ -5,10 +5,13 @@ import { resolve } from "node:path";
 const scene = readFileSync(resolve(process.cwd(), "src/scene3d/tableScene.ts"), "utf8");
 
 describe("chip ownership choreography", () => {
-  it("keeps a separate travelling pile between the owner rack and betting circle", () => {
+  it("moves exact selected rack chips under the owner's left hand", () => {
     expect(scene).toContain('chips-moving-from-stack');
     expect(scene).toContain('restingChipStackPosition(pose, chipCommitment?.stackBefore ?? seat.stack)');
-    expect(scene).toContain('restingChipStackPosition(pose, chipCommitment.stackBefore)');
+    expect(scene).toContain('if (isCommitting && betFrame) return betFrame.hand.position;');
+    expect(scene).toContain('chip.ownership !== "rack"');
+    expect(scene).toContain('setTravellingChipFrames(view.travellingChips, physicalChips, pose, resources)');
+    expect(scene).toContain('setChipStack(view.stackChips, rackLayoutAmount, resources, excludedRackChipIds)');
     expect(scene).toContain('betCirclePosition(pose)');
     expect(scene).toContain('view.travellingChips.visible = true');
   });

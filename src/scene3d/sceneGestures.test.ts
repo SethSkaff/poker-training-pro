@@ -18,6 +18,11 @@ describe("scene gesture grammar", () => {
     expect(bet.chipMotion).toBe("bet");
     expect(raise.chipMotion).toBe("raise");
     expect(allIn.chipMotion).toBe("all-in");
+    expect(deal.movingArm).toBe("none");
+    expect(fold.movingArm).toBe("right");
+    for (const wager of [call, bet, raise, allIn]) {
+      expect(wager.movingArm).toBe("left");
+    }
     expect(raise.armReach).toBeGreaterThan(bet.armReach);
     expect(allIn.armReach).toBeGreaterThan(raise.armReach);
   });
@@ -41,7 +46,8 @@ describe("scene gesture grammar", () => {
     expect(wager.elbowBend).toBeGreaterThan(tap.elbowBend);
     expect(wager.shoulderPitch).toBeGreaterThan(tap.shoulderPitch);
     expect(fold.cardMotion).toBe("muck");
-    expect(fold.elbowBend).toBeGreaterThan(0);
+    expect(fold.movingArm).toBe("right");
+    expect(fold.elbowBend).toBe(0);
   });
 
   it("uses the right hand for exactly two taps, then returns to rest", () => {
@@ -66,6 +72,7 @@ describe("scene gesture grammar", () => {
     expect(sceneGestureFor(undefined, 0, false, true)).toMatchObject({
       bodyLean: -0.04,
       cardMotion: "muck",
+      movingArm: "none",
     });
     // Folded cards muck independently in `applySeat`, but committed public
     // chips must still travel during the later collection event.

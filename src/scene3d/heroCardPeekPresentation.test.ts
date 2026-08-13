@@ -26,9 +26,10 @@ describe("hero card peek presentation", () => {
   });
 
   it("keeps the planted half backed and authorises a face only on the grouped bent half", () => {
-    expect(scene).toContain("mesh.geometry = squeezing ? resources.heroPeekCardGeometry : resources.cardGeometry;");
-    expect(scene).toContain("mesh.material = squeezing\n      ? [deckBack, code ? resources.heroPeekFaceMaterial(code) : resources.cardMaterial]");
-    expect(scene).toContain("mesh.userData.privateCodeAuthorised = squeezing && Boolean(code);");
+    expect(scene).toContain("mesh.geometry = cardCanBeSqueezed ? resources.heroPeekCardGeometry : resources.cardGeometry;");
+    expect(scene).toContain("mesh.material = cardCanBeSqueezed\n      ? [deckBack, code ? resources.heroPeekFaceMaterial(code) : resources.cardMaterial]");
+    expect(scene).toContain("mesh.userData.privateCodeAuthorised = cardCanBeSqueezed && Boolean(code);");
+    expect(scene).toContain("dealCardFrame?.viewable ?? true");
     expect(scene).toContain("geometry.addGroup(0, 6, 0);");
     expect(scene).toContain("geometry.addGroup(6, rows * 6, 1);");
     expect(scene).not.toContain('peekFace.name = "hero-peek-face";');
@@ -48,6 +49,6 @@ describe("hero card peek presentation", () => {
     expect(scene).toContain("indices.push(left, left + 1, left + 2, left + 1, left + 3, left + 2);");
     expect(scene).not.toContain("indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);");
     expect(scene).toContain("card.rotation.x = 0;");
-    expect(scene).toContain("const spread = squeezing ? 0.040 : 0.055;");
+    expect(scene).toContain("const spread = cardCanBeSqueezed ? 0.040 : 0.055;");
   });
 });

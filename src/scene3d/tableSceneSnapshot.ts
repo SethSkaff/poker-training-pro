@@ -33,6 +33,8 @@ export interface TableSceneSnapshotInput {
    * part of a replay -- it describes a hand on a card, not a game state.
    */
   readonly heroPeeked?: boolean;
+  /** Public presentation gate; individual arrivals remain renderer-owned. */
+  readonly privateCardsDealt?: boolean;
   readonly revealedCardCodesByPlayer?: Readonly<Record<string, readonly string[]>>;
   readonly cameraPan: number;
   readonly cameraZoom?: number;
@@ -136,6 +138,7 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
     cameraZoom: input.cameraZoom ?? 0,
     heroStationIndex: input.heroStationIndex,
     heroPeeked: input.heroPeeked ?? false,
+    privateCardsDealt: input.privateCardsDealt ?? true,
     cameraView: input.cameraView ?? "standard",
     cameraMotion: input.cameraMotion ?? "full",
     reducedMotion: input.reducedMotion,

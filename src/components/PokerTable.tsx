@@ -41,6 +41,10 @@ import {
   type SceneSnapshotSeat,
 } from "../scene3d/tableSceneSnapshot";
 import {
+  createHoleCardDealPlan,
+  sampleHoleCardDeal,
+} from "../scene3d/dealChoreography";
+import {
   heroStationIndex,
   chipInventoryForAmount,
   seatBetViewportAnchor,
@@ -806,7 +810,8 @@ interface PlayerSeatProps {
   /** Only a public action can drive a character gesture; no card data is read. */
   recentAction?: BettingActionType;
   recentActionLabel?: string;
-  cardsDealt: boolean;
+  /** Number of physical private cards that have reached this owner, 0..2. */
+  dealtCardCount: number;
   /** True while this hand's deal beat is the presented event. */
   justDealt?: boolean;
   isActing: boolean;
@@ -917,7 +922,7 @@ function PlayerSeat({
   wonPot = false,
   recentAction,
   recentActionLabel,
-  cardsDealt,
+  dealtCardCount,
   justDealt = false,
   isActing,
   eliminated = false,
@@ -951,7 +956,8 @@ function PlayerSeat({
   // A folded hand is mucked, not a still-visible two-card hand. The public
   // fold gesture/state cue supplies the animation beat; retaining card DOM
   // through a queued event caused folded placeholder corners to overlap.
-  const isShowingCards = !isHero && !isOut && cardsDealt && !isFolded;
+  const visiblePrivateCardCount = Math.max(0, Math.min(2, Math.floor(dealtCardCount)));
+  const isShowingCards = !isHero && !isOut && visiblePrivateCardCount > 0 && !isFolded;
   const hasRevealedCards = revealedCards?.length === 2;
   const shouldHoldCards =
     isShowingCards && !hasRevealedCards && player.status === "active" && !isMucking;
@@ -1039,7 +1045,7 @@ function PlayerSeat({
                   }
                 />
               ))
-            : [0, 1].map((index) => (
+            : Array.from({ length: visiblePrivateCardCount }, (_, index) => (
                 <PlayingCard
                   key={index}
                   card={{ rank: "A", suit: "spades" }}
@@ -2403,7 +2409,28 @@ export function PokerTable({
       setCardsDealtHandId(scenario.id);
       return;
     }
-    if (tournament.presentationEvent?.kind === "hole-cards-dealt") {
+    const presentationEvent = tournament.presentationEvent;
+    if (
+      presentationEvent
+      && presentationEvent.kind !== "button-moved"
+      && presentationEvent.kind !== "blinds-posted"
+    ) {
+      /*
+       * The presentation queue and scenario snapshot commit independently at a
+       * hand boundary.  A fast result/next-hand transition can therefore show
+       * a new-hand event for one render while `scenario` still names the
+       * previous hand.  Every event after the two pre-deal beats proves that
+       * hand's cards have been dealt, and the public event already carries the
+       * authoritative identity.
+       */
+      setCardsDealtHandId(presentationEvent.handId);
+    } else if (!presentationEvent && tournament.heroDecision) {
+      /*
+       * Skip fast-forwards the remainder of the current hand to the next hero
+       * decision.  That deliberately elides the intervening presentation
+       * queue, including the next hand's deal event, so the legal decision is
+       * also conclusive public evidence that both cards are already present.
+       */
       setCardsDealtHandId(scenario.id);
     } else if (cardsDealtHandId !== scenario.id) {
       setCardsDealtHandId(null);
@@ -3158,6 +3185,7 @@ export function PokerTable({
        `revealedCardCodesByPlayer`, which the snapshot already honours for every
        seat including this one. */
     heroPeeked: peeked,
+    privateCardsDealt: cardsDealt,
     cameraView: settings.cameraView,
     // A disabled automatic camera still accepts the player's own free-look;
     // keep renderer interpolation immediate in that mode instead of discarding
@@ -3175,6 +3203,40 @@ export function PokerTable({
     tier: tournament?.tier === "circuit" ? "regional" : tournament?.tier === "championship" ? "national" : tournament?.tier === "world" ? "championship" : "local",
     transition: sceneTransition,
   });
+  /*
+   * DOM affordances use the same two-circuit physical clock as the renderer.
+   * A first card therefore becomes peekable when that card reaches the owner;
+   * the second cannot appear merely because the overall deal event has begun.
+   * Geometry is immaterial to this projection, so zero anchors keep it pure and
+   * avoid introducing a second scene-layout source into the accessible layer.
+   */
+  const holeDealAvailabilityFrame = sceneTransition?.kind === "hole-cards-dealt"
+    ? sampleHoleCardDeal(
+        createHoleCardDealPlan(
+          sceneSnapshot.seats
+            .filter((seat) => sceneTransition.playerIds.includes(seat.id))
+            .map((seat) => ({
+              id: seat.id,
+              clockwiseIndex: seat.relativeSeat,
+              cardAnchor: [0, 0, 0] as const,
+              facingRadians: 0,
+            })),
+          {
+            surfaceY: 0,
+            deckAnchor: [0, 0, 0],
+            rightHandRest: [0, 0, 0],
+          },
+          { firstRecipientId: sceneSnapshot.smallBlindPlayerId },
+        ),
+        sceneTransition.progress,
+      )
+    : undefined;
+  const dealtCardCountForPlayer = (playerId: string): number => holeDealAvailabilityFrame
+    ? holeDealAvailabilityFrame.cards.filter(
+        (card) => card.assignment.recipientId === playerId && card.viewable,
+      ).length
+    : cardsDealt ? 2 : 0;
+  const heroDealtCardCount = dealtCardCountForPlayer(heroPlayerId);
   const sceneSeatByPlayerId = new Map(
     sceneSnapshot.seats.map((seat) => [seat.id, seat]),
   );
@@ -4195,7 +4257,7 @@ export function PokerTable({
                   }
                   recentAction={presentation.action}
                   recentActionLabel={presentation.label}
-                  cardsDealt={cardsDealt}
+                  dealtCardCount={dealtCardCountForPlayer(player.id)}
                   justDealt={
                     tournament?.presentationEvent?.kind === "hole-cards-dealt"
                   }
@@ -4313,10 +4375,10 @@ export function PokerTable({
               })}
               // A mucked hand is not interactive: no peeking, no dragging it
               // back onto the table for the rest of the hand.
-              disabled={Boolean(action) || !cardsDealt || heroFolded}
+              disabled={Boolean(action) || heroDealtCardCount === 0 || heroFolded}
             >
               <span className="hero-hole-cards__cards">
-                {scenario.heroCards.map((card, index) => (
+                {scenario.heroCards.slice(0, heroDealtCardCount).map((card, index) => (
                   <span className="hero-card-wrap" key={cardLabel(card)}>
                     <PlayingCard
                       card={card}
@@ -4329,7 +4391,7 @@ export function PokerTable({
                           : undefined
                       }
                     />
-                    {(peeked || showdownHeroRevealed) && index === 1 && (
+                    {(peeked || showdownHeroRevealed) && index === heroDealtCardCount - 1 && (
                       <small>{cardLabel(card)}</small>
                     )}
                   </span>

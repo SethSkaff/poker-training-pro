@@ -379,8 +379,12 @@ export const TABLE_ANCHORS = {
       TABLE_HEIGHT + 0.005,
       -0.24,
     ] as const,
-  /** Where the dealer's shoe sits, and where dealt cards originate. */
-  dealerShoe: [0.36, TABLE_HEIGHT + 0.02, -(TABLE_DEPTH / 2 - 0.2)] as const,
+  /**
+   * Centre of the live pack under the dealer's left palm. The renderer parents
+   * the pack to the dealer arm assembly, so this is both its rest position and
+   * the exact origin sampled by every deal choreography.
+   */
+  dealerShoe: [0.30, TABLE_HEIGHT + 0.002, -(TABLE_DEPTH / 2 - 0.2)] as const,
   /**
    * The point a card visibly leaves the dealer's throwing hand.
    *

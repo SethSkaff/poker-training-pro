@@ -46,7 +46,9 @@ import {
   TABLE_WIDTH,
   turnIndicatorPosition,
   BET_CIRCLE_FORWARD,
+  PREVIOUS_BET_CIRCLE_FORWARD,
   CHIP_STACK_SAFE_RADIUS,
+  CHIP_PHYSICAL_RADIUS,
   CARD_ZONE_DEPTH,
   CARD_ZONE_WIDTH,
   CARD_ZONE_LOCAL_MIN_Z,
@@ -335,6 +337,9 @@ describe("the current-turn indicator", () => {
 
 describe("six-player tournament lanes", () => {
   it("gives each player one straight card rectangle and a separate inward wager circle", () => {
+    expect(BET_CIRCLE_FORWARD).toBe(
+      (PREVIOUS_BET_CIRCLE_FORWARD + CARD_ZONE_LOCAL_MAX_Z) / 2,
+    );
     const poses = seatPoses(6);
     for (const pose of poses) {
       const circle = betCirclePosition(pose);
@@ -617,7 +622,9 @@ describe("protected seat occupancy", () => {
         expect(rectsOverlap(cardRect, rackRect), `seat ${pose.seat} amount ${amount} card/rack`).toBe(false);
         expect(rectsOverlap(cardRect, labelRect), `seat ${pose.seat} amount ${amount} card/label`).toBe(false);
         expect(rectsOverlap(rackRect, labelRect), `seat ${pose.seat} amount ${amount} rack/label`).toBe(false);
-        expect(circleOverlapsRect({ x: wager[0], z: wager[2], radius: BET_CIRCLE_RADIUS }, cardRect), `seat ${pose.seat} wager/card`).toBe(false);
+        // The mandated midpoint makes the printed 40 mm ring tangent to the
+        // card-zone edge. The physical 35 mm chip still retains clear felt.
+        expect(circleOverlapsRect({ x: wager[0], z: wager[2], radius: CHIP_PHYSICAL_RADIUS }, cardRect), `seat ${pose.seat} wager/card`).toBe(false);
         expect(circleOverlapsRect({ x: wager[0], z: wager[2], radius: BET_CIRCLE_RADIUS }, rackRect), `seat ${pose.seat} wager/rack`).toBe(false);
         for (const markerLabel of ["D", "SB", "BB"] as const) {
           const marker = seatLocalPoint(pose, tableMarkerPosition(pose, markerLabel, amount));

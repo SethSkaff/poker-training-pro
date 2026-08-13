@@ -36,12 +36,18 @@ export function sceneGestureFor(
     // already-committed chips travel from the wager circle to the pot.
     return gesture(0, 0, "rest", "collect", 0, 0, 0, 0, "none");
   }
-  if (folded || action === "fold") {
-    return gesture(-0.04, 0.07 * pulse, "muck", "none", 0.40 * pulse, 0.06, 0.62 * pulse);
+  if (action === "fold") {
+    // The choreography supplies the exact low right-palm target. Keep generic
+    // shoulder pulses out of the path so a fold cannot begin with an upward
+    // two-arm jerk.
+    return gesture(-0.04, 0.07 * pulse, "muck", "none", 0, 0, 0, 0, "right");
+  }
+  if (folded) {
+    return gesture(-0.04, 0, "muck", "none", 0, 0, 0, 0, "none");
   }
   switch (action) {
     case "deal":
-      return gesture(0.015 * pulse, 0.12 * pulse, "deal", "none", 0.28 * pulse, 0, 0.36 * pulse);
+      return gesture(0, 0, "deal", "none", 0, 0, 0, 0, "none");
     case "check":
       /*
         Two short table knocks with the player's right hand. The contact pulses
@@ -51,13 +57,13 @@ export function sceneGestureFor(
       */
       return checkGesture(t);
     case "call":
-      return gesture(0.025 * pulse, 0.11 * pulse, "rest", "call", 0.43 * pulse, 0.05, 0.60 * pulse);
+      return gesture(0.025 * pulse, 0.11 * pulse, "rest", "call", 0.43 * pulse, 0.05, 0.60 * pulse, 0, "left");
     case "bet":
-      return gesture(0.035 * pulse, 0.15 * pulse, "rest", "bet", 0.48 * pulse, 0.07, 0.68 * pulse);
+      return gesture(0.035 * pulse, 0.15 * pulse, "rest", "bet", 0.48 * pulse, 0.07, 0.68 * pulse, 0, "left");
     case "raise":
-      return gesture(0.05 * pulse, 0.2 * pulse, "rest", "raise", 0.56 * pulse, 0.10, 0.78 * pulse);
+      return gesture(0.05 * pulse, 0.2 * pulse, "rest", "raise", 0.56 * pulse, 0.10, 0.78 * pulse, 0, "left");
     case "all-in":
-      return gesture(0.065 * pulse, 0.24 * pulse, "rest", "all-in", 0.68 * pulse, 0.13, 0.92 * pulse);
+      return gesture(0.065 * pulse, 0.24 * pulse, "rest", "all-in", 0.68 * pulse, 0.13, 0.92 * pulse, 0, "left");
     case "win":
       return gesture(0.03 * pulse, 0.16 * pulse, "rest", "none", 0.32 * pulse, 0, 0.44 * pulse);
     default:

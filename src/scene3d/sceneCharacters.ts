@@ -687,10 +687,11 @@ function buildArticulatedArm(
 ): { shoulder: Group; elbow: Group } {
   const { shoulder: shoulderPoint, elbow: elbowPoint, hand: handPoint } = armJoints(body, side);
   const shoulder = new Group();
-  shoulder.name = side < 0 ? "left-shoulder" : "right-shoulder";
+  // In the station frame +Z points inward, so screen/anatomical left is +X.
+  shoulder.name = side > 0 ? "left-shoulder" : "right-shoulder";
   shoulder.position.set(...shoulderPoint);
   const elbow = new Group();
-  elbow.name = side < 0 ? "left-elbow" : "right-elbow";
+  elbow.name = side > 0 ? "left-elbow" : "right-elbow";
   const upper = new Mesh(
     ledger.track(limb([0, 0, 0], [
       elbowPoint[0] - shoulderPoint[0], elbowPoint[1] - shoulderPoint[1], elbowPoint[2] - shoulderPoint[2],
@@ -972,9 +973,12 @@ export function buildDealer(
       DEALER_SHOULDER_PIVOT[1],
       DEALER_SHOULDER_PIVOT[2],
     ] as const;
-    const elbowPoint = [side * shoulder * 0.76, top - 0.20, 0.17] as const;
+    const isLeftHand = side === 1;
+    const elbowX = isLeftHand ? 0.245 : side * shoulder * 0.76;
+    const handX = isLeftHand ? 0.30 : side * shoulder * 0.52;
+    const elbowPoint = [elbowX, top - 0.20, 0.17] as const;
     const handPoint = [
-      side * shoulder * 0.52,
+      handX,
       DEALER_HAND_REST[1],
       DEALER_HAND_REST[2],
     ] as const;

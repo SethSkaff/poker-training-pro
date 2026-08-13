@@ -3,6 +3,8 @@ import {
   type FreezableDelayHost,
 } from "./freezableDelay";
 import type { TournamentPresentationEvent } from "../modes/tournamentRunner";
+import { HOLE_CARD_DEAL_DURATION_MS } from "../scene3d/dealChoreography";
+import { FOLD_CHOREOGRAPHY_TIMING } from "../scene3d/foldChoreography";
 
 export interface PresentationMotionSettings {
   reducedMotion: boolean;
@@ -35,7 +37,7 @@ export function presentationEventDelayMs(
         // equity figures before any card lands on the board.
         1_500
       : event.kind === "hole-cards-dealt"
-        ? 1_600
+        ? HOLE_CARD_DEAL_DURATION_MS
         : event.kind === "board-card-dealt"
           ? context.allInRunout
             ? 1_500
@@ -44,7 +46,7 @@ export function presentationEventDelayMs(
             ? event.command.type === "check"
               ? 650
               : event.command.type === "fold"
-                ? 800
+                ? FOLD_CHOREOGRAPHY_TIMING.totalMs
                 : 950
             : event.kind === "pot-awarded" ||
                 event.kind === "showdown" ||

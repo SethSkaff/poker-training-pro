@@ -202,8 +202,19 @@ export const CARD_ZONE_LOCAL_CENTER_Z = (CARD_ZONE_LOCAL_MIN_Z + CARD_ZONE_LOCAL
 export const BET_CIRCLE_RADIUS = 0.040;
 /** Visible felt between the protected card rectangle and every other object. */
 export const CARD_ZONE_OBJECT_GAP = 0.020;
-/** The wager line sits beyond a complete multi-column rack, not just a chip. */
-export const BET_CIRCLE_FORWARD = 0.25;
+/**
+ * Previous centre of the authored wager circle. The bundled play-zone mesh is
+ * baked at this offset, so the renderer uses it only to translate that mesh to
+ * the current shared anchor.
+ */
+export const PREVIOUS_BET_CIRCLE_FORWARD = 0.25;
+/**
+ * The owner-side wager anchor is halfway between the former circle centre and
+ * the far/inward edge of that owner's private-card zone.
+ */
+export const BET_CIRCLE_FORWARD = (
+  PREVIOUS_BET_CIRCLE_FORWARD + CARD_ZONE_LOCAL_MAX_Z
+) / 2;
 
 /**
  * Conservative footprint for the deepest rendered chip rack.

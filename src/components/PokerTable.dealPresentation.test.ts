@@ -10,7 +10,9 @@ const styles = readFileSync(path.join(componentDir, "..", "styles.css"), "utf8")
 describe("hole-card deal presentation", () => {
   it("gates hero interaction on the public deal event and passes deal state to seats", () => {
     expect(tableSource).toContain('presentationEvent?.kind === "hole-cards-dealt"');
-    expect(tableSource).toContain("cardsDealt={cardsDealt}");
+    expect(tableSource).toContain("setCardsDealtHandId(presentationEvent.handId)");
+    expect(tableSource).toContain("!presentationEvent && tournament.heroDecision");
+    expect(tableSource).toContain("dealtCardCount={dealtCardCountForPlayer(player.id)}");
     /*
       Hero interaction stays gated on the public deal event and on a pending
       action, and is now additionally gated on the hand being mucked (E27-001):
@@ -19,9 +21,11 @@ describe("hole-card deal presentation", () => {
       strengthening the gate does not read as breaking it.
     */
     expect(tableSource).toMatch(
-      /disabled=\{Boolean\(action\) \|\| !cardsDealt \|\| heroFolded\}/,
+      /disabled=\{Boolean\(action\) \|\| heroDealtCardCount === 0 \|\| heroFolded\}/,
     );
-    expect(tableSource).toContain("const isShowingCards = !isHero && !isOut && cardsDealt && !isFolded");
+    expect(tableSource).toContain("const visiblePrivateCardCount = Math.max(0, Math.min(2, Math.floor(dealtCardCount)))");
+    expect(tableSource).toContain("scenario.heroCards.slice(0, heroDealtCardCount)");
+    expect(tableSource).toContain("card.assignment.recipientId === playerId && card.viewable");
     expect(tableSource).toContain("hasRevealedCards");
     expect(tableSource).toContain("revealedCards.map((card)");
     expect(tableSource).toContain('card={{ rank: "A", suit: "spades" }}');
