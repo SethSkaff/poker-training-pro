@@ -51,10 +51,11 @@ import {
   CARD_ZONE_WIDTH,
   CARD_ZONE_LOCAL_MIN_Z,
   CARD_ZONE_LOCAL_MAX_Z,
+  CARD_ZONE_LOCAL_CENTER_Z,
   CARD_ZONE_OBJECT_GAP,
   BET_CIRCLE_RADIUS,
   STACK_AMOUNT_OUTWARD_GAP,
-  CHIP_STACK_LOCAL_RIGHT_SIDE,
+  CHIP_STACK_LOCAL_LEFT_SIDE,
   STACK_LABEL_HALF_DEPTH,
   STACK_LABEL_HALF_WIDTH,
   turnIndicatorPositionForPlayer,
@@ -550,7 +551,7 @@ describe("protected seat occupancy", () => {
     ].map(([x, z]) => seatWorldPoint(pose, [x, TABLE_HEIGHT, z]));
   };
 
-  it("prefers a collision-free rack behind and on the player's right", () => {
+  it("prefers a collision-free rack rail-side and on the player's left", () => {
     // This representative side seat has enough felt for the preferred semantic
     // slot even for the widest authored rack. Tight end seats are intentionally
     // allowed to choose a collision fallback rather than clip a neighbouring
@@ -561,9 +562,32 @@ describe("protected seat occupancy", () => {
     for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
       const layout = seatOccupancyLayout(pose, amount);
       const rack = seatLocalPoint(pose, layout.rackOrigin);
-      expect(layout.rackSide, `seat ${pose.seat} amount ${amount}`).toBe(CHIP_STACK_LOCAL_RIGHT_SIDE);
-      expect(rack[0], `seat ${pose.seat} amount ${amount} right of cards`).toBeLessThan(card[0]);
-      expect(rack[2], `seat ${pose.seat} amount ${amount} behind cards`).toBeLessThan(cardCentreZ);
+      expect(layout.rackSide, `seat ${pose.seat} amount ${amount}`).toBe(CHIP_STACK_LOCAL_LEFT_SIDE);
+      expect(rack[0], `seat ${pose.seat} amount ${amount} left of cards`).toBeGreaterThan(card[0]);
+      expect(rack[2], `seat ${pose.seat} amount ${amount} rail-side of cards`).toBeLessThan(cardCentreZ);
+    }
+  });
+
+  it("uses one rigid rack, cards, marker, wager depth order at all six seats", () => {
+    for (const pose of seatPoses(6)) {
+      const card = seatLocalPoint(pose, pose.feltPosition);
+      const layout = seatOccupancyLayout(pose, 15_000);
+      const rack = seatLocalPoint(pose, layout.rackOrigin);
+      const wager = seatLocalPoint(pose, layout.wager);
+      const marker = seatLocalPoint(pose, tableMarkerPosition(pose, "D", 15_000));
+
+      expect(rack[0], `seat ${pose.seat} rack player-left`).toBeGreaterThan(card[0]);
+      expect(rack[2], `seat ${pose.seat} rack closest to rail`).toBeLessThan(
+        card[2] + CARD_ZONE_LOCAL_CENTER_Z,
+      );
+      expect(wager[2], `seat ${pose.seat} bet beyond cards`).toBeGreaterThan(
+        card[2] + CARD_ZONE_LOCAL_MAX_Z,
+      );
+      expect(marker[2], `seat ${pose.seat} marker beyond cards`).toBeGreaterThan(
+        card[2] + CARD_ZONE_LOCAL_MAX_Z,
+      );
+      expect(Math.abs(marker[0] - wager[0]), `seat ${pose.seat} marker beside bet`)
+        .toBeCloseTo(BET_CIRCLE_RADIUS + TABLE_MARKER_RADIUS + TABLE_MARKER_GAP, 9);
     }
   });
 
@@ -683,14 +707,15 @@ describe("protected seat occupancy", () => {
 });
 
 describe("dealer and blind markers", () => {
-  it("sit in their own side pocket, clear of cards and the chip rack", () => {
+  it("sit beside their owner's wager, clear of cards and the chip rack", () => {
     for (const pose of seatPoses(6)) {
       const stack = restingChipStackPosition(pose);
       const marker = tableMarkerPosition(pose);
+      const wager = betCirclePosition(pose);
       const gap = distance(marker, stack);
       expect(gap, `seat ${pose.seat}`).toBeGreaterThanOrEqual(0.2);
-      expect(distance(marker, pose.feltPosition)).toBeGreaterThan(
-        CARD_ZONE_WIDTH / 2 + TABLE_MARKER_GAP,
+      expect(distance(marker, wager)).toBeGreaterThanOrEqual(
+        TABLE_MARKER_RADIUS + BET_CIRCLE_RADIUS + TABLE_MARKER_GAP,
       );
     }
   });

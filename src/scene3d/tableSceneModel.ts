@@ -203,7 +203,7 @@ export const BET_CIRCLE_RADIUS = 0.040;
 /** Visible felt between the protected card rectangle and every other object. */
 export const CARD_ZONE_OBJECT_GAP = 0.020;
 /** The wager line sits beyond a complete multi-column rack, not just a chip. */
-export const BET_CIRCLE_FORWARD = 0.31;
+export const BET_CIRCLE_FORWARD = 0.25;
 
 /**
  * Conservative footprint for the deepest rendered chip rack.
@@ -216,9 +216,12 @@ export const BET_CIRCLE_FORWARD = 0.31;
  */
 export const CHIP_STACK_SAFE_RADIUS = 0.13;
 
-/** Chip racks sit beside the cards, slightly toward their owner. */
-/** Rack depth bias toward its owner; lateral separation is solved from bounds. */
-export const CHIP_STACK_LOCAL_OWNER_OFFSET = -0.018;
+/**
+ * Rack depth bias toward its owner.  The approved casino layout keeps the rack
+ * in the rail-side row, with the hole cards just inside it and the bet deepest
+ * toward the pot.
+ */
+export const CHIP_STACK_LOCAL_OWNER_OFFSET = -0.070;
 
 /** Shared physical rack dimensions used by both placement and rendering. */
 export const CHIPS_PER_COLUMN = 8;
@@ -233,8 +236,8 @@ export const TABLE_MARKER_GAP = 0.024;
 /** Conservative radius of the rendered rack footprint, excluding the height. */
 export const CHIP_STACK_FOOTPRINT_RADIUS = 0.105;
 
-/** The renderer's station frame has +Z toward the table; -X is the player's right. */
-export const CHIP_STACK_LOCAL_RIGHT_SIDE: -1 = -1;
+/** The renderer's station frame has +Z inward; +X is the player's left. */
+export const CHIP_STACK_LOCAL_LEFT_SIDE: 1 = 1;
 
 /**
  * Clear table-space gap from the outside edge of a rack to its numeral.
@@ -466,14 +469,14 @@ function markerPocketCentres(
   pose: SeatPose,
   markerSide: -1 | 1,
 ): readonly (readonly [number, number, number])[] {
-  const cardOrigin = seatLocalPoint(pose, pose.feltPosition);
-  const markerX = cardOrigin[0] + markerSide * (
-    CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + TABLE_MARKER_RADIUS
+  const wager = seatLocalPoint(pose, betCirclePosition(pose));
+  const markerX = wager[0] + markerSide * (
+    BET_CIRCLE_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS
   );
-  return [-0.065, 0.065, 0].map((slotOffset) => seatWorldPoint(pose, [
-    markerX,
+  return [0, 0.065].map((slotOffset) => seatWorldPoint(pose, [
+    markerX + markerSide * slotOffset,
     TABLE_HEIGHT + 0.012,
-    cardOrigin[2] + slotOffset,
+    wager[2],
   ]));
 }
 
@@ -571,7 +574,7 @@ function seatOccupancyCandidateSet(
     STACK_LABEL_HALF_DEPTH,
   );
   const lateral = CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + lateralHalfWidth;
-  const playerRight = CHIP_STACK_LOCAL_RIGHT_SIDE;
+  const playerLeft = CHIP_STACK_LOCAL_LEFT_SIDE;
   const slotCandidates: Array<{
     side: -1 | 0 | 1;
     desiredCentreX: number;
@@ -579,59 +582,59 @@ function seatOccupancyCandidateSet(
     markerSide: -1 | 1;
     preferred: boolean;
   }> = [
-    // Semantic owner slot first. A rack belongs behind and to the player's
-    // right of the hole cards; depth-only and opposite-side slots are
+    // Semantic owner slot first. A rack belongs rail-side and to the player's
+    // left of the hole cards; depth-only and opposite-side slots are
     // collision fallbacks, never the preferred placement.
     {
-      side: playerRight,
-      desiredCentreX: card[0] + playerRight * lateral,
+      side: playerLeft,
+      desiredCentreX: card[0] + playerLeft * lateral,
       desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
-      markerSide: -playerRight as -1 | 1,
+      markerSide: -playerLeft as -1 | 1,
       preferred: true,
     },
     {
-      side: playerRight,
-      desiredCentreX: card[0] + playerRight * lateral,
+      side: playerLeft,
+      desiredCentreX: card[0] + playerLeft * lateral,
       desiredCentreZ: card[2] - ownerDepth,
-      markerSide: -playerRight as -1 | 1,
+      markerSide: -playerLeft as -1 | 1,
       preferred: true,
     },
     ...[0.018, 0.036, 0.054].map((extraLateral) => ({
-      side: playerRight,
-      desiredCentreX: card[0] + playerRight * (lateral + extraLateral),
+      side: playerLeft,
+      desiredCentreX: card[0] + playerLeft * (lateral + extraLateral),
       desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
-      markerSide: -playerRight as -1 | 1,
+      markerSide: -playerLeft as -1 | 1,
       preferred: true,
     })),
     ...[0.018, 0.036, 0.054].map((extraLateral) => ({
-      side: playerRight,
-      desiredCentreX: card[0] + playerRight * (lateral + extraLateral),
+      side: playerLeft,
+      desiredCentreX: card[0] + playerLeft * (lateral + extraLateral),
       desiredCentreZ: card[2] - ownerDepth,
-      markerSide: -playerRight as -1 | 1,
+      markerSide: -playerLeft as -1 | 1,
       preferred: true,
     })),
     // Preserve the old rear lane as a safe fallback for curved seats.
-    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] - ownerDepth, markerSide: -playerRight as -1 | 1, preferred: false },
-    { side: -playerRight as -1 | 1, desiredCentreX: card[0] - playerRight * lateral, desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET, markerSide: playerRight, preferred: false },
-    { side: -playerRight as -1 | 1, desiredCentreX: card[0] - playerRight * lateral, desiredCentreZ: card[2] - ownerDepth, markerSide: playerRight, preferred: false },
+    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] - ownerDepth, markerSide: -playerLeft as -1 | 1, preferred: false },
+    { side: -playerLeft as -1 | 1, desiredCentreX: card[0] - playerLeft * lateral, desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET, markerSide: playerLeft, preferred: false },
+    { side: -playerLeft as -1 | 1, desiredCentreX: card[0] - playerLeft * lateral, desiredCentreZ: card[2] - ownerDepth, markerSide: playerLeft, preferred: false },
     ...[0.018, 0.036, 0.054].map((extraLateral) => ({
-      side: -playerRight as -1 | 1,
-      desiredCentreX: card[0] - playerRight * (lateral + extraLateral),
+      side: -playerLeft as -1 | 1,
+      desiredCentreX: card[0] - playerLeft * (lateral + extraLateral),
       desiredCentreZ: card[2] + CHIP_STACK_LOCAL_OWNER_OFFSET,
-      markerSide: playerRight,
+      markerSide: playerLeft,
       preferred: false,
     })),
     ...[0.018, 0.036, 0.054].map((extraLateral) => ({
-      side: -playerRight as -1 | 1,
-      desiredCentreX: card[0] - playerRight * (lateral + extraLateral),
+      side: -playerLeft as -1 | 1,
+      desiredCentreX: card[0] - playerLeft * (lateral + extraLateral),
       desiredCentreZ: card[2] - ownerDepth,
-      markerSide: playerRight,
+      markerSide: playerLeft,
       preferred: false,
     })),
     // An inward slot is deliberately last among authored placements. It keeps
     // the collision solver useful at the tight end seats without recreating the
     // screenshot regression where stacks read as a second row of bets.
-    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] + ownerDepth, markerSide: -playerRight as -1 | 1, preferred: false },
+    { side: 0 as const, desiredCentreX: card[0], desiredCentreZ: card[2] + ownerDepth, markerSide: -playerLeft as -1 | 1, preferred: false },
   ];
   // Curved end seats have less room than side seats, and high-value stacks can
   // change the rack's aspect ratio. Search a deterministic seat-local grid
@@ -644,8 +647,8 @@ function seatOccupancyCandidateSet(
         side,
         desiredCentreX: card[0] + dx,
         desiredCentreZ: card[2] + dz,
-        markerSide: side === playerRight ? -playerRight as -1 | 1 : playerRight,
-        preferred: side === playerRight && dz < 0,
+        markerSide: side === playerLeft ? -playerLeft as -1 | 1 : playerLeft,
+        preferred: side === playerLeft && dz < 0,
       });
     }
   }
@@ -734,10 +737,13 @@ function seatOccupancyLayoutFromCandidate(
   selected: SeatOccupancyCandidate,
 ): SeatOccupancyLayout {
   const rackOrigin = seatWorldPoint(pose, selected.origin);
+  const wagerLocal = seatLocalPoint(pose, betCirclePosition(pose));
   const markerBase = seatWorldPoint(pose, [
-    card[0] + selected.markerSide * (CARD_ZONE_WIDTH / 2 + CARD_ZONE_OBJECT_GAP + TABLE_MARKER_RADIUS),
+    wagerLocal[0] + selected.markerSide * (
+      BET_CIRCLE_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS
+    ),
     TABLE_HEIGHT + 0.012,
-    card[2],
+    wagerLocal[2],
   ]);
   const stackLabel = seatWorldPoint(pose, [
     selected.labelCentre[0],
@@ -905,7 +911,7 @@ export function seatOccupancyLayout(
  * Resting stack for one seat, safely inside that same seat's play lane.
  *
  * This uses the owner's local frame so every player has their chips on the
- * same side of their cards. The final capsule clamp protects corner stations
+ * same player-left, rail-side lane. The final capsule clamp protects corner stations
  * from rail overlap without changing any card, bet-circle, or seat-zone anchor.
  */
 export function restingChipStackPosition(
@@ -916,13 +922,11 @@ export function restingChipStackPosition(
 }
 
 /**
- * Place a dealer/blind marker in its own side pocket beside the card lane.
+ * Place a dealer/blind marker beside the owner's wager circle.
  *
- * The old owner offset was a fixed local-Z nudge that happened to put every
- * puck farther from the centre than its rack. That made the marker read as a
- * second object behind the chips, and made the error more obvious as the
- * camera panned. This derives the direction from the actual rack anchor, so
- * every station uses the same seat-relative radial rule.
+ * The puck is not a wager and never replaces one: it owns a parallel pocket at
+ * the same inward depth.  This keeps D/SB/BB beyond the cards, visually tied to
+ * their owner, and clear of both the rack and live committed chips.
  */
 export function tableMarkerPosition(
   pose: SeatPose,
@@ -931,13 +935,14 @@ export function tableMarkerPosition(
 ): readonly [number, number, number] {
   const layout = seatOccupancyLayout(pose, amount);
   const base = seatLocalPoint(pose, layout.markerBase);
-  // Heads-up poker gives one player both D and SB. Distinct local-Z pockets
-  // prevent those physical pucks from occupying each other.
-  const slotOffset = label === "D" ? -0.065 : label === "SB" ? 0.065 : 0;
+  // Heads-up poker gives one player both D and SB. The SB uses a second
+  // lateral pocket farther along the same side of the wager; neither marker is
+  // pulled back over the cards.
+  const slotOffset = label === "SB" ? Math.sign(base[0]) * 0.065 : 0;
   return seatWorldPoint(pose, [
-    base[0],
+    base[0] + slotOffset,
     TABLE_HEIGHT + 0.012,
-    base[2] + slotOffset,
+    base[2],
   ]);
 }
 
@@ -1188,7 +1193,7 @@ export function betCirclePosition(pose: SeatPose): readonly [number, number, num
   ];
 }
 
-/** The pot: the middle of the felt, a little toward the hero. */
+/** The pot: centred laterally and slightly toward the dealer's working bay. */
 export const POT_POSITION: readonly [number, number, number] = [0, TABLE_HEIGHT, TABLE_ANCHORS.mainPot[2]];
 
 /**

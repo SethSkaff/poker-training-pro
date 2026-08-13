@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardDealPose, burnCardPose, deckColourForHand, inactiveDeckColour, muckCardCount } from "./dealerPresentation";
+import { boardCardX, boardDealPose, burnCardPose, deckColourForHand, inactiveDeckColour, muckCardCount } from "./dealerPresentation";
 import { TABLE_ANCHORS } from "./tableStations";
 
 describe("dealer public deck presentation", () => {
@@ -27,7 +27,7 @@ describe("dealer public deck presentation", () => {
     expect(boardDealPose(0, 0.36).position).toEqual(TABLE_ANCHORS.dealerThrow);
     expect(start.rotationX).toBe(Math.PI);
     expect(end.position[0]).toBe(TABLE_ANCHORS.board[0]);
-    expect(end.position[2]).toBe(TABLE_ANCHORS.board[2]);
+    expect(end.position[2]).toBeCloseTo(TABLE_ANCHORS.board[2]);
     expect(end.rotationX).toBe(0);
 
     const burnStart = burnCardPose(0);
@@ -36,6 +36,14 @@ describe("dealer public deck presentation", () => {
     expect(burnEnd.visible).toBe(true);
     expect(burnEnd.position[0]).toBeCloseTo(TABLE_ANCHORS.muck[0]);
     expect(burnEnd.position[2]).toBeCloseTo(TABLE_ANCHORS.muck[2]);
+  });
+
+  it("keeps flop-through-river order fixed from the house dealer's perspective", () => {
+    const worldX = [0, 1, 2, 3, 4].map(boardCardX);
+    // Dealer faces +Z, so world +X is the dealer's left.
+    expect(worldX).toEqual([...worldX].sort((left, right) => right - left));
+    expect(boardDealPose(0, 1).position[0]).toBeCloseTo(worldX[0]);
+    expect(boardDealPose(4, 1).position[0]).toBeCloseTo(worldX[4]);
   });
 
   it("keeps folded cards in a bounded dealer-side muck instead of deleting them", () => {

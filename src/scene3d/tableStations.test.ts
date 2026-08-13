@@ -19,6 +19,9 @@ import {
   TABLE_WIDTH,
   CAMERA_VERTICAL_FOV,
   CAMERA_PITCH_DEGREES,
+  DEALER_CUTOUT_DEPTH,
+  PLAYER_LANE_FELT_INSET,
+  STATION_CLEARANCE,
 } from "./tableStations";
 
 const DEG = Math.PI / 180;
@@ -62,9 +65,9 @@ const onScreen = (p: { x: number; y: number; depth: number }) =>
 
 const HEAD_Y = 1.2;
 
-describe("seated-ring-v3 puts the hero in a player seat, not the dealer's spot", () => {
+describe("casino-dealer-cutout-v4 puts the hero in a player seat, not the dealer's spot", () => {
   it("is a six-player ring with a separate dealer station", () => {
-    expect(TABLE_COMPOSITION_ID).toBe("seated-ring-v3");
+    expect(TABLE_COMPOSITION_ID).toBe("casino-dealer-cutout-v4");
     expect(PLAYER_STATION_COUNT).toBe(6);
     expect(playerStations()).toHaveLength(6);
     // The dealer holds the far long side and is not one of the six.
@@ -77,6 +80,48 @@ describe("seated-ring-v3 puts the hero in a player seat, not the dealer's spot",
         station.position[2] - dealer.position[2],
       )).toBeGreaterThan(0.6);
     }
+  });
+
+  it("mirrors the approved top-corner, side and near seat pairs", () => {
+    const stations = playerStations();
+    for (const [left, right] of [[0, 5], [1, 4], [2, 3]] as const) {
+      expect(stations[left].position[0]).toBeCloseTo(-stations[right].position[0], 9);
+      expect(stations[left].position[2]).toBeCloseTo(stations[right].position[2], 9);
+      expect(stations[left].feltPosition[0]).toBeCloseTo(-stations[right].feltPosition[0], 9);
+      expect(stations[left].feltPosition[2]).toBeCloseTo(stations[right].feltPosition[2], 9);
+      expect(Math.sin(stations[left].facing)).toBeCloseTo(-Math.sin(stations[right].facing), 9);
+      expect(Math.cos(stations[left].facing)).toBeCloseTo(Math.cos(stations[right].facing), 9);
+    }
+  });
+
+  it("makes every chair tangent to the rail and every card lane equally inset", () => {
+    for (const station of playerStations()) {
+      const inward = [Math.sin(station.facing), Math.cos(station.facing)] as const;
+      const chairToRail = [
+        station.railPosition[0] - station.position[0],
+        station.railPosition[2] - station.position[2],
+      ] as const;
+      const railToCards = [
+        station.feltPosition[0] - station.railPosition[0],
+        station.feltPosition[2] - station.railPosition[2],
+      ] as const;
+      expect(Math.hypot(...chairToRail)).toBeCloseTo(STATION_CLEARANCE, 9);
+      expect(Math.hypot(...railToCards)).toBeCloseTo(TABLE_RAIL_WIDTH + PLAYER_LANE_FELT_INSET, 9);
+      expect(chairToRail[0]).toBeCloseTo(inward[0] * STATION_CLEARANCE, 9);
+      expect(chairToRail[1]).toBeCloseTo(inward[1] * STATION_CLEARANCE, 9);
+      expect(railToCards[0]).toBeCloseTo(inward[0] * (TABLE_RAIL_WIDTH + PLAYER_LANE_FELT_INSET), 9);
+      expect(railToCards[1]).toBeCloseTo(inward[1] * (TABLE_RAIL_WIDTH + PLAYER_LANE_FELT_INSET), 9);
+    }
+  });
+
+  it("places the dealer at the inset cutout instead of the player rail", () => {
+    const dealer = dealerStation();
+    expect(dealer.railPosition[0]).toBe(0);
+    expect(dealer.railPosition[2]).toBeCloseTo(-(
+      TABLE_DEPTH / 2 + TABLE_RAIL_WIDTH - DEALER_CUTOUT_DEPTH
+    ), 9);
+    expect(dealer.position[2]).toBeLessThan(dealer.railPosition[2]);
+    expect(dealer.facing).toBe(0);
   });
 
   it("leaves room for shoulders between neighbours", () => {

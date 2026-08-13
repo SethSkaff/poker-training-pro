@@ -87,7 +87,6 @@ import {
 import {
   playerStations,
   stationAsPose,
-  stationLedgeAnchor,
   TABLE_DEPTH,
   TABLE_WIDTH,
   type Station,
@@ -112,7 +111,7 @@ import { createSceneActionTimingState, reconcileSceneActionTiming } from "./scen
 import { createSceneRenderLifecycle } from "./sceneLifecycle";
 import { createSceneResourceLedger, type SceneResourceLedger } from "./sceneResources";
 import { createSceneFrameTelemetry } from "./sceneDiagnostics";
-import { boardDealPose, boardStreetRequiresBurn, burnCardPose, deckColourForHand, inactiveDeckColour, muckCardCount, type DeckColour } from "./dealerPresentation";
+import { boardCardX, boardDealPose, boardStreetRequiresBurn, burnCardPose, deckColourForHand, inactiveDeckColour, muckCardCount, type DeckColour } from "./dealerPresentation";
 import {
   parsePublicCardFace,
   PROCEDURAL_CARD_FACE_SIZE,
@@ -269,10 +268,12 @@ const FELT_PRINT = 0x24704a;
    that pulled the eye off the felt and read as moulded plastic. A darker hide
    lets the brass trim be the highlight, which is the way round a real table
    works. */
-const RAIL = 0x5a4131;
+const RAIL = 0x603a2c;
 /* The hard ledge between felt and padded rail, in a darker timber than the rail
    so the three zones separate under the pendant key rather than merging. */
-const LEDGE = 0x46311f;
+const LEDGE = 0x3f281f;
+/** Subtle leather piping from the approved casino rail, not bright metal. */
+const RAIL_SEAM = 0x8a5940;
 const PEDESTAL = 0x33231a;
 const BRASS = 0xc9a227;
 const CARPET = 0x5c1a28;
@@ -1666,11 +1667,10 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
 /**
  * The table, assembled from the Blender-authored meshes.
  *
- * Three zones, outward from the middle: printed felt (centre medallion,
- * racetrack betting line, one play zone per seat), the hard ledge ring carrying
- * each seat's inlaid medallion, and the padded rail with its metal trim bead.
- * That silhouette is what makes the table read as a modern card-room table
- * rather than a felt oval with a border, and every dimension comes from the
+ * Three zones, outward from the middle: textured felt with subtle wager rings,
+ * a narrow hard ledge, and the broad brown padded rail. The dealer-side cutout
+ * and softer leather seam follow the approved casino-table reference, while the
+ * project's original felt weave remains intact. Every dimension comes from the
  * same constants the composition solver uses.
  *
  * The authored geometry has the felt plane at y=0, so the whole assembly is
@@ -1705,7 +1705,8 @@ function buildTable(stations: readonly Station[], scene: TableSceneResources): G
   const feltTexture = scene.surfaceTexture("felt", TABLE_WIDTH / 0.26, TABLE_DEPTH / 0.26);
   if (feltTexture) feltMaterial.map = feltTexture;
   else feltMaterial.color.setHex(FELT);
-  zone("table/print", FELT_PRINT, "table-print");
+  // Keep the existing textured baize clean, as in the approved casino layout.
+  // The only per-seat felt print is the wager circle instantiated below.
   zone("table/ledge", LEDGE, "table-ledge");
   const rail = zone("table/rail", RAIL, "table-rail");
   const railMaterial = rail.material as MeshLambertMaterial;
@@ -1718,7 +1719,7 @@ function buildTable(stations: readonly Station[], scene: TableSceneResources): G
   railMaterial.depthWrite = true;
   railMaterial.side = DoubleSide;
   rail.renderOrder = 3;
-  zone("table/trim", BRASS, "table-trim");
+  zone("table/trim", RAIL_SEAM, "table-trim");
   zone("table/pedestal", PEDESTAL, "table-pedestal");
 
   /*
@@ -1728,15 +1729,9 @@ function buildTable(stations: readonly Station[], scene: TableSceneResources): G
     players and their chips need.
   */
   const playZoneGeometry = resources.track(tableMeshGeometry("table/play-zone"));
-  const inlayGeometry = resources.track(tableMeshGeometry("table/seat-inlay"));
   const printMaterial = resources.track(new MeshLambertMaterial({ color: FELT_PRINT }));
-  /* Aged bronze, not the trim's bright brass: six unlit-bright discs sitting on
-     the ledge around the table drew the eye harder than the cards did. */
-  const inlayMaterial = resources.track(new MeshLambertMaterial({ color: 0x8a6b32 }));
   const playZones = new InstancedMesh(playZoneGeometry, printMaterial, stations.length);
-  const inlays = new InstancedMesh(inlayGeometry, inlayMaterial, stations.length);
   playZones.name = "table-play-zones";
-  inlays.name = "table-seat-inlays";
   const placement = new Matrix4();
   const rotation = new Matrix4();
   stations.forEach((station, index) => {
@@ -1747,13 +1742,9 @@ function buildTable(stations: readonly Station[], scene: TableSceneResources): G
       station.feltPosition[2],
     );
     playZones.setMatrixAt(index, placement);
-    const ledge = stationLedgeAnchor(station);
-    placement.copy(rotation).setPosition(ledge[0], 0, ledge[2]);
-    inlays.setMatrixAt(index, placement);
   });
   playZones.instanceMatrix.needsUpdate = true;
-  inlays.instanceMatrix.needsUpdate = true;
-  group.add(playZones, inlays);
+  group.add(playZones);
   return group;
 }
 
@@ -2842,7 +2833,7 @@ function setBoardCards(
 ): void {
   while (group.children.length < count) {
     const card = new Mesh(resources.cardGeometry, resources.cardMaterial);
-    card.position.x = (group.children.length - 2) * 0.105 * BOARD_CARD_SCALE;
+    card.position.x = boardCardX(group.children.length) - TABLE_ANCHORS.board[0];
     card.scale.setScalar(BOARD_CARD_SCALE);
     group.add(card);
   }
@@ -2878,7 +2869,7 @@ function setBoardCards(
       mesh.userData.cardQuaternion = [...cardFrame.quaternion];
     } else {
       mesh.position.set(
-        (index - 2) * 0.105 * BOARD_CARD_SCALE,
+        boardCardX(index) - TABLE_ANCHORS.board[0],
         isWinningCard ? 0.016 : 0,
         isWinningCard ? 0.012 : 0,
       );

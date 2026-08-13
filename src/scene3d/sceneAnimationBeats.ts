@@ -45,6 +45,11 @@ export function animationBeatFor(
   const owner = ownsSeatBeat ? playerId : "dealer";
 
   if (transition.kind === "board-card-dealt") {
+    // Burning and turning a board card is dealer-owned work. `applySeat` asks
+    // for a beat once per player, so returning the dealer's burn-to-muck beat
+    // from those calls makes every player reach toward the muck as though they
+    // had folded. Seats must remain inert while the dealer works the board.
+    if (playerId !== undefined) return undefined;
     if (t < 0.36) return beat(transition.id, "dealer", "burn", segment(t, 0, 0.36), segment(t, 0.08, 0.32), "deck", "muck");
     if (t < 0.9) return beat(transition.id, "dealer", "deal", segment(t, 0.36, 0.9), segment(t, 0.36, 0.9), "deck", "board");
     return beat(transition.id, "dealer", "recover", segment(t, 0.9, 1), 1, "dealer", "board");

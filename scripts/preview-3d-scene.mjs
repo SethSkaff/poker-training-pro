@@ -122,6 +122,13 @@ async function main() {
     await waitUntil(cdp, clickSelector(".night-back"), "settings back");
     await waitUntil(cdp, clickSelector('button[aria-label="Play"]'), "play");
     await evaluate(cdp, clickSelector("#play-chip-ack-title ~ .startup-gate__actions button"));
+    await waitUntil(cdp, "document.querySelector('.table-view-stage') !== null", "table-view selection");
+    await waitUntil(cdp, clickSelector(".table-view-choices > button:nth-of-type(2)"), "3D table view");
+    await evaluate(cdp, `(async () => {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      if (window.desktop?.setFullscreen) await window.desktop.setFullscreen(false);
+      return true;
+    })()`);
     await waitUntil(cdp, "document.querySelector('.mode-stage') !== null", "mode stage");
     await waitUntil(cdp, clickSelector(".mode-stage__choice--normal"), "normal mode");
     await waitUntil(cdp, clickButton("Enter event"), "enter event");

@@ -372,9 +372,9 @@
       "path": "src/assets/table.glb",
       "shippingRole": "authored-3d-table-card-and-chip-master-compiled-into-the-bundle",
       "format": "GLB",
-      "bytes": 190976,
-      "sha256": "876a72cc8499e4f7829af400583aceb6f2075e2e1e91ce854d72ab7c847398cf",
-      "dimensions": "13 meshes, 6461 triangles",
+      "bytes": 199108,
+      "sha256": "e21dc967890dc103353b606fd48518f87907b8cc07b4187c94982df68f05ffe0",
+      "dimensions": "13 meshes, 6743 triangles",
       "embeddedMetadata": {
         "inspection": "glTF 2.0 binary; JSON + BIN chunks only; no materials, no textures, no images, no external URIs, no extensions."
       },

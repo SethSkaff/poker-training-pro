@@ -44,4 +44,21 @@ describe("presentation-event animation beats", () => {
     expect(animationBeatFor(board(0.6))?.phase).toBe("deal");
     expect(animationBeatFor(board(0.95))?.phase).toBe("recover");
   });
+
+  it("never projects a dealer board reveal onto a player as a fold or muck beat", () => {
+    const board = (progress: number): SceneTransition => ({
+      id: "board:turn:1", kind: "board-card-dealt", handId: "h1", cardIndex: 3,
+      playerIds: [], foldedPlayerIds: [], progress,
+    });
+
+    for (const progress of [0.1, 0.3, 0.6, 0.95]) {
+      expect(animationBeatFor(board(progress), "hero")).toBeUndefined();
+      expect(animationBeatFor(board(progress), "opponent")).toBeUndefined();
+    }
+
+    // The physical dealer still owns the exact same burn/deal sequence.
+    expect(animationBeatFor(board(0.2))).toMatchObject({
+      owner: "dealer", phase: "burn", source: "deck", destination: "muck",
+    });
+  });
 });

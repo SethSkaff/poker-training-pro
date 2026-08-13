@@ -45,6 +45,16 @@ export function boardStreetRequiresBurn(cardIndex: number): boolean {
   return cardIndex === 0 || cardIndex === 3 || cardIndex === 4;
 }
 
+/**
+ * World-space board order is fixed from the house dealer's perspective.
+ * The dealer faces +Z, so their left is world +X: flop one starts at +X and
+ * river finishes at -X. A player's camera may move, but the physical row never
+ * mirrors with it.
+ */
+export function boardCardX(cardIndex: number): number {
+  return TABLE_ANCHORS.board[0] + (2 - cardIndex) * 0.105 * 1.5;
+}
+
 export function boardDealPose(cardIndex: number, progress: number): {
   readonly position: readonly [number, number, number];
   readonly rotationX: number;
@@ -52,7 +62,7 @@ export function boardDealPose(cardIndex: number, progress: number): {
 } {
   const t = Math.max(0, Math.min(1, progress));
   const target: readonly [number, number, number] = [
-    TABLE_ANCHORS.board[0] + (cardIndex - 2) * 0.105 * 1.5,
+    boardCardX(cardIndex),
     TABLE_HEIGHT + 0.009,
     TABLE_ANCHORS.board[2],
   ];

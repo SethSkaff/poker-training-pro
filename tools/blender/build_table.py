@@ -51,12 +51,16 @@ TABLE_WIDTH = 2.30
 TABLE_DEPTH = 1.15
 TABLE_RAIL_WIDTH = 0.13
 TABLE_HEIGHT = 0.76
+DEALER_CUTOUT_HALF_WIDTH = 0.27
+DEALER_CUTOUT_DEPTH = 0.12
 
-LEDGE_WIDTH = 0.055
+# The approved casino reference has a broad upholstered brown bumper and only a
+# narrow hard shelf between it and the felt.
+LEDGE_WIDTH = 0.035
 RAIL_WIDTH = TABLE_RAIL_WIDTH - LEDGE_WIDTH
 
 LEDGE_RISE = 0.011
-RAIL_CREST = 0.052
+RAIL_CREST = 0.070
 
 OUTLINE_SEGMENTS = 72
 
@@ -81,7 +85,7 @@ PLAY_ZONE_CORNER = 0.035
 BET_CIRCLE_RADIUS = 0.040
 # Blender +Y exports as three.js -Z, so the negative authored value becomes the
 # runtime's positive (toward-centre) station-forward offset.
-BET_CIRCLE_FORWARD = -0.125
+BET_CIRCLE_FORWARD = -0.250
 
 # 1.25x a real playing card, at the true 0.714 card ratio.
 CARD_WIDTH = 0.088
@@ -183,6 +187,24 @@ def capsule_outline(width, depth, segments=OUTLINE_SEGMENTS):
     for index in range(caps + 1):
         angle = -math.pi / 2.0 + math.pi * index / caps
         points.append((straight + math.cos(angle) * radius, math.sin(angle) * radius))
+    # Fixed house-dealer bay on the far (+Y in Blender, -Z at runtime) rail.
+    # Every swept table zone calls this same outline, so felt, ledge, padding and
+    # trim share one continuous cutout instead of drifting independently.
+    half = min(DEALER_CUTOUT_HALF_WIDTH, straight - 0.08)
+    shoulder = 0.07
+    cut = min(DEALER_CUTOUT_DEPTH, max(0.04, radius * 0.42))
+    points.extend([
+        (half + shoulder, radius),
+        (half + 0.035, radius - 0.010),
+        (half, radius - 0.035),
+        (half - 0.030, radius - cut * 0.72),
+        (half - 0.075, radius - cut),
+        (-half + 0.075, radius - cut),
+        (-half + 0.030, radius - cut * 0.72),
+        (-half, radius - 0.035),
+        (-half - 0.035, radius - 0.010),
+        (-half - shoulder, radius),
+    ])
     for index in range(caps + 1):
         angle = math.pi / 2.0 + math.pi * index / caps
         points.append((-straight + math.cos(angle) * radius, math.sin(angle) * radius))
@@ -432,12 +454,9 @@ def build_play_zone():
     a clone by the station's own facing and have it land the right way up.
     """
     obj, bm = new_mesh("table/play-zone")
-    band_from_points(
-        bm,
-        rounded_rect_points(PLAY_ZONE_WIDTH, PLAY_ZONE_DEPTH, PLAY_ZONE_CORNER),
-        0.006,
-        PRINT_LIFT,
-    )
+    # A casino table does not draw a large rounded rectangle under the hole
+    # cards. Keep only the unambiguous wager circle from the approved reference;
+    # card and rack exclusion remains a tested, invisible spatial contract.
     annulus(
         bm,
         BET_CIRCLE_RADIUS,

@@ -6,15 +6,16 @@
  * the hero occupied the one spot at a real table nobody sits at -- the dealer's.
  * The camera read as standing over the table rather than playing at it.
  *
- * The v3 model is a conventional card-room layout: seven stations around an oval,
- * one of which is the dealer's, six of which are players. The hero is one of
- * those six, chosen deterministically per table. Their neighbours are therefore
- * genuinely beside them, which is what sitting at a table looks like.
+ * The v4 model is a casino-dealt six-player layout: the house dealer owns a
+ * shallow cutout in the far rail, while six player chairs touch the remaining
+ * perimeter. The hero is one of those six, chosen deterministically per table.
+ * Their neighbours are therefore genuinely beside them, which is what sitting
+ * at a table looks like.
  *
  * Pure arithmetic, no three.js, so the layout can be tested without a GPU.
  */
 
-export const TABLE_COMPOSITION_ID = "seated-ring-v3";
+export const TABLE_COMPOSITION_ID = "casino-dealer-cutout-v4";
 
 /** Playing surface, in metres. A real six-max oval is about this size. */
 export const TABLE_WIDTH = 2.30;
@@ -23,17 +24,21 @@ export const TABLE_RAIL_WIDTH = 0.13;
 export const TABLE_HEIGHT = 0.76;
 
 /**
+ * The house dealer works from a shallow cutout in the far rail.  These are
+ * public composition dimensions (not camera offsets): the authored table mesh,
+ * dealer station, shoe and layout tests all consume the same values.
+ */
+export const DEALER_CUTOUT_HALF_WIDTH = 0.27;
+export const DEALER_CUTOUT_DEPTH = 0.12;
+
+/**
  * How far a station's body centre sits outside the outer rail.
  *
- * Raised from 0.30, where the hero's two neighbours sat 0.55 m from the eye and
- * a neighbour's shoulder and forearm were the two largest objects in the frame.
- * Most of that problem turned out to belong to the 70-degree lens rather than
- * the spacing, and pushing the seats out to 0.42 to compensate simply moved it:
- * at that distance nobody could rest their hands on their own rail without an
- * arm long enough to look wrong. 0.34 is ordinary card-room spacing and, with
- * the narrower lens, leaves the neighbours reading as people.
+ * This is measured from the exact outer-rail contact along the surface normal.
+ * It keeps the chair front tangent to the padded rail while leaving the body
+ * centre far enough outside the table for believable arms and camera framing.
  */
-export const STATION_CLEARANCE = 0.34;
+export const STATION_CLEARANCE = 0.25;
 
 /**
  * The dealer sits tighter to the table than the players do.
@@ -55,20 +60,12 @@ export const DEALER_CLEARANCE = 0.20;
  */
 export const DEALER_ANGLE_DEGREES = 180;
 /*
-  Narrowed from +/-125 to +/-108. At 125 the outermost seat sat only 55 degrees
-  from the dealer, which put the dealer 1.4 m from that hero's eyes and made them
-  loom over a third of the frame. 72 degrees of clearance reads as sitting next to
-  the dealer rather than inside them, and still leaves 0.8 m between neighbours.
-*/
-/*
-  Six stations are intentionally spaced on a regular 48 degree pitch.  The
-  previous end lanes stopped at 108 degrees, leaving only 306 mm between their
-  printed play areas at the capsule's narrow ends.  It read as overlapping,
-  skewed boxes even though the chairs themselves cleared.  Moving the end lanes
-  to 120 degrees gives every tournament lane a real gap while keeping a clear
-  dealer working bay across the far rail.
-*/
-export const PLAYER_ANGLES_DEGREES = [-120, -72, -24, 24, 72, 120] as const;
+ * These bearings are diagnostic labels for seat order and test output. Physical
+ * placement comes from mirrored rail contacts below: two dealer-side corners,
+ * two side seats and two near-straight seats. This preserves the reference's
+ * dealer gap and keeps every chair tangent to the same authored rail.
+ */
+export const PLAYER_ANGLES_DEGREES = [-136, -90, -29, 29, 90, 136] as const;
 export const PLAYER_STATION_COUNT = PLAYER_ANGLES_DEGREES.length;
 
 export interface Station {
@@ -84,45 +81,105 @@ export interface Station {
   readonly railPosition: readonly [number, number, number];
 }
 
-function ellipseSemiAxes(clearance: number): readonly [number, number] {
-  return [
-    TABLE_WIDTH / 2 + TABLE_RAIL_WIDTH + clearance,
-    TABLE_DEPTH / 2 + TABLE_RAIL_WIDTH + clearance,
-  ];
-}
+type StationContact = {
+  readonly angleDegrees: number;
+  /** Exact point where the chair touches the outside of the padded rail. */
+  readonly rail: readonly [number, number];
+  /** Unit vector from the rail into the felt, also the seat's facing. */
+  readonly inward: readonly [number, number];
+};
 
-function stationAt(angleDegrees: number, clearance = STATION_CLEARANCE): Station {
-  const angle = (angleDegrees * Math.PI) / 180;
-  const [bodyA, bodyB] = ellipseSemiAxes(clearance);
-  const [railA, railB] = ellipseSemiAxes(0.015);
-  /*
-    Felt anchors sit just inboard of the ledge on the station's own bearing, so a
-    player's cards and chips are unambiguously in front of *them*. Pulled further
-    in (0.34/0.26) every seat's objects bunched toward the middle of the felt and
-    it was impossible to tell whose chips were whose.
-  */
-  const feltA = TABLE_WIDTH / 2 - 0.20;
-  const feltB = TABLE_DEPTH / 2 - 0.15;
+/*
+ * The approved casino reference is not a six-point ellipse. It has two corner
+ * seats beside the dealer bay, two true side seats and two seats on the near
+ * straight. Authoring the six rail contacts makes all chairs tangent to the
+ * same physical outline and gives every local lane an identical depth.
+ *
+ * Outer capsule geometry: straight half-run 0.575 m, radius 0.705 m.  The two
+ * far-corner contacts lie on that exact radius; the side and near contacts lie
+ * on its side cap and straight respectively. Values are mirrored by design.
+ */
+const FAR_CORNER_X = 0.80;
+const OUTER_RADIUS = TABLE_DEPTH / 2 + TABLE_RAIL_WIDTH;
+const STRAIGHT_HALF_RUN = TABLE_WIDTH / 2 - TABLE_DEPTH / 2;
+const FAR_CORNER_DX = FAR_CORNER_X - STRAIGHT_HALF_RUN;
+const FAR_CORNER_Z = Math.sqrt(OUTER_RADIUS ** 2 - FAR_CORNER_DX ** 2);
+const FAR_CORNER_NORMAL_X = FAR_CORNER_DX / OUTER_RADIUS;
+const FAR_CORNER_NORMAL_Z = FAR_CORNER_Z / OUTER_RADIUS;
+const NEAR_SEAT_X = 0.52;
+
+const PLAYER_CONTACTS: readonly StationContact[] = [
+  {
+    angleDegrees: PLAYER_ANGLES_DEGREES[0],
+    rail: [-FAR_CORNER_X, -FAR_CORNER_Z],
+    inward: [FAR_CORNER_NORMAL_X, FAR_CORNER_NORMAL_Z],
+  },
+  {
+    angleDegrees: PLAYER_ANGLES_DEGREES[1],
+    rail: [-(TABLE_WIDTH / 2 + TABLE_RAIL_WIDTH), 0],
+    inward: [1, 0],
+  },
+  {
+    angleDegrees: PLAYER_ANGLES_DEGREES[2],
+    rail: [-NEAR_SEAT_X, OUTER_RADIUS],
+    inward: [0, -1],
+  },
+  {
+    angleDegrees: PLAYER_ANGLES_DEGREES[3],
+    rail: [NEAR_SEAT_X, OUTER_RADIUS],
+    inward: [0, -1],
+  },
+  {
+    angleDegrees: PLAYER_ANGLES_DEGREES[4],
+    rail: [TABLE_WIDTH / 2 + TABLE_RAIL_WIDTH, 0],
+    inward: [-1, 0],
+  },
+  {
+    angleDegrees: PLAYER_ANGLES_DEGREES[5],
+    rail: [FAR_CORNER_X, -FAR_CORNER_Z],
+    inward: [-FAR_CORNER_NORMAL_X, FAR_CORNER_NORMAL_Z],
+  },
+];
+
+/** Full card-zone bounds remain inside the felt while staying close to rail. */
+export const PLAYER_LANE_FELT_INSET = 0.20;
+
+function stationAtContact(contact: StationContact): Station {
+  const [railX, railZ] = contact.rail;
+  const [inwardX, inwardZ] = contact.inward;
+  const feltInset = TABLE_RAIL_WIDTH + PLAYER_LANE_FELT_INSET;
   return {
-    angleDegrees,
-    position: [bodyA * Math.sin(angle), 0, bodyB * Math.cos(angle)],
-    // Faces the table centre from wherever the station is.
-    facing: Math.atan2(-bodyA * Math.sin(angle), -bodyB * Math.cos(angle)),
-    feltPosition: [feltA * Math.sin(angle), TABLE_HEIGHT, feltB * Math.cos(angle)],
-    railPosition: [railA * Math.sin(angle), TABLE_HEIGHT + 0.03, railB * Math.cos(angle)],
+    angleDegrees: contact.angleDegrees,
+    position: [
+      railX - inwardX * STATION_CLEARANCE,
+      0,
+      railZ - inwardZ * STATION_CLEARANCE,
+    ],
+    facing: Math.atan2(inwardX, inwardZ),
+    feltPosition: [
+      railX + inwardX * feltInset,
+      TABLE_HEIGHT,
+      railZ + inwardZ * feltInset,
+    ],
+    railPosition: [railX, TABLE_HEIGHT + 0.03, railZ],
   };
 }
 
 /** The six player stations, in seat order around the table. */
 export function playerStations(): readonly Station[] {
-  // Not `map(stationAt)`: `map` passes the index as a second argument, which
-  // would land in the clearance parameter and give each seat a different one.
-  return PLAYER_ANGLES_DEGREES.map((angleDegrees) => stationAt(angleDegrees));
+  return PLAYER_CONTACTS.map((contact) => stationAtContact(contact));
 }
 
 /** The dealer's station. Not a player, and never dealt a hand. */
 export function dealerStation(): Station {
-  return stationAt(DEALER_ANGLE_DEGREES, DEALER_CLEARANCE);
+  const cutoutRailZ = -(OUTER_RADIUS - DEALER_CUTOUT_DEPTH);
+  return {
+    angleDegrees: DEALER_ANGLE_DEGREES,
+    position: [0, 0, cutoutRailZ - DEALER_CLEARANCE],
+    facing: 0,
+    feltPosition: [0, TABLE_HEIGHT, -(TABLE_DEPTH / 2 - DEALER_CUTOUT_DEPTH - 0.105)],
+    railPosition: [0, TABLE_HEIGHT + 0.03, cutoutRailZ],
+  };
 }
 
 /**
@@ -311,15 +368,16 @@ export function stationLedgeAnchor(station: Station): readonly [number, number, 
 
 /** Public poker-object anchors, in table space. */
 export const TABLE_ANCHORS = {
-  board: [0, TABLE_HEIGHT + 0.005, 0] as const,
-  mainPot: [0, TABLE_HEIGHT + 0.005, 0.24] as const,
+  /* Shared objects are dealer-owned and sit just dealer-side of true centre. */
+  board: [0, TABLE_HEIGHT + 0.005, -0.05] as const,
+  mainPot: [0, TABLE_HEIGHT + 0.005, -0.24] as const,
   sidePot: (index: number) =>
     [
       index % 2 === 0
         ? 0.34 + Math.floor(index / 2) * 0.2
         : -0.34 - Math.floor(index / 2) * 0.2,
       TABLE_HEIGHT + 0.005,
-      0.24,
+      -0.24,
     ] as const,
   /** Where the dealer's shoe sits, and where dealt cards originate. */
   dealerShoe: [0.36, TABLE_HEIGHT + 0.02, -(TABLE_DEPTH / 2 - 0.2)] as const,
