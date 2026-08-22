@@ -45,6 +45,13 @@ const { createLocalLogger } = require("./local-logger.cjs");
 const { safeSendToRenderer } = require("./safe-send.cjs");
 
 const isDevelopment = !app.isPackaged;
+const requestedDevelopmentServerPort = process.env.PTP_DEV_SERVER_PORT;
+const developmentServerPort =
+  /^\d+$/.test(requestedDevelopmentServerPort ?? "") &&
+  Number(requestedDevelopmentServerPort) >= 1 &&
+  Number(requestedDevelopmentServerPort) <= 65_535
+    ? requestedDevelopmentServerPort
+    : "5173";
 const lifecycleSmokeEnabled = process.argv.includes("--ptp-lifecycle-smoke");
 // Test-only renderer capability override used by the packaged scene fallback
 // audit. The renderer cannot infer this from a CDP override after it has
@@ -201,7 +208,7 @@ function createWindow() {
   mainWindow = window;
 
   if (isDevelopment) {
-    window.loadURL("http://127.0.0.1:5173");
+    window.loadURL(`http://127.0.0.1:${developmentServerPort}`);
   } else {
     window.loadURL(`${APP_PROTOCOL}://app/index.html`);
   }
@@ -870,7 +877,7 @@ function isTrustedAppUrl(value) {
       return (
         url.protocol === "http:" &&
         url.hostname === "127.0.0.1" &&
-        url.port === "5173"
+        url.port === developmentServerPort
       );
     }
     return (

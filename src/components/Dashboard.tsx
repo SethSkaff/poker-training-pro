@@ -22,6 +22,8 @@ import type { GameMode, PlayerProgress } from "../types/poker";
 const START_MENU_LOOP: string | undefined = undefined;
 const START_MENU_STILL = "/start-menu-reference.png";
 const START_MENU_SETTINGS_STILL = "/start-menu-settings.png";
+const TABLE_VIEW_PREVIEW_2D = "/table-view-preview-2d.png";
+const TABLE_VIEW_PREVIEW_3D = "/table-view-preview-3d.png";
 
 interface SceneProps {
   quiet?: boolean;
@@ -240,6 +242,40 @@ interface TableViewSelectProps {
   onSelect: (spatialScene: boolean) => void;
 }
 
+function TableViewPreview({ spatialScene }: { spatialScene: boolean }) {
+  const asset = useResilientAsset(
+    spatialScene ? TABLE_VIEW_PREVIEW_3D : TABLE_VIEW_PREVIEW_2D,
+    formatMessage(
+      spatialScene
+        ? "dashboard.tableView.3d.label"
+        : "dashboard.tableView.2d.label",
+    ),
+  );
+
+  return (
+    <span
+      className={`table-view-preview table-view-preview--${spatialScene ? "3d" : "2d"}`}
+      data-preview-status={asset.status}
+      aria-hidden="true"
+    >
+      {asset.status === "failed" ? (
+        <span className="table-view-preview__fallback">
+          {formatMessage("dashboard.tableView.previewUnavailable")}
+        </span>
+      ) : (
+        <img
+          src={asset.key}
+          alt=""
+          decoding="async"
+          loading="eager"
+          onLoad={asset.onLoad}
+          onError={asset.onError}
+        />
+      )}
+    </span>
+  );
+}
+
 /** Explicit table-view choice shown in the Play path, before game selection. */
 export function TableViewSelect({
   initialSpatialScene,
@@ -270,34 +306,37 @@ export function TableViewSelect({
             type="button"
             className={!initialSpatialScene ? "is-preferred" : ""}
             aria-label={formatMessage("dashboard.tableView.2d.ariaLabel")}
+            aria-describedby="table-view-2d-description"
             onClick={() => onSelect(false)}
           >
-            <span className="table-view-preview table-view-preview--2d" aria-hidden="true">
-              <i className="table-view-preview__felt" />
-              <i className="table-view-preview__board" />
-              <i className="table-view-preview__hand"><b /><b /></i>
-              <i className="table-view-preview__seats"><b /><b /><b /><b /><b /></i>
-              <i className="table-view-preview__dock" />
-            </span>
+            <TableViewPreview spatialScene={false} />
             <strong>{formatMessage("dashboard.tableView.2d.label")}</strong>
-            <small>{formatMessage("dashboard.tableView.2d.description")}</small>
-            {!initialSpatialScene && <em>{formatMessage("dashboard.tableView.lastUsed")}</em>}
+            <small id="table-view-2d-description">
+              {formatMessage("dashboard.tableView.2d.description")}
+            </small>
+            {!initialSpatialScene && (
+              <em className="table-view-choice__last-used">
+                {formatMessage("dashboard.tableView.lastUsed")}
+              </em>
+            )}
           </button>
           <button
             type="button"
             className={initialSpatialScene ? "is-preferred" : ""}
             aria-label={formatMessage("dashboard.tableView.3d.ariaLabel")}
+            aria-describedby="table-view-3d-description"
             onClick={() => onSelect(true)}
           >
-            <span className="table-view-preview table-view-preview--3d" aria-hidden="true">
-              <i className="table-view-preview__felt" />
-              <i className="table-view-preview__board" />
-              <i className="table-view-preview__seats"><b /><b /><b /><b /><b /></i>
-              <i className="table-view-preview__dock" />
-            </span>
+            <TableViewPreview spatialScene />
             <strong>{formatMessage("dashboard.tableView.3d.label")}</strong>
-            <small>{formatMessage("dashboard.tableView.3d.description")}</small>
-            {initialSpatialScene && <em>{formatMessage("dashboard.tableView.lastUsed")}</em>}
+            <small id="table-view-3d-description">
+              {formatMessage("dashboard.tableView.3d.description")}
+            </small>
+            {initialSpatialScene && (
+              <em className="table-view-choice__last-used">
+                {formatMessage("dashboard.tableView.lastUsed")}
+              </em>
+            )}
           </button>
         </div>
       </section>

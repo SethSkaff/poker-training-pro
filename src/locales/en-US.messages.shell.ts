@@ -23,6 +23,7 @@ export const SHELL_MESSAGES = Object.freeze({
   "dashboard.tableView.3d.description": "Immersive seated view",
   "dashboard.tableView.3d.ariaLabel": "Play at a 3D table",
   "dashboard.tableView.lastUsed": "Last used",
+  "dashboard.tableView.previewUnavailable": "Gameplay preview unavailable",
   // Shared shell/product copy, reused across several startup-gate screens.
   "shell.productName": "Poker Training Pro",
   "shell.action.exportSave": "Export save",

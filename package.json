@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:static-budgets": "node --test scripts/audit-static-budgets.test.mjs",
     "build": "tsc --noEmit && vite build",
+    "assets:capture-table-previews": "node scripts/capture-table-view-previews.mjs",
     "assets:build-table": "blender --background --factory-startup --python tools/blender/build_table.py -- --out src/assets/table.glb && node tools/glb-to-geometry.mjs src/assets/table.glb src/scene3d/generated/tableGeometry.ts tableGeometry",
     "assets:build-characters": "blender --background --factory-startup --python tools/blender/build_characters.py -- --out work/blender/characters.glb",
     "package:win": "npm run build && electron-builder --win nsis portable --x64 --config.electronDist=node_modules/electron/dist && npm run release:audit-packaged-3d-scene && npm run release:audit-packaged-licenses",
