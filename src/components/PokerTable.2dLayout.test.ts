@@ -17,7 +17,7 @@ describe("isolated 2D table layout contract", () => {
     expect(tableSource).toContain('data-bet-badge={isHero ? "hero" : "opponent"}');
     expect(tableSource).toContain('data-card-control="hero"');
     expect(tableSource).not.toContain('className="hero-stack-readout"');
-    expect(tableSource).toContain("const isShowingCards = !isHero && !isOut && cardsDealt && !isFolded");
+    expect(tableSource).toContain("const isShowingCards = !isHero && !isOut && visiblePrivateCardCount > 0 && !isFolded");
     expect(tableSource).toContain("setFoldProgress(0);");
   });
 
