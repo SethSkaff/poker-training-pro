@@ -37,7 +37,6 @@ export const HAIR_STYLES = [
   "curls",
   "bun",
   "long",
-  "undercut",
   "bald",
 ] as const;
 
@@ -166,7 +165,7 @@ export const ACCESSORIES = [
   "chain",
 ] as const;
 
-export const FACE_SHAPES = ["oval", "square", "round", "long", "heart"] as const;
+export const FACE_SHAPES = ["oval", "square", "round", "long"] as const;
 export const BODY_TYPES = ["slim", "average", "broad", "heavy"] as const;
 export const AGE_PRESENTATIONS = ["young", "adult", "middle", "senior"] as const;
 export const POSTURES = ["upright", "leaning", "hunched", "reclined"] as const;
@@ -297,83 +296,6 @@ export function describeOpponentAppearance(playerId: string): OpponentAppearance
             : -3,
     idlePhaseSeconds: (dimensionHash(playerId, "idle") % 24) / 10,
   };
-}
-
-/**
- * Stable visual identity for the flat table's visible roster.
- *
- * `describeOpponentAppearance` intentionally describes one identity in
- * isolation, so independent hashes can theoretically collide when six players
- * share a table. The 2D renderer resolves those rare collisions in sorted
- * player-id order by rotating only face, hair, hair colour, and shirt choices.
- * That makes the result deterministic, independent of seat rotation, and keeps
- * the original identity's skin/accessory/age/posture choices intact.
- */
-export function unique2DPlayerAppearances(
-  playerIds: readonly string[],
-): ReadonlyMap<string, OpponentAppearance> {
-  const appearances = new Map<string, OpponentAppearance>();
-  const used = new Set<string>();
-  const orderedIds = [...new Set(playerIds)].sort();
-  const faceCount = FACE_SHAPES.length;
-  const hairStyleCount = HAIR_STYLES.length;
-  const hairColorCount = HAIR_COLORS.length;
-  const clothingCount = CLOTHING.length;
-
-  for (const playerId of orderedIds) {
-    const preferred = describeOpponentAppearance(playerId);
-    const preferredSignature = appearanceSignature(preferred);
-    let chosen = preferred;
-
-    if (used.has(preferredSignature)) {
-      const faceStart = dimensionHash(playerId, "2d-face") % faceCount;
-      const hairStyleStart = dimensionHash(playerId, "2d-hair-style") % hairStyleCount;
-      const hairColorStart = dimensionHash(playerId, "2d-hair-color") % hairColorCount;
-      const clothingStart = dimensionHash(playerId, "2d-clothing") % clothingCount;
-      const maxVariants = faceCount * hairStyleCount * hairColorCount * clothingCount;
-
-      for (let variant = 1; variant < maxVariants; variant += 1) {
-        const candidate: OpponentAppearance = {
-          ...preferred,
-          faceShape: FACE_SHAPES[(faceStart + variant) % faceCount],
-          hairStyle: HAIR_STYLES[
-            (hairStyleStart + Math.floor(variant / faceCount)) % hairStyleCount
-          ],
-          hairColor: HAIR_COLORS[
-            (hairColorStart + Math.floor(variant / (faceCount * hairStyleCount))) % hairColorCount
-          ],
-          clothing: CLOTHING[
-            (clothingStart + Math.floor(variant / (faceCount * hairStyleCount * hairColorCount))) % clothingCount
-          ],
-        };
-        if (!used.has(appearanceSignature(candidate))) {
-          chosen = candidate;
-          break;
-        }
-      }
-    }
-
-    used.add(appearanceSignature(chosen));
-    appearances.set(playerId, chosen);
-  }
-
-  return appearances;
-}
-
-/** Stable full-combination key used only by the 2D roster collision resolver. */
-export function appearanceSignature(appearance: OpponentAppearance): string {
-  return [
-    appearance.portrait,
-    appearance.faceShape,
-    appearance.skinTone,
-    appearance.hairStyle,
-    appearance.hairColor,
-    appearance.clothing.name,
-    appearance.accessory,
-    appearance.bodyType,
-    appearance.agePresentation,
-    appearance.posture,
-  ].join("|");
 }
 
 /** CSS custom properties for one seated figure. */

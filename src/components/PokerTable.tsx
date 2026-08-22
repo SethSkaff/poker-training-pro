@@ -96,9 +96,7 @@ import { PokerReferenceContent } from "./PokerReference";
 import {
   describeOpponentCharacter,
   describeOpponentAppearance,
-  type OpponentAppearance,
   opponentAppearanceStyle,
-  unique2DPlayerAppearances,
 } from "../lib/opponentAppearance";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import {
@@ -739,7 +737,7 @@ function SeatChipStack({
   );
 }
 
-/** Stable roster hash, intentionally unrelated to policy/personality. */
+/** Stable visual identity, intentionally unrelated to policy/personality. */
 export function avatarVariantForPlayerId(playerId: string): number {
   let hash = 2166136261;
   for (const character of playerId) {
@@ -760,6 +758,22 @@ export function firstNameFor2DPlayer(playerId: string, offset = 0): string {
   const names = TWO_D_FIRST_NAMES[gender];
   const index = (avatarVariantForPlayerId(`${playerId}:name`) + offset) % names.length;
   return names[index];
+}
+
+/** Resolve the six visible portrait cells without allowing a duplicate cell. */
+export function unique2DAvatarVariants(playerIds: readonly string[]): ReadonlyMap<string, number> {
+  const variants = new Map<string, number>();
+  const used = new Set<number>();
+  for (const playerId of [...playerIds].sort()) {
+    const preferred = avatarVariantForPlayerId(playerId);
+    let variant = preferred;
+    for (let step = 0; used.has(variant) && step < 6; step += 1) {
+      variant = (preferred + step + 1) % 6;
+    }
+    used.add(variant);
+    variants.set(playerId, variant);
+  }
+  return variants;
 }
 
 /** Give a visible 2D table a collision-free, gender-matched first-name roster. */
@@ -822,7 +836,7 @@ interface PlayerSeatProps {
   stackAnchor?: { readonly xPercent: number; readonly yPercent: number };
   betAnchor?: { readonly xPercent: number; readonly yPercent: number };
   displayName?: string;
-  appearance?: OpponentAppearance;
+  avatarVariant?: number;
 }
 
 /**
@@ -920,14 +934,14 @@ function PlayerSeat({
   positionLabel,
   revealedCards,
   winningCardLabels,
-  appearance: suppliedAppearance,
   sceneSeat,
   railAnchor,
   stackAnchor,
   betAnchor,
   displayName,
+  avatarVariant,
 }: PlayerSeatProps) {
-  const appearance = suppliedAppearance ?? describeOpponentAppearance(player.id);
+  const appearance = describeOpponentAppearance(player.id);
   const isMucking = isSeatFoldedForPresentation(
     player.status,
     recentAction,
@@ -1059,7 +1073,7 @@ function PlayerSeat({
         <i className="seat-figure-chair" />
         <i className="seat-figure-torso" />
         <div
-          className={`seat-avatar seat-avatar--face-${appearance.faceShape}`}
+          className={`seat-avatar seat-avatar--variant-${avatarVariant ?? appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
         >
           <span className="seat-avatar-name">{displayName ?? player.name.split(" ")[0]}</span>
           <i className={`seat-figure-hair seat-figure-hair--${appearance.hairStyle}`} />
@@ -1085,14 +1099,8 @@ function PlayerSeat({
         this player" at a glance, the numeral answers "exactly how much".
       */}
       <SeatChipStack stack={player.stack} bigBlind={bigBlind} />
-      <div
-        className="seat-label"
-        aria-hidden="true"
-        {...(isHero ? { "data-hero-identity": "true" } : {})}
-      >
-        <span className="seat-name">
-          {isHero ? "YOU" : displayName ?? player.name.split(" ")[0]}
-        </span>
+      <div className="seat-label" aria-hidden="true">
+        <span className="seat-name">{displayName ?? player.name.split(" ")[0]}</span>
         <strong>{formatChips(player.stack)}</strong>
       </div>
       {/*
@@ -1101,11 +1109,7 @@ function PlayerSeat({
         a floating panel instead.
       */}
       {player.bet > 0 && (
-        <div
-          className="seat-bet"
-          aria-hidden="true"
-          data-bet-badge={isHero ? "hero" : "opponent"}
-        >
+        <div className="seat-bet" aria-hidden="true">
           <b>{formatChips(player.bet)}</b>
         </div>
       )}
@@ -1697,7 +1701,6 @@ export function PokerTable({
     readonly viewportWidth: number;
     readonly viewportHeight: number;
   };
-  const isTwoDMode = !settings.spatialScene;
   const [peeked, setPeeked] = useState(false);
   const [foldProgress, setFoldProgress] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -2870,11 +2873,11 @@ export function PokerTable({
     toward the dealer remains reserved for folding, so a player never has to
     keep a mouse button depressed just to read their own two cards.
   */
-  const handlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+  const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     // Reading a live hand is allowed once the public deal beat has completed;
     // the action gate also disables this surface while a submitted action is
     // being presented so a peek cannot race the authoritative update.
-    if (heroFolded || action || heroDealtCardCount === 0) return;
+    if (heroFolded) return;
     dragStart.current = null;
     didDrag.current = false;
     /*
@@ -2908,7 +2911,7 @@ export function PokerTable({
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+  const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     if (!dragStart.current || action) return;
     const deltaX = event.clientX - dragStart.current.x;
@@ -2924,7 +2927,7 @@ export function PokerTable({
   };
 
   const endPointerGesture = (
-    event: ReactPointerEvent<HTMLElement>,
+    event: ReactPointerEvent<HTMLButtonElement>,
     cancelled = false,
   ) => {
     // A pointer in the enclosing rectangle but outside both physical card
@@ -3142,7 +3145,8 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
-  const twoDAppearances = unique2DPlayerAppearances(
+  const isTwoDMode = !settings.spatialScene;
+  const twoDAvatarVariants = unique2DAvatarVariants(
     scenario.players.map((player) => player.id),
   );
   const twoDDisplayNames = unique2DDisplayNames(
@@ -4368,8 +4372,8 @@ export function PokerTable({
                           )
                       : undefined
                   }
-                  appearance={isTwoDMode ? twoDAppearances.get(player.id) : undefined}
                   displayName={isTwoDMode ? twoDDisplayNames.get(player.id) : undefined}
+                  avatarVariant={isTwoDMode ? twoDAvatarVariants.get(player.id) : undefined}
                 />
               );
             })}
@@ -4394,14 +4398,13 @@ export function PokerTable({
               </div>
             )}
 
-            <div
-              className={`hero-hole-cards-visual ${peeked ? "is-peeked" : ""} ${
+            <button
+              className={`hero-hole-cards ${peeked ? "is-peeked" : ""} ${
                 dragging ? "is-dragging" : ""
               } ${heroFolded ? "is-folded" : ""} ${
                 heroHoleCardHitBounds ? "has-spatial-hit-target" : ""
               }`}
-              role="img"
-              aria-hidden="true"
+              type="button"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={(event) => endPointerGesture(event)}
@@ -4422,6 +4425,14 @@ export function PokerTable({
                      : {}),
                  } as CSSProperties
               }
+              aria-label={formatMessage("table.holeCards.ariaLabel", {
+                state: peeked
+                  ? formatMessage("table.holeCards.hide")
+                  : formatMessage("table.holeCards.peek"),
+              })}
+              // A mucked hand is not interactive: no peeking, no dragging it
+              // back onto the table for the rest of the hand.
+              disabled={Boolean(action) || heroDealtCardCount === 0 || heroFolded}
             >
               <span className="hero-hole-cards__cards">
                 {scenario.heroCards.slice(0, heroDealtCardCount).map((card, index) => (
@@ -4441,38 +4452,27 @@ export function PokerTable({
                       <small>{cardLabel(card)}</small>
                     )}
                   </span>
-                  ))}
+                ))}
+              </span>
+              {!action && (
+                <span className="peek-label">
+                  {peeked ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {peeked
+                    ? formatMessage("table.holeCards.hideCardsLabel")
+                    : formatMessage("table.holeCards.peekInstructions")}
+                </span>
+              )}
+            </button>
+            <div className="hero-stack-readout" aria-label={`Stack ${formatChips(heroStack)}. Bet ${formatChips(heroStreetCommitted)}.`}>
+              <span>
+                <small>{formatMessage("table.context.stack")}</small>
+                <b>{formatChips(heroStack)}</b>
+              </span>
+              <span>
+                <small>{formatMessage("review.action.bet")}</small>
+                <b>{formatChips(heroStreetCommitted)}</b>
               </span>
             </div>
-            <button
-              className={`hero-card-control ${peeked ? "is-peeked" : ""} ${
-                dragging ? "is-dragging" : ""
-              } ${heroFolded ? "is-folded" : ""}`}
-              type="button"
-              data-card-control="hero"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={(event) => endPointerGesture(event)}
-              onPointerCancel={(event) => endPointerGesture(event, true)}
-              style={
-                {
-                  "--fold-offset": `${foldOffsetProgress(heroFoldState) * -0.55}px`,
-                } as CSSProperties
-              }
-              aria-label={formatMessage("table.holeCards.ariaLabel", {
-                state: peeked
-                  ? formatMessage("table.holeCards.hide")
-                  : formatMessage("table.holeCards.peek"),
-              })}
-              // A mucked hand is not interactive: no peeking, no dragging it
-              // back onto the table for the rest of the hand.
-              disabled={Boolean(action) || heroDealtCardCount === 0 || heroFolded}
-            >
-              {peeked ? <EyeOff size={14} /> : <Eye size={14} />}
-              {peeked
-                ? formatMessage("table.holeCards.hideCardsLabel")
-                : formatMessage("table.holeCards.peekInstructions")}
-            </button>
           </div>
 
           <div className="action-context">
