@@ -37,12 +37,26 @@ describe("Play table-view choice", () => {
         onSelect={() => undefined}
       />,
     );
+    const spatialMarkup = renderToStaticMarkup(
+      <TableViewSelect
+        initialSpatialScene
+        onBack={() => undefined}
+        onSelect={() => undefined}
+      />,
+    );
     const styles = readFileSync(path.resolve(process.cwd(), "src", "styles.css"), "utf8");
 
     expect(markup).toContain('class="table-view-choice__last-used"');
+    expect(spatialMarkup).toContain('class="table-view-choice__last-used"');
     expect((markup.match(/<button/g) ?? []).length).toBe(3);
     expect(styles).toMatch(
       /\.table-view-choice__last-used\s*\{[\s\S]*display: inline-flex;[\s\S]*align-items: center;[\s\S]*justify-content: center;[\s\S]*text-align: center;/,
+    );
+    expect(styles).toMatch(
+      /\.table-view-preview\s*\{[\s\S]*aspect-ratio: 16 \/ 9;/,
+    );
+    expect(styles).toMatch(
+      /\.table-view-preview > img\s*\{[\s\S]*object-fit: contain;/,
     );
   });
 

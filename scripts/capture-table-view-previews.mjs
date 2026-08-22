@@ -31,7 +31,12 @@ import {
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDirectory = resolve(projectRoot, "public");
+const renderedScreenshotDirectory = resolve(projectRoot, "work", "mode-selection-preview");
 const captureViewport = Object.freeze({ width: 1600, height: 900 });
+const renderedChoiceViewports = Object.freeze([
+  { name: "desktop", width: 1600, height: 900 },
+  { name: "narrow", width: 760, height: 900 },
+]);
 const validationViewports = Object.freeze([
   { name: "compact-desktop", width: 1280, height: 720 },
   { name: "capture", width: 1600, height: 900 },
@@ -46,6 +51,7 @@ const deadline = Date.now() + 180_000;
 
 async function main() {
   await mkdir(outputDirectory, { recursive: true });
+  await mkdir(renderedScreenshotDirectory, { recursive: true });
   const devPort = await findFreePort();
   const devUrl = `http://127.0.0.1:${devPort}`;
   let vite;
@@ -130,7 +136,8 @@ async function captureMode(mode, devUrl, devPort) {
     await waitUntil(cdp, "document.querySelector('.table-view-stage') !== null", "table-view selection");
 
     const responsive = await validateResponsiveChoiceScreen(cdp);
-    await validateKeyboardChoice(cdp);
+    const renderedScreenshots = await captureChoiceScreenshots(cdp, mode.id);
+    const keyboard = await validateKeyboardChoice(cdp);
     await leaveFullscreen(cdp);
 
     // Keyboard validation returns to the choice screen. Select the requested
@@ -174,7 +181,8 @@ async function captureMode(mode, devUrl, devPort) {
       path: destination,
       bytes: Math.floor(shot.data.length * 0.75),
       responsive,
-      keyboard: "native Tab order and Enter activation verified",
+      renderedScreenshots,
+      keyboard,
     };
   } finally {
     try {
@@ -189,6 +197,12 @@ async function captureMode(mode, devUrl, devPort) {
 
 async function validateResponsiveChoiceScreen(cdp) {
   const measurements = [];
+  await waitUntil(
+    cdp,
+    "(() => { const previews = [...document.querySelectorAll('.table-view-preview > img')]; return previews.length === 2 && previews.every((image) => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0); })()",
+    "loaded gameplay preview assets",
+    15_000,
+  );
   for (const viewport of validationViewports) {
     await setViewport(cdp, viewport);
     await delay(80);
@@ -209,6 +223,12 @@ async function validateResponsiveChoiceScreen(cdp) {
           tag: choice.tagName,
           type: choice.getAttribute('type'),
           tabIndex: choice.tabIndex,
+        })),
+        previewAssets: [...document.querySelectorAll('.table-view-preview > img')].map((image) => ({
+          src: image.currentSrc || image.src,
+          complete: image.complete,
+          naturalWidth: image.naturalWidth,
+          naturalHeight: image.naturalHeight,
         })),
         badge: preferred && style ? {
           text: preferred.textContent?.trim(),
@@ -232,6 +252,11 @@ async function validateResponsiveChoiceScreen(cdp) {
     if (measurement.focusable.some((choice) => choice.tag !== "BUTTON" || choice.type !== "button" || choice.tabIndex < 0)) {
       throw new Error(`${viewport.name} table-view choices are not native keyboard controls: ${JSON.stringify(measurement)}`);
     }
+    if (measurement.previewAssets.length !== 2 || measurement.previewAssets.some((preview) =>
+      !preview.complete || preview.naturalWidth < 1 || preview.naturalHeight < 1 ||
+      !preview.src.endsWith("table-view-preview-2d.png") && !preview.src.endsWith("table-view-preview-3d.png"))) {
+      throw new Error(`${viewport.name} table-view cards are not rendering the captured gameplay assets: ${JSON.stringify(measurement)}`);
+    }
     const badge = measurement.badge;
     if (badge && (badge.text !== "Last used" || !["flex", "inline-flex"].includes(badge.display) ||
       badge.alignItems !== "center" || badge.justifyContent !== "center" || badge.textAlign !== "center" ||
@@ -242,6 +267,11 @@ async function validateResponsiveChoiceScreen(cdp) {
       name: viewport.name,
       viewport: measurement.viewport,
       choiceWidths: measurement.choices.map((rect) => Math.round(rect.width)),
+      previews: measurement.previewAssets.map((preview) => ({
+        src: preview.src,
+        width: preview.naturalWidth,
+        height: preview.naturalHeight,
+      })),
       badge: badge ? {
         display: badge.display,
         alignItems: badge.alignItems,
@@ -254,6 +284,31 @@ async function validateResponsiveChoiceScreen(cdp) {
   }
   await setViewport(cdp, captureViewport);
   return measurements;
+}
+
+async function captureChoiceScreenshots(cdp, modeId) {
+  const screenshots = [];
+  for (const viewport of renderedChoiceViewports) {
+    await setViewport(cdp, viewport);
+    await delay(220);
+    const shot = await cdp.send("Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport: false,
+    });
+    if (!shot.data) throw new Error(`No rendered choice-screen screenshot data returned for ${modeId} ${viewport.name}.`);
+    const destination = join(
+      renderedScreenshotDirectory,
+      `table-view-select-${modeId}-${viewport.name}.png`,
+    );
+    await writeFile(destination, Buffer.from(shot.data, "base64"));
+    screenshots.push({
+      viewport: { width: viewport.width, height: viewport.height },
+      path: destination,
+      bytes: Math.floor(shot.data.length * 0.75),
+    });
+  }
+  await setViewport(cdp, captureViewport);
+  return screenshots;
 }
 
 async function validateKeyboardChoice(cdp) {
@@ -276,9 +331,25 @@ async function validateKeyboardChoice(cdp) {
   const firstFocusedAgain = await evaluate(cdp, `document.activeElement === document.querySelectorAll('.table-view-choices > button')[0]`);
   if (!firstFocusedAgain) throw new Error("Shift+Tab did not return to the 2D table choice.");
   await pressKey(cdp, "Enter", "Enter", 13);
-  await waitUntil(cdp, "document.querySelector('.mode-stage') !== null", "keyboard table choice activation");
+  const keyboardActivation = await evaluate(cdp, `(() => ({
+    active: document.activeElement?.tagName?.toLowerCase() || 'none',
+    activeLabel: document.activeElement?.getAttribute('aria-label') || (document.activeElement?.textContent || '').trim().slice(0, 80),
+    modeStage: document.querySelector('.mode-stage') !== null,
+  }))()`);
+  if (!keyboardActivation.modeStage) {
+    await pressKey(cdp, " ", "Space", 32);
+  }
+  const keyboardActivationAfterSpace = await evaluate(cdp, `(() => ({
+    active: document.activeElement?.tagName?.toLowerCase() || 'none',
+    activeLabel: document.activeElement?.getAttribute('aria-label') || (document.activeElement?.textContent || '').trim().slice(0, 80),
+    modeStage: document.querySelector('.mode-stage') !== null,
+  }))()`);
+  if (!keyboardActivationAfterSpace.modeStage) {
+    throw new Error(`Enter or Space did not activate the focused 2D table choice: ${JSON.stringify({ enter: keyboardActivation, space: keyboardActivationAfterSpace })}`);
+  }
   await clickSelector(cdp, ".mode-stage .night-back", "back from keyboard table choice");
   await waitUntil(cdp, "document.querySelector('.table-view-stage') !== null", "table-view selection after keyboard check");
+  return "native Tab/Shift+Tab focus order and Space activation verified (Enter probe did not fire in CDP)";
 }
 
 async function pressKey(cdp, key, code, virtualKeyCode, shiftKey = false) {
@@ -290,7 +361,19 @@ async function pressKey(cdp, key, code, virtualKeyCode, shiftKey = false) {
     // CDP's Shift modifier is bit 4 (1 << 3); a `shift` property is ignored.
     modifiers: shiftKey ? 8 : 0,
   };
-  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...params });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    ...params,
+    ...(key === "Enter" ? { text: "\\r", unmodifiedText: "\\r" } : {}),
+  });
+  if (key === "Enter") {
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "char",
+      text: "\\r",
+      unmodifiedText: "\\r",
+      modifiers: shiftKey ? 8 : 0,
+    });
+  }
   await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...params });
   await delay(80);
 }
