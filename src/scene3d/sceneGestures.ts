@@ -33,7 +33,7 @@ export function sceneGestureFor(
   // the pot just because their owner has already folded.
   if (action === "collect") {
     // The dealer owns the rake. A player's arm must not pulse while their
-    // already-committed chips travel from the wager circle to the pot.
+    // already-committed chips travel from the owner's wager anchor to the pot.
     return gesture(0, 0, "rest", "collect", 0, 0, 0, 0, "none");
   }
   if (action === "fold") {

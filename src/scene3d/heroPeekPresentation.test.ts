@@ -7,8 +7,12 @@ import {
   HERO_PEEK_HAND_ROOT_OFFSET,
   HERO_PEEK_HINGE_DEGREES,
   HERO_PEEK_TABLE_CLEARANCE,
+  heroHoleCardClientPointHits,
+  heroHoleCardProjectedHitTarget,
   heroPeekProjectedLayout,
   heroPeekFaceUvForLocalPoint,
+  sceneClientPointToViewportPercent,
+  type ProjectedPoint,
   type InterfaceScale,
 } from "./heroPeekPresentation";
 import { tableMeshGeometry } from "./tableGeometryLibrary";
@@ -104,5 +108,106 @@ describe("hero peek projected protected windows", () => {
     expect(HERO_PEEK_CARD_EXPOSED_FRACTION).toBeCloseTo(0.65);
     expect(HERO_PEEK_HINGE_DEGREES).toBeGreaterThanOrEqual(65);
     expect(HERO_PEEK_CARD_EXPOSED_FRACTION).toBeGreaterThan(HERO_PEEK_CARD_PLANTED_FRACTION);
+  });
+
+  it("hits visible resting-card pixels and rejects CSS pixels immediately below them", () => {
+    const viewports = [
+      { width: 1024, height: 768 },
+      { width: 1366, height: 768 },
+      { width: 1920, height: 1080 },
+    ];
+    const cameraViews = ["wide", "standard", "close"] as const;
+    const centroid = (polygon: readonly ProjectedPoint[]): ProjectedPoint => ({
+      xPercent: polygon.reduce((sum, point) => sum + point.xPercent, 0) / polygon.length,
+      yPercent: polygon.reduce((sum, point) => sum + point.yPercent, 0) / polygon.length,
+    });
+
+    for (let heroIndex = 0; heroIndex < 6; heroIndex += 1) {
+      // A full +/-2 head turn intentionally moves the hero's own cards out of
+      // frame. These values exercise live camera interpolation while retaining
+      // actual visible pixels that a browser pointer can reach.
+      for (const pan of [-0.5, 0, 0.5]) {
+        for (const cameraView of cameraViews) {
+          for (const viewport of viewports) {
+            const target = heroHoleCardProjectedHitTarget({
+              pan,
+              cameraView,
+              viewportWidth: viewport.width,
+              viewportHeight: viewport.height,
+              heroIndex,
+              cardCount: 2,
+            });
+            const rect = {
+              // A non-zero document offset catches the former client/viewport
+              // origin mismatch, while width/height remain CSS pixels.
+              left: 117.25,
+              top: 63.5,
+              width: viewport.width,
+              height: viewport.height,
+            };
+            expect(target.cardPolygons, `${heroIndex}/${pan}/${cameraView}/${viewport.width}`)
+              .toHaveLength(2);
+            expect(target.bounds).toBeDefined();
+            for (const polygon of target.cardPolygons) {
+              const visiblePixel = centroid(polygon);
+              expect(visiblePixel.xPercent).toBeGreaterThan(0);
+              expect(visiblePixel.xPercent).toBeLessThan(100);
+              expect(visiblePixel.yPercent).toBeGreaterThan(0);
+              expect(visiblePixel.yPercent).toBeLessThan(100);
+              expect(heroHoleCardClientPointHits(
+                target,
+                rect.left + visiblePixel.xPercent / 100 * rect.width,
+                rect.top + visiblePixel.yPercent / 100 * rect.height,
+                rect,
+              ), `${heroIndex}/${pan}/${cameraView}/${viewport.width} visible card`).toBe(true);
+            }
+
+            const firstCard = centroid(target.cardPolygons[0]);
+            const belowCardsY = rect.top + target.bounds!.yMax / 100 * rect.height + 2;
+            expect(heroHoleCardClientPointHits(
+              target,
+              rect.left + firstCard.xPercent / 100 * rect.width,
+              belowCardsY,
+              rect,
+            ), `${heroIndex}/${pan}/${cameraView}/${viewport.width} below cards`).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
+  it("tracks the raised squeeze silhouette and never scales client coordinates by device pixels", () => {
+    const target = heroHoleCardProjectedHitTarget({
+      pan: 0.65,
+      cameraView: "close",
+      wheelZoom: 0.25,
+      viewportWidth: 1440,
+      viewportHeight: 900,
+      heroIndex: 4,
+      peeked: true,
+      cardCount: 2,
+    });
+    const rect = { left: 204, top: 91, width: 1440, height: 900 };
+    const polygon = target.cardPolygons[1];
+    // Midpoint across the sixth flexible strip is a real point on the raised
+    // face. The outline is concave in this oblique close view, so the arithmetic
+    // mean of all outline vertices is not guaranteed to remain on the card.
+    const point = {
+      xPercent: (polygon[6].xPercent + polygon[21].xPercent) / 2,
+      yPercent: (polygon[6].yPercent + polygon[21].yPercent) / 2,
+    };
+    const clientX = rect.left + point.xPercent / 100 * rect.width;
+    const clientY = rect.top + point.yPercent / 100 * rect.height;
+
+    const converted = sceneClientPointToViewportPercent(clientX, clientY, rect)!;
+    expect(converted.xPercent).toBeCloseTo(point.xPercent, 10);
+    expect(converted.yPercent).toBeCloseTo(point.yPercent, 10);
+    expect(heroHoleCardClientPointHits(target, clientX, clientY, rect)).toBe(true);
+    expect(heroHoleCardClientPointHits(
+      target,
+      clientX,
+      rect.top + target.bounds!.yMax / 100 * rect.height + 4,
+      rect,
+    )).toBe(false);
   });
 });

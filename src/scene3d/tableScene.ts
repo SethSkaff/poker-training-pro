@@ -66,7 +66,6 @@ import {
   CAMERA_PITCH_DEGREES,
   CAMERA_VERTICAL_FOV,
   chipInventoryForAmount,
-  PREVIOUS_BET_CIRCLE_FORWARD,
   raiseChipPosition,
   restingChipStackPosition,
   tableMarkerPosition,
@@ -76,19 +75,17 @@ import {
   TABLE_ANCHORS,
   TABLE_HEIGHT,
   turnIndicatorPositionForPlayer,
-  BET_CIRCLE_FORWARD,
   BET_CIRCLE_RADIUS,
+  wagerChipStackOffset,
   type SceneCameraMotion,
   type SceneCameraView,
   type SeatActionKind,
   type SeatPose,
 } from "./tableSceneModel";
 import {
-  playerStations,
   stationAsPose,
   TABLE_DEPTH,
   TABLE_WIDTH,
-  type Station,
 } from "./tableStations";
 import { dealerGestureFor, dealerWorkFor, type DealerWork } from "./dealerGesture";
 import { dealerCardFrame } from "./dealerChoreography";
@@ -152,6 +149,7 @@ import {
   HERO_PEEK_HAND_RIG,
   HERO_PEEK_HAND_ROOT_OFFSET,
   HERO_PEEK_CARD_PLANTED_FRACTION,
+  HERO_HOLE_CARD_PLACEMENT,
   heroPeekFaceUvForLocalPoint,
 } from "./heroPeekPresentation";
 
@@ -285,11 +283,6 @@ export function probeWebGl2(canvas: HTMLCanvasElement): WebGlProbeResult {
    on it reads against it. */
 const FELT = 0x155232;
 const FELT_EDGE = 0x0e3a21;
-/* Printed felt graphics -- medallion, racetrack line, per-seat play zones. A
-   shade lighter than the baize, as printed felt actually is: high contrast here
-   pulls the eye off the cards, which is the only thing on the table that
-   matters. */
-const FELT_PRINT = 0x24704a;
 /* Padded leather, not bare timber. At 0x7b6b59 the near rail was the brightest
    large surface in the seated frame -- a pale tan band across the bottom third
    that pulled the eye off the felt and read as moulded plastic. A darker hide
@@ -888,7 +881,7 @@ export function createTableScene(
   buildRoom(scene, resources);
   // Hero-relative seat order mapped onto the ring from wherever the hero sits.
   const poses = seatPoses(6, initial.heroStationIndex ?? 0);
-  const table = buildTable(playerStations(), resources);
+  const table = buildTable(resources);
   scene.add(table);
 
   /*
@@ -1296,6 +1289,7 @@ export function createTableScene(
                 pose: entry.pose,
                 rackAmount: chipCommitment.stackBefore,
                 amount: chipCommitment.amount,
+                existingWagerAmount: chipCommitment.betBefore,
               });
               betChoreographyPlans.set(seat.id, plan);
             } catch (error) {
@@ -1846,7 +1840,7 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
 /**
  * The table, assembled from the Blender-authored meshes.
  *
- * Three zones, outward from the middle: textured felt with subtle wager rings,
+ * Three zones, outward from the middle: uninterrupted textured felt,
  * a narrow hard ledge, and the broad brown padded rail. The dealer-side cutout
  * and softer leather seam follow the approved casino-table reference, while the
  * project's original felt weave remains intact. Every dimension comes from the
@@ -1855,7 +1849,7 @@ function buildRoom(scene: Scene, bundle: TableSceneResources): void {
  * The authored geometry has the felt plane at y=0, so the whole assembly is
  * placed by one `TABLE_HEIGHT` offset and nothing here re-derives a height.
  */
-function buildTable(stations: readonly Station[], scene: TableSceneResources): Group {
+function buildTable(scene: TableSceneResources): Group {
   const resources = scene.ledger;
   const group = new Group();
   group.position.y = TABLE_HEIGHT;
@@ -1885,7 +1879,7 @@ function buildTable(stations: readonly Station[], scene: TableSceneResources): G
   if (feltTexture) feltMaterial.map = feltTexture;
   else feltMaterial.color.setHex(FELT);
   // Keep the existing textured baize clean, as in the approved casino layout.
-  // The only per-seat felt print is the wager circle instantiated below.
+  // Wager and private-card zones remain model-only placement/collision data.
   zone("table/ledge", LEDGE, "table-ledge");
   const rail = zone("table/rail", RAIL, "table-rail");
   const railMaterial = rail.material as MeshLambertMaterial;
@@ -1901,30 +1895,6 @@ function buildTable(stations: readonly Station[], scene: TableSceneResources): G
   zone("table/trim", RAIL_SEAM, "table-trim");
   zone("table/pedestal", PEDESTAL, "table-pedestal");
 
-  /*
-    Per-seat printed graphics. One geometry and one material each, cloned to the
-    six stations, so six play zones plus six inlays cost two draw calls rather
-    than twelve: the printed felt is decoration and must not eat the budget the
-    players and their chips need.
-  */
-  const playZoneGeometry = resources.track(tableMeshGeometry("table/play-zone"));
-  const printMaterial = resources.track(new MeshLambertMaterial({ color: FELT_PRINT }));
-  const playZones = new InstancedMesh(playZoneGeometry, printMaterial, stations.length);
-  playZones.name = "table-play-zones";
-  const placement = new Matrix4();
-  const rotation = new Matrix4();
-  const wagerPrintShift = BET_CIRCLE_FORWARD - PREVIOUS_BET_CIRCLE_FORWARD;
-  stations.forEach((station, index) => {
-    rotation.makeRotationY(station.facing);
-    placement.copy(rotation).setPosition(
-      station.feltPosition[0] + Math.sin(station.facing) * wagerPrintShift,
-      0,
-      station.feltPosition[2] + Math.cos(station.facing) * wagerPrintShift,
-    );
-    playZones.setMatrixAt(index, placement);
-  });
-  playZones.instanceMatrix.needsUpdate = true;
-  group.add(playZones);
   return group;
 }
 
@@ -1965,7 +1935,7 @@ function placeMarker(
  */
 function buildTurnIndicator(resources: TableSceneResources): Mesh {
   const indicator = new Mesh(
-    // Sized and placed to sit exactly on the felt's own printed bet circle.
+    // Sized and placed on the same internal wager anchor as the owner's chips.
     resources.ledger.track(new TorusGeometry(BET_CIRCLE_RADIUS + 0.004, 0.006, 6, 28)),
     resources.ledger.track(new MeshBasicMaterial({ color: 0xf0c473 })),
   );
@@ -2379,7 +2349,9 @@ function applySeat(
     // natural overlap across 88 mm cards: both printed corners stay exposed,
     // but the cards no longer read as two widely separated billboards.
     const cardCanBeSqueezed = squeezeAvailable && (dealCardFrame?.viewable ?? true);
-    const spread = cardCanBeSqueezed ? 0.040 : 0.055;
+    const spread = cardCanBeSqueezed
+      ? HERO_HOLE_CARD_PLACEMENT.squeezedSpread
+      : HERO_HOLE_CARD_PLACEMENT.restingSpread;
     /*
       Card 0 goes to the player's left.
 
@@ -2399,8 +2371,8 @@ function applySeat(
     const revealInward = (allInReveal || winning) ? 0.014 : 0;
     card.position.set(
       local[0] + toPlayersLeft,
-      local[1] + (cardCanBeSqueezed ? 0.003 : 0) + revealLift,
-      local[2] + (cardCanBeSqueezed ? -0.006 : 0) + revealInward,
+      local[1] + (cardCanBeSqueezed ? HERO_HOLE_CARD_PLACEMENT.squeezedYOffset : 0) + revealLift,
+      local[2] + (cardCanBeSqueezed ? HERO_HOLE_CARD_PLACEMENT.squeezedZOffset : 0) + revealInward,
     );
     // The card's *geometry* now flexes, rather than rotating an entire rigid
     // rectangle. Keeping the packet level preserves the printed orientation
@@ -2408,7 +2380,9 @@ function applySeat(
     card.rotation.x = 0;
     card.rotation.y = foldCardPose
       ? foldCardPose.rotation[1] - pose.facing
-      : cardCanBeSqueezed ? (index === 0 ? 0.025 : -0.025) : 0;
+      : cardCanBeSqueezed
+        ? (index === 0 ? HERO_HOLE_CARD_PLACEMENT.squeezedYaw : -HERO_HOLE_CARD_PLACEMENT.squeezedYaw)
+        : 0;
     card.scale.setScalar(1);
     if (winning) card.scale.multiplyScalar(1.045);
     const mesh = card as Mesh;
@@ -2543,7 +2517,7 @@ function applySeat(
   }
 
   const settledBet = isCommitting ? (chipCommitment?.betBefore ?? seat.bet) : seat.bet;
-  setChipStack(view.betChips, settledBet, resources);
+  setChipStack(view.betChips, settledBet, resources, new Set(), "wager");
   if (settledBet > 0) {
     const local = seatLocalPoint(pose, isCommitting
       ? betCirclePosition(pose)
@@ -2689,6 +2663,7 @@ function setChipStack(
   amount: number,
   resources: TableSceneResources,
   excludedChipIds: ReadonlySet<string> = new Set(),
+  placement: "rack" | "wager" = "rack",
 ): void {
   const layout = chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN);
   const renderedColumns = layout.map((column) => ({
@@ -2733,15 +2708,17 @@ function setChipStack(
     if (child.name.startsWith("chip-denomination-")) group.remove(child);
   }
   let instance = 0;
+  let wagerHeight = 0;
   for (const column of layout) {
     const [columnX, columnZ] = chipRackColumnPosition(column.column, layout.length);
     for (let height = 0; height < column.count; height += 1) {
       if (excludedChipIds.has(`${column.column}:${height}`)) continue;
+      const wagerOffset = wagerChipStackOffset(wagerHeight);
       matrix.makeRotationY(((instance * 37 + column.denomination) % 360) * (Math.PI / 180));
       matrix.setPosition(
-        columnX,
-        height * 0.0045,
-        columnZ,
+        placement === "wager" ? wagerOffset[0] : columnX,
+        placement === "wager" ? wagerOffset[1] : height * 0.0045,
+        placement === "wager" ? wagerOffset[2] : columnZ,
       );
       stack.setMatrixAt(instance, matrix);
       spots.setMatrixAt(instance, matrix);
@@ -2753,6 +2730,7 @@ function setChipStack(
       inlay.copy(edge);
       faces.setColorAt(instance, inlay);
       instance += 1;
+      wagerHeight += 1;
     }
   }
   stack.count = instance;
@@ -2770,20 +2748,22 @@ function setChipStack(
 
   let shadows = group.getObjectByName("chip-rack-contact-shadows") as InstancedMesh | undefined;
   const occupiedColumns = renderedColumns.filter((column) => column.count > 0);
+  const contactOffsets: readonly (readonly [number, number])[] = placement === "wager"
+    ? (renderedCount > 0 ? [[0, 0]] : [])
+    : occupiedColumns.map((column) => chipRackColumnPosition(column.column, layout.length));
   const shadowCapacity = Number(shadows?.userData.capacity ?? shadows?.count ?? 0);
-  if (!shadows || shadowCapacity < occupiedColumns.length) {
+  if (!shadows || shadowCapacity < contactOffsets.length) {
     if (shadows) group.remove(shadows);
     shadows = new InstancedMesh(
       resources.chipShadowGeometry,
       resources.chipShadowMaterial,
-      Math.max(1, occupiedColumns.length),
+      Math.max(1, contactOffsets.length),
     );
     shadows.name = "chip-rack-contact-shadows";
-    shadows.userData.capacity = Math.max(1, occupiedColumns.length);
+    shadows.userData.capacity = Math.max(1, contactOffsets.length);
     group.add(shadows);
   }
-  for (const [shadowIndex, column] of occupiedColumns.entries()) {
-    const [columnX, columnZ] = chipRackColumnPosition(column.column, layout.length);
+  for (const [shadowIndex, [columnX, columnZ]] of contactOffsets.entries()) {
     matrix.makeRotationX(-Math.PI / 2);
     matrix.setPosition(
       columnX,
@@ -2792,7 +2772,7 @@ function setChipStack(
     );
     shadows.setMatrixAt(shadowIndex, matrix);
   }
-  shadows.count = occupiedColumns.length;
+  shadows.count = contactOffsets.length;
   shadows.instanceMatrix.needsUpdate = true;
   const renderedValue = renderedColumns.reduce(
     (total, column) => total + column.denomination * column.count,
@@ -2804,6 +2784,7 @@ function setChipStack(
   group.userData.publicChipColumns = renderedColumns
     .filter((column) => column.count > 0)
     .map((column) => ({ denomination: column.denomination, count: column.count }));
+  group.userData.publicPlacement = placement;
   if (excludedChipIds.size === 0 && renderedValue !== Math.max(0, Math.floor(amount))) {
     throw new Error(`Rendered chip value mismatch: ${renderedValue} !== ${amount}`);
   }

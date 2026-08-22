@@ -49,6 +49,7 @@ describe("hero card peek presentation", () => {
     expect(scene).toContain("indices.push(left, left + 1, left + 2, left + 1, left + 3, left + 2);");
     expect(scene).not.toContain("indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);");
     expect(scene).toContain("card.rotation.x = 0;");
-    expect(scene).toContain("const spread = cardCanBeSqueezed ? 0.040 : 0.055;");
+    expect(scene).toContain("HERO_HOLE_CARD_PLACEMENT.squeezedSpread");
+    expect(scene).toContain("HERO_HOLE_CARD_PLACEMENT.restingSpread");
   });
 });

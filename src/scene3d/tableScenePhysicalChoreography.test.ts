@@ -32,12 +32,14 @@ describe("physical choreography renderer integration", () => {
     expect(scene).toContain("excludedRackChipIds");
   });
 
-  it("renders burn, supported flip, exact placement, and owner-shifted felt rings", () => {
+  it("renders burn, supported flip, exact placement, and no player-facing guide zones", () => {
     expect(scene).toContain("boardStreetChoreographyAtProgress(");
     expect(scene).toContain("burnCard.position.set(...burnFrame.position)");
     expect(scene).toContain("communityCardTarget(index)");
     expect(scene).toContain("cardFrame.faceUpFraction >= 0.5");
-    expect(scene).toContain("BET_CIRCLE_FORWARD - PREVIOUS_BET_CIRCLE_FORWARD");
+    expect(scene).not.toContain('tableMeshGeometry("table/play-zone")');
+    expect(scene).not.toContain('playZones.name = "table-play-zones"');
+    expect(scene).toContain('setChipStack(view.betChips, settledBet, resources, new Set(), "wager")');
     expect(scene).not.toContain("boardDealPose(");
     expect(scene).not.toContain("burnCardPose(");
   });

@@ -54,6 +54,10 @@ import {
   seatPlaqueViewportAnchor,
 } from "../scene3d/tableSceneModel";
 import {
+  heroHoleCardClientPointHits,
+  heroHoleCardProjectedHitTarget,
+} from "../scene3d/heroPeekPresentation";
+import {
   trainingScenarios,
   type RatedTrainingScenario,
 } from "../data/trainingScenarios";
@@ -2874,6 +2878,30 @@ export function PokerTable({
     // the action gate also disables this surface while a submitted action is
     // being presented so a peek cannot race the authoritative update.
     if (heroFolded) return;
+    dragStart.current = null;
+    didDrag.current = false;
+    /*
+      In ready 3D the button is a semantic overlay, not the painted cards. Its
+      rectangular CSS box is only the smallest box enclosing both projected
+      card silhouettes, so validate the browser's CSS-pixel point against those
+      silhouettes before beginning a peek/fold gesture. `clientX/Y` and the
+      canvas parent rect deliberately stay in CSS pixels; the WebGL drawing
+      buffer's device-pixel ratio must never enter DOM hit testing.
+    */
+    if (heroHoleCardHitTarget) {
+      const viewport = sceneElementRef.current?.getBoundingClientRect();
+      if (
+        !viewport
+        || !heroHoleCardClientPointHits(
+          heroHoleCardHitTarget,
+          event.clientX,
+          event.clientY,
+          viewport,
+        )
+      ) {
+        return;
+      }
+    }
     // The semantic card target sits above the canvas. Stop this private-card
     // gesture from becoming a table-look drag after the stage has already
     // rejected button targets in its capture handler.
@@ -2902,6 +2930,9 @@ export function PokerTable({
     event: ReactPointerEvent<HTMLButtonElement>,
     cancelled = false,
   ) => {
+    // A pointer in the enclosing rectangle but outside both physical card
+    // polygons never started a card gesture and therefore cannot toggle peek.
+    if (!dragStart.current) return;
     event.stopPropagation();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -3237,6 +3268,22 @@ export function PokerTable({
       ).length
     : cardsDealt ? 2 : 0;
   const heroDealtCardCount = dealtCardCountForPlayer(heroPlayerId);
+  const heroHitProjectionWidth = activeCameraFrame?.viewportWidth || sceneViewport.width;
+  const heroHitProjectionHeight = activeCameraFrame?.viewportHeight || sceneViewport.height;
+  const heroHoleCardHitTarget = sceneReadyForPlaques
+    ? heroHoleCardProjectedHitTarget({
+        pan: effectiveCameraPan,
+        cameraView: settings.cameraView,
+        wheelZoom: cameraZoom,
+        viewportWidth: heroHitProjectionWidth,
+        viewportHeight: heroHitProjectionHeight,
+        heroIndex: heroStationIndexForTable,
+        peeked,
+        cardCount: heroDealtCardCount,
+        camera: activeCameraFrame ?? undefined,
+      })
+    : undefined;
+  const heroHoleCardHitBounds = heroHoleCardHitTarget?.bounds;
   const sceneSeatByPlayerId = new Map(
     sceneSnapshot.seats.map((seat) => [seat.id, seat]),
   );
@@ -4354,7 +4401,9 @@ export function PokerTable({
             <button
               className={`hero-hole-cards ${peeked ? "is-peeked" : ""} ${
                 dragging ? "is-dragging" : ""
-              } ${heroFolded ? "is-folded" : ""}`}
+              } ${heroFolded ? "is-folded" : ""} ${
+                heroHoleCardHitBounds ? "has-spatial-hit-target" : ""
+              }`}
               type="button"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
@@ -4364,9 +4413,17 @@ export function PokerTable({
                 {
                   // The drag drives the offset while dragging; once folded the
                   // cards sit at the full offset regardless of how the fold was
-                  // submitted, so button and gesture folds look the same.
-                  "--fold-offset": `${foldOffsetProgress(heroFoldState) * -0.55}px`,
-                } as CSSProperties
+                   // submitted, so button and gesture folds look the same.
+                   "--fold-offset": `${foldOffsetProgress(heroFoldState) * -0.55}px`,
+                   ...(heroHoleCardHitBounds
+                     ? {
+                         "--hero-card-hit-left": `${heroHoleCardHitBounds.xMin}%`,
+                         "--hero-card-hit-top": `${heroHoleCardHitBounds.yMin}%`,
+                         "--hero-card-hit-width": `${heroHoleCardHitBounds.xMax - heroHoleCardHitBounds.xMin}%`,
+                         "--hero-card-hit-height": `${heroHoleCardHitBounds.yMax - heroHoleCardHitBounds.yMin}%`,
+                       }
+                     : {}),
+                 } as CSSProperties
               }
               aria-label={formatMessage("table.holeCards.ariaLabel", {
                 state: peeked

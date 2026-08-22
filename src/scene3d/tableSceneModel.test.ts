@@ -47,6 +47,7 @@ import {
   turnIndicatorPosition,
   BET_CIRCLE_FORWARD,
   PREVIOUS_BET_CIRCLE_FORWARD,
+  WAGER_OWNERWARD_LOCAL_DELTA,
   CHIP_STACK_SAFE_RADIUS,
   CHIP_PHYSICAL_RADIUS,
   CARD_ZONE_DEPTH,
@@ -62,6 +63,7 @@ import {
   STACK_LABEL_HALF_WIDTH,
   turnIndicatorPositionForPlayer,
   seatOccupancyLayout,
+  wagerChipStackOffset,
 } from "./tableSceneModel";
 
 const distance = (
@@ -163,9 +165,8 @@ describe("objects travel between real places", () => {
   /*
     A wager stops on its owner's betting line. It used to run all the way to the
     middle of the felt, and the renderer drew an idle bet at progress 1 -- so
-    every live wager on the table sat in one heap at the centre and the six
-    printed bet circles the felt carries were never used. Only the dealer's
-    sweep reaches the pot.
+    every live wager on the table sat in one heap at the centre. Only the
+    dealer's sweep reaches the pot; the owner anchor remains internal geometry.
   */
   it("pushes a bet from the seat out to its own betting line", () => {
     const start = betChipPosition(pose, 0);
@@ -286,10 +287,10 @@ describe("the current-turn indicator", () => {
 
       /*
         That player's lane, not the chair and not the table centre -- and
-        specifically on the bet circle printed in front of them, which is a
+        specifically on the internal wager anchor in front of them, which is a
         short step from the lane origin *toward the middle of the table*. The
-        cue is the felt's own printed circle lighting up rather than a ring
-        drawn around the actor's hole cards.
+        cue is a transient turn light rather than a permanent guide drawn
+        around the actor's hole cards.
       */
       const lane = Math.hypot(pose.feltPosition[0], pose.feltPosition[2]);
       const cue = Math.hypot(indicator[0], indicator[2]);
@@ -336,9 +337,12 @@ describe("the current-turn indicator", () => {
 });
 
 describe("six-player tournament lanes", () => {
-  it("gives each player one straight card rectangle and a separate inward wager circle", () => {
+  it("keeps each private-card rectangle and invisible wager zone separate", () => {
     expect(BET_CIRCLE_FORWARD).toBe(
       (PREVIOUS_BET_CIRCLE_FORWARD + CARD_ZONE_LOCAL_MAX_Z) / 2,
+    );
+    expect(WAGER_OWNERWARD_LOCAL_DELTA).toBe(
+      (CARD_ZONE_LOCAL_MAX_Z - PREVIOUS_BET_CIRCLE_FORWARD) / 2,
     );
     const poses = seatPoses(6);
     for (const pose of poses) {
@@ -346,15 +350,14 @@ describe("six-player tournament lanes", () => {
       const toCentre = Math.hypot(pose.feltPosition[0], pose.feltPosition[2]);
       expect(Math.hypot(circle[0], circle[2]), `seat ${pose.seat} wager direction`)
         .toBeLessThan(toCentre);
-      // The circular wager mark starts beyond the card rectangle rather than
-      // cutting through it, so the two marks remain legible at every seat.
+      // The physical wager footprint starts beyond the protected card bounds.
       expect(BET_CIRCLE_FORWARD - BET_CIRCLE_RADIUS)
         .toBeGreaterThan(CARD_ZONE_DEPTH / 2);
       expect(CARD_ZONE_WIDTH).toBeGreaterThan(0.22);
     }
   });
 
-  it("keeps all six printed player lanes physically separated", () => {
+  it("keeps all six internal player lanes physically separated", () => {
     const poses = seatPoses(6);
     for (let i = 0; i < poses.length; i += 1) {
       for (let j = i + 1; j < poses.length; j += 1) {
@@ -378,9 +381,51 @@ describe("six-player tournament lanes", () => {
       const cue = turnIndicatorPosition(pose);
       expect(cue[0]).toBeCloseTo(circle[0], 6);
       expect(cue[2]).toBeCloseTo(circle[2], 6);
-      // The destination from the motion model is the printed wager mark, not
+      // The destination from the motion model is the internal wager anchor, not
       // a neighbouring lane or the central pot.
       expect(betChipPosition(pose, 1)).toEqual(circle);
+      expect(callChipPosition(pose, 1)).toEqual(circle);
+      expect(raiseChipPosition(pose, 1)).toEqual(circle);
+      expect(allInChipPosition(pose, 1)).toEqual(circle);
+      expect(seatOccupancyLayout(pose, 15_000).wager).toEqual(circle);
+    }
+  });
+
+  it("moves collision, cue, chip, and projected-label anchors by the exact midpoint delta", () => {
+    for (const pose of seatPoses(6)) {
+      const card = seatLocalPoint(pose, pose.feltPosition);
+      const wager = seatLocalPoint(pose, betCirclePosition(pose));
+      const cue = seatLocalPoint(pose, turnIndicatorPosition(pose));
+      const label = seatLocalPoint(pose, committedAmountPosition(pose));
+      const previousDepth = card[2] + PREVIOUS_BET_CIRCLE_FORWARD;
+
+      expect(wager[0], `seat ${pose.seat} wager bearing`).toBeCloseTo(card[0], 12);
+      expect(wager[2] - previousDepth, `seat ${pose.seat} ownerward delta`)
+        .toBeCloseTo(WAGER_OWNERWARD_LOCAL_DELTA, 12);
+      expect(wager[2], `seat ${pose.seat} exact midpoint`).toBeCloseTo(
+        (previousDepth + card[2] + CARD_ZONE_LOCAL_MAX_Z) / 2,
+        12,
+      );
+      expect(cue[0], `seat ${pose.seat} cue bearing`).toBeCloseTo(wager[0], 12);
+      expect(cue[2], `seat ${pose.seat} cue depth`).toBeCloseTo(wager[2], 12);
+      expect(label[0], `seat ${pose.seat} label bearing`).toBeCloseTo(wager[0], 12);
+      expect(label[2], `seat ${pose.seat} label endpoint`)
+        .toBeCloseTo(wager[2] - 0.040, 12);
+    }
+  });
+
+  it("bounds every representative compact wager pile inside its invisible zone", () => {
+    for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
+      const chipCount = chipInventoryForAmount(amount).length;
+      for (let height = 0; height < chipCount; height += 1) {
+        const offset = wagerChipStackOffset(height);
+        expect(
+          Math.hypot(offset[0], offset[2]) + CHIP_PHYSICAL_RADIUS,
+          `amount ${amount} chip ${height} footprint`,
+        ).toBeLessThanOrEqual(BET_CIRCLE_RADIUS);
+        expect(offset[1], `amount ${amount} chip ${height} vertical order`)
+          .toBeGreaterThanOrEqual(height === 0 ? 0 : wagerChipStackOffset(height - 1)[1]);
+      }
     }
   });
 });
@@ -714,6 +759,28 @@ describe("protected seat occupancy", () => {
 });
 
 describe("dealer and blind markers", () => {
+  it("inherits the exact wager radial delta and preserves fixed lateral pockets", () => {
+    const baseLateral = BET_CIRCLE_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS;
+    for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
+      for (const pose of seatPoses(6)) {
+        const card = seatLocalPoint(pose, pose.feltPosition);
+        const wager = seatLocalPoint(pose, betCirclePosition(pose));
+        const previousMarkerDepth = card[2] + PREVIOUS_BET_CIRCLE_FORWARD;
+        for (const label of ["D", "SB", "BB"] as const) {
+          const marker = seatLocalPoint(pose, tableMarkerPosition(pose, label, amount));
+          const expectedLateral = baseLateral + (label === "SB" ? 0.065 : 0);
+
+          expect(marker[2] - previousMarkerDepth, `seat ${pose.seat} ${label} radial delta`)
+            .toBeCloseTo(WAGER_OWNERWARD_LOCAL_DELTA, 12);
+          expect(marker[2], `seat ${pose.seat} ${label} shared depth`)
+            .toBeCloseTo(wager[2], 12);
+          expect(marker[0] - wager[0], `seat ${pose.seat} ${label} signed lateral pocket`)
+            .toBeCloseTo(-expectedLateral, 12);
+        }
+      }
+    }
+  });
+
   it("sit beside their owner's wager, clear of cards and the chip rack", () => {
     for (const pose of seatPoses(6)) {
       const stack = restingChipStackPosition(pose);

@@ -17,7 +17,7 @@ nothing to license.
 Shape language follows the three-zone top that reads as a modern VR poker
 table rather than a generic felt oval:
 
-    printed felt (racetrack line, centre medallion, per-seat play zones)
+    printed felt (racetrack line and centre medallion)
       -> hard ledge ring with a per-seat inlaid medallion
         -> padded rail with a metal trim edge
 
@@ -66,20 +66,16 @@ OUTLINE_SEGMENTS = 72
 
 # Printed felt graphics.
 #
-# The racetrack betting line has to run *inside* the seat play zones -- it is
-# the line a bet is pushed across. At a 0.105 inset it cut straight through
-# every play zone and the two graphics read as one scribble. 0.275 puts it a
-# clean 40 mm inboard of the play zones' inner edge on both axes.
+# The restrained racetrack line sits well inside the table edge without
+# competing with cards, chips, or the internal-only per-seat placement zones.
 MEDALLION_RADIUS = 0.170
 RACETRACK_INSET = 0.275
 PRINT_LIFT = 0.0012
 
-# Per-seat printed play zone, authored facing -Y (three.js +Z, toward its owner).
+# Compatibility-only placement-zone proxy, authored facing -Y (three.js +Z).
 PLAY_ZONE_WIDTH = 0.250
-# The card rectangle is its own straight, compact mark. The wager circle sits
-# just beyond it toward the table centre, instead of being squeezed inside one
-# oversized rounded square. This gives six evenly spaced tournament lanes with
-# no overlapping outlines at the capsule ends.
+# The runtime does not instantiate this legacy mesh. Its dimensions remain here
+# only so old generated table libraries can be reproduced byte-for-byte.
 PLAY_ZONE_DEPTH = 0.160
 PLAY_ZONE_CORNER = 0.035
 BET_CIRCLE_RADIUS = 0.040
@@ -450,13 +446,12 @@ def build_print():
 
 def build_play_zone():
     """
-    One seat's printed play zone, authored facing -Y so the runtime can rotate
-    a clone by the station's own facing and have it land the right way up.
+    Legacy placement-zone proxy retained only for compatible asset regeneration.
     """
     obj, bm = new_mesh("table/play-zone")
-    # A casino table does not draw a large rounded rectangle under the hole
-    # cards. Keep only the unambiguous wager circle from the approved reference;
-    # card and rack exclusion remains a tested, invisible spatial contract.
+    # Retain the source asset for backwards-compatible table libraries. The
+    # runtime deliberately does not instantiate this internal placement-zone
+    # proxy, so it is never player-facing.
     annulus(
         bm,
         BET_CIRCLE_RADIUS,
@@ -476,7 +471,7 @@ def build_seat_inlay():
     centre it was 66 mm of metal on the ledge -- wider than a chip -- and the
     hero's own, a third of a metre from the eye, read as a gold puddle on the
     rail. A real ledge inlay is a discreet bezel, and that is all it needs to be:
-    the seat is already identified by the play zone printed in front of it.
+    the seat already has ample identity through its occupant and marker.
     """
     obj, bm = new_mesh("table/seat-inlay")
     height = LEDGE_RISE + 0.0006

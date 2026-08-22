@@ -12,24 +12,28 @@
  * simulation.
  */
 import {
+  BET_CIRCLE_FORWARD,
   CARD_ZONE_LOCAL_MAX_Z,
+  CHIP_VERTICAL_PITCH,
   CHIPS_PER_COLUMN,
   PREVIOUS_BET_CIRCLE_FORWARD,
   TABLE_HEIGHT,
   betCirclePosition,
   chipColumnLayoutForAmount,
+  chipInventoryForAmount,
   chipRackColumnPosition,
   restingChipStackPosition,
   seatLocalPoint,
   seatRailAnchor,
   seatWorldPoint,
+  wagerChipStackOffset,
   type SeatPose,
 } from "./tableSceneModel";
 
 export type BetPoint3 = readonly [number, number, number];
 
 /** Matches the vertical instance pitch in `tableScene.setChipStack`. */
-export const BET_CHIP_VERTICAL_PITCH = 0.0045;
+export const BET_CHIP_VERTICAL_PITCH = CHIP_VERTICAL_PITCH;
 /** The contact surface sits halfway above a chip centre. */
 export const BET_CHIP_HALF_HEIGHT = BET_CHIP_VERTICAL_PITCH / 2;
 /** A low, visible clearance while the hand crosses the felt. */
@@ -104,6 +108,8 @@ export interface BetChoreographyPlan {
   readonly rackAmount: number;
   /** Increment removed from the rack, not the seat's already-committed total. */
   readonly amount: number;
+  /** Chips already settled at this wager anchor before the increment begins. */
+  readonly existingWagerChipCount: number;
   readonly hand: "left";
   readonly handRestPosition: BetPoint3;
   /** Existing renderer anchor, retained so integration can audit the move. */
@@ -148,6 +154,8 @@ export interface BetChoreographyRequest {
   readonly rackAmount: number;
   /** Exact chip value to leave the rack during this action. */
   readonly amount: number;
+  /** Public amount already committed on this street before this increment. */
+  readonly existingWagerAmount?: number;
   /** Supply the rig's measured rest target when available. */
   readonly handRestPosition?: BetPoint3;
 }
@@ -209,6 +217,12 @@ export function createBetChoreographyPlan(
 ): BetChoreographyPlan {
   const rackAmount = requireAmount("rackAmount", request.rackAmount, true);
   const amount = requireAmount("amount", request.amount, false);
+  const existingWagerAmount = requireAmount(
+    "existingWagerAmount",
+    request.existingWagerAmount ?? 0,
+    true,
+  );
+  const existingWagerChipCount = chipInventoryForAmount(existingWagerAmount).length;
   if (amount > rackAmount) {
     throw new RangeError(`Wager ${amount} exceeds rack amount ${rackAmount}`);
   }
@@ -290,21 +304,17 @@ export function createBetChoreographyPlan(
     }
   }
 
-  const destinationAssignments = destinationSlots(selected);
-  const destinationColumnCount = destinationAssignments.reduce(
-    (maximum, assignment) => Math.max(maximum, assignment.destinationColumn + 1),
-    0,
-  );
+  const destinationAssignments = destinationSlots(selected, existingWagerChipCount);
   const wagerPosition = ownerWagerPosition(request.pose);
   const wagerLocal = seatLocalPoint(request.pose, wagerPosition);
   const chips: readonly SelectedWagerChip[] = destinationAssignments.map((assignment) => {
-    const offset = chipRackColumnPosition(assignment.destinationColumn, destinationColumnCount);
+    const offset = wagerChipStackOffset(assignment.destinationHeight);
     return {
       ...assignment,
       destinationPosition: seatWorldPoint(request.pose, [
         wagerLocal[0] + offset[0],
-        TABLE_HEIGHT + assignment.destinationHeight * BET_CHIP_VERTICAL_PITCH,
-        wagerLocal[2] + offset[1],
+        TABLE_HEIGHT + offset[1],
+        wagerLocal[2] + offset[2],
       ]),
     };
   });
@@ -338,6 +348,7 @@ export function createBetChoreographyPlan(
     pose: request.pose,
     rackAmount,
     amount,
+    existingWagerChipCount,
     hand: "left",
     handRestPosition: request.handRestPosition ?? defaultLeftHandRestPosition(request.pose),
     previousWagerPosition: previousWagerPosition(request.pose),
@@ -555,25 +566,22 @@ function exactDenominationSelection(
 
 function destinationSlots(
   chips: readonly MutableSelectedChip[],
+  baseHeight = 0,
 ): readonly Omit<SelectedWagerChip, "destinationPosition">[] {
   const ordered = [...chips].sort((left, right) =>
     left.denomination - right.denomination
       || left.sourceColumn - right.sourceColumn
       || left.sourceHeight - right.sourceHeight
   );
-  const result: Omit<SelectedWagerChip, "destinationPosition">[] = [];
-  let destinationColumn = 0;
-  for (const denomination of [...new Set(ordered.map((chip) => chip.denomination))]) {
-    const group = ordered.filter((chip) => chip.denomination === denomination);
-    for (let start = 0; start < group.length; start += CHIPS_PER_COLUMN) {
-      const column = group.slice(start, start + CHIPS_PER_COLUMN);
-      column.forEach((chip, destinationHeight) => {
-        result.push({ ...chip, destinationColumn, destinationHeight });
-      });
-      destinationColumn += 1;
-    }
-  }
-  return result;
+  // Racks remain denomination-pure and may spread across several columns. A
+  // wager has a different spatial contract: every physical token must stay
+  // inside the invisible 40 mm zone. Preserve deterministic low-to-high order
+  // while stacking those exact selected chips into one compact vertical pile.
+  return ordered.map((chip, destinationHeight) => ({
+    ...chip,
+    destinationColumn: 0,
+    destinationHeight: baseHeight + destinationHeight,
+  }));
 }
 
 function carriedChipFrame(
@@ -636,6 +644,4 @@ function withY(point: BetPoint3, y: number): BetPoint3 {
 
 // Compile-time documentation: this should remain the midpoint of the existing
 // authored constants unless the private-card zone itself changes.
-export const OWNER_WAGER_LOCAL_FORWARD = (
-  PREVIOUS_BET_CIRCLE_FORWARD + CARD_ZONE_LOCAL_MAX_Z
-) / 2;
+export const OWNER_WAGER_LOCAL_FORWARD = BET_CIRCLE_FORWARD;

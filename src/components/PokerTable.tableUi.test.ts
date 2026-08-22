@@ -82,6 +82,33 @@ describe("table UI restraint and card peek", () => {
     expect(table).toContain("if (shouldFold) {");
   });
 
+  it("aligns the ready-3D semantic card target to physical projected card pixels", () => {
+    expect(table).toContain("heroHoleCardProjectedHitTarget({");
+    expect(table).toContain("camera: activeCameraFrame ?? undefined");
+    expect(table).toContain("sceneElementRef.current?.getBoundingClientRect()");
+    expect(table).toContain("heroHoleCardClientPointHits(");
+    expect(table).toContain("if (!dragStart.current) return;");
+    expect(table).toContain('heroHoleCardHitBounds ? "has-spatial-hit-target" : ""');
+
+    const readyTargetRule = styles.slice(
+      styles.indexOf(
+        '.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .hero-hole-cards {',
+      ),
+      styles.indexOf(
+        '.table-stage:has(.poker-scene[data-spatial-scene="ready"]) .hero-hole-cards {',
+      ) + 800,
+    );
+    expect(readyTargetRule).toContain("top: var(--hero-card-hit-top)");
+    expect(readyTargetRule).toContain("left: var(--hero-card-hit-left)");
+    expect(readyTargetRule).toContain("width: var(--hero-card-hit-width)");
+    expect(readyTargetRule).toContain("height: var(--hero-card-hit-height)");
+    expect(readyTargetRule).toContain("min-width: 0");
+    expect(readyTargetRule).toContain("min-height: 0");
+    expect(readyTargetRule).not.toContain("bottom: 14%");
+    expect(readyTargetRule).not.toContain("min-width: 180px");
+    expect(readyTargetRule).not.toContain("min-height: 126px");
+  });
+
   it("keeps the numeric question and post-move feedback interactive in ready 3D Training", () => {
     const genericHiddenRule = styles.indexOf(
       '.table-layout:has(.poker-scene[data-spatial-scene="ready"]) > .training-panel',

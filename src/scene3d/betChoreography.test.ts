@@ -10,8 +10,10 @@ import {
   type BetPoint3,
 } from "./betChoreography";
 import {
+  BET_CIRCLE_RADIUS,
   BET_CIRCLE_FORWARD,
   CARD_ZONE_LOCAL_MAX_Z,
+  CHIP_PHYSICAL_RADIUS,
   PREVIOUS_BET_CIRCLE_FORWARD,
   TABLE_HEIGHT,
   betCirclePosition,
@@ -67,6 +69,58 @@ describe("owner-side wager geometry", () => {
         .toBeLessThan(previousLocal[2]);
       expect(wager[1]).toBe(TABLE_HEIGHT);
       expect(wager).toEqual(betCirclePosition(pose));
+    }
+  });
+
+  it("keeps every physical destination chip inside the invisible zone for all seats", () => {
+    for (const rackAmount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
+      for (const pose of seatPoses(6)) {
+        const plan = createBetChoreographyPlan({
+          pose,
+          rackAmount,
+          amount: rackAmount,
+        });
+        const wagerLocal = seatLocalPoint(pose, plan.wagerPosition);
+        const destinationHeights = plan.chips.map((chip) => chip.destinationHeight);
+
+        expect(new Set(plan.chips.map((chip) => chip.destinationColumn)), `${rackAmount} seat ${pose.seat} columns`)
+          .toEqual(new Set([0]));
+        expect(destinationHeights, `${rackAmount} seat ${pose.seat} vertical slots`)
+          .toEqual(destinationHeights.map((_, index) => index));
+        for (const chip of plan.chips) {
+          const destination = seatLocalPoint(pose, chip.destinationPosition);
+          expect(
+            Math.hypot(destination[0] - wagerLocal[0], destination[2] - wagerLocal[2])
+              + CHIP_PHYSICAL_RADIUS,
+            `${rackAmount} seat ${pose.seat} chip ${chip.id}`,
+          ).toBeLessThanOrEqual(BET_CIRCLE_RADIUS);
+        }
+      }
+    }
+  });
+
+  it("stacks a raise above the chips already settled at the same wager anchor", () => {
+    for (const pose of seatPoses(6)) {
+      const plan = createBetChoreographyPlan({
+        pose,
+        rackAmount: 15_000,
+        amount: 500,
+        existingWagerAmount: 150,
+      });
+      const wagerLocal = seatLocalPoint(pose, plan.wagerPosition);
+
+      expect(plan.existingWagerChipCount, `seat ${pose.seat} existing pile`).toBe(3);
+      expect(plan.chips.map((chip) => chip.destinationHeight), `seat ${pose.seat} raised slots`)
+        .toEqual([3]);
+      for (const chip of plan.chips) {
+        const destination = seatLocalPoint(pose, chip.destinationPosition);
+        expect(destination[0], `seat ${pose.seat} raised chip x`).toBeCloseTo(wagerLocal[0], 12);
+        expect(destination[2], `seat ${pose.seat} raised chip z`).toBeCloseTo(wagerLocal[2], 12);
+        expect(
+          Math.hypot(destination[0] - wagerLocal[0], destination[2] - wagerLocal[2])
+            + CHIP_PHYSICAL_RADIUS,
+        ).toBeLessThanOrEqual(BET_CIRCLE_RADIUS);
+      }
     }
   });
 });

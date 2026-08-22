@@ -33,6 +33,7 @@
     "release:test-packaged-licenses": "node scripts/test-packaged-license-sidecars.mjs",
     "diagnose:motion": "node scripts/diagnose-motion.mjs",
     "measure:ai": "vite-node -c scripts/vite-node.config.mjs scripts/report-ai-behavior.ts --",
+    "measure:normal-all-ins": "vite-node -c scripts/vite-node.config.mjs scripts/report-normal-all-in-audit.ts --",
     "measure:exploitability": "vite-node -c scripts/vite-node.config.mjs scripts/report-exploitability.ts --",
     "measure:critic": "vite-node -c scripts/vite-node.config.mjs scripts/report-critic-harness.ts --",
     "release:audit-ai-behavior": "vite-node -c scripts/vite-node.config.mjs scripts/audit-ai-behavior-gates.ts",

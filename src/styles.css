@@ -3600,13 +3600,35 @@ body:has(.table-screen--3d),
 }
 
 /* The DOM hero-card button remains the semantic/focus target while physical
-   cards own the ready-mode paint.  Peek exposes only compact readable text. */
+   cards own the ready-mode paint. Its box is projected from those cards using
+   the renderer's current CSS-pixel camera frame; the former fixed 180x126 box
+   extended below the visible cards and turned empty felt into a peek target. */
 .table-stage:has(.poker-scene[data-spatial-scene="ready"]) .hero-hole-cards {
-  bottom: 14%;
+  top: var(--hero-card-hit-top);
+  right: auto;
+  bottom: auto;
+  left: var(--hero-card-hit-left);
   z-index: 44;
-  min-width: 180px;
-  min-height: 126px;
+  display: block;
+  width: var(--hero-card-hit-width);
+  height: var(--hero-card-hit-height);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: transparent;
+  pointer-events: none;
+  transform: none;
+  animation: none;
+}
+.table-stage:has(.poker-scene[data-spatial-scene="ready"])
+  .hero-hole-cards.has-spatial-hit-target:not(:disabled) {
+  pointer-events: auto;
+}
+.table-stage:has(.poker-scene[data-spatial-scene="ready"])
+  .hero-hole-cards > * {
+  /* Invisible fallback card markup must not extend the projected hit box via
+     overflow or become an independent pointer target. */
+  pointer-events: none;
 }
 .poker-scene[data-spatial-scene="ready"] .hero-hole-cards .playing-card,
 .poker-scene[data-spatial-scene="ready"] .hero-hole-cards .peek-label {

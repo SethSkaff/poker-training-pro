@@ -164,23 +164,20 @@ export function seatWorldPoint(
   ] as const;
 }
 
-/** The actor cue sits on that player's own felt lane, never inside their body. */
+/** The actor cue sits on that player's internal wager anchor, never inside their body. */
 export function turnIndicatorPosition(pose: SeatPose): readonly [number, number, number] {
   /*
-    On the actor's printed bet circle, not around their cards.
+    On the actor's wager anchor, not around their cards.
 
     Centred on the felt lane the cue was a 0.34 m ring enclosing the actor's two
     hole cards, and from the seat beside them it filled a fifth of the frame as a
     bright gold donut lying over the table -- unmistakably a piece of interface
-    rather than a light. The bet circle is already printed on the felt in front of
-    every seat, so lighting that up is a cue the table itself provides.
+    rather than a light. The wager zone is deliberately invisible, but its centre
+    remains the one shared location for the cue, chips, collision, and projected
+    interaction endpoints.
   */
-  const forward = BET_CIRCLE_FORWARD;
-  return [
-    pose.feltPosition[0] + Math.sin(pose.facing) * forward,
-    TABLE_HEIGHT + 0.004,
-    pose.feltPosition[2] + Math.cos(pose.facing) * forward,
-  ];
+  const wager = betCirclePosition(pose);
+  return [wager[0], TABLE_HEIGHT + 0.004, wager[2]];
 }
 
 /**
@@ -189,32 +186,32 @@ export function turnIndicatorPosition(pose: SeatPose): readonly [number, number,
  * resting chips can sit beside them, and a committed wager has one unambiguous
  * landing spot toward the middle of the felt.
  */
-// These are the authored `table/play-zone` mesh bounds, not estimates around
-// its origin. The print extends farther toward the betting line than toward
-// the owner, so a symmetric 160 mm proxy allowed racks to cover the visible
-// green rectangle even while the old centre-only assertion passed.
+// These are the protected private-card bounds formerly carried by the visible
+// play-zone mesh. They now exist only in this model, where placement and
+// collision can protect the asymmetric card lane without rendering it.
 export const CARD_ZONE_WIDTH = 0.256;
 export const CARD_ZONE_LOCAL_MIN_Z = -0.083;
 export const CARD_ZONE_LOCAL_MAX_Z = 0.170;
 export const CARD_ZONE_DEPTH = CARD_ZONE_LOCAL_MAX_Z - CARD_ZONE_LOCAL_MIN_Z;
 export const CARD_ZONE_LOCAL_CENTER_Z = (CARD_ZONE_LOCAL_MIN_Z + CARD_ZONE_LOCAL_MAX_Z) / 2;
-/** Distance from a seat's card lane to its printed bet circle; see build_table.py. */
+/** Radius of the invisible wager placement/collision zone. */
 export const BET_CIRCLE_RADIUS = 0.040;
 /** Visible felt between the protected card rectangle and every other object. */
 export const CARD_ZONE_OBJECT_GAP = 0.020;
 /**
- * Previous centre of the authored wager circle. The bundled play-zone mesh is
- * baked at this offset, so the renderer uses it only to translate that mesh to
- * the current shared anchor.
+ * Previous wager anchor, retained as migration evidence for the exact requested
+ * ownerward delta. It is geometry metadata only and is never rendered.
  */
 export const PREVIOUS_BET_CIRCLE_FORWARD = 0.25;
 /**
- * The owner-side wager anchor is halfway between the former circle centre and
+ * The owner-side wager anchor moves halfway from the former centre toward
  * the far/inward edge of that owner's private-card zone.
  */
-export const BET_CIRCLE_FORWARD = (
-  PREVIOUS_BET_CIRCLE_FORWARD + CARD_ZONE_LOCAL_MAX_Z
+export const WAGER_OWNERWARD_LOCAL_DELTA = (
+  CARD_ZONE_LOCAL_MAX_Z - PREVIOUS_BET_CIRCLE_FORWARD
 ) / 2;
+export const BET_CIRCLE_FORWARD = PREVIOUS_BET_CIRCLE_FORWARD
+  + WAGER_OWNERWARD_LOCAL_DELTA;
 
 /**
  * Conservative footprint for the deepest rendered chip rack.
@@ -239,6 +236,21 @@ export const CHIPS_PER_COLUMN = 8;
 export const CHIP_COLUMN_PITCH = 0.052;
 export const CHIP_PHYSICAL_RADIUS = 0.035;
 export const CHIP_RACK_COLUMNS_PER_ROW = 3;
+/** Shared vertical pitch for both rack chips and the compact wager pile. */
+export const CHIP_VERTICAL_PITCH = 0.0045;
+
+/**
+ * A committed wager is one compact vertical pile at the invisible zone centre.
+ * Keeping all planar offsets at zero guarantees every physical chip remains
+ * inside the 40 mm placement/collision zone; denomination-pure spreading is a
+ * rack concern and must not leak into the wager lane beside the private cards.
+ */
+export function wagerChipStackOffset(
+  height: number,
+): readonly [number, number, number] {
+  const safeHeight = Number.isFinite(height) ? Math.max(0, Math.floor(height)) : 0;
+  return [0, safeHeight * CHIP_VERTICAL_PITCH, 0];
+}
 
 /** Radius of the physical dealer/blind marker mesh in the renderer. */
 export const TABLE_MARKER_RADIUS = 0.028;
@@ -923,7 +935,7 @@ export function seatOccupancyLayout(
  *
  * This uses the owner's local frame so every player has their chips on the
  * same player-left, rail-side lane. The final capsule clamp protects corner stations
- * from rail overlap without changing any card, bet-circle, or seat-zone anchor.
+ * from rail overlap without changing any card, wager, or seat-zone anchor.
  */
 export function restingChipStackPosition(
   pose: SeatPose,
@@ -933,7 +945,7 @@ export function restingChipStackPosition(
 }
 
 /**
- * Place a dealer/blind marker beside the owner's wager circle.
+ * Place a dealer/blind marker beside the owner's invisible wager zone.
  *
  * The puck is not a wager and never replaces one: it owns a parallel pocket at
  * the same inward depth.  This keeps D/SB/BB beyond the cards, visually tied to
@@ -1188,13 +1200,12 @@ export function holeCardDealProgress(
 }
 
 /**
- * The printed bet circle a wager rests on, in table space.
+ * Internal wager placement/collision-zone centre, in table space.
  *
  * A wager belongs in front of the player who made it until the street closes
- * and the dealer sweeps it. Everything here used to push straight to the middle
- * of the felt, and an idle seat with a live bet drew its chips at `progress` 1
- * -- so every wager teleported into a heap at the centre the moment it was
- * made, and the six bet circles printed on the felt were never once used.
+ * and the dealer sweeps it. This stays internal: it aligns physical chips,
+ * collision, the turn cue, and projected endpoints without painting a guide on
+ * the felt.
  */
 export function betCirclePosition(pose: SeatPose): readonly [number, number, number] {
   return [
