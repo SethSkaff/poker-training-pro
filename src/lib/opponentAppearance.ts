@@ -37,6 +37,7 @@ export const HAIR_STYLES = [
   "curls",
   "bun",
   "long",
+  "undercut",
   "bald",
 ] as const;
 
@@ -165,7 +166,7 @@ export const ACCESSORIES = [
   "chain",
 ] as const;
 
-export const FACE_SHAPES = ["oval", "square", "round", "long"] as const;
+export const FACE_SHAPES = ["oval", "square", "round", "long", "heart"] as const;
 export const BODY_TYPES = ["slim", "average", "broad", "heavy"] as const;
 export const AGE_PRESENTATIONS = ["young", "adult", "middle", "senior"] as const;
 export const POSTURES = ["upright", "leaning", "hunched", "reclined"] as const;
@@ -296,6 +297,78 @@ export function describeOpponentAppearance(playerId: string): OpponentAppearance
             : -3,
     idlePhaseSeconds: (dimensionHash(playerId, "idle") % 24) / 10,
   };
+}
+
+/**
+ * A compact identity key for visual QA and deterministic collision resolution.
+ * Runtime layout never uses this string; keeping it here makes the uniqueness
+ * contract testable without coupling tests to object serialization order.
+ */
+export function appearanceSignature(appearance: OpponentAppearance): string {
+  return [
+    appearance.portrait,
+    appearance.faceShape,
+    appearance.skinTone,
+    appearance.hairStyle,
+    appearance.hairColor,
+    appearance.clothing.name,
+    appearance.accessory,
+    appearance.bodyType,
+    appearance.agePresentation,
+    appearance.posture,
+  ].join("|");
+}
+
+/**
+ * Resolve the procedural 2D identity for every visible player.
+ *
+ * The base appearance is already stable from the player id. A small table can
+ * still contain an accidental duplicate, though, so the visible six-seat map
+ * rotates one of the high-signal dimensions until the complete signature is
+ * unique. The sorted id order makes the result independent of engine seat
+ * order, replay order, or the order in which a roster was assembled.
+ */
+export function unique2DPlayerAppearances(
+  playerIds: readonly string[],
+): ReadonlyMap<string, OpponentAppearance> {
+  const appearances = new Map<string, OpponentAppearance>();
+  const used = new Set<string>();
+  const ids = [...new Set(playerIds)].sort();
+
+  for (const playerId of ids) {
+    const preferred = describeOpponentAppearance(playerId);
+    let resolved = preferred;
+    if (used.has(appearanceSignature(resolved))) {
+      const faceOffset = dimensionHash(playerId, "2d-face-resolve");
+      const hairOffset = dimensionHash(playerId, "2d-hair-resolve");
+      const colorOffset = dimensionHash(playerId, "2d-color-resolve");
+      const clothingOffset = dimensionHash(playerId, "2d-clothing-resolve");
+
+      for (let attempt = 1; attempt <= 64; attempt += 1) {
+        const candidate = {
+          ...preferred,
+          faceShape:
+            FACE_SHAPES[(faceOffset + attempt) % FACE_SHAPES.length],
+          hairStyle:
+            HAIR_STYLES[(hairOffset + Math.floor(attempt / 2)) % HAIR_STYLES.length],
+          hairColor:
+            HAIR_COLORS[(colorOffset + Math.floor(attempt / 3)) % HAIR_COLORS.length],
+          clothing:
+            CLOTHING[(clothingOffset + Math.floor(attempt / 4)) % CLOTHING.length],
+        } satisfies OpponentAppearance;
+        if (!used.has(appearanceSignature(candidate))) {
+          resolved = candidate;
+          break;
+        }
+      }
+    }
+
+    const signature = appearanceSignature(resolved);
+    used.add(signature);
+    appearances.set(playerId, resolved);
+  }
+
+  return appearances;
 }
 
 /** CSS custom properties for one seated figure. */

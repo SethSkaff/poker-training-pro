@@ -97,6 +97,8 @@ import {
   describeOpponentCharacter,
   describeOpponentAppearance,
   opponentAppearanceStyle,
+  type OpponentAppearance,
+  unique2DPlayerAppearances,
 } from "../lib/opponentAppearance";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import {
@@ -836,7 +838,7 @@ interface PlayerSeatProps {
   stackAnchor?: { readonly xPercent: number; readonly yPercent: number };
   betAnchor?: { readonly xPercent: number; readonly yPercent: number };
   displayName?: string;
-  avatarVariant?: number;
+  appearance?: OpponentAppearance;
 }
 
 /**
@@ -939,9 +941,9 @@ function PlayerSeat({
   stackAnchor,
   betAnchor,
   displayName,
-  avatarVariant,
+  appearance: suppliedAppearance,
 }: PlayerSeatProps) {
-  const appearance = describeOpponentAppearance(player.id);
+  const appearance = suppliedAppearance ?? describeOpponentAppearance(player.id);
   const isMucking = isSeatFoldedForPresentation(
     player.status,
     recentAction,
@@ -1073,8 +1075,11 @@ function PlayerSeat({
         <i className="seat-figure-chair" />
         <i className="seat-figure-torso" />
         <div
-          className={`seat-avatar seat-avatar--variant-${avatarVariant ?? appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
-        >
+            className={`seat-avatar seat-avatar--variant-${appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
+            data-avatar-face={appearance.faceShape}
+            data-avatar-hair={appearance.hairStyle}
+            data-avatar-shirt={appearance.clothing.name}
+          >
           <span className="seat-avatar-name">{displayName ?? player.name.split(" ")[0]}</span>
           <i className={`seat-figure-hair seat-figure-hair--${appearance.hairStyle}`} />
           {appearance.accessory !== "none" && (
@@ -1099,8 +1104,11 @@ function PlayerSeat({
         this player" at a glance, the numeral answers "exactly how much".
       */}
       <SeatChipStack stack={player.stack} bigBlind={bigBlind} />
-      <div className="seat-label" aria-hidden="true">
-        <span className="seat-name">{displayName ?? player.name.split(" ")[0]}</span>
+      <div
+        className="seat-label" aria-hidden="true"
+        {...(isHero ? { "data-hero-identity": "true" } : {})}
+      >
+        <span className="seat-name">{isHero ? formatMessage("table.seat.you") : displayName ?? player.name.split(" ")[0]}</span>
         <strong>{formatChips(player.stack)}</strong>
       </div>
       {/*
@@ -1109,7 +1117,11 @@ function PlayerSeat({
         a floating panel instead.
       */}
       {player.bet > 0 && (
-        <div className="seat-bet" aria-hidden="true">
+        <div
+          className="seat-bet"
+          aria-hidden="true"
+          data-bet-badge={isHero ? "hero" : "opponent"}
+        >
           <b>{formatChips(player.bet)}</b>
         </div>
       )}
@@ -1693,6 +1705,7 @@ export function PokerTable({
   onExit,
   tournament,
 }: PokerTableProps) {
+  const isTwoDMode = !settings.spatialScene;
   type ActiveCameraFrame = {
     readonly position: readonly [number, number, number];
     readonly target: readonly [number, number, number];
@@ -2275,7 +2288,10 @@ export function PokerTable({
       },
       // Betting is already closed once the all-in hands are face up, so the
       // remaining board cards run out on the slower suspense cadence.
-      { allInRunout: Boolean(tournament?.allInReveal) },
+      {
+        allInRunout: Boolean(tournament?.allInReveal),
+        twoDMode: isTwoDMode,
+      },
     );
     pendingPresentationEvent.current = delay;
     group.add(delay);
@@ -2293,6 +2309,7 @@ export function PokerTable({
   }, [
     settings.reducedMotion,
     settings.transitionMotion,
+    isTwoDMode,
     publishSceneEventProgress,
     speed,
     tournament?.presentationEvent?.id,
@@ -2305,6 +2322,7 @@ export function PokerTable({
     if (!event || !delay || paused) return;
     const duration = presentationEventDelayMs(event, speed, settings, {
       allInRunout: Boolean(tournament?.allInReveal),
+      twoDMode: isTwoDMode,
     });
     return sampleScenePresentationProgress(
       delay,
@@ -2322,6 +2340,7 @@ export function PokerTable({
     paused,
     settings.reducedMotion,
     settings.transitionMotion,
+    isTwoDMode,
     publishSceneEventProgress,
     speed,
     tournament?.allInReveal,
@@ -2873,7 +2892,7 @@ export function PokerTable({
     toward the dealer remains reserved for folding, so a player never has to
     keep a mouse button depressed just to read their own two cards.
   */
-  const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     // Reading a live hand is allowed once the public deal beat has completed;
     // the action gate also disables this surface while a submitted action is
     // being presented so a peek cannot race the authoritative update.
@@ -2911,7 +2930,7 @@ export function PokerTable({
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     event.stopPropagation();
     if (!dragStart.current || action) return;
     const deltaX = event.clientX - dragStart.current.x;
@@ -2927,7 +2946,7 @@ export function PokerTable({
   };
 
   const endPointerGesture = (
-    event: ReactPointerEvent<HTMLButtonElement>,
+    event: ReactPointerEvent<HTMLElement>,
     cancelled = false,
   ) => {
     // A pointer in the enclosing rectangle but outside both physical card
@@ -3145,8 +3164,7 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
-  const isTwoDMode = !settings.spatialScene;
-  const twoDAvatarVariants = unique2DAvatarVariants(
+  const twoDAppearances = unique2DPlayerAppearances(
     scenario.players.map((player) => player.id),
   );
   const twoDDisplayNames = unique2DDisplayNames(
@@ -4373,7 +4391,7 @@ export function PokerTable({
                       : undefined
                   }
                   displayName={isTwoDMode ? twoDDisplayNames.get(player.id) : undefined}
-                  avatarVariant={isTwoDMode ? twoDAvatarVariants.get(player.id) : undefined}
+                  appearance={isTwoDMode ? twoDAppearances.get(player.id) : undefined}
                 />
               );
             })}
@@ -4399,7 +4417,7 @@ export function PokerTable({
             )}
 
             <button
-              className={`hero-hole-cards ${peeked ? "is-peeked" : ""} ${
+              className={`hero-hole-cards hero-hole-cards-visual ${peeked ? "is-peeked" : ""} ${
                 dragging ? "is-dragging" : ""
               } ${heroFolded ? "is-folded" : ""} ${
                 heroHoleCardHitBounds ? "has-spatial-hit-target" : ""
@@ -4463,16 +4481,30 @@ export function PokerTable({
                 </span>
               )}
             </button>
-            <div className="hero-stack-readout" aria-label={`Stack ${formatChips(heroStack)}. Bet ${formatChips(heroStreetCommitted)}.`}>
+            <button
+              className={`hero-card-control ${peeked ? "is-peeked" : ""} ${heroFolded ? "is-folded" : ""}`}
+              type="button"
+              data-card-control="hero"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (!action && cardsDealt && !heroFolded) {
+                  setPeeked((value) => !value);
+                }
+              }}
+              aria-label={formatMessage("table.holeCards.ariaLabel", {
+                state: peeked
+                  ? formatMessage("table.holeCards.hide")
+                  : formatMessage("table.holeCards.peek"),
+              })}
+              disabled={Boolean(action) || !cardsDealt || heroFolded}
+            >
+              {peeked ? <EyeOff size={14} /> : <Eye size={14} />}
               <span>
-                <small>{formatMessage("table.context.stack")}</small>
-                <b>{formatChips(heroStack)}</b>
+                {peeked
+                  ? formatMessage("table.holeCards.hideCardsLabel")
+                  : formatMessage("table.holeCards.peekInstructions")}
               </span>
-              <span>
-                <small>{formatMessage("review.action.bet")}</small>
-                <b>{formatChips(heroStreetCommitted)}</b>
-              </span>
-            </div>
+            </button>
           </div>
 
           <div className="action-context">

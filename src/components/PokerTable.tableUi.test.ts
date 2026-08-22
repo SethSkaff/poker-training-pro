@@ -37,10 +37,17 @@ describe("table UI restraint and card peek", () => {
     expect(table).toContain("value={raiseAmount}");
   });
 
-  it("keeps folded 2D cards transient without fading or moving stack and bet identity", () => {
-    expect(table.indexOf('<div className="hero-stack-readout"')).toBeGreaterThan(
-      table.indexOf("</button>"),
+  it("keeps folded 2D cards transient while preserving the hero identity/control order", () => {
+    expect(table).not.toContain('className="hero-stack-readout"');
+    expect(table).toContain('"data-hero-identity": "true"');
+    expect(table).toContain('data-card-control="hero"');
+    expect(table.indexOf('data-card-control="hero"')).toBeGreaterThan(
+      table.indexOf('"data-hero-identity": "true"'),
     );
+    expect(table).toContain("appearance={isTwoDMode ? twoDAppearances.get(player.id) : undefined}");
+    expect(styles).toContain("--rail-gap");
+    expect(styles).toContain("background: #101214");
+    expect(styles).toContain(".table-screen--2d .hero-card-control");
     const folded2d = styles.match(/\.table-screen--2d \.player-seat\.is-folded\s*\{([\s\S]*?)\}/)?.[1] ?? "";
     expect(folded2d).toContain("opacity: 1");
     expect(folded2d).toContain("filter: none");
@@ -59,7 +66,7 @@ describe("table UI restraint and card peek", () => {
   });
 
   it("keeps card taps as a private toggle while preserving drag-fold protection", () => {
-    expect(table).toContain('className={`hero-hole-cards ${peeked ? "is-peeked" : ""}');
+    expect(table).toContain('className={`hero-hole-cards hero-hole-cards-visual ${peeked ? "is-peeked" : ""}');
     expect(table).toContain("setPeeked((value) => !value)");
     expect(table).toContain("const shouldFold = !cancelled && didDrag.current && foldProgress >= 82");
     // A table action can be in flight while the player is still entitled to

@@ -134,6 +134,29 @@ describe("tournament presentation clock", () => {
     ).toBe(675);
   });
 
+  it("halves only the two inter-card flop gaps in isolated 2D mode", () => {
+    const settings = { reducedMotion: false, transitionMotion: "full" } as const;
+    const board = (street: "flop" | "turn" | "river", cardIndex: number): TournamentPresentationEvent => ({
+      id: `2d:${street}:${cardIndex}`,
+      kind: "board-card-dealt",
+      handId: "2d-hand",
+      street,
+      cardIndex,
+      card: { rank: "9", suit: "clubs" },
+    });
+
+    expect(presentationEventDelayMs(board("flop", 0), 1, settings, { twoDMode: true })).toBe(1_050);
+    expect(presentationEventDelayMs(board("flop", 1), 1, settings, { twoDMode: true })).toBe(525);
+    expect(presentationEventDelayMs(board("flop", 2), 1, settings, { twoDMode: true })).toBe(525);
+    expect(presentationEventDelayMs(board("turn", 3), 1, settings, { twoDMode: true })).toBe(1_050);
+    expect(presentationEventDelayMs(board("river", 4), 1, settings, { twoDMode: true })).toBe(1_050);
+
+    // The same events in 3D retain the authored cadence.
+    expect(presentationEventDelayMs(board("flop", 0), 1, settings, { twoDMode: false })).toBe(1_050);
+    expect(presentationEventDelayMs(board("flop", 1), 1, settings)).toBe(1_050);
+    expect(presentationEventDelayMs(board("flop", 2), 1, settings, { twoDMode: false })).toBe(1_050);
+  });
+
   /*
     E27-003. Speed and reduced motion scale motion; they must not scale reading.
     At the old 1,100 ms base with no floor, a reduced-motion player at 2x was

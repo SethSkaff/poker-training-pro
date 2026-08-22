@@ -10,8 +10,10 @@ import {
   OUTFITS,
   POSTURES,
   SKIN_TONES,
+  appearanceSignature,
   describeOpponentAppearance,
   opponentAppearanceStyle,
+  unique2DPlayerAppearances,
 } from "./opponentAppearance";
 
 const ids = Array.from({ length: 400 }, (_, index) => `opponent-${index}`);
@@ -28,6 +30,24 @@ describe("opponent appearance", () => {
     expect(describeOpponentAppearance("alex-moreno")).not.toEqual(
       describeOpponentAppearance("blair-woods"),
     );
+  });
+
+  it("resolves a deterministic, distinct six-seat 2D identity map", () => {
+    const sixSeats = [
+      "maya-tempo",
+      "rafael-solver",
+      "adrian-pressure",
+      "juno-mirror",
+      "lena-anchor",
+      "noor-value",
+    ];
+    const first = unique2DPlayerAppearances(sixSeats);
+    const replay = unique2DPlayerAppearances([...sixSeats].reverse());
+
+    expect(first.size).toBe(6);
+    expect(new Set([...first.values()].map(appearanceSignature)).size).toBe(6);
+    expect([...first.entries()]).toEqual([...replay.entries()]);
+    expect(unique2DPlayerAppearances([sixSeats[0], sixSeats[0]]).size).toBe(1);
   });
 
   it("cannot correlate with behavior because behavior is not an input", () => {

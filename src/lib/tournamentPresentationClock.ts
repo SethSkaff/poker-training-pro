@@ -19,6 +19,8 @@ export interface PresentationPacingContext {
    * slower, deliberate cadence (E06-001 step 7).
    */
   allInRunout?: boolean;
+  /** True only for the isolated flat 2D table; the 3D cadence is unchanged. */
+  twoDMode?: boolean;
 }
 
 /**
@@ -53,13 +55,22 @@ export function presentationEventDelayMs(
                 event.kind === "hand-result"
               ? 1_100
               : 620;
+  const twoDFlopCadence =
+    context.twoDMode === true &&
+    event.kind === "board-card-dealt" &&
+    event.street === "flop" &&
+    event.cardIndex > 0 &&
+    event.cardIndex < 3;
   const motionMultiplier =
     settings.reducedMotion || settings.transitionMotion === "off"
       ? 0.45
       : settings.transitionMotion === "reduced"
         ? 0.7
         : 1;
-  const scaled = Math.round((base * motionMultiplier) / Math.max(1, speed));
+  const scaled = Math.round(
+    (base * (twoDFlopCadence ? 0.5 : 1) * motionMultiplier) /
+      Math.max(1, speed),
+  );
   return Math.max(minimumReadableMs(event), scaled);
 }
 
