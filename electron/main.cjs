@@ -43,6 +43,7 @@ const {
 } = require("./replay-export.cjs");
 const { createLocalLogger } = require("./local-logger.cjs");
 const { safeSendToRenderer } = require("./safe-send.cjs");
+const { assertTrustedSender: assertTrustedIpcSender } = require("./ipc-trust.cjs");
 
 const isDevelopment = !app.isPackaged;
 const requestedDevelopmentServerPort = process.env.PTP_DEV_SERVER_PORT;
@@ -946,10 +947,12 @@ function bundledContentType(filePath) {
 }
 
 function assertTrustedSender(event) {
-  const senderUrl = event.senderFrame?.url ?? event.sender.getURL();
-  if (!isTrustedAppUrl(senderUrl)) {
-    throw new Error("Rejected IPC request from an untrusted renderer");
-  }
+  // Same-origin is necessary but not sufficient: bind privileged IPC to the
+  // one live application window and its main frame.
+  return assertTrustedIpcSender(event, {
+    mainWebContents: mainWindow?.webContents,
+    isTrustedUrl: isTrustedAppUrl,
+  });
 }
 
 function assertConfirmationToken(token) {

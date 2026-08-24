@@ -49,6 +49,12 @@ const MS_PER_HAND = 75_000;
 export interface AiBehaviorMetrics {
   mode: "normal" | "rational";
   seeds: number;
+  /** Number of events that reached a terminal tournament state. */
+  completedEvents: number;
+  /** Events stopped by a harness safety cap before the tournament finished. */
+  cappedEvents: number;
+  /** One explicit outcome timeline per requested seed. */
+  eventTimelines: readonly AiBehaviorEventTimeline[];
   /** Longest run of consecutive raises/bets within a single street. */
   maxRaiseChain: number;
   chainsAtLeast4: number;
@@ -67,9 +73,25 @@ export interface AiBehaviorMetrics {
   /** Raise size as a fraction of the pot it was facing. */
   raiseOverPot: { mean: number; median: number };
   raiseOverEffectiveStack: { mean: number; median: number };
-  handsToFirstElimination: { mean: number; median: number };
-  handsToHeadsUp: { mean: number; median: number };
-  handsToFinish: { mean: number; median: number };
+  handsToFirstElimination: { mean: number; median: number; samples: number };
+  handsToHeadsUp: { mean: number; median: number; samples: number };
+  handsToFinish: { mean: number; median: number; samples: number };
+}
+
+export type AiBehaviorEventTermination = "finished" | "hand-cap" | "action-cap";
+
+/**
+ * A milestone timeline is deliberately retained per seed. Aggregating only
+ * defined milestones is useful for descriptive statistics, but is unsafe as a
+ * regression gate: a capped event otherwise disappears from heads-up samples.
+ */
+export interface AiBehaviorEventTimeline {
+  seed: string;
+  handsPlayed: number;
+  termination: AiBehaviorEventTermination;
+  handsToFirstElimination?: number;
+  handsToHeadsUp?: number;
+  handsToFinish?: number;
 }
 
 function median(values: number[]): number {
@@ -88,6 +110,7 @@ function mean(values: number[]): number {
 }
 
 interface EventAccumulator {
+  seed: string;
   chains: number[];
   vpipOpportunities: number;
   vpipActions: number;
@@ -106,10 +129,12 @@ interface EventAccumulator {
   handsToFirstElimination?: number;
   handsToHeadsUp?: number;
   handsToFinish?: number;
+  timeline?: AiBehaviorEventTimeline;
 }
 
-function emptyAccumulator(): EventAccumulator {
+function emptyAccumulator(seed: string): EventAccumulator {
   return {
+    seed,
     chains: [],
     vpipOpportunities: 0,
     vpipActions: 0,
@@ -168,7 +193,7 @@ function playEvent(
   eventId: string,
   freezeBlinds: boolean,
 ): EventAccumulator {
-  const accumulator = emptyAccumulator();
+  const accumulator = emptyAccumulator(seed);
   const opponents = createSessionOpponents(seed, eventId, mode);
   let session: TournamentSession = createTournamentSession({
     eventId,
@@ -314,8 +339,76 @@ function playEvent(
     }
   }
 
-  accumulator.handsToFinish = handIndex;
+  const termination: AiBehaviorEventTermination =
+    session.status !== "playing"
+      ? "finished"
+      : handIndex >= MAX_HANDS_PER_EVENT
+        ? "hand-cap"
+        : "action-cap";
+  // A safety cap is right-censored data, not a completed tournament. Never
+  // report the cap itself as a finish milestone.
+  if (termination === "finished") accumulator.handsToFinish = handIndex;
+  accumulator.timeline = {
+    seed,
+    handsPlayed: handIndex,
+    termination,
+    ...(accumulator.handsToFirstElimination === undefined
+      ? {}
+      : { handsToFirstElimination: accumulator.handsToFirstElimination }),
+    ...(accumulator.handsToHeadsUp === undefined
+      ? {}
+      : { handsToHeadsUp: accumulator.handsToHeadsUp }),
+    ...(accumulator.handsToFinish === undefined
+      ? {}
+      : { handsToFinish: accumulator.handsToFinish }),
+  };
   return accumulator;
+}
+
+export interface AiBehaviorMilestoneStats {
+  mean: number;
+  median: number;
+  samples: number;
+}
+
+function milestoneStats(values: number[]): AiBehaviorMilestoneStats {
+  return { mean: mean(values), median: median(values), samples: values.length };
+}
+
+export interface AiBehaviorTimelineSummary {
+  completedEvents: number;
+  cappedEvents: number;
+  handsToFirstElimination: AiBehaviorMilestoneStats;
+  handsToHeadsUp: AiBehaviorMilestoneStats;
+  handsToFinish: AiBehaviorMilestoneStats;
+}
+
+/**
+ * Summarize right-censored event timelines without treating missing outcomes
+ * as zero or as the safety-cap hand count. Kept pure so the censoring rule has
+ * a cheap regression test independent of the full tournament simulation.
+ */
+export function summarizeEventTimelines(
+  timelines: readonly AiBehaviorEventTimeline[],
+): AiBehaviorTimelineSummary {
+  const values = (key: keyof Pick<
+    AiBehaviorEventTimeline,
+    "handsToFirstElimination" | "handsToHeadsUp" | "handsToFinish"
+  >) =>
+    timelines.flatMap((timeline) =>
+      timeline[key] === undefined ? [] : [timeline[key] as number],
+    );
+  return {
+    completedEvents: timelines.filter(
+      (timeline) => timeline.termination === "finished",
+    ).length,
+    cappedEvents: timelines.filter(
+      (timeline) => timeline.termination !== "finished",
+    ).length,
+    handsToFirstElimination: milestoneStats(values("handsToFirstElimination")),
+    handsToHeadsUp: milestoneStats(values("handsToHeadsUp")),
+    handsToFinish: milestoneStats(values("handsToFinish")),
+  };
 }
 
 export function measureAiBehavior(options: {
@@ -343,6 +436,13 @@ export function measureAiBehavior(options: {
   );
   const facingSamples = facingBet.fold + facingBet.call + facingBet.raise;
   const totalHands = events.reduce((sum, event) => sum + event.hands, 0);
+  const timelines = events.map((event) => {
+    if (!event.timeline) {
+      throw new Error(`AI behavior event ${event.seed} has no outcome timeline`);
+    }
+    return event.timeline;
+  });
+  const timelineSummary = summarizeEventTimelines(timelines);
   const vpipOpportunities = events.reduce(
     (sum, event) => sum + event.vpipOpportunities,
     0,
@@ -357,6 +457,9 @@ export function measureAiBehavior(options: {
   return {
     mode: options.mode,
     seeds: seedCount,
+    completedEvents: timelineSummary.completedEvents,
+    cappedEvents: timelineSummary.cappedEvents,
+    eventTimelines: timelines,
     maxRaiseChain: chains.length ? Math.max(...chains) : 0,
     chainsAtLeast4: chains.filter((length) => length >= 4).length,
     chainsAtLeast8: chains.filter((length) => length >= 8).length,
@@ -397,21 +500,8 @@ export function measureAiBehavior(options: {
       mean: mean(raiseOverStack),
       median: median(raiseOverStack),
     },
-    handsToFirstElimination: {
-      mean: mean(events.flatMap((event) =>
-        event.handsToFirstElimination ? [event.handsToFirstElimination] : [])),
-      median: median(events.flatMap((event) =>
-        event.handsToFirstElimination ? [event.handsToFirstElimination] : [])),
-    },
-    handsToHeadsUp: {
-      mean: mean(events.flatMap((event) =>
-        event.handsToHeadsUp ? [event.handsToHeadsUp] : [])),
-      median: median(events.flatMap((event) =>
-        event.handsToHeadsUp ? [event.handsToHeadsUp] : [])),
-    },
-    handsToFinish: {
-      mean: mean(events.map((event) => event.handsToFinish ?? 0)),
-      median: median(events.map((event) => event.handsToFinish ?? 0)),
-    },
+    handsToFirstElimination: timelineSummary.handsToFirstElimination,
+    handsToHeadsUp: timelineSummary.handsToHeadsUp,
+    handsToFinish: timelineSummary.handsToFinish,
   };
 }

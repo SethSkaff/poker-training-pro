@@ -27,9 +27,10 @@ function report(metrics: AiBehaviorMetrics): string {
     `all-in hand rate pre/post   ${percent(metrics.preflopAllInHandRate)} / ${percent(metrics.postflopAllInHandRate)}`,
     `raise/pot mean / median     ${metrics.raiseOverPot.mean.toFixed(2)} / ${metrics.raiseOverPot.median.toFixed(2)}`,
     `raise/stack mean / median   ${metrics.raiseOverEffectiveStack.mean.toFixed(2)} / ${metrics.raiseOverEffectiveStack.median.toFixed(2)}`,
-    `hands to 1st elimination    ${metrics.handsToFirstElimination.mean.toFixed(1)} / ${metrics.handsToFirstElimination.median}`,
-    `hands to heads-up           ${metrics.handsToHeadsUp.mean.toFixed(1)} / ${metrics.handsToHeadsUp.median}`,
-    `hands to finish             ${metrics.handsToFinish.mean.toFixed(1)} / ${metrics.handsToFinish.median}`,
+    `event completion            ${metrics.completedEvents} / ${metrics.seeds} (capped ${metrics.cappedEvents})`,
+    `hands to 1st elimination    ${metrics.handsToFirstElimination.mean.toFixed(1)} / ${metrics.handsToFirstElimination.median} (n=${metrics.handsToFirstElimination.samples})`,
+    `hands to heads-up           ${metrics.handsToHeadsUp.mean.toFixed(1)} / ${metrics.handsToHeadsUp.median} (n=${metrics.handsToHeadsUp.samples})`,
+    `hands to finish             ${metrics.handsToFinish.mean.toFixed(1)} / ${metrics.handsToFinish.median} (n=${metrics.handsToFinish.samples})`,
   ].join("\n");
 }
 

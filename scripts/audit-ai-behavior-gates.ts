@@ -46,6 +46,30 @@ interface Bound {
  */
 const BOUNDS: Bound[] = [
   {
+    label: "completed tournament events",
+    value: (metrics) => metrics.completedEvents / metrics.seeds,
+    min: 1,
+    max: 1,
+    rationale:
+      "A hand/action cap is right-censored data, not a tournament finish. Every measured seed must reach a terminal state before pacing statistics can be gated.",
+  },
+  {
+    label: "heads-up milestone coverage",
+    value: (metrics) => metrics.handsToHeadsUp.samples / metrics.seeds,
+    min: 1,
+    max: 1,
+    rationale:
+      "A missing heads-up milestone must not silently disappear from the median; all seeds must reach heads-up for a tournament pacing claim.",
+  },
+  {
+    label: "finish milestone coverage",
+    value: (metrics) => metrics.handsToFinish.samples / metrics.seeds,
+    min: 1,
+    max: 1,
+    rationale:
+      "Finish samples are only valid when the tournament actually reached a terminal state; capped seeds are reported and fail closed.",
+  },
+  {
     label: "max consecutive-raise chain",
     value: (metrics) => metrics.maxRaiseChain,
     max: 10,

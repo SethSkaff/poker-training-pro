@@ -17,6 +17,8 @@ const saveStore = require("../../electron/save-store.cjs") as {
   PREVIOUS_FILENAME: string;
   MAX_AUTOSAVE_PAYLOAD_BYTES: number;
   MAX_AUTOSAVE_REPLAY_BYTES: number;
+  MAX_AUTOSAVE_REPLAY_DEPTH: number;
+  MAX_AUTOSAVE_REPLAY_NODES: number;
   createAutosaveRecord(
     serializedSave: string,
     options: Record<string, unknown>,
@@ -210,5 +212,41 @@ describe("crash-safe tournament autosave generations", () => {
         },
       }),
     ).toThrow(/replay metadata is too large/i);
+  });
+
+  it("bounds replay graph work before serializing renderer-provided metadata", () => {
+    let deeplyNested: Record<string, unknown> = {};
+    for (
+      let depth = 0;
+      depth <= saveStore.MAX_AUTOSAVE_REPLAY_DEPTH;
+      depth += 1
+    ) {
+      deeplyNested = { next: deeplyNested };
+    }
+    expect(() =>
+      saveStore.createAutosaveRecord(save("Depth bounded"), {
+        boundary: "action",
+        replay: deeplyNested,
+      }),
+    ).toThrow(/nested too deeply/i);
+
+    expect(() =>
+      saveStore.createAutosaveRecord(save("Node bounded"), {
+        boundary: "action",
+        replay: {
+          values: Array.from(
+            { length: saveStore.MAX_AUTOSAVE_REPLAY_NODES },
+            () => 0,
+          ),
+        },
+      }),
+    ).toThrow(/too many values/i);
+
+    expect(() =>
+      saveStore.createAutosaveRecord(save("JSON values only"), {
+        boundary: "action",
+        replay: { createdAt: new Date() },
+      }),
+    ).toThrow(/only JSON-safe values/i);
   });
 });

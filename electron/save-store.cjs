@@ -20,6 +20,8 @@ const AUTOSAVE_VERSION = 1;
 // checksumming, rotating, or writing it in the main process.
 const MAX_AUTOSAVE_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const MAX_AUTOSAVE_REPLAY_BYTES = 2 * 1024 * 1024;
+const MAX_AUTOSAVE_REPLAY_DEPTH = 32;
+const MAX_AUTOSAVE_REPLAY_NODES = 20_000;
 const CURRENT_FILENAME = "autosave.json";
 const PREVIOUS_FILENAME = "autosave.previous.json";
 const LAST_KNOWN_GOOD_FILENAME = "autosave.last-known-good.json";
@@ -74,7 +76,7 @@ function sanitizeReplayMetadata(metadata) {
   if (!isRecord(metadata)) {
     throw new TypeError("Replay metadata must be an object");
   }
-  assertJsonSafe(metadata, new Set());
+  assertJsonSafe(metadata);
   const serialized = JSON.stringify(metadata);
   if (Buffer.byteLength(serialized, "utf8") > MAX_AUTOSAVE_REPLAY_BYTES) {
     throw new TypeError("Replay metadata is too large");
@@ -82,34 +84,55 @@ function sanitizeReplayMetadata(metadata) {
   return JSON.parse(serialized);
 }
 
-function assertJsonSafe(value, ancestors) {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    (typeof value === "number" && Number.isFinite(value))
-  ) {
-    return;
-  }
-  if (Array.isArray(value)) {
-    if (ancestors.has(value)) throw new TypeError("Replay metadata is cyclic");
-    ancestors.add(value);
-    for (const item of value) assertJsonSafe(item, ancestors);
-    ancestors.delete(value);
-    return;
-  }
-  if (!isRecord(value)) {
-    throw new TypeError("Replay metadata must contain only JSON-safe values");
-  }
-  if (ancestors.has(value)) throw new TypeError("Replay metadata is cyclic");
-  ancestors.add(value);
-  for (const [key, item] of Object.entries(value)) {
-    if (FORBIDDEN_REPLAY_KEYS.has(key)) {
-      throw new TypeError(`Replay metadata cannot contain ${key}`);
+function assertJsonSafe(value) {
+  const ancestors = new Set();
+  let nodes = 0;
+
+  function visit(item, depth) {
+    nodes += 1;
+    if (nodes > MAX_AUTOSAVE_REPLAY_NODES) {
+      throw new TypeError("Replay metadata contains too many values");
     }
-    assertJsonSafe(item, ancestors);
+    if (depth > MAX_AUTOSAVE_REPLAY_DEPTH) {
+      throw new TypeError("Replay metadata is nested too deeply");
+    }
+    if (
+      item === null ||
+      typeof item === "string" ||
+      typeof item === "boolean" ||
+      (typeof item === "number" && Number.isFinite(item))
+    ) {
+      return;
+    }
+    if (
+      typeof item !== "object" ||
+      (!Array.isArray(item) && !isPlainRecord(item))
+    ) {
+      throw new TypeError("Replay metadata must contain only JSON-safe values");
+    }
+    if (ancestors.has(item)) throw new TypeError("Replay metadata is cyclic");
+    ancestors.add(item);
+    if (Array.isArray(item)) {
+      for (const child of item) visit(child, depth + 1);
+    } else {
+      for (const key in item) {
+        if (!Object.prototype.hasOwnProperty.call(item, key)) continue;
+        if (FORBIDDEN_REPLAY_KEYS.has(key)) {
+          throw new TypeError(`Replay metadata cannot contain ${key}`);
+        }
+        visit(item[key], depth + 1);
+      }
+    }
+    ancestors.delete(item);
   }
-  ancestors.delete(value);
+
+  visit(value, 0);
+}
+
+function isPlainRecord(value) {
+  if (!isRecord(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function createAutosaveRecord(serializedSave, options = {}) {
@@ -552,6 +575,8 @@ module.exports = {
   AUTOSAVE_VERSION,
   MAX_AUTOSAVE_PAYLOAD_BYTES,
   MAX_AUTOSAVE_REPLAY_BYTES,
+  MAX_AUTOSAVE_REPLAY_DEPTH,
+  MAX_AUTOSAVE_REPLAY_NODES,
   CURRENT_FILENAME,
   LAST_KNOWN_GOOD_FILENAME,
   PREVIOUS_FILENAME,
