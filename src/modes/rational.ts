@@ -65,7 +65,33 @@ export interface EquityEstimate {
   losses: number;
   simulations: number;
   opponentRanges: OpponentRangeSummary[];
+  /** Compact sufficient statistics reused by every candidate wager. */
+  responseSamples: EquityResponseSample[];
   work: EquityWorkMetrics;
+}
+
+export interface EquityResponseSample {
+  opponents: Array<{
+    opponentId: string;
+    /** Weighted percentile in the opponent's public range (stronger is 1). */
+    rangeQuantile: number;
+    /** Opponent hand compared with hero at showdown: -1 loses, 0 ties, 1 wins. */
+    result: -1 | 0 | 1;
+  }>;
+}
+
+export interface RationalActionResponseAudit {
+  modelVersion: "range-response-v1";
+  foldProbability: number;
+  callProbability: number;
+  reRaiseProbability: number;
+  continuingRangePercent: number;
+  conditionalEquity: number;
+  callEquity: number;
+  reRaiseEquity: number;
+  expectedContinuingOpponents: number;
+  expectedOpponentContribution: number;
+  simulations: number;
 }
 
 export interface EquityWorkMetrics {
@@ -104,6 +130,7 @@ export interface RationalActionOption {
   foldEquity: number;
   role: RationalActionRole;
   rationale: string;
+  response?: RationalActionResponseAudit;
 }
 
 export interface RationalDecisionAudit {
@@ -143,7 +170,7 @@ export interface RationalDecisionAudit {
     Pick<
       RationalActionOption,
       "id" | "utilityBigBlinds" | "foldEquity" | "role" | "rationale"
-    >
+    > & { response?: RationalActionResponseAudit }
   >;
   summary: string;
 }
@@ -157,6 +184,21 @@ export interface RationalDecision {
 interface WeightedCombo {
   cards: readonly [Card, Card];
   weight: number;
+  rangeQuantile: number;
+}
+
+interface WeightedRange {
+  combos: WeightedCombo[];
+  /** Inclusive prefix sums in combo order for logarithmic weighted draws. */
+  cumulativeWeights: number[];
+  totalWeight: number;
+  summary: OpponentRangeSummary;
+}
+
+interface RangeComboFeatures {
+  cards: readonly [Card, Card];
+  strategicStrength: number;
+  draw: number;
 }
 
 interface CandidateAction {
@@ -188,9 +230,16 @@ interface PublicOpponent {
   status: "active" | "folded" | "all-in" | "out";
   stack: number;
   seat: number;
+  streetCommitted: number;
 }
 
-const POLICY_VERSION = "rational-v2";
+const POLICY_VERSION = "rational-v4";
+// v3 changed the way multiple hidden ranges are joined; v4 conditions each
+// wager on the public-range hands which continue. Retaining the v2
+// random-stream namespace keeps every unaffected heads-up sample and action
+// draw frozen while the public policy version still records the behavior
+// change for replay compatibility checks.
+const POLICY_RANDOM_STREAM_VERSION = "rational-v2";
 const DEFAULT_SIMULATIONS = 700;
 export const MAX_EQUITY_SIMULATIONS_PER_DECISION = 1_200;
 export const MAX_EQUITY_SIMULATIONS_PER_SLICE = 32;
@@ -317,35 +366,74 @@ function allTwoCardCombos(cards: readonly Card[]): Array<readonly [Card, Card]> 
   return combos;
 }
 
-function buildRange(
-  opponent: PublicOpponent,
+function buildRangeComboFeatures(
   availableDeck: readonly Card[],
   board: readonly Card[],
+): RangeComboFeatures[] {
+  return allTwoCardCombos(availableDeck).map((cards) => {
+    const starting = preflopStrength(cards);
+    const made = madeHandStrength(cards, board);
+    const draw = drawPotential(cards, board);
+    return {
+      cards,
+      strategicStrength:
+        board.length >= 3 ? made * 0.62 + starting * 0.18 + draw * 0.2 : starting,
+      draw,
+    };
+  });
+}
+
+function buildRange(
+  opponent: PublicOpponent,
+  features: readonly RangeComboFeatures[],
   actions: readonly HandActionRecord[],
-): { combos: WeightedCombo[]; summary: OpponentRangeSummary } {
+): WeightedRange {
   const aggression = aggressionFor(actions, opponent.id);
   const publicActions = actions.filter((action) => action.playerId === opponent.id)
     .length;
   const tightness = clamp(0.8 + aggression * 0.75, 0.8, 3.4);
-  const rawCombos = allTwoCardCombos(availableDeck);
-  const combos = rawCombos.map((cards) => {
-    const starting = preflopStrength(cards);
-    const made = madeHandStrength(cards, board);
-    const draw = drawPotential(cards, board);
-    const strategicStrength =
-      board.length >= 3 ? made * 0.62 + starting * 0.18 + draw * 0.2 : starting;
+  const combos = features.map(({ cards, strategicStrength, draw }) => {
     const valueWeight = Math.exp((strategicStrength - 0.48) * tightness * 2.2);
     // Preserve a low-frequency weak tail so aggression can represent bluffs.
     const bluffTail =
       aggression > 0
         ? 0.08 + draw * 0.5 + (1 - strategicStrength) * 0.04
         : 0.04;
-    return { cards, weight: Math.max(0.0001, valueWeight + bluffTail) };
+    return {
+      cards,
+      weight: Math.max(0.0001, valueWeight + bluffTail),
+      rangeQuantile: 0,
+      strategicStrength,
+    };
   });
 
+  // Convert public hand strength into a weighted range percentile. Candidate
+  // responses can then retain the strongest x% of *this opponent's inferred
+  // range* instead of multiplying hero's unconditional equity by a heuristic.
+  const ranked = [...combos].sort((left, right) =>
+    left.strategicStrength === right.strategicStrength
+      ? cardKey(left.cards[0]).localeCompare(cardKey(right.cards[0])) ||
+        cardKey(left.cards[1]).localeCompare(cardKey(right.cards[1]))
+      : left.strategicStrength - right.strategicStrength,
+  );
+  const totalWeight = ranked.reduce((sum, combo) => sum + combo.weight, 0);
+  let cumulativeWeight = 0;
+  for (const combo of ranked) {
+    combo.rangeQuantile =
+      (cumulativeWeight + combo.weight / 2) / Math.max(Number.EPSILON, totalWeight);
+    cumulativeWeight += combo.weight;
+  }
+
   const topPercent = clamp(62 - aggression * 13 - publicActions * 2, 8, 72);
+  let prefixWeight = 0;
+  const cumulativeWeights = combos.map((combo) => {
+    prefixWeight += combo.weight;
+    return prefixWeight;
+  });
   return {
     combos,
+    cumulativeWeights,
+    totalWeight,
     summary: {
       opponentId: opponent.id,
       publicActions,
@@ -362,41 +450,94 @@ function buildRange(
   };
 }
 
-function chooseWeightedAvailableCombo(
-  combos: readonly WeightedCombo[],
-  unavailable: Set<string>,
+function chooseWeightedCombo(
+  range: WeightedRange,
   random: RandomSource,
-): readonly [Card, Card] {
-  let total = 0;
-  for (const combo of combos) {
-    if (
-      !unavailable.has(cardKey(combo.cards[0])) &&
-      !unavailable.has(cardKey(combo.cards[1]))
-    ) {
-      total += combo.weight;
-    }
-  }
-  if (total <= 0) throw new Error("No legal opponent combinations remain");
-
-  let needle = random() * total;
-  for (const combo of combos) {
-    if (
-      unavailable.has(cardKey(combo.cards[0])) ||
-      unavailable.has(cardKey(combo.cards[1]))
-    ) {
-      continue;
-    }
-    needle -= combo.weight;
-    if (needle <= 0) return combo.cards;
+): WeightedCombo {
+  if (range.totalWeight <= 0) {
+    throw new Error("No weighted opponent combinations remain");
   }
 
-  const fallback = combos.find(
-    (combo) =>
-      !unavailable.has(cardKey(combo.cards[0])) &&
-      !unavailable.has(cardKey(combo.cards[1])),
-  );
-  if (!fallback) throw new Error("No legal fallback combination remains");
-  return fallback.cards;
+  const needle = random() * range.totalWeight;
+  let low = 0;
+  let high = range.cumulativeWeights.length - 1;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (range.cumulativeWeights[middle] >= needle) high = middle;
+    else low = middle + 1;
+  }
+  const selected = range.combos[low];
+  if (selected) return selected;
+  const fallback = range.combos.at(-1);
+  if (!fallback) throw new Error("No weighted fallback combination remains");
+  return fallback;
+}
+
+function compareOpponentId(left: PublicOpponent, right: PublicOpponent): number {
+  if (left.id < right.id) return -1;
+  if (left.id > right.id) return 1;
+  return 0;
+}
+
+/**
+ * Samples the product of every opponent's individual weighted range,
+ * conditioned on all sampled hole cards being distinct. Each proposal draws
+ * every hidden range independently; rejecting the whole proposal on any card
+ * collision therefore gives a legal assignment probability proportional to
+ * the product of its component weights. Sampling in canonical identity order
+ * makes a fixed seed independent of presentation/seat enumeration.
+ */
+function sampleJointOpponentCards(
+  opponents: readonly PublicOpponent[],
+  ranges: ReadonlyMap<string, WeightedRange>,
+  random: RandomSource,
+): Map<string, WeightedCombo> {
+  const revealed = new Map<string, WeightedCombo>();
+  const revealedCardKeys = new Set<string>();
+  const hidden = opponents
+    .filter((opponent) => !opponent.holeCards)
+    .slice()
+    .sort(compareOpponentId);
+
+  for (const opponent of opponents) {
+    if (!opponent.holeCards) continue;
+    const combo: readonly [Card, Card] = [
+      opponent.holeCards[0],
+      opponent.holeCards[1],
+    ];
+    revealed.set(opponent.id, {
+      cards: combo,
+      weight: 1,
+      // Revealed cards are public; their current-board strategic strength is
+      // therefore a legitimate deterministic proxy for range percentile.
+      rangeQuantile: preflopStrength(combo),
+    });
+    revealedCardKeys.add(cardKey(combo[0]));
+    revealedCardKeys.add(cardKey(combo[1]));
+  }
+
+  for (;;) {
+    const proposal = new Map(revealed);
+    const used = new Set(revealedCardKeys);
+    let collision = false;
+
+    // Draw the complete tuple even after detecting a collision. Every rejected
+    // proposal then consumes exactly one draw per hidden identity, keeping the
+    // deterministic stream independent of where the first collision occurred.
+    for (const opponent of hidden) {
+      const range = ranges.get(opponent.id);
+      if (!range) throw new Error(`Missing range for opponent ${opponent.id}`);
+      const combo = chooseWeightedCombo(range, random);
+      const first = cardKey(combo.cards[0]);
+      const second = cardKey(combo.cards[1]);
+      if (used.has(first) || used.has(second)) collision = true;
+      proposal.set(opponent.id, combo);
+      used.add(first);
+      used.add(second);
+    }
+
+    if (!collision) return proposal;
+  }
 }
 
 function sampleWithoutReplacement<T>(
@@ -431,6 +572,9 @@ function assertInformationSet(
   if (!hero?.holeCards || hero.holeCards.length !== 2) {
     throw new Error("Rational policy requires exactly two visible hero cards");
   }
+  if (informationSet.board.length > 5) {
+    throw new Error("Rational policy board cannot contain more than five cards");
+  }
   const knownCards = [
     ...hero.holeCards,
     ...informationSet.board,
@@ -462,6 +606,7 @@ function assertInformationSet(
         status: player.status,
         stack: player.stack,
         seat: player.seat,
+        streetCommitted: player.streetCommitted,
         holeCards:
           player.revealed && player.holeCards
             ? player.holeCards.map((card) => ({ ...card }))
@@ -470,6 +615,18 @@ function assertInformationSet(
     });
   if (opponents.length === 0) {
     throw new Error("Rational policy requires at least one live opponent");
+  }
+  // Hold'em tables have at most nine live seats (hero plus eight opponents).
+  // Reject impossible snapshots before building ranges or entering the joint
+  // rejection sampler, whose collision-free tuple could otherwise be
+  // impossible and therefore loop forever.
+  if (opponents.length > 8) {
+    throw new Error("Rational policy supports at most eight live opponents");
+  }
+  const hiddenHoleCards = opponents.filter((opponent) => !opponent.holeCards).length * 2;
+  const requiredRunoutCards = 5 - informationSet.board.length;
+  if (hiddenHoleCards + requiredRunoutCards > 52 - knownCards.length) {
+    throw new Error("Information set does not contain enough unknown cards for a legal showdown");
   }
   return {
     heroCards: hero.holeCards.map((card) => ({ ...card })),
@@ -481,10 +638,7 @@ interface RangeEquityWorkState {
   informationSet: PlayerInformationSet;
   heroCards: Card[];
   opponents: PublicOpponent[];
-  ranges: Map<
-    string,
-    { combos: WeightedCombo[]; summary: OpponentRangeSummary }
-  >;
+  ranges: Map<string, WeightedRange>;
   random: RandomSource;
   simulations: number;
   simulationsPerSlice: number;
@@ -494,6 +648,7 @@ interface RangeEquityWorkState {
   ties: number;
   losses: number;
   equityPoints: number;
+  responseSamples: EquityResponseSample[];
 }
 
 function validateEquityWorkBudget(
@@ -544,18 +699,21 @@ function createRangeEquityWork(
     ),
   ]);
   const unknownDeck = createDeck().filter((card) => !known.has(cardKey(card)));
-  const ranges = new Map<
-    string,
-    { combos: WeightedCombo[]; summary: OpponentRangeSummary }
-  >();
+  // Every hidden opponent sees the same public board and unknown cards. Compute
+  // the expensive evaluator/draw features once; only the action-derived
+  // weighting differs by opponent.
+  const rangeFeatures = buildRangeComboFeatures(
+    unknownDeck,
+    stableInformationSet.board,
+  );
+  const ranges = new Map<string, WeightedRange>();
   for (const opponent of opponents) {
     if (!opponent.holeCards) {
       ranges.set(
         opponent.id,
         buildRange(
           opponent,
-          unknownDeck,
-          stableInformationSet.board,
+          rangeFeatures,
           stableInformationSet.actions,
         ),
       );
@@ -568,7 +726,12 @@ function createRangeEquityWork(
     opponents,
     ranges,
     random: createSeededRandom(
-      deriveSeed(seed, POLICY_VERSION, stableInformationSet.handId, "equity"),
+      deriveSeed(
+        seed,
+        POLICY_RANDOM_STREAM_VERSION,
+        stableInformationSet.handId,
+        "equity",
+      ),
     ),
     simulations,
     simulationsPerSlice,
@@ -578,6 +741,7 @@ function createRangeEquityWork(
     ties: 0,
     losses: 0,
     equityPoints: 0,
+    responseSamples: [],
   };
 }
 
@@ -592,24 +756,15 @@ function advanceRangeEquityWork(state: RangeEquityWorkState): void {
       ...state.heroCards.map(cardKey),
       ...state.informationSet.board.map(cardKey),
     ]);
-    const opponentCards = new Map<string, readonly [Card, Card]>();
+    const opponentCards = sampleJointOpponentCards(
+      state.opponents,
+      state.ranges,
+      state.random,
+    );
 
-    for (const opponent of state.opponents) {
-      let combo: readonly [Card, Card];
-      if (opponent.holeCards) {
-        combo = [opponent.holeCards[0], opponent.holeCards[1]];
-      } else {
-        const range = state.ranges.get(opponent.id);
-        if (!range) throw new Error("Missing opponent range");
-        combo = chooseWeightedAvailableCombo(
-          range.combos,
-          unavailable,
-          state.random,
-        );
-      }
-      opponentCards.set(opponent.id, combo);
-      unavailable.add(cardKey(combo[0]));
-      unavailable.add(cardKey(combo[1]));
+    for (const combo of opponentCards.values()) {
+      unavailable.add(cardKey(combo.cards[0]));
+      unavailable.add(cardKey(combo.cards[1]));
     }
 
     const runout = sampleWithoutReplacement(
@@ -624,7 +779,7 @@ function advanceRangeEquityWork(state: RangeEquityWorkState): void {
       ...state.opponents.map((opponent) => ({
         id: opponent.id,
         value: evaluateBestHand([
-          ...(opponentCards.get(opponent.id) as readonly [Card, Card]),
+          ...(opponentCards.get(opponent.id) as WeightedCombo).cards,
           ...board,
         ]),
       })),
@@ -635,6 +790,22 @@ function advanceRangeEquityWork(state: RangeEquityWorkState): void {
     const winners = values.filter(
       (candidate) => compareHandValues(candidate.value, best.value) === 0,
     );
+    state.responseSamples.push({
+      opponents: state.opponents
+        .slice()
+        .sort(compareOpponentId)
+        .map((opponent) => {
+          const sampled = opponentCards.get(opponent.id);
+          const opponentValue = values.find((entry) => entry.id === opponent.id)?.value;
+          if (!sampled || !opponentValue) throw new Error("Missing sampled opponent outcome");
+          const comparison = compareHandValues(opponentValue, heroValue);
+          return {
+            opponentId: opponent.id,
+            rangeQuantile: sampled.rangeQuantile,
+            result: (comparison < 0 ? -1 : comparison > 0 ? 1 : 0) as -1 | 0 | 1,
+          };
+        }),
+    });
     if (
       !winners.some(
         (winner) => winner.id === state.informationSet.viewerId,
@@ -683,6 +854,7 @@ function finishRangeEquityWork(state: RangeEquityWorkState): EquityEstimate {
         }
       );
     }),
+    responseSamples: state.responseSamples,
     work: {
       workVersion: "range-equity-work-v1",
       requestedSimulations: state.simulations,
@@ -1119,19 +1291,6 @@ export function streetAggressionCount(
   return count;
 }
 
-/**
- * The probability that raising again is met by another raise rather than a
- * fold or a call. It climbs with the number of raises already made, because a
- * table that has re-raised four times has demonstrated it will do so again.
- * Capped below 1 so a raise never becomes strictly impossible to justify.
- */
-function reRaiseRisk(aggression: number): number {
-  if (aggression <= 0) return 0.06;
-  // Slope tuned against the measured 4-bet rate: at 0.17 per prior raise the
-  // gate still recorded Rational 4-betting 65% of the time facing a 3-bet.
-  return Math.min(0.85, 0.06 + aggression * 0.28);
-}
-
 function addCandidate(
   map: Map<string, CandidateAction>,
   command: BettingActionCommand,
@@ -1234,37 +1393,142 @@ function buildCandidates(
   return [...candidates.values()];
 }
 
-function foldEquityFor(
+function responseForCandidate(
   candidate: CandidateAction,
   informationSet: PlayerInformationSet,
   ranges: readonly OpponentRangeSummary[],
+  samples: readonly EquityResponseSample[],
+  fallbackEquity: number,
   position: number,
-): number {
-  if (!["bet", "raise", "all-in"].includes(candidate.command.type)) return 0;
-  const opponents = informationSet.players.filter(
-    (player) =>
+): RationalActionResponseAudit | undefined {
+  if (!["bet", "raise", "all-in"].includes(candidate.command.type)) return undefined;
+  const opponents = informationSet.players
+    .filter((player) =>
       player.id !== informationSet.viewerId &&
       player.status !== "folded" &&
-      player.status !== "out" &&
-      player.status !== "all-in",
-  );
-  if (opponents.length === 0) return 0;
-
-  const sizeRatio =
-    candidate.additionalRisk /
-    Math.max(1, informationSet.pot + candidate.additionalRisk);
-  let everyoneFolds = 1;
-  for (const opponent of opponents) {
-    const range = ranges.find((entry) => entry.opponentId === opponent.id);
-    const aggressionResistance = clamp((range?.aggression ?? 0) * 0.045, 0, 0.16);
-    const singleFold = clamp(
-      0.16 + sizeRatio * 0.62 + position * 0.07 - aggressionResistance,
-      0.06,
-      0.78,
+      player.status !== "out",
+    )
+    .slice()
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const foldable = opponents.filter((opponent) => opponent.status !== "all-in");
+  const hero = informationSet.players.find((player) => player.id === informationSet.viewerId);
+  if (!hero) throw new Error("Hero is missing");
+  const heroTarget = hero.streetCommitted + candidate.additionalRisk;
+  // Minimum-defence frequency: a bluff risks W to win P, so the table may
+  // fold W/(P+W). Split that fold target symmetrically across live defenders;
+  // retaining the top weighted range percent makes larger wagers narrower.
+  // An out-of-position defender realizes less of a marginal hand's equity
+  // because the in-position bettor observes their action on later streets.
+  // Apply that public information disadvantage to the *range boundary*, not
+  // hero equity or EV: late-position pressure therefore retains fewer
+  // marginal combos while early-position wagers face a slightly wider range.
+  const positionalRealizationGap = clamp((position - 0.5) * 0.16, -0.06, 0.08);
+  const foldThresholdFor = (opponent: (typeof opponents)[number]): number => {
+    if (opponent.status === "all-in" || foldable.length === 0) return 0;
+    // A covered defender can only call its effective remaining stack. Its MDF
+    // must be priced from that public effective call, not hero's uncapped
+    // wager; otherwise a 10-BB stack incorrectly folds as if facing 300 BB.
+    const effectiveCall = Math.min(
+      opponent.stack,
+      Math.max(0, heroTarget - opponent.streetCommitted),
     );
-    everyoneFolds *= singleFold;
+    const tableFoldTarget = effectiveCall /
+      Math.max(1, informationSet.pot + effectiveCall);
+    const minimumDefenceFoldThreshold =
+      tableFoldTarget ** (1 / foldable.length);
+    return clamp(
+      minimumDefenceFoldThreshold +
+        (1 - minimumDefenceFoldThreshold) * positionalRealizationGap,
+      0,
+      0.995,
+    );
+  };
+  const continuingRangePercent = foldable.length
+    ? foldable.reduce(
+        (sum, opponent) => sum + (1 - foldThresholdFor(opponent)) * 100,
+        0,
+      ) / foldable.length
+    : 100;
+  let folds = 0;
+  let calls = 0;
+  let reRaises = 0;
+  let callPoints = 0;
+  let reRaisePoints = 0;
+  let continuingOpponents = 0;
+  let callContribution = 0;
+
+  for (const sample of samples) {
+    const responders: typeof sample.opponents = [];
+    let anyReRaise = false;
+    let contribution = 0;
+    for (const sampled of sample.opponents) {
+      const opponent = opponents.find((entry) => entry.id === sampled.opponentId);
+      if (!opponent) continue;
+      const forced = opponent.status === "all-in";
+      const foldThreshold = foldThresholdFor(opponent);
+      if (!forced && sampled.rangeQuantile < foldThreshold) continue;
+      responders.push(sampled);
+      const callAmount = Math.min(
+        opponent.stack,
+        Math.max(0, heroTarget - opponent.streetCommitted),
+      );
+      contribution += callAmount;
+      const aggression = ranges.find((range) => range.opponentId === opponent.id)?.aggression ?? 0;
+      const reRaiseShare = clamp(0.2 + aggression * 0.06, 0.2, 0.4);
+      const reRaiseThreshold = 1 - (1 - foldThreshold) * reRaiseShare;
+      if (
+        !forced &&
+        candidate.command.type !== "all-in" &&
+        opponent.stack > callAmount &&
+        sampled.rangeQuantile >= reRaiseThreshold
+      ) {
+        anyReRaise = true;
+      }
+    }
+    if (responders.length === 0) {
+      folds += 1;
+      continue;
+    }
+    continuingOpponents += responders.length;
+    const winner = responders.some((entry) => entry.result > 0)
+      ? 0
+      : 1 / (1 + responders.filter((entry) => entry.result === 0).length);
+    if (anyReRaise) {
+      reRaises += 1;
+      reRaisePoints += winner;
+    } else {
+      calls += 1;
+      callPoints += winner;
+      callContribution += contribution;
+    }
   }
-  return clamp(everyoneFolds, 0, 0.82);
+  const simulations = samples.length;
+  const continuations = calls + reRaises;
+  // Live play uses 60 samples, so a narrow branch can contain only a handful
+  // of observations. Treat the unconditional public-range estimate as a
+  // finite prior instead of letting one lucky/unlucky caller dictate EV.
+  const priorSamples = 12;
+  const regularizedEquity = (points: number, observations: number): number =>
+    (points + fallbackEquity * priorSamples) /
+    (observations + priorSamples);
+  return {
+    modelVersion: "range-response-v1",
+    foldProbability: simulations ? folds / simulations : 0,
+    callProbability: simulations ? calls / simulations : 0,
+    reRaiseProbability: simulations ? reRaises / simulations : 0,
+    continuingRangePercent,
+    conditionalEquity: regularizedEquity(
+      callPoints + reRaisePoints,
+      continuations,
+    ),
+    callEquity: regularizedEquity(callPoints, calls),
+    reRaiseEquity: regularizedEquity(reRaisePoints, reRaises),
+    expectedContinuingOpponents: simulations
+      ? continuingOpponents / simulations
+      : 0,
+    expectedOpponentContribution: calls ? callContribution / calls : 0,
+    simulations,
+  };
 }
 
 function actionRole(
@@ -1325,6 +1589,7 @@ function scoreCandidates(
   draw: number,
   blockers: number,
   ranges: readonly OpponentRangeSummary[],
+  responseSamples: readonly EquityResponseSample[],
   pressure: PublicPressureContext,
   tournamentPressure: TournamentPressureAdjustment,
 ): Array<Omit<RationalActionOption, "probability">> {
@@ -1343,13 +1608,17 @@ function scoreCandidates(
 
   return candidates.map((candidate) => {
     const type = candidate.command.type;
-    const foldEquity = foldEquityFor(
+    const response = responseForCandidate(
       candidate,
       informationSet,
       ranges,
+      responseSamples,
+      equity,
       position,
     );
-    const role = actionRole(candidate, equity, potOdds, draw, blockers);
+    const foldEquity = response?.foldProbability ?? 0;
+    const candidateEquity = response?.conditionalEquity ?? equity;
+    const role = actionRole(candidate, candidateEquity, potOdds, draw, blockers);
     let chipUtility = 0;
 
     if (type === "fold") {
@@ -1380,12 +1649,10 @@ function scoreCandidates(
         (0.38 + (1 - boardVolatility) * 0.3);
     } else {
       const wager = candidate.additionalRisk;
-      const calledEquity = clamp(
-        equity * (role === "bluff" ? 0.82 : 0.91) + draw * 0.05,
-        0,
-        1,
-      );
-      const calledPot = informationSet.pot + wager * 2;
+      const calledEquity = response?.callEquity ?? equity;
+      const calledPot =
+        informationSet.pot + wager +
+        (response?.expectedOpponentContribution ?? wager);
 
       // Three outcomes, not two. The previous model priced a raise as "they
       // fold, or they call and we see a showdown", which made raising again
@@ -1393,12 +1660,13 @@ function scoreCandidates(
       // itself had created, while the cost grew only by a flat increment. The
       // missing branch is the one that actually happens in a raise war -- the
       // opponent comes back over the top and the chips just wagered are dead.
-      const reRaised = reRaiseRisk(aggression);
-      const called = Math.max(0, 1 - foldEquity - reRaised * (1 - foldEquity));
-      const reRaisedShare = (1 - foldEquity) * reRaised;
-      // Facing a re-raise we usually give up the wager; occasionally the hand
-      // is strong enough to continue and recover part of it.
-      const reRaisedValue = -wager * (1 - clamp(equity - 0.25, 0, 0.55));
+      const called = response?.callProbability ?? Math.max(0, 1 - foldEquity);
+      const reRaisedShare = response?.reRaiseProbability ?? 0;
+      // At this one-decision boundary a re-raise is treated as a fold; a later
+      // policy decision, if played, will evaluate continuing afresh. This
+      // keeps the explicit escalation cost from recursively rewarding raise
+      // wars.
+      const reRaisedValue = -wager;
 
       chipUtility =
         foldEquity * informationSet.pot +
@@ -1408,6 +1676,19 @@ function scoreCandidates(
       chipUtility -= riskPremium * wager * (1.4 + Math.min(1, wager / Math.max(1, effectiveStack)));
       chipUtility += position * bigBlind * 0.1;
       const strongValue = clamp((equity - requiredEquity - 0.12) / 0.24, 0, 1);
+      if (aggression > 0) {
+        // Re-raising surrenders the option to realize equity at the current
+        // price and re-opens action to a range which has already shown
+        // strength. Charge that public option cost in proportion to escalation
+        // depth, wager, and the sampled re-raise branch. This is zero for an
+        // unopened pot and discounted (not erased) for robust value.
+        const reopenRate = clamp(
+          0.07 + Math.max(0, aggression - 1) * 0.04 + reRaisedShare * 0.15,
+          0.07,
+          0.3,
+        );
+        chipUtility -= wager * reopenRate * (1 - strongValue * 0.55);
+      }
       // Once a large aggressor has committed chips, robust value can punish
       // that commitment. Dynamic boards favor raising now; dry boards retain
       // more trapping weight in the call branch above.
@@ -1494,6 +1775,7 @@ function scoreCandidates(
       chipUtility -=
         exposure * exposure *
         effectiveStack * survivalWeight * clamp(0.62 - equity, 0, 0.62);
+
     }
 
     // Reward continuing only when range equity clears the relevant threshold.
@@ -1508,11 +1790,12 @@ function scoreCandidates(
       rationale: rationaleFor(
         candidate,
         role,
-        equity,
+        candidateEquity,
         requiredEquity,
         foldEquity,
         spr,
       ),
+      ...(response ? { response } : {}),
     };
   });
 }
@@ -1545,7 +1828,13 @@ function sampleAction(
   viewerId: string,
 ): RationalActionOption {
   const random = createSeededRandom(
-    deriveSeed(seed, POLICY_VERSION, handId, viewerId, "action"),
+    deriveSeed(
+      seed,
+      POLICY_RANDOM_STREAM_VERSION,
+      handId,
+      viewerId,
+      "action",
+    ),
   );
   let needle = random();
   for (const option of distribution) {
@@ -1701,6 +1990,7 @@ function assembleRationalDecision(
     draw,
     blockers,
     equity.opponentRanges,
+    equity.responseSamples,
     pressure,
     tournamentPressure,
   );
@@ -1764,12 +2054,13 @@ function assembleRationalDecision(
       },
       opponentRanges: equity.opponentRanges,
       actionEvaluations: distribution.map(
-        ({ id, utilityBigBlinds, foldEquity, role, rationale }) => ({
+        ({ id, utilityBigBlinds, foldEquity, role, rationale, response }) => ({
           id,
           utilityBigBlinds,
           foldEquity,
           role,
           rationale,
+          ...(response ? { response } : {}),
         }),
       ),
       summary: `${actionLabel(best.command.type)} is the highest-frequency action at ${formatPercentage(best.probability * 100, undefined, 0)}; estimated equity is ${formatPercentage(equity.equity * 100, undefined, 1)} versus a ${formatPercentage(requiredEquity * 100, undefined, 1)} risk-adjusted threshold.`,

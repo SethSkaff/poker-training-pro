@@ -32,6 +32,7 @@ import { RenderSmokeFailure } from "./release/packaged-render-smoke-lib.mjs";
 import { canonicalJson } from "./release/runtime-performance-profile-lib.mjs";
 import { projectRoot } from "./release/shared.mjs";
 import { isCdpTransportTimeout } from "./lib/cdp-outcome.mjs";
+import { assertSupportedNodeVersion } from "./runtime-version.mjs";
 
 const DEFAULT_APP = join(
   projectRoot,
@@ -55,12 +56,7 @@ const FRESHNESS_INPUTS = Object.freeze([
   "src/styles.css",
 ]);
 
-const nodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
-if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
-  throw new Error(
-    `Packaged asset-fault smoke requires Node.js 22 or newer; current runtime is ${process.versions.node}.`,
-  );
-}
+assertSupportedNodeVersion({ workflow: "Packaged asset-fault smoke" });
 
 export async function runPackagedAssetFaultSmoke(options = {}) {
   const appPath = resolve(options.appPath ?? DEFAULT_APP);

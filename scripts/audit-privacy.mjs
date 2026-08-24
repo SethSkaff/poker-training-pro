@@ -17,10 +17,24 @@ const packageJson = JSON.parse(
 const runtimeRoots = ["src", "electron"].map((directory) =>
   path.join(projectRoot, directory),
 );
-const runtimeFiles = runtimeRoots.flatMap(walk).filter((file) =>
+const sourceFiles = runtimeRoots.flatMap(walk).filter((file) =>
   [".cjs", ".js", ".jsx", ".mjs", ".ts", ".tsx"].includes(
     path.extname(file).toLowerCase(),
   ),
+);
+// Fixtures are deliberately hostile in places, and this catalogue is a rights
+// research document rather than a module reachable from the shipped entrypoint.
+// Keep the latter exemption honest below by failing if production source starts
+// importing it.
+const isTestFixture = (file) => /(?:^|[\\/])[^\\/]+\.test\.[^.]+$/i.test(file);
+const researchCatalogue = path.join(
+  projectRoot,
+  "src",
+  "data",
+  "musicRotationCatalogue.ts",
+);
+const runtimeFiles = sourceFiles.filter(
+  (file) => !isTestFixture(file) && file !== researchCatalogue,
 );
 const dependencyNames = Object.keys({
   ...(packageJson.dependencies ?? {}),
@@ -40,6 +54,19 @@ const prohibitedRuntimePatterns = [
 ];
 const findings = [];
 
+for (const file of runtimeFiles) {
+  if (
+    readFileSync(file, "utf8").includes("musicRotationCatalogue") &&
+    file !== researchCatalogue
+  ) {
+    findings.push({
+      type: "non-runtime module reachable",
+      file: path.relative(projectRoot, file).replaceAll("\\", "/"),
+      detail: "imports the rights-research music catalogue",
+    });
+  }
+}
+
 for (const dependency of dependencyNames) {
   if (prohibitedDependency.test(dependency)) {
     findings.push({
@@ -53,12 +80,19 @@ for (const dependency of dependencyNames) {
 for (const file of runtimeFiles) {
   const contents = readFileSync(file, "utf8");
   for (const rule of prohibitedRuntimePatterns) {
-    if (rule.pattern.test(contents)) {
-      findings.push({
-        type: rule.name,
-        file: path.relative(projectRoot, file).replaceAll("\\", "/"),
-        detail: contents.match(rule.pattern)?.[0] ?? "matched",
-      });
+    const relativeFile = path.relative(projectRoot, file).replaceAll("\\", "/");
+    const matcher = new RegExp(
+      rule.pattern.source,
+      rule.pattern.flags.includes("g") ? rule.pattern.flags : `${rule.pattern.flags}g`,
+    );
+    for (const match of contents.matchAll(matcher)) {
+      if (
+        rule.name === "external HTTP endpoint" &&
+        isReviewedNonEgressUrl(relativeFile, match[0])
+      ) {
+        continue;
+      }
+      findings.push({ type: rule.name, file: relativeFile, detail: match[0] });
     }
   }
 }
@@ -91,12 +125,52 @@ for (const statement of requiredPolicyStatements) {
 const report = {
   ok: findings.length === 0,
   runtimeFiles: runtimeFiles.length,
+  excludedTestFixtures: sourceFiles.filter(isTestFixture).length,
+  reviewedNonRuntimeModules: 1,
   productionDependencies: dependencyNames.length,
   findings,
   publicPolicyUrlReady: false,
 };
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 if (!report.ok) process.exit(1);
+
+/**
+ * Narrow, evidence-backed exceptions for strings which cannot initiate I/O.
+ * Egress primitives are audited independently above, so using either value in
+ * fetch/WebSocket/XMLHttpRequest still fails. Electron also denies every
+ * window.open and non-app navigation; these values exist solely for legally
+ * required music attribution in the Credits screen.
+ */
+function isReviewedNonEgressUrl(file, value) {
+  if (
+    file === "electron/main.cjs" &&
+    value === "http://127.0.0.1:${developmentServerPort}"
+  ) {
+    return true;
+  }
+  if (file !== "src/data/musicPlaylistManifest.ts") return false;
+  return (
+    value ===
+      "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=" ||
+    value === "https://creativecommons.org/licenses/by/4.0/"
+  );
+}
+
+// Classification regression checks: exact reviewed literals pass, close
+// variants and arbitrary endpoints do not acquire a blanket domain exemption.
+if (
+  !isReviewedNonEgressUrl(
+    "electron/main.cjs",
+    "http://127.0.0.1:${developmentServerPort}",
+  ) ||
+  isReviewedNonEgressUrl("electron/main.cjs", "http://127.0.0.1:9999/steal") ||
+  isReviewedNonEgressUrl(
+    "src/data/musicPlaylistManifest.ts",
+    "https://incompetech.com/api/telemetry",
+  )
+) {
+  throw new Error("privacy audit non-egress URL classification regression");
+}
 
 function walk(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

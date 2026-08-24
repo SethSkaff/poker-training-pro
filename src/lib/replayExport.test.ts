@@ -61,7 +61,7 @@ function replay(overrides: Record<string, unknown> = {}) {
     version: 1,
     engineVersion: "tournament-session-v1",
     contentVersion: "career-events-v1",
-    policyVersion: "normal-rational-v2",
+    policyVersion: "normal-rational-v4",
     policySimulations: 60,
     kind: "career",
     eventId: "local-qualifier",
@@ -194,6 +194,14 @@ describe("player-safe public replay artifact", () => {
   });
 
   it("rejects invalid schema and oversized inputs before opening a picker", async () => {
+    expect(
+      replayExport.createPublicReplayArtifact(
+        replay({ policyVersion: "normal-rational-v2" }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { code: "invalid-replay" },
+    });
     expect(
       replayExport.createPublicReplayArtifact(
         replay({

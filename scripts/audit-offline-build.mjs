@@ -45,6 +45,40 @@ const allowedLiteralUrls = new Set([
 ]);
 const allowedLiteralPrefixes = ["https://react.dev/errors/"];
 
+/*
+  Legally required music source/license citations rendered in Credits. They
+  are not media endpoints: audio always uses /audio/*.ogg, Electron denies all
+  window.open requests and non-app navigation, and the CSP restricts media and
+  images to self/blob/data. The source privacy audit independently rejects any
+  fetch/XMLHttpRequest/WebSocket/sendBeacon primitive even when it uses one of
+  these strings.
+*/
+const allowedAttributionPrefixes = [
+  "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=",
+];
+const allowedAttributionUrls = new Set([
+  "https://creativecommons.org/licenses/by/4.0/",
+  // Vite keeps this shared prefix as a literal and appends each audited ISRC.
+  "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=",
+]);
+
+function isAllowedAttributionUrl(value) {
+  if (allowedAttributionUrls.has(value)) return true;
+  const prefix = allowedAttributionPrefixes.find((candidate) =>
+    value.startsWith(candidate),
+  );
+  return prefix !== undefined && /^USUAN\d{7}$/.test(value.slice(prefix.length));
+}
+
+if (
+  !isAllowedAttributionUrl(
+    "https://incompetech.com/music/royalty-free/index.html?Search=Search&isrc=USUAN1100630",
+  ) ||
+  isAllowedAttributionUrl("https://incompetech.com/api/telemetry")
+) {
+  throw new Error("offline audit attribution URL classification regression");
+}
+
 if (!existsSync(distDirectory)) {
   fail("dist/ does not exist; run the production build first");
 }
@@ -70,7 +104,8 @@ for (const file of textFiles) {
     const value = match[0].replace(/[;,]+$/, "");
     if (
       !allowedLiteralUrls.has(value) &&
-      !allowedLiteralPrefixes.some((prefix) => value.startsWith(prefix))
+      !allowedLiteralPrefixes.some((prefix) => value.startsWith(prefix)) &&
+      !isAllowedAttributionUrl(value)
     ) {
       remoteReferences.push({
         file: path.relative(projectRoot, file).replaceAll("\\", "/"),
@@ -96,12 +131,23 @@ const requiredCsp = [
   "base-uri 'none'",
   "form-action 'none'",
   "frame-src 'none'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
 ];
 if (!csp) fail("production index.html has no Content Security Policy");
 for (const directive of requiredCsp) {
   if (!csp.includes(directive)) {
     fail(`Content Security Policy is missing: ${directive}`);
   }
+}
+const connectDirective = csp
+  .split(";")
+  .map((directive) => directive.trim())
+  .find((directive) => directive.startsWith("connect-src"));
+if (connectDirective !== "connect-src 'self'") {
+  fail(
+    `production Content Security Policy must allow only same-origin connections; found: ${connectDirective ?? "missing connect-src"}`,
+  );
 }
 
 const fontFiles = files.filter((file) => path.extname(file) === ".woff2");

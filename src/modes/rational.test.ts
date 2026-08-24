@@ -121,6 +121,78 @@ function makeSpot(options: SpotOptions = {}): PlayerInformationSet {
   };
 }
 
+function makeMultiwaySpot(
+  options: { revealedOpponent?: string } = {},
+): PlayerInformationSet {
+  const spot = makeSpot({
+    board: [],
+    actions: [
+      { playerId: "alpha", type: "raise", amount: 500 },
+      { playerId: "alpha", type: "bet", amount: 200 },
+      { playerId: "bravo", type: "call", amount: 200 },
+      { playerId: "charlie", type: "check", amount: 0 },
+    ],
+  });
+  const villain = spot.players[1];
+  const opponent = (id: string, name: string, seat: number) => ({
+    ...villain,
+    id,
+    name,
+    seat,
+    revealed: options.revealedOpponent === id,
+    holeCards:
+      options.revealedOpponent === id ? cards("Qc", "Qd") : undefined,
+  });
+  spot.players = [
+    spot.players[0],
+    // Deliberately not identity-sorted: public presentation order must not be
+    // allowed to determine which weighted range gets the first random draw.
+    opponent("charlie", "Charlie", 3),
+    opponent("alpha", "Alpha", 1),
+    opponent("bravo", "Bravo", 2),
+  ];
+  return spot;
+}
+
+function reorderMultiwayOpponents(
+  spot: PlayerInformationSet,
+  opponentIds: readonly string[],
+  seatRotation: number,
+): PlayerInformationSet {
+  const clone = structuredClone(spot);
+  const hero = clone.players.find((player) => player.id === clone.viewerId);
+  if (!hero) throw new Error("Hero missing");
+  const byId = new Map(clone.players.map((player) => [player.id, player]));
+  const opponents = opponentIds.map((id, index) => {
+    const player = byId.get(id);
+    if (!player) throw new Error(`Opponent ${id} missing`);
+    return {
+      ...player,
+      seat: ((index + seatRotation) % 5) + 1,
+    };
+  });
+  return {
+    ...clone,
+    buttonSeat: ((clone.buttonSeat + seatRotation - 1) % 6) + 1,
+    players: [{ ...hero, seat: 6 }, ...opponents],
+  };
+}
+
+function canonicalizeRangeAudit(
+  estimate: ReturnType<typeof estimateRangeEquity>,
+): ReturnType<typeof estimateRangeEquity> {
+  return {
+    ...estimate,
+    opponentRanges: [...estimate.opponentRanges].sort((left, right) =>
+      left.opponentId < right.opponentId
+        ? -1
+        : left.opponentId > right.opponentId
+          ? 1
+          : 0,
+    ),
+  };
+}
+
 function facingBetLegal(
   spot: PlayerInformationSet,
   options: { canRaise?: boolean } = {},
@@ -208,6 +280,23 @@ describe("rational policy contract", () => {
     ).toThrow(/exactly two hole cards/);
   });
 
+  it("rejects an impossible 25-opponent snapshot before joint sampling", () => {
+    const spot = makeSpot({ board: [] });
+    const template = spot.players[1];
+    spot.players = [
+      spot.players[0],
+      ...Array.from({ length: 25 }, (_, index) => ({
+        ...template,
+        id: `villain-${index}`,
+        name: `Villain ${index}`,
+        seat: index + 1,
+      })),
+    ];
+    expect(() =>
+      estimateRangeEquity(spot, facingBetLegal(spot), "oversized-table", 50),
+    ).toThrow(/at most eight live opponents/);
+  });
+
   it("is deterministic for an identical information set and policy seed", () => {
     const spot = makeSpot();
     const policyInput = input(spot, facingBetLegal(spot));
@@ -278,10 +367,41 @@ describe("rational policy contract", () => {
     );
     expect(serialized).not.toContain("holeCards");
     expect(serialized).not.toContain("gameRng");
+    expect(decision.audit.policyVersion).toBe("rational-v4");
   });
 });
 
 describe("range-aware equity", () => {
+  it("narrows continuations and derives candidate equity from shared outcomes as wagers grow", () => {
+    const spot = makeSpot({
+      heroCards: cards("Qh", "Qd"),
+      board: cards("Jh", "9h", "4c"),
+      pot: 900,
+      currentBet: 300,
+      heroStack: 8_000,
+      villainStack: 8_000,
+      actions: [{ playerId: "villain", type: "bet", amount: 300 }],
+    });
+    const decision = decideRationalAction(
+      input(spot, facingBetLegal(spot), { seed: "conditional-candidates", simulations: 300 }),
+    );
+    const aggressive = decision.distribution
+      .filter((option) => option.response)
+      .sort((left, right) => left.foldEquity - right.foldEquity);
+    const widest = aggressive[0].response;
+    const narrowest = aggressive.at(-1)?.response;
+
+    expect(aggressive.length).toBeGreaterThan(1);
+    expect(narrowest?.continuingRangePercent).toBeLessThan(
+      widest?.continuingRangePercent ?? 0,
+    );
+    expect(narrowest?.foldProbability).toBeGreaterThan(widest?.foldProbability ?? 1);
+    expect(narrowest?.conditionalEquity).not.toBe(widest?.conditionalEquity);
+    expect(narrowest?.simulations).toBe(300);
+    expect(decision.audit.equityWork.handEvaluations).toBe(600);
+    expect(JSON.stringify(decision.audit.actionEvaluations)).not.toContain("holeCards");
+  });
+
   it("returns deterministic equity accounting for ties", () => {
     const spot = makeSpot({
       heroCards: cards("2c", "3d"),
@@ -296,6 +416,84 @@ describe("range-aware equity", () => {
     expect(first.losses).toBe(0);
     expect(first.ties).toBe(180);
     expect(first.equity).toBe(0.5);
+  });
+
+  it("is exactly invariant to multi-opponent enumeration and seat rotation", () => {
+    const permutations = [
+      ["alpha", "bravo", "charlie"],
+      ["alpha", "charlie", "bravo"],
+      ["bravo", "alpha", "charlie"],
+      ["bravo", "charlie", "alpha"],
+      ["charlie", "alpha", "bravo"],
+      ["charlie", "bravo", "alpha"],
+    ] as const;
+
+    for (const revealedOpponent of [undefined, "charlie"] as const) {
+      const spot = makeMultiwaySpot({ revealedOpponent });
+      for (const seed of ["joint-order-a", "joint-order-b", "joint-order-c"]) {
+        const baseline = estimateRangeEquity(
+          spot,
+          facingBetLegal(spot),
+          seed,
+          50,
+        );
+
+        for (const [index, order] of permutations.entries()) {
+          const permuted = reorderMultiwayOpponents(spot, order, index);
+          const estimate = estimateRangeEquity(
+            permuted,
+            facingBetLegal(permuted),
+            seed,
+            50,
+          );
+
+          expect(
+            canonicalizeRangeAudit(estimate),
+            `${seed}; revealed=${String(revealedOpponent)}; ${order.join(",")}`,
+          ).toEqual(canonicalizeRangeAudit(baseline));
+          // Audit summaries remain presentation-friendly even though sampling
+          // itself is canonicalized internally.
+          expect(estimate.opponentRanges.map((range) => range.opponentId)).toEqual(
+            order,
+          );
+        }
+      }
+    }
+  });
+
+  it("keeps joint-range samples fixed across enumeration and async slice sizes", async () => {
+    const spot = makeMultiwaySpot();
+    const narrowSpot = reorderMultiwayOpponents(
+      spot,
+      ["charlie", "alpha", "bravo"],
+      1,
+    );
+    const wideSpot = reorderMultiwayOpponents(
+      spot,
+      ["bravo", "charlie", "alpha"],
+      4,
+    );
+    const narrow = estimateRangeEquity(
+      narrowSpot,
+      facingBetLegal(narrowSpot),
+      "joint-slice-order",
+      160,
+      { simulationsPerSlice: 1 },
+    );
+    const wide = await estimateRangeEquitySliced(
+      wideSpot,
+      facingBetLegal(wideSpot),
+      "joint-slice-order",
+      160,
+      { simulationsPerSlice: MAX_EQUITY_SIMULATIONS_PER_SLICE },
+    );
+    const { work: narrowWork, ...narrowOutcome } = canonicalizeRangeAudit(narrow);
+    const { work: wideWork, ...wideOutcome } = canonicalizeRangeAudit(wide);
+
+    expect(wideOutcome).toEqual(narrowOutcome);
+    expect(narrowWork.slices).toBe(160);
+    expect(wideWork.slices).toBe(5);
+    expect(wideWork.handEvaluations).toBe(narrowWork.handEvaluations);
   });
 
   it("produces identical samples across deterministic slice sizes", () => {

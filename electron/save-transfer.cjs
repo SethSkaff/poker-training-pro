@@ -20,6 +20,14 @@ const {
   probeAutosaveGenerations,
   writeAutosaveGeneration,
 } = require("./save-store.cjs");
+const {
+  defaultProgress: DEFAULT_PROGRESS,
+  defaultSettings: DEFAULT_SETTINGS,
+  normalizePersistedProgress,
+  normalizePersistedSettings,
+  validateCurrentPersistedProgress,
+  validateCurrentPersistedSettings,
+} = require("./persisted-data-normalization.cjs");
 
 const SAVE_FORMAT = "poker-training-pro-save";
 const CURRENT_SAVE_VERSION = 1;
@@ -28,53 +36,6 @@ const CONFIRMATION_TTL_MS = 5 * 60 * 1000;
 const MAX_JSON_DEPTH = 32;
 const MAX_JSON_NODES = 20_000;
 const MAX_STRING_LENGTH = 16_384;
-
-const DEFAULT_SETTINGS = Object.freeze({
-  masterVolume: 100,
-  muted: false,
-  musicVolume: 35,
-  effectsVolume: 70,
-  fullscreen: false,
-  reducedMotion: false,
-  reducedMotionExplicit: false,
-  dealSpeed: "standard",
-  colorAssist: false,
-  cameraSensitivity: "standard",
-  cameraView: "standard",
-  autoCameraMovement: true,
-  menuMotion: "full",
-  roomMotion: "full",
-  cameraMotion: "full",
-  tableMotion: "full",
-  transitionMotion: "full",
-  interfaceScale: "standard",
-  // Presentation-only 3D room (E09-001 M1). Mirrored from the renderer's
-  // `defaultSettings`; the two normalizers must agree or an imported save
-  // silently loses the field on its way through the main process.
-  spatialScene: false,
-});
-
-const DEFAULT_PROGRESS = Object.freeze({
-  onboardingCompleted: false,
-  playChipsAcknowledged: false,
-  playerName: "Player",
-  decisionElo: 1000,
-  mathElo: 1000,
-  tournamentElo: 1000,
-  trainingCompleted: 0,
-  currentStreak: 0,
-  bestStreak: 0,
-  totalDecisionMs: 0,
-  results: [],
-  unlockedCircuit: 1,
-  career: { normal: { results: [] }, rational: { results: [] } },
-  reviewTotals: {
-    roundsReviewed: 0,
-    decisions: 0,
-    bestDecisions: 0,
-    totalRegretBigBlinds: 0,
-  },
-});
 
 const ACTIONS = new Set(["fold", "check", "call", "raise", "all-in"]);
 const DEAL_SPEEDS = new Set(["cinematic", "standard", "quick"]);
@@ -419,8 +380,8 @@ function migrateAndValidateSave(payload) {
         "The legacy save does not contain valid settings and progress.",
       );
     }
-    settings = { ok: true, value: normalizeLegacySettings(legacy.settings) };
-    progress = { ok: true, value: normalizeLegacyProgress(legacy.progress) };
+    settings = { ok: true, value: normalizePersistedSettings(legacy.settings) };
+    progress = { ok: true, value: normalizePersistedProgress(legacy.progress) };
     migratedFromVersion = 0;
   }
 
@@ -436,6 +397,9 @@ function migrateAndValidateSave(payload) {
 }
 
 function validateCurrentSettings(value) {
+  const shared = validateCurrentPersistedSettings(value);
+  return shared.ok ? shared : failure("invalid-payload", shared.reason);
+  /* c8 ignore next -- old inline validator retained as migration context. */
   const numberFields = ["masterVolume", "musicVolume", "effectsVolume"];
   for (const key of numberFields) {
     if (!finiteBetween(value[key], 0, 100)) {
@@ -527,6 +491,9 @@ function validateCurrentSettings(value) {
 }
 
 function validateCurrentProgress(value) {
+  const shared = validateCurrentPersistedProgress(value);
+  return shared.ok ? shared : failure("invalid-payload", shared.reason);
+  /* c8 ignore next -- old inline validator retained as migration context. */
   if (
     typeof value.onboardingCompleted !== "boolean" ||
     typeof value.playChipsAcknowledged !== "boolean" ||

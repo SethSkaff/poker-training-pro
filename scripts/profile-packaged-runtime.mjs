@@ -54,6 +54,7 @@ import {
   summarizeResourceEntries,
 } from "./release/runtime-performance-profile-lib.mjs";
 import { projectRoot } from "./release/shared.mjs";
+import { assertSupportedNodeVersion } from "./runtime-version.mjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_APP = join(
@@ -77,12 +78,7 @@ const SUMMARY_OUTPUT = join(
   "packaged-runtime-profile.md",
 );
 
-const nodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
-if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
-  throw new Error(
-    `Packaged runtime profiling requires Node.js 22 or newer; current runtime is ${process.versions.node}.`,
-  );
-}
+assertSupportedNodeVersion({ workflow: "Packaged runtime profiling" });
 
 export async function profilePackagedRuntime(options = {}) {
   if (process.platform !== "win32") {

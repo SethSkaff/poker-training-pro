@@ -3,11 +3,12 @@
 ## Supported toolchain
 
 Poker Training Pro uses exact release-runtime pins for the components that
-execute application code:
+execute application code. Development supports the declared range while CI
+uses the repository's exact baseline pin:
 
 | Layer | Supported version | Verification |
 | --- | --- | --- |
-| Development and CI Node.js | `>=22.12.0` | `node --version` before install |
+| Development and CI Node.js | `>=22.12.0`; CI baseline `22.12.0` | `.node-version`/`.nvmrc`, preinstall and npm workflow guard, CI pin-file setup |
 | Electron | `43.2.0` | exact `devDependency` and lockfile |
 | Packaged Chromium | `150.0.7871.129` | `process.versions.chrome` in Electron |
 | Packaged Node.js | `24.18.0` | `process.versions.node` in Electron |
@@ -27,7 +28,9 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE
 
 The application does not claim support for development with an older Node
 release. `npm ci` is the required install command for repeatable CI/release
-builds.
+builds. `scripts/runtime-version.mjs` is the shared authority used by ordinary
+npm commands and standalone packaged/release scripts; `engines` is supporting
+metadata rather than the only enforcement mechanism.
 
 ## Update cadence
 

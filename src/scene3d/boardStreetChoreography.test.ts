@@ -8,10 +8,10 @@ import {
   boardStreetChoreographyFrame,
   boardStreetForCardIndex,
   boardStreetPhaseSequence,
+  boardStreetPhaseWindows,
   boardStreetRequiresBurn,
   communityCardTarget,
   type BoardStreetChoreographyFrame,
-  type BoardStreetPhase,
   type BoardStreetPoint3,
 } from "./boardStreetChoreography";
 import { boardCardX } from "./dealerPresentation";
@@ -21,41 +21,84 @@ function distance(left: BoardStreetPoint3, right: BoardStreetPoint3): number {
   return Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]);
 }
 
-function observedPhases(cardIndex: number): BoardStreetPhase[] {
-  const phases: BoardStreetPhase[] = [];
-  for (let step = 0; step <= 10_000; step += 1) {
-    const phase = boardStreetChoreographyAtProgress(cardIndex, step / 10_000).phase;
-    if (phases.at(-1) !== phase) phases.push(phase);
+const BOUNDARY_EPSILON = 1e-8;
+const PATH_SAMPLE_STEPS = 480;
+/** Tighter than the previous implicit 20 metres per normalized event. */
+const MAX_NORMALIZED_POINT_SPEED = 16;
+
+const WITH_BURN_WINDOWS = [
+  { phase: "burn-reach", start: 0, end: 0.09 },
+  { phase: "burn-carry", start: 0.09, end: 0.26 },
+  { phase: "burn-place", start: 0.26, end: 0.29 },
+  { phase: "burn-release", start: 0.29, end: 0.33 },
+  { phase: "board-take", start: 0.33, end: 0.42 },
+  { phase: "board-carry", start: 0.42, end: 0.64 },
+  { phase: "board-flip", start: 0.64, end: 0.86 },
+  { phase: "board-place", start: 0.86, end: 0.90 },
+  { phase: "board-release", start: 0.90, end: 0.94 },
+  { phase: "recover", start: 0.94, end: 1 },
+] as const;
+
+const WITHOUT_BURN_WINDOWS = [
+  { phase: "board-take", start: 0, end: 0.12 },
+  { phase: "board-carry", start: 0.12, end: 0.48 },
+  { phase: "board-flip", start: 0.48, end: 0.78 },
+  { phase: "board-place", start: 0.78, end: 0.84 },
+  { phase: "board-release", start: 0.84, end: 0.90 },
+  { phase: "recover", start: 0.90, end: 1 },
+] as const;
+
+function phaseProbeProgresses(cardIndex: number): number[] {
+  const progress = boardStreetPhaseWindows(cardIndex).flatMap((window) => [
+    window.start,
+    (window.start + window.end) / 2,
+    Math.max(window.start, window.end - BOUNDARY_EPSILON),
+  ]);
+  return [...new Set([...progress, 1])].sort((left, right) => left - right);
+}
+
+function representativeProgresses(cardIndex: number, steps = 96): number[] {
+  const uniform = Array.from({ length: steps + 1 }, (_, step) => step / steps);
+  return [...new Set([...uniform, ...phaseProbeProgresses(cardIndex)])]
+    .sort((left, right) => left - right);
+}
+
+function expectPositionsNear(
+  left: BoardStreetChoreographyFrame,
+  right: BoardStreetChoreographyFrame,
+  maximumDistance: number,
+  context: string,
+): void {
+  const positions = [
+    ["board card", left.boardCard.position, right.boardCard.position],
+    ["burn card", left.burnCard.position, right.burnCard.position],
+    ["right hand", left.rightHand.position, right.rightHand.position],
+  ] as const;
+  for (const [name, leftPosition, rightPosition] of positions) {
+    expect(distance(leftPosition, rightPosition), `${context}: ${name}`)
+      .toBeLessThanOrEqual(maximumDistance);
   }
-  return phases;
 }
 
 describe("dealer board-street phase contract", () => {
   it("finishes a complete burn before taking the next card", () => {
-    const expected = [
-      "burn-reach",
-      "burn-carry",
-      "burn-place",
-      "burn-release",
-      "board-take",
-      "board-carry",
-      "board-flip",
-      "board-place",
-      "board-release",
-      "recover",
-      "settled",
-    ] as const;
+    const expected = [...WITH_BURN_WINDOWS.map((window) => window.phase), "settled"];
+    const windows = boardStreetPhaseWindows(0);
+    expect(windows).toEqual(WITH_BURN_WINDOWS);
+    expect(Object.isFrozen(windows)).toBe(true);
+    expect(windows.every(Object.isFrozen)).toBe(true);
     expect(boardStreetPhaseSequence(0)).toEqual(expected);
-    expect(observedPhases(0)).toEqual(expected);
     expect(expected.indexOf("burn-release")).toBeLessThan(expected.indexOf("board-take"));
 
-    for (let step = 0; step <= 10_000; step += 1) {
-      const frame = boardStreetChoreographyAtProgress(0, step / 10_000);
-      if (frame.phase.startsWith("burn-")) {
+    for (const window of windows) {
+      const progress = (window.start + window.end) / 2;
+      const frame = boardStreetChoreographyAtProgress(0, progress);
+      expect(frame.phase).toBe(window.phase);
+      if (window.phase.startsWith("burn-")) {
         expect(frame.boardCard.ownership).toBe("deck");
         expect(frame.boardCard.visible).toBe(false);
       }
-      if (frame.phase === "board-take") {
+      if (window.phase === "board-take") {
         expect(frame.burnCard).toMatchObject({
           ownership: "discard-pile",
           arrived: true,
@@ -63,27 +106,23 @@ describe("dealer board-street phase contract", () => {
         });
       }
     }
+    expect(boardStreetChoreographyAtProgress(0, 1).phase).toBe("settled");
   });
 
   it("continues flop cards one and two without inventing extra burns", () => {
-    const expected = [
-      "board-take",
-      "board-carry",
-      "board-flip",
-      "board-place",
-      "board-release",
-      "recover",
-      "settled",
-    ] as const;
-    expect(observedPhases(1)).toEqual(expected);
-    expect(observedPhases(2)).toEqual(expected);
+    const expected = [...WITHOUT_BURN_WINDOWS.map((window) => window.phase), "settled"];
+    expect(boardStreetPhaseWindows(1)).toEqual(WITHOUT_BURN_WINDOWS);
+    expect(boardStreetPhaseSequence(1)).toEqual(expected);
+    expect(boardStreetPhaseSequence(2)).toEqual(expected);
     for (const index of [1, 2]) {
-      const frame = boardStreetChoreographyAtProgress(index, 0.5);
-      expect(frame.burnCard).toMatchObject({
-        required: false,
-        visible: false,
-        ownership: "not-required",
-      });
+      for (const progress of phaseProbeProgresses(index)) {
+        const frame = boardStreetChoreographyAtProgress(index, progress);
+        expect(frame.burnCard).toMatchObject({
+          required: false,
+          visible: false,
+          ownership: "not-required",
+        });
+      }
     }
   });
 
@@ -100,34 +139,66 @@ describe("dealer board-street phase contract", () => {
 
 describe("supported card travel", () => {
   it("keeps card and right-hand positions continuous at every phase boundary", () => {
-    const epsilon = 1e-7;
-    for (const cardIndex of [0, 1, 3, 4]) {
-      let previous = boardStreetChoreographyAtProgress(cardIndex, 0);
-      for (let step = 1; step <= 20_000; step += 1) {
-        const frame = boardStreetChoreographyAtProgress(cardIndex, step / 20_000);
-        expect(distance(previous.boardCard.position, frame.boardCard.position)).toBeLessThan(0.001);
-        expect(distance(previous.burnCard.position, frame.burnCard.position)).toBeLessThan(0.001);
-        expect(distance(previous.rightHand.position, frame.rightHand.position)).toBeLessThan(0.001);
-        previous = frame;
+    for (const cardIndex of [0, 1, 2, 3, 4]) {
+      const windows = boardStreetPhaseWindows(cardIndex);
+      expect(windows[0]?.start).toBe(0);
+
+      for (let windowIndex = 1; windowIndex <= windows.length; windowIndex += 1) {
+        const previousWindow = windows[windowIndex - 1]!;
+        const nextWindow = windows[windowIndex];
+        const boundary = previousWindow.end;
+        expect(nextWindow?.start ?? 1).toBe(boundary);
+        expect(boundary).toBeGreaterThan(previousWindow.start);
+
+        const before = boardStreetChoreographyAtProgress(
+          cardIndex,
+          boundary - BOUNDARY_EPSILON,
+        );
+        const exact = boardStreetChoreographyAtProgress(cardIndex, boundary);
+        const after = boardStreetChoreographyAtProgress(
+          cardIndex,
+          boundary + BOUNDARY_EPSILON,
+        );
+        const nextPhase = nextWindow?.phase ?? "settled";
+
+        expect(before.phase).toBe(previousWindow.phase);
+        expect(exact.phase).toBe(nextPhase);
+        expect(after.phase).toBe(nextPhase);
+        expect(before.phaseProgress).toBeGreaterThan(0.999);
+        expect(exact.phaseProgress).toBe(nextWindow ? 0 : 1);
+        expect(exact.complete).toBe(nextWindow === undefined);
+        expectPositionsNear(
+          before,
+          exact,
+          0.00001,
+          `card ${cardIndex} entering ${nextPhase}`,
+        );
+        expectPositionsNear(
+          exact,
+          after,
+          0.00001,
+          `card ${cardIndex} leaving boundary into ${nextPhase}`,
+        );
       }
 
-      for (let step = 1; step < 10_000; step += 1) {
-        const progress = step / 10_000;
-        const before = boardStreetChoreographyAtProgress(cardIndex, progress - epsilon);
-        const after = boardStreetChoreographyAtProgress(cardIndex, progress + epsilon);
-        if (before.phase !== after.phase) {
-          expect(distance(before.boardCard.position, after.boardCard.position)).toBeLessThan(0.00001);
-          expect(distance(before.burnCard.position, after.burnCard.position)).toBeLessThan(0.00001);
-          expect(distance(before.rightHand.position, after.rightHand.position)).toBeLessThan(0.00001);
-        }
+      let previous = boardStreetChoreographyAtProgress(cardIndex, 0);
+      for (let step = 1; step <= PATH_SAMPLE_STEPS; step += 1) {
+        const frame = boardStreetChoreographyAtProgress(cardIndex, step / PATH_SAMPLE_STEPS);
+        expectPositionsNear(
+          previous,
+          frame,
+          MAX_NORMALIZED_POINT_SPEED / PATH_SAMPLE_STEPS,
+          `card ${cardIndex} path sample ${step}`,
+        );
+        previous = frame;
       }
     }
   });
 
   it("never creates an unsupported airborne card and keeps flip clearance low", () => {
     for (const cardIndex of [0, 1, 2, 3, 4]) {
-      for (let step = 0; step <= 2_000; step += 1) {
-        const frame = boardStreetChoreographyAtProgress(cardIndex, step / 2_000);
+      for (const progress of representativeProgresses(cardIndex)) {
+        const frame = boardStreetChoreographyAtProgress(cardIndex, progress);
         expect(frame.deck.owner).toBe("dealer-left-hand");
         expect(frame.leftHand.holdingDeck).toBe(true);
         for (const card of [frame.burnCard, frame.boardCard]) {
@@ -157,16 +228,22 @@ describe("supported card travel", () => {
   });
 
   it("visibly flips the public card while its carried position keeps advancing", () => {
-    for (const cardIndex of [0, 1, 3, 4]) {
-      const flipFrames: BoardStreetChoreographyFrame[] = [];
-      for (let step = 0; step <= 10_000; step += 1) {
-        const frame = boardStreetChoreographyAtProgress(cardIndex, step / 10_000);
-        if (frame.phase === "board-flip") flipFrames.push(frame);
-      }
-      const first = flipFrames[0]!;
-      const middle = flipFrames[Math.floor(flipFrames.length / 2)]!;
-      const last = flipFrames.at(-1)!;
+    for (const cardIndex of [0, 1, 2, 3, 4]) {
+      const flip = boardStreetPhaseWindows(cardIndex)
+        .find((window) => window.phase === "board-flip")!;
+      const first = boardStreetChoreographyAtProgress(cardIndex, flip.start);
+      const middle = boardStreetChoreographyAtProgress(
+        cardIndex,
+        (flip.start + flip.end) / 2,
+      );
+      const last = boardStreetChoreographyAtProgress(
+        cardIndex,
+        flip.end - BOUNDARY_EPSILON,
+      );
 
+      expect([first.phase, middle.phase, last.phase]).toEqual([
+        "board-flip", "board-flip", "board-flip",
+      ]);
       expect(first.boardCard.rotationX).toBeCloseTo(Math.PI, 4);
       expect(middle.boardCard.rotationX).toBeGreaterThan(0);
       expect(middle.boardCard.rotationX).toBeLessThan(Math.PI);
@@ -190,10 +267,10 @@ describe("supported card travel", () => {
 
 describe("destination and order", () => {
   it("releases burn and board cards only at their exact destinations", () => {
-    for (const cardIndex of [0, 1, 3, 4]) {
+    for (const cardIndex of [0, 1, 2, 3, 4]) {
       const target = communityCardTarget(cardIndex);
-      for (let step = 0; step <= 5_000; step += 1) {
-        const frame = boardStreetChoreographyAtProgress(cardIndex, step / 5_000);
+      for (const progress of phaseProbeProgresses(cardIndex)) {
+        const frame = boardStreetChoreographyAtProgress(cardIndex, progress);
         if (frame.boardCard.released || frame.boardCard.ownership === "community-board") {
           expect(frame.boardCard.position).toEqual(target);
           expect(frame.boardCard.arrived).toBe(true);

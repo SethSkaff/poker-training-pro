@@ -7,7 +7,8 @@ including an ASAR that opens a blank document.
 
 ## Run
 
-Use Node.js 22 or newer:
+Use Node.js 22.12.0 or newer; the script fails before package launch on an
+unsupported runtime:
 
 ```powershell
 node scripts/audit-packaged-render-smoke.mjs

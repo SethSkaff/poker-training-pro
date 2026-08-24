@@ -11,6 +11,11 @@ import { join } from "node:path";
 
 export const stages = (node) => [
   {
+    name: "Supported Node runtime contract negative self-tests",
+    command: node,
+    args: ["--test", join("scripts", "runtime-version.test.mjs")],
+  },
+  {
     name: "Package manifest, lockfile, SRI metadata, and installed-version integrity",
     command: node,
     args: [join("scripts", "release", "verify-package-integrity.mjs")],
@@ -34,6 +39,14 @@ export const stages = (node) => [
     name: "Rejected merge artifact and conflict-marker hygiene",
     command: node,
     args: [join("scripts", "release", "verify-worktree-hygiene.mjs")],
+  },
+  {
+    // The operations index links this ignored report. Generate it before the
+    // local-link validator so a clean checkout is judged from artifacts made
+    // by this run, never from an untracked file left by a developer machine.
+    name: "Complete third-party dependency/asset audit generation",
+    command: node,
+    args: [join("scripts", "generate-third-party-audit.mjs")],
   },
   {
     name: "Versioned release-operations documentation gate",
@@ -159,11 +172,6 @@ export const stages = (node) => [
     name: "Production composition audit negative tests",
     command: node,
     args: [join("scripts", "test-production-composition-audit.mjs")],
-  },
-  {
-    name: "Complete third-party dependency/asset audit generation",
-    command: node,
-    args: [join("scripts", "generate-third-party-audit.mjs")],
   },
   {
     name: "Deterministic CycloneDX software bill of materials",

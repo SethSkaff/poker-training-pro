@@ -6,9 +6,28 @@ import {
   createTournamentRunnerReplay,
   heroTournamentLegalActions,
   restoreTournamentRunnerReplay,
+  TournamentReplayVersionError,
 } from "./tournamentRunner";
 
 describe("tournament checkpoint replay", () => {
+  it("rejects v2 policy replays after the multiway sampling correction", () => {
+    const runner = createCareerTournamentRunner({
+      eventId: "local-qualifier",
+      hero: { id: "hero", name: "Version Player", rating: 1_000 },
+      mode: "rational",
+      seed: "replay-policy-version",
+    });
+    const current = createTournamentRunnerReplay(runner, 60);
+    const legacy = {
+      ...current,
+      policyVersion: "normal-rational-v2",
+    } as unknown as typeof current;
+
+    expect(() => restoreTournamentRunnerReplay(legacy)).toThrow(
+      TournamentReplayVersionError,
+    );
+  });
+
   it("restores the exact public decision state without serializing hidden cards", () => {
     let runner = advanceTournamentRunnerToHero(
       createCareerTournamentRunner({

@@ -24,14 +24,39 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Use Node.js 22
+      - name: Use pinned Node.js runtime
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
 
-      - name: Clean lockfile install
-        run: npm ci
+      - name: Fetch clean lockfile install without lifecycle code
+        run: npm ci --ignore-scripts
+
+      - name: Verify lockfile integrity before lifecycle code
+        run: node scripts/release/verify-package-integrity.mjs
+
+      - name: Verify registry, vulnerability, and install-script allowlists
+        run: node scripts/release/verify-dependency-security.mjs
+
+      # Run only the reviewed, version-pinned Windows lifecycle entry points.
+      # Do not replace these with `npm rebuild`: that would rediscover and run
+      # lifecycle scripts from the installed dependency tree.
+      - name: Install approved root esbuild binary
+        working-directory: node_modules/esbuild
+        run: node install.js
+
+      - name: Install approved vite-node esbuild binary
+        working-directory: node_modules/vite-node/node_modules/esbuild
+        run: node install.js
+
+      - name: Install approved Vitest esbuild binary
+        working-directory: node_modules/vitest/node_modules/esbuild
+        run: node install.js
+
+      - name: Select approved electron-winstaller 7-Zip binary
+        working-directory: node_modules/electron-winstaller
+        run: node script/select-7z-arch.js
 
       - name: Verify release inputs and production artifacts
         run: npm run release:verify

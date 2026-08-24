@@ -7,7 +7,8 @@ matrix.
 
 ## Run
 
-Use Node.js 22 or newer after creating a fresh unpacked package:
+Use Node.js 22.12.0 or newer after creating a fresh unpacked package. The script
+enforces this boundary before inspecting or launching the package:
 
 ```powershell
 node scripts/profile-packaged-runtime.mjs

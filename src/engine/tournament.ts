@@ -766,9 +766,10 @@ export function recordEliminations(
     (player) => player.status === "active",
   ).length;
   const bestPlace = activeBefore - records.length + 1;
-  const sameSynchronizedHand =
-    source.handForHand &&
-    records.every((record) => record.handId === records[0].handId);
+  // During hand-for-hand play the director submits one completed synchronized
+  // round as a transition. Hand IDs are table-local, so equality across tables
+  // is neither expected nor a valid synchronization signal.
+  const sameSynchronizedHand = source.handForHand;
   const sameTableAndHand = records.every(
     (record) =>
       record.handId === records[0].handId &&
@@ -796,9 +797,16 @@ export function recordEliminations(
   } else if (sameSynchronizedHand) {
     for (const record of records) places.set(record.playerId, bestPlace);
   } else {
-    records.forEach((record, index) => {
+    [...records]
+      .sort(
+        (left, right) =>
+          left.handId.localeCompare(right.handId) ||
+          left.tableId.localeCompare(right.tableId) ||
+          left.playerId.localeCompare(right.playerId),
+      )
+      .forEach((record, index) => {
       places.set(record.playerId, bestPlace + index);
-    });
+      });
   }
 
   const state: TournamentState = {

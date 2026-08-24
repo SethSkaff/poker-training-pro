@@ -196,17 +196,17 @@ export function createRationalEquityService(
 }
 
 /**
- * Constructs a worker-backed service for the desktop/browser renderer. The
- * worker is a Vite module worker served from the packaged custom protocol under
- * the strict CSP (`worker-src 'self' blob:`). Falls back to the in-thread
- * estimator when `Worker` is unavailable (tests or packaged environments).
+ * Constructs the renderer service. A browser without the Electron desktop
+ * bridge receives a Vite module worker; Electron deliberately receives the
+ * deterministic in-thread fallback until its packaged sandbox can bootstrap
+ * that worker reliably. Tests and runtimes without `Worker` also fall back.
  */
 export function createDesktopEquityService(): RationalEquityService {
   // Electron's hardened renderer uses Chromium's sandbox. Its module Worker
   // bootstrap currently emits a sandbox_bundle startupData error in packaged
-  // builds (and then falls back anyway), so do not create that broken worker
-  // there. The in-thread path remains deterministic and strictly capped per
-  // decision; regular browser builds keep the worker-backed boundary.
+  // builds, so every renderer exposing the desktop bridge takes the explicit
+  // fallback. It is deterministic and strictly capped, but still occupies the
+  // renderer thread; browser-only builds keep the worker-backed boundary.
   const sandboxedElectronRenderer =
     typeof window !== "undefined" && Boolean(window.desktop);
   if (typeof Worker === "undefined" || sandboxedElectronRenderer) {

@@ -88,10 +88,14 @@ are never exposed to the player or public replay.
 Rational opponents build an information set from legal public information and
 their own seat's available cards. They do not receive the hero's hidden cards or
 future board cards. Range equity is estimated with deterministic, seeded Monte
-Carlo work, capped at 1,200 simulations per decision and sliced into bounded
-units. On desktop, expensive work runs in a Web Worker with cancellation and
-stale-result rejection; the synchronous path remains available to tests and
-packaged fallback environments.
+Carlo work. Live tournaments request 60 simulations per decision; 1,200 is the
+hard engineering ceiling for every caller, not the live default. Browser
+renderers without the Electron desktop bridge use a module Web Worker with
+between-slice cancellation and stale-result rejection. The hardened Electron
+renderer, including the packaged Windows app, deliberately uses the identical
+synchronous estimator because its module-worker bootstrap is not yet reliable
+under the packaged sandbox. That fallback is deterministic and capped, but its
+bounded work still runs on the renderer thread.
 
 ### Decision timing
 
@@ -118,7 +122,7 @@ The engine is independent of React and Electron. The main pieces are in
 - pairwise tournament, decision, and math rating calculations.
 
 The current replay identifiers are `tournament-session-v1`,
-`career-events-v1`, and `normal-rational-v2`. A replay records the engine/content
+`career-events-v1`, and `normal-rational-v4`. A replay records the engine/content
 and policy identifiers, seed, public action log, blind structure, simulation
 settings, and public entrant data. It does not store opponent hidden cards as a
 player-visible or exported public fact. Engine invariants and deterministic

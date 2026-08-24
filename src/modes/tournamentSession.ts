@@ -1298,10 +1298,10 @@ export function chooseTournamentSessionPolicyAction(
 }
 
 /**
- * Deterministic async counterpart used by the worker-backed live progression.
- * The heavy equity Monte Carlo is delegated to `estimateEquity` (a worker),
- * while the resulting session decision is bit-for-bit identical to the
- * synchronous adapter for a fixed seed and work budget.
+ * Deterministic async counterpart used by live progression. The equity Monte
+ * Carlo is delegated to `estimateEquity`: a worker in a plain browser, or the
+ * capped synchronous fallback in Electron. The resulting session decision is
+ * bit-for-bit identical for a fixed seed and work budget.
  */
 export async function chooseTournamentSessionPolicyActionAsync(
   session: TournamentSession,

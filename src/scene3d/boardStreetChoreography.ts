@@ -114,13 +114,13 @@ export interface BoardStreetChoreographyFrame {
   readonly boardCard: BoardStreetCardFrame;
 }
 
-interface PhaseWindow {
+export interface BoardStreetPhaseWindow {
   readonly phase: Exclude<BoardStreetPhase, "settled">;
   readonly start: number;
   readonly end: number;
 }
 
-const WITH_BURN_WINDOWS: readonly PhaseWindow[] = Object.freeze([
+const WITH_BURN_WINDOWS = freezePhaseWindows([
   { phase: "burn-reach", start: 0, end: 0.09 },
   { phase: "burn-carry", start: 0.09, end: 0.26 },
   { phase: "burn-place", start: 0.26, end: 0.29 },
@@ -133,7 +133,7 @@ const WITH_BURN_WINDOWS: readonly PhaseWindow[] = Object.freeze([
   { phase: "recover", start: 0.94, end: 1 },
 ]);
 
-const WITHOUT_BURN_WINDOWS: readonly PhaseWindow[] = Object.freeze([
+const WITHOUT_BURN_WINDOWS = freezePhaseWindows([
   { phase: "board-take", start: 0, end: 0.12 },
   { phase: "board-carry", start: 0.12, end: 0.48 },
   { phase: "board-flip", start: 0.48, end: 0.78 },
@@ -180,12 +180,25 @@ export function communityCardTarget(cardIndex: number): BoardStreetPoint3 {
   ];
 }
 
+/**
+ * Authored normalized phase windows for a board-card event.
+ *
+ * Windows are contiguous and use [start, end) semantics; progress 1 is the
+ * separate settled frame. The returned array and its entries are frozen so
+ * capture tooling and tests can inspect the timing contract without mutating
+ * choreography state.
+ */
+export function boardStreetPhaseWindows(
+  cardIndex: number,
+): readonly BoardStreetPhaseWindow[] {
+  return boardStreetRequiresBurn(cardIndex) ? WITH_BURN_WINDOWS : WITHOUT_BURN_WINDOWS;
+}
+
 export function boardStreetPhaseSequence(
   cardIndex: number,
 ): readonly BoardStreetPhase[] {
   return [
-    ...(boardStreetRequiresBurn(cardIndex) ? WITH_BURN_WINDOWS : WITHOUT_BURN_WINDOWS)
-      .map((window) => window.phase),
+    ...boardStreetPhaseWindows(cardIndex).map((window) => window.phase),
     "settled",
   ];
 }
@@ -218,7 +231,7 @@ function frameAt(
 ): BoardStreetChoreographyFrame {
   const cardIndex = clampCardIndex(requestedCardIndex);
   const burnRequired = boardStreetRequiresBurn(cardIndex);
-  const windows = burnRequired ? WITH_BURN_WINDOWS : WITHOUT_BURN_WINDOWS;
+  const windows = boardStreetPhaseWindows(cardIndex);
   const window = progress >= 1
     ? undefined
     : windows.find((candidate) => progress >= candidate.start && progress < candidate.end)
@@ -465,11 +478,17 @@ function phaseAfterBurnRelease(phase: BoardStreetPhase): boolean {
 function phaseComesAfter(
   phase: BoardStreetPhase,
   reference: BoardStreetPhase,
-  windows: readonly PhaseWindow[],
+  windows: readonly BoardStreetPhaseWindow[],
 ): boolean {
   if (phase === "settled") return true;
   return windows.findIndex((window) => window.phase === phase)
     > windows.findIndex((window) => window.phase === reference);
+}
+
+function freezePhaseWindows(
+  windows: readonly BoardStreetPhaseWindow[],
+): readonly BoardStreetPhaseWindow[] {
+  return Object.freeze(windows.map((window) => Object.freeze(window)));
 }
 
 function clampCardIndex(value: number): number {

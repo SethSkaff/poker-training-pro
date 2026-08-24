@@ -6,6 +6,7 @@ import {
   projectRoot,
   readJson,
 } from "./shared.mjs";
+import { validateNpmAuditReport } from "./dependency-security-lib.mjs";
 
 const lockfile = readJson(join(projectRoot, "package-lock.json"));
 const allowlist = readJson(
@@ -80,11 +81,12 @@ for (const [packagePath, approved] of approvedScripts) {
 }
 
 const audit = runNpmAudit();
-if (!audit.report) {
+if (audit.error) {
   errors.push(audit.error);
 }
-
-const vulnerabilityCounts = audit.report?.metadata?.vulnerabilities ?? {};
+const auditValidation = validateNpmAuditReport(audit.report);
+errors.push(...auditValidation.errors);
+const vulnerabilityCounts = auditValidation.vulnerabilityCounts;
 for (const severity of ["high", "critical"]) {
   const count = Number(vulnerabilityCounts[severity] ?? 0);
   if (!Number.isFinite(count) || count > 0) {

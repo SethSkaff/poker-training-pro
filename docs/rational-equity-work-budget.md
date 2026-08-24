@@ -1,89 +1,120 @@
-# Rational equity work budget and UI-thread audit
+# Rational equity execution budget and UI-thread audit
 
-## Finding
+Status: current implementation, reviewed 2026-08-23
 
-Rational policy was the material UI-thread risk. Each decision ran a synchronous
-range-aware Monte Carlo loop with a default of 700 simulations and an accepted
-maximum of 20,000. Every trial selects opponent combinations, constructs a
-runout, and evaluates the hero plus every live opponent. Normal policy does not
-run Monte Carlo; it consumes already-scored legal actions.
+## Current policy and hard limits
 
-The current synchronous tournament engine calls `decideRationalAction` in the
-same call stack that advances a hand. Converting that contract to a worker or
-promise safely also requires an explicit pending-policy state, stale-result
-rejection, save/replay semantics, cancellation, and renderer integration.
-Those cross-owner changes are not made here.
+The live tournament UI explicitly requests **60 simulations per opponent
+decision** and records that count in the replay boundary. The estimator's
+library default is 700 for callers that omit a value, while the enforced
+engineering ceiling is 1,200 simulations per decision. The ceiling is a
+safety limit, not the live budget and not a claim that 1,200 samples are
+statistically sufficient for every poker question.
 
-## Implemented boundary
+Every estimate advances in deterministic simulation-count slices: 16
+simulations per slice by default and no more than 32. Slicing changes scheduling
+and work telemetry only. It never reads wall-clock time and does not alter the
+seeded sample stream, equity result, action distribution, or chosen action.
 
-- A Rational decision now fails closed above 1,200 simulations instead of
-  accepting 20,000.
-- Work advances in deterministic slices of 16 simulations by default. A slice
-  may contain at most 32 simulations.
-- `estimateRangeEquitySliced` yields only between completed-simulation-count
-  boundaries. It never reads elapsed time. A caller can inject its scheduler;
-  the default yields with a zero-delay task.
-- The public information set is cloned before the first slice, so caller
-  mutation during a yield cannot alter later samples in that request.
-- Synchronous `estimateRangeEquity` and current `decideRationalAction` retain
-  the existing engine contract while using the same state machine.
-- Every estimate reports requested/completed simulations, slice size/count,
-  exact hand-evaluation count, caps, and the count-based scheduling policy.
-  Rational decision audit exposes these values as `equityWork`.
-- Slice size changes scheduling and instrumentation only. The seed stream,
-  opponent sampling, runouts, equity, action distribution, and chosen action
-  remain identical.
+Each estimate reports requested/completed simulations, slice size/count, exact
+hand-evaluation count, and the applicable caps through `equityWork` audit data.
+The same sampled runout also records only an opponent's public-range quantile
+and its showdown comparison with hero. Every legal wager reuses those compact
+statistics to retain the strongest minimum-defence range, producing audited
+fold/call/re-raise frequencies and equity conditional on continuation without
+adding simulations or hand evaluations.
+The public information set is cloned before the first slice, so caller mutation
+during an asynchronous request cannot change later samples.
 
-The 1,200-simulation ceiling is an engineering work limit, not a claim that
-1,200 samples are statistically sufficient for every poker question. Product
-accuracy decisions require a separate error/latency study.
+## Execution topology
 
-## Deterministic tests
+| Runtime | Estimator used by live progression | UI-thread consequence |
+| --- | --- | --- |
+| Browser renderer without `window.desktop` | Vite module Web Worker | Monte Carlo runs off the renderer thread. |
+| Electron renderer with the desktop bridge, including the packaged Windows app | Deterministic synchronous fallback | The bounded Monte Carlo runs on the renderer thread. |
+| Unit tests or runtimes without `Worker` | Synchronous fallback unless a worker factory is injected | The calling thread performs the work. |
 
-The Rational suite verifies:
+Electron takes the fallback deliberately. Its sandboxed module-worker bootstrap
+currently emits a `sandbox_bundle` `startupData` error in packaged builds. The
+service therefore does not attempt a worker whenever the desktop bridge is
+present. This avoids a known-broken bootstrap, but it also means the packaged
+app cannot yet claim complete UI-thread isolation.
 
-- identical equity outcomes at slice sizes 1 and 32;
-- identical synchronous and async-sliced results;
+Both execution paths use the same serializable request and estimator state
+machine. For fixed public information, legal actions, seed, simulation count,
+and slice size, worker and synchronous results are bit-for-bit identical.
+
+## Cancellation, staleness, and persistence
+
+The worker-backed service assigns a token to each request and permits one live
+request by default. A newer request rejects the previous promise as stale and
+sends a cancellation message. Explicit cancellation rejects the promise, and
+the worker observes cancellation between completed slices. Responses for
+already cancelled or superseded tokens are dropped.
+
+The tournament runner also checks an abort signal before applying an awaited
+policy result. Pausing or disposing the table invalidates the current worker
+request, leaving the authoritative runner at the previous committed boundary.
+
+The synchronous Electron fallback is importantly different: its estimate
+finishes in the call that starts it, before another renderer event can request
+cancellation. `cancelPending()` therefore cannot preempt work already executing
+on that path. The 60-simulation live budget and 1,200 ceiling bound the exposure,
+but neither is a substitute for moving the packaged path off-thread.
+
+No partially completed Monte Carlo state or worker token is persisted. Saves
+and replays retain the deterministic runner inputs and policy simulation count;
+work interrupted before a decision is committed is recomputed from the saved
+runner boundary rather than resumed mid-slice.
+
+## Deterministic coverage
+
+The Rational and equity-service suites verify:
+
+- identical equity outcomes across slice sizes and between synchronous and
+  worker-backed estimators;
 - immunity to caller mutation of the original information set during a yield;
-- yields occur exactly between slices, never based on time;
-- the per-decision and per-slice limits reject excess work;
-- fixed-seed chosen action, distribution, metrics, ranges, and explanation are
-  identical across slice boundaries;
-- the frozen bot-league baseline and tournament policy adapters remain green.
+- yields occur at completed-simulation boundaries rather than elapsed-time
+  thresholds;
+- rejection above the per-decision and per-slice limits;
+- identical fixed-seed decision, distribution, metrics, ranges, explanation,
+  and audit across the async boundary;
+- explicit cancellation, supersession, and late-result rejection;
+- tournament-runner aborts do not apply an obsolete awaited decision; and
+- frozen bot-league and replay compatibility gates remain deterministic.
 
-## Local profiling
+## Profiling
 
-Run the non-gating profiler with the supported Node runtime:
+Run the non-gating profiler with the repository's supported Node runtime:
 
 ```powershell
-& "C:\Users\19496\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe" `
-  ".\node_modules\vite-node\vite-node.mjs" `
-  ".\scripts\profile-rational-equity.ts"
+npm run check:runtime
+node node_modules/vite-node/vite-node.mjs `
+  -c scripts/vite-node.config.mjs `
+  scripts/profile-rational-equity.ts
 ```
 
-It reports five-run observed timing ranges at 50, 200, 700, and 1,200
-simulations plus exact work counts. Wall-clock observations vary by machine and
-load and are never used to stop a simulation or select an action.
+The profiler reports repeated observations at 50, 200, 700, and 1,200
+simulations plus exact work counts. Measurements vary by machine and load and
+are never used to terminate a simulation or select an action. Profile the live
+60-simulation policy separately when collecting packaged interaction evidence.
 
-One local Windows x64 / Node 24.14 run of the fixed two-opponent fixture measured
-median synchronous times of 40.131 ms, 119.452 ms, 381.923 ms, and 663.044 ms
-respectively. These observations demonstrate why the async integration remains
-necessary; they are not portable acceptance thresholds.
+## Remaining packaged UI-thread work
 
-## Remaining integration
+Before claiming that Rational equity cannot block player interaction:
 
-Before claiming the UI thread is fully protected:
+1. Restore a functioning off-renderer estimator under the hardened packaged
+   Electron sandbox, or replace the module-worker bootstrap with an equally
+   isolated supported boundary.
+2. Prove request cancellation and stale-result rejection through that actual
+   packaged boundary, including pause, quit, restart, and hand advancement.
+3. Capture packaged input-delay and long-task evidence at the live 60-simulation
+   policy and at the 1,200-simulation ceiling on low-end supported hardware.
+4. Keep replay/save recovery deterministic without serializing hidden deck
+   state or partially completed worker state.
+5. Re-run the accuracy/latency study before increasing the live simulation
+   policy; the hard ceiling alone is not an accuracy target.
 
-1. Add an async Rational policy boundary around the tournament runner, or a
-   versioned worker request/response protocol.
-2. Persist a pending policy request using only public information, seed,
-   simulation count, policy version, and request ID; never serialize hidden
-   deck state into renderer-visible data.
-3. Reject stale worker results after navigation, restart, hand advancement, or
-   request cancellation.
-4. Make replay record the fixed work budget and seed, not elapsed time.
-5. Add packaged desktop measurements for input delay and long tasks at default
-   and maximum work, including low-end supported hardware.
-
-Until that integration is complete, the synchronous path is capped and
-measurable but can still occupy its calling thread for the bounded duration.
+Until those items are complete, browser-only execution is worker-backed while
+the packaged Electron path remains synchronous, deterministic, capped, and a
+known bounded renderer-thread risk.

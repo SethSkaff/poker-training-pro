@@ -20,6 +20,21 @@ import react from "@vitejs/plugin-react";
 */
 const reactPlugin = react() as unknown as Plugin;
 
+// Development HMR needs a WebSocket connection, but the packaged application
+// is deliberately offline. Strip that development-only capability from the
+// generated index instead of weakening the production renderer policy.
+const productionCspPlugin: Plugin = {
+  name: "production-offline-csp",
+  apply: "build",
+  transformIndexHtml(html) {
+    const developmentDirective = "connect-src 'self' ws:";
+    if (!html.includes(developmentDirective)) {
+      throw new Error("Expected development connect-src directive was not found");
+    }
+    return html.replace(developmentDirective, "connect-src 'self'");
+  },
+};
+
 /*
   Test workers are capped well below the core count on purpose.
 
@@ -54,7 +69,7 @@ const reactPlugin = react() as unknown as Plugin;
 const testWorkers = Math.max(2, Math.floor(cpus().length / 4));
 
 export default defineConfig({
-  plugins: [reactPlugin],
+  plugins: [reactPlugin, productionCspPlugin],
   base: "./",
   build: {
     outDir: "dist",
@@ -66,7 +81,8 @@ export default defineConfig({
     maxWorkers: testWorkers,
     minWorkers: 1,
     /*
-      `scripts/*.test.mjs` are `node --test` fixtures, not Vitest suites.
+      Script files ending in `.test.mjs` are `node --test` fixtures, not
+      Vitest suites.
 
       Vitest's default include matches them, finds no `describe`, and fails the
       file -- so `npm test` exited 1 with every one of its own tests passing and
@@ -76,6 +92,14 @@ export default defineConfig({
       release verification stage runs that runner. Excluding them here stops one
       runner from failing on the other's files; it does not stop them running.
     */
-    exclude: ["node_modules/**", "dist/**", "outputs/**", "scripts/**"],
+    // Keep the TypeScript suites under scripts/ in Vitest. Excluding the whole
+    // directory silently disabled release-stage, CDP, critic, and all-in audit
+    // regressions; only the Node test-runner fixtures need isolation here.
+    exclude: [
+      "node_modules/**",
+      "dist/**",
+      "outputs/**",
+      "scripts/**/*.test.mjs",
+    ],
   },
 });

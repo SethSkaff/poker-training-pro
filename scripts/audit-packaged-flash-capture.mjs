@@ -47,13 +47,9 @@ import {
 } from "./release/flash-luminance-analysis-lib.mjs";
 import { assertValidatedTemporaryProfile, canonicalJson } from "./release/runtime-performance-profile-lib.mjs";
 import { projectRoot } from "./release/shared.mjs";
+import { assertSupportedNodeVersion } from "./runtime-version.mjs";
 
-const nodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
-if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
-  throw new Error(
-    `Packaged flash capture requires Node.js 22 or newer; current runtime is ${process.versions.node}.`,
-  );
-}
+assertSupportedNodeVersion({ workflow: "Packaged flash capture" });
 
 const DEFAULT_APP = join(projectRoot, "outputs", "next", "win-unpacked", "Poker Training Pro.exe");
 const PROFILE_PREFIX = "poker-training-pro-flash-capture-";

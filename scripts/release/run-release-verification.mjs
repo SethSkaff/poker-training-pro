@@ -1,14 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { assertSupportedNodeVersion } from "../runtime-version.mjs";
 import { projectRoot } from "./shared.mjs";
 import { stages as buildStages } from "./release-stages.mjs";
 
-const nodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
-if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
-  throw new Error(
-    `Release verification requires Node.js 22 or newer; current runtime is ${process.versions.node}.`,
-  );
-}
+assertSupportedNodeVersion({ workflow: "Release verification" });
 
 const node = process.execPath;
 const stages = buildStages(node);

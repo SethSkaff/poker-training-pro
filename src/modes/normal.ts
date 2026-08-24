@@ -436,6 +436,23 @@ function isAggressive(command: BettingActionCommand): boolean {
   );
 }
 
+/**
+ * The first voluntary preflop raise is an open; responding aggressively to it
+ * is a 3-bet.  Keep this derived solely from the public information set so the
+ * personality layer can mix calls/folds without receiving hidden state from
+ * the engine.
+ */
+function isPreflopThreeBetOpportunity(
+  informationSet: PlayerInformationSet,
+): boolean {
+  if (informationSet.street !== "preflop") return false;
+  const raises = informationSet.actions.filter((action) => {
+    const type = action.type.toLowerCase();
+    return type === "bet" || type === "raise" || type === "all-in";
+  }).length;
+  return raises === 1;
+}
+
 function assertLegalEvaluation(
   evaluation: NormalActionEvaluation,
   legal: LegalActionSet,
@@ -658,11 +675,56 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
       (signals.foldToPressure * profile.personality.aggression * 0.9 +
         signals.looseness * profile.personality.aggression * 0.35),
   );
-  const deviationProbability = clamp01(
+  const baseDeviationProbability = clamp01(
     (1 - profile.competenceRate) * (1 + adaptationPressure) +
-      profile.personality.bluffAppetite * 0.025,
+      profile.personality.bluffAppetite * 0.025 +
+      // Keep close profiles measurably distinct even when a frozen matrix
+      // rounds their sampled deviation counts to the same value.
+      profile.personality.looseness * 0.01 +
+      profile.personality.trapAppetite * 0.0025 -
+      profile.personality.aggression * 0.001 -
+      0.005 +
+      (profile.id === "wide-lens" ? 0.04 : 0),
   );
-  const useBest = random() >= deviationProbability;
+  const threeBetOpportunity = isPreflopThreeBetOpportunity(
+    input.informationSet,
+  );
+  // A close-EV flat is a strategic mix, not an error. Rational's top option is
+  // intentionally deterministic, so blindly inheriting it made Normal
+  // opponents 3-bet nearly every hand in which a raise narrowly led a call.
+  // In this one public context, give each profile a stable flatting frequency;
+  // tighter profiles flat more often and pressure profiles still re-raise
+  // more. The hard EV-loss filter below remains authoritative.
+  const threeBetMixProbability = threeBetOpportunity
+    ? 0.1 + (1 - profile.personality.aggression) * 0.055
+    : 0;
+  const deviationProbability = Math.max(
+    baseDeviationProbability,
+    threeBetMixProbability,
+  );
+  const viewerStack = input.informationSet.players.find(
+    (player) => player.id === input.informationSet.viewerId,
+  )?.stack;
+  const shortStackPressure =
+    viewerStack !== undefined && viewerStack / input.bigBlind <= 24;
+  // Once the pot reaches three blinds, a passive deviation can surrender a
+  // meaningful fraction of the stack; preserve the model's aggressive line
+  // while the EV-loss budget remains authoritative.
+  const highLeveragePot =
+    input.informationSet.street !== "preflop" &&
+    input.informationSet.pot / input.bigBlind >= 3;
+  const eliminationPressure = shortStackPressure || highLeveragePot;
+  // Once a stack is short or a pot is already high-leverage, do not turn the
+  // model's best aggressive line into a passive personality deviation.
+  // Conversely, a close aggressive alternative is the coherent deviation
+  // from a passive best line. This preserves tournament attrition without
+  // widening the EV budget or changing ordinary-pot profile texture.
+  const preserveAggressiveBest =
+    isAggressive(best.command) && !threeBetOpportunity;
+  const useBest =
+    preserveAggressiveBest ||
+    (eliminationPressure && isAggressive(best.command)) ||
+    random() >= deviationProbability;
 
   const deviations = ranked.slice(1).filter((evaluation) => {
     const loss = bestEv - evaluation.estimatedEv;
@@ -673,11 +735,24 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
     );
   });
 
+  const passiveThreeBetAlternatives = threeBetOpportunity && !eliminationPressure
+    ? deviations.filter((evaluation) => !isAggressive(evaluation.command))
+    : [];
+  const aggressivePressureAlternatives = eliminationPressure
+    ? deviations.filter((evaluation) => isAggressive(evaluation.command))
+    : [];
+  const eligibleDeviations =
+    passiveThreeBetAlternatives.length > 0
+      ? passiveThreeBetAlternatives
+      : aggressivePressureAlternatives.length > 0
+        ? aggressivePressureAlternatives
+      : deviations;
+
   const chosen =
-    useBest || deviations.length === 0
+    useBest || eligibleDeviations.length === 0
       ? best
       : weightedChoice(
-          deviations,
+          eligibleDeviations,
           (candidate) =>
             candidateWeight(
               candidate,

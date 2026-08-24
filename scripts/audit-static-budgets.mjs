@@ -195,9 +195,18 @@ function round(value) {
 }
 
 /**
- * Follow Vite's named import graph from the scene's source entry. Shared
- * imports are charged to the scene as well: loading the scene must pay for
- * them even if another lazy route also happens to use the same chunk.
+ * Measure the JavaScript and assets added when the lazy 3D scene is loaded.
+ *
+ * Vite's `imports` and `dynamicImports` have different runtime semantics:
+ * static imports are prerequisites of the importing chunk, while dynamic
+ * imports are merely possible later loads. Following both turns a static
+ * back-reference to `index.html` into a walk of every lazy route in the app.
+ *
+ * The entry's static closure is already present before the scene can load, so
+ * it is a prerequisite rather than scene cost. The scene budget therefore
+ * charges the scene's static closure minus that prerequisite closure. This
+ * still charges a shared static chunk when it is not part of startup, while
+ * avoiding both double-counting startup code and charging optional routes.
  */
 function readSceneGraph() {
   const manifestPath = path.join(distDirectory, ".vite", "manifest.json");
@@ -207,36 +216,80 @@ function readSceneGraph() {
   }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const entry = "src/components/TableScene3D.tsx";
+  const prerequisiteEntry = "index.html";
   if (!manifest[entry]) {
     failures.push({ name: "scene entry", actual: "missing", maximum: entry });
     return null;
   }
-  const visited = new Set();
-  const visit = (key) => {
-    if (visited.has(key)) return;
-    const item = manifest[key];
-    if (!item) {
-      failures.push({ name: "scene manifest import", actual: key, maximum: "present" });
-      return;
-    }
-    visited.add(key);
-    for (const imported of [...(item.imports ?? []), ...(item.dynamicImports ?? [])]) {
-      visit(imported);
-    }
+  if (!manifest[prerequisiteEntry]) {
+    failures.push({
+      name: "scene prerequisite entry",
+      actual: "missing",
+      maximum: prerequisiteEntry,
+    });
+    return null;
+  }
+
+  const collectStaticClosure = (root, failureName) => {
+    const visited = new Set();
+    const visit = (key) => {
+      if (visited.has(key)) return;
+      const item = manifest[key];
+      if (!item) {
+        failures.push({ name: failureName, actual: key, maximum: "present" });
+        return;
+      }
+      visited.add(key);
+      for (const imported of item.imports ?? []) visit(imported);
+    };
+    visit(root);
+    return visited;
   };
-  visit(entry);
-  const items = [...visited].map((key) => manifest[key]);
-  const scriptPaths = new Set(items.map((item) => item.file));
-  const assetPaths = new Set(items.flatMap((item) => item.assets ?? []));
+
+  const prerequisiteClosure = collectStaticClosure(
+    prerequisiteEntry,
+    "scene prerequisite manifest import",
+  );
+  const requiredClosure = collectStaticClosure(entry, "scene manifest import");
+  const incrementalEntries = new Set(
+    [...requiredClosure].filter((key) => !prerequisiteClosure.has(key)),
+  );
+  const prerequisiteEntries = new Set(
+    [...requiredClosure].filter((key) => prerequisiteClosure.has(key)),
+  );
+  const requiredItems = [...requiredClosure].map((key) => manifest[key]);
+  const incrementalItems = [...incrementalEntries].map((key) => manifest[key]);
+  const prerequisiteItems = [...prerequisiteClosure].map((key) => manifest[key]);
+  const prerequisiteAssetPaths = new Set(
+    prerequisiteItems.flatMap((item) => item.assets ?? []),
+  );
+  const scriptPaths = new Set(incrementalItems.map((item) => item.file));
+  const assetPaths = new Set(
+    incrementalItems
+      .flatMap((item) => item.assets ?? [])
+      .filter((file) => !prerequisiteAssetPaths.has(file)),
+  );
+  const requiredOutputPaths = new Set([
+    ...requiredItems.map((item) => item.file),
+    ...requiredItems.flatMap((item) => item.assets ?? []),
+  ]);
+  const excludedDynamicEntries = new Set(
+    [...requiredClosure]
+      .flatMap((key) => manifest[key].dynamicImports ?? [])
+      .filter((key) => !requiredClosure.has(key)),
+  );
   const byRelative = new Map(files.map((file) => [file.relative, file]));
   const sceneScripts = [...scriptPaths].map((file) => byRelative.get(file)).filter(Boolean);
   const sceneAssets = [...assetPaths].map((file) => byRelative.get(file)).filter(Boolean);
-  for (const file of [...scriptPaths, ...assetPaths]) {
+  for (const file of requiredOutputPaths) {
     if (!byRelative.has(file)) failures.push({ name: "scene output", actual: file, maximum: "present" });
   }
   return {
     entry,
-    entries: [...visited].sort(),
+    entries: [...incrementalEntries].sort(),
+    requiredEntries: [...requiredClosure].sort(),
+    prerequisiteEntries: [...prerequisiteEntries].sort(),
+    excludedDynamicEntries: [...excludedDynamicEntries].sort(),
     javascriptGzipBytes: sum(sceneScripts.map(gzipOf)),
     assetBytes: sum(sceneAssets.map((file) => file.bytes)),
     assets: [...assetPaths].sort(),

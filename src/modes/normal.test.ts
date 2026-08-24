@@ -220,6 +220,69 @@ describe("Normal mode policy", () => {
     expect(semiBluffs).toBeGreaterThan(0);
   });
 
+  it("mixes bounded flats instead of automatically 3-betting a close-EV open", () => {
+    const preflopInformationSet: PlayerInformationSet = {
+      ...informationSet(),
+      street: "preflop",
+      board: [],
+      pot: 1_800,
+      actions: [
+        { playerId: "villain", type: "raise", amount: 1_200 },
+        { playerId: "normal-ai", type: "pending" },
+      ],
+    };
+    const evaluations: readonly NormalActionEvaluation[] = [
+      { command: { type: "raise", to: 3_600 }, estimatedEv: 160, purpose: "value" },
+      { command: { type: "call" }, estimatedEv: 148, purpose: "defense" },
+      { command: { type: "fold" }, estimatedEv: 0, purpose: "neutral" },
+    ];
+    let raises = 0;
+    const sampleSize = 4_000;
+    for (let index = 0; index < sampleSize; index += 1) {
+      const decision = decideNormalAction({
+        informationSet: preflopInformationSet,
+        legalActions,
+        evaluations,
+        profile: "pressure",
+        bigBlind: 200,
+        seed: `three-bet-mix-${index}`,
+      });
+      if (decision.command.type === "raise") raises += 1;
+      expect(decision.evLoss).toBeLessThanOrEqual(
+        decision.evLossBudget + Number.EPSILON,
+      );
+    }
+
+    expect(raises / sampleSize).toBeGreaterThan(0.88);
+    expect(raises / sampleSize).toBeLessThan(0.91);
+  });
+
+  it("does not suppress the best aggressive line once its stack reaches push-fold pressure", () => {
+    const shallow = informationSet();
+    shallow.street = "preflop";
+    shallow.board = [];
+    shallow.players = shallow.players.map((player) =>
+      player.id === shallow.viewerId ? { ...player, stack: 4_000 } : player,
+    );
+    const evaluations: readonly NormalActionEvaluation[] = [
+      { command: { type: "raise", to: 3_600 }, estimatedEv: 160, purpose: "value" },
+      { command: { type: "call" }, estimatedEv: 148, purpose: "defense" },
+    ];
+
+    for (let index = 0; index < 250; index += 1) {
+      const decision = decideNormalAction({
+        informationSet: shallow,
+        legalActions,
+        evaluations,
+        profile: "pressure",
+        bigBlind: 200,
+        seed: `short-stack-pressure-${index}`,
+      });
+      expect(decision.command.type).toBe("raise");
+      expect(decision.evLoss).toBe(0);
+    }
+  });
+
   it("does not invent a pure bluff without a draw, blocker, or public fold signal", () => {
     const dryInformationSet = informationSet(
       undefined,

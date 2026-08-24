@@ -193,9 +193,9 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | base64-js | 1.5.1 | MIT | node_modules/plist/node_modules/base64-js/package.json#license |
 | bluebird | 3.7.2 | MIT | node_modules/bluebird/package.json#license |
 | boolean | 3.2.0 | MIT | node_modules/boolean/package.json#license |
-| brace-expansion | 1.1.16 | MIT | node_modules/brace-expansion/package.json#license |
-| brace-expansion | 2.1.2 | MIT | node_modules/filelist/node_modules/brace-expansion/package.json#license |
-| brace-expansion | 5.0.7 | MIT | node_modules/app-builder-lib/node_modules/brace-expansion/package.json#license |
+| brace-expansion | 1.1.18 | MIT | node_modules/brace-expansion/package.json#license |
+| brace-expansion | 2.1.4 | MIT | node_modules/filelist/node_modules/brace-expansion/package.json#license |
+| brace-expansion | 5.0.9 | MIT | node_modules/app-builder-lib/node_modules/brace-expansion/package.json#license |
 | buffer-from | 1.1.2 | MIT | node_modules/buffer-from/package.json#license |
 | builder-util | 26.15.3 | MIT | node_modules/builder-util/package.json#license |
 | builder-util-runtime | 9.7.0 | MIT | node_modules/builder-util-runtime/package.json#license |
@@ -266,7 +266,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | expect-type | 1.4.0 | Apache-2.0 | node_modules/expect-type/package.json#license |
 | exponential-backoff | 3.1.3 | Apache-2.0 | node_modules/exponential-backoff/package.json#license |
 | fast-deep-equal | 3.1.3 | MIT | node_modules/fast-deep-equal/package.json#license |
-| fast-uri | 3.1.4 | BSD-3-Clause | node_modules/fast-uri/package.json#license |
+| fast-uri | 3.1.6 | BSD-3-Clause | node_modules/fast-uri/package.json#license |
 | fdir | 6.5.0 | MIT | node_modules/vitest/node_modules/fdir/package.json#license |
 | fflate | 0.8.3 | MIT | node_modules/fflate/package.json#license |
 | filelist | 1.0.6 | Apache-2.0 | node_modules/filelist/package.json#license |
@@ -315,7 +315,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | jiti | 2.7.0 | MIT | node_modules/jiti/package.json#license |
 | joi | 18.2.3 | BSD-3-Clause | node_modules/joi/package.json#license |
 | js-tokens | 9.0.1 | MIT | node_modules/strip-literal/node_modules/js-tokens/package.json#license |
-| js-yaml | 4.3.0 | MIT | node_modules/js-yaml/package.json#license |
+| js-yaml | 4.3.1 | MIT | node_modules/js-yaml/package.json#license |
 | json-buffer | 3.0.1 | MIT | node_modules/json-buffer/package.json#license |
 | json-schema-traverse | 1.0.0 | MIT | node_modules/app-builder-lib/node_modules/json-schema-traverse/package.json#license |
 | json-stringify-safe | 5.0.1 | ISC | node_modules/json-stringify-safe/package.json#license |
@@ -371,7 +371,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | minizlib | 3.1.0 | MIT | node_modules/minizlib/package.json#license |
 | mkdirp | 0.5.6 | MIT | node_modules/mkdirp/package.json#license |
 | ms | 2.1.3 | MIT | node_modules/ms/package.json#license |
-| nanoid | 3.3.16 | MIT | node_modules/nanoid/package.json#license |
+| nanoid | 3.3.18 | MIT | node_modules/nanoid/package.json#license |
 | node-abi | 4.33.0 | MIT | node_modules/node-abi/package.json#license |
 | node-api-version | 0.2.1 | MIT | node_modules/node-api-version/package.json#license |
 | node-gyp | 12.4.0 | MIT | node_modules/node-gyp/package.json#license |
@@ -391,7 +391,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | picomatch | 4.0.5 | MIT | node_modules/picomatch/package.json#license |
 | pkijs | 3.4.0 | BSD-3-Clause | node_modules/pkijs/package.json#license |
 | plist | 3.1.0 | MIT | node_modules/plist/package.json#license |
-| postcss | 8.5.22 | MIT | node_modules/postcss/package.json#license |
+| postcss | 8.5.26 | MIT | node_modules/postcss/package.json#license |
 | postject | 1.0.0-alpha.6 | MIT | node_modules/postject/package.json#license |
 | proc-log | 6.1.0 | ISC | node_modules/proc-log/package.json#license |
 | process-nextick-args | 2.0.1 | MIT | node_modules/process-nextick-args/package.json#license |
@@ -468,8 +468,8 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | tsx | 4.22.1 | MIT | node_modules/tsx/package.json#license |
 | type-fest | 0.13.1 | (MIT OR CC0-1.0) | node_modules/type-fest/package.json#license |
 | typescript | 5.9.3 | Apache-2.0 | node_modules/typescript/package.json#license |
-| undici | 6.27.0 | MIT | node_modules/node-gyp/node_modules/undici/package.json#license |
-| undici | 7.28.0 | MIT | node_modules/undici/package.json#license |
+| undici | 6.28.0 | MIT | node_modules/node-gyp/node_modules/undici/package.json#license |
+| undici | 7.29.0 | MIT | node_modules/undici/package.json#license |
 | undici-types | 6.21.0 | MIT | node_modules/undici-types/package.json#license |
 | undici-types | 7.18.2 | MIT | node_modules/electron/node_modules/undici-types/package.json#license |
 | universalify | 0.1.2 | MIT | node_modules/universalify/package.json#license |

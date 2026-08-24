@@ -23,6 +23,7 @@ import {
   waitForRenderSmoke,
 } from "./release/packaged-render-smoke-lib.mjs";
 import { isCdpTransportTimeout } from "./lib/cdp-outcome.mjs";
+import { assertSupportedNodeVersion } from "./runtime-version.mjs";
 
 const DEFAULT_APP = join(
   projectRoot,
@@ -34,12 +35,7 @@ const DEFAULT_APP = join(
 const DEFAULT_TIMEOUT_MS = 30_000;
 const PROFILE_PREFIX = "poker-training-pro-render-smoke-";
 
-const nodeMajor = Number.parseInt(process.versions.node.split(".")[0], 10);
-if (!Number.isInteger(nodeMajor) || nodeMajor < 22) {
-  throw new Error(
-    `Packaged renderer smoke requires Node.js 22 or newer; current runtime is ${process.versions.node}.`,
-  );
-}
+assertSupportedNodeVersion({ workflow: "Packaged renderer smoke" });
 
 export async function runPackagedRenderSmoke(options = {}) {
   const appPath = resolve(options.appPath ?? DEFAULT_APP);

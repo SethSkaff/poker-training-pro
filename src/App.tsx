@@ -378,6 +378,10 @@ export default function App() {
   const [runner, setRunner] = useState<TournamentRunner | null>(null);
   const [pendingPresentation, setPendingPresentation] =
     useState<PendingTournamentPresentation | null>(null);
+  // A pause may cancel AI work without changing the authoritative runner.
+  // This revision wakes the progression effect when play resumes at that same
+  // immutable runner boundary.
+  const [tournamentAdvanceRevision, setTournamentAdvanceRevision] = useState(0);
   // Legal reveal data belongs to the renderer's in-memory presentation state,
   // not the game model. It remains visible through a queued all-in runout and
   // is discarded as soon as that hand ends.
@@ -437,9 +441,9 @@ export default function App() {
     fromEventId: string;
     toEventId: string;
   } | null>(null);
-  // Worker-backed equity boundary: opponent Monte Carlo runs off the main
-  // thread. Decisions stay bit-for-bit deterministic with the synchronous path;
-  // a superseded/obsolete decision is cancelled and its stale result rejected.
+  // Shared equity boundary. A plain browser renderer uses the worker service;
+  // Electron currently selects its deterministic, capped in-thread fallback.
+  // Both paths feed the same async runner contract and produce identical work.
   const equityServiceRef = useRef<RationalEquityService | null>(null);
   const decisionAbortRef = useRef<{ aborted: boolean } | null>(null);
   const decisionPendingRef = useRef(false);
@@ -1102,7 +1106,8 @@ export default function App() {
       source.session.status === "complete" ||
       heroTournamentLegalActions(source) ||
       pendingPresentationRef.current ||
-      presentationAdvancePendingRef.current
+      presentationAdvancePendingRef.current ||
+      tournamentPausedAtRef.current !== null
     ) {
       return;
     }
@@ -1142,6 +1147,15 @@ export default function App() {
         })
         .finally(() => {
           presentationAdvancePendingRef.current = false;
+          if (decisionAbortRef.current === signal) {
+            decisionAbortRef.current = null;
+          }
+          // Resume can race the worker's cancellation rejection. If it did,
+          // the first wake-up observed `presentationAdvancePendingRef`; issue
+          // another after the cancelled request has fully settled.
+          if (signal.aborted && tournamentPausedAtRef.current === null) {
+            setTournamentAdvanceRevision((revision) => revision + 1);
+          }
         });
       return;
     }
@@ -1193,7 +1207,13 @@ export default function App() {
     }
     if (heroTournamentLegalActions(runner)) return;
     advanceTournamentPresentation();
-  }, [advanceTournamentPresentation, pendingPresentation, runner, screen]);
+  }, [
+    advanceTournamentPresentation,
+    pendingPresentation,
+    runner,
+    screen,
+    tournamentAdvanceRevision,
+  ]);
 
   useEffect(
     () => () => {
@@ -1208,10 +1228,10 @@ export default function App() {
     (isPaused: boolean) => {
       const nowMs = Date.now();
       if (isPaused) {
-        // A hidden/minimized table must not keep running Rational equity work
-        // in the background. The runner is intentionally left untouched, so
-        // resume returns to the exact same hero decision rather than silently
-        // applying an action that completed off-screen.
+        // Cancel pending browser-worker work and invalidate its eventual
+        // transition. Electron's in-thread fallback cannot be interrupted once
+        // entered, but it also cannot commit through this callback after an
+        // abort has been observed. The runner stays at its prior boundary.
         if (decisionAbortRef.current) decisionAbortRef.current.aborted = true;
         equityServiceRef.current?.cancelPending();
         tournamentPausedAtRef.current ??= nowMs;
@@ -1220,6 +1240,9 @@ export default function App() {
       const pausedAt = tournamentPausedAtRef.current;
       tournamentPausedAtRef.current = null;
       if (pausedAt === null) return;
+      // Non-timed career runners keep object identity across a pause, so they
+      // need an explicit progression wake-up at the frozen engine boundary.
+      setTournamentAdvanceRevision((revision) => revision + 1);
       const inactiveMs = Math.max(0, nowMs - pausedAt);
       if (inactiveMs === 0) return;
       setRunner((current) => {

@@ -14,9 +14,12 @@ settings, ratings, and timing history are stored locally on the device.
 
 ## Development
 
-Prerequisite: Node.js 22 or newer.
+Prerequisite: Node.js 22.12.0 or newer. The reproducible baseline is pinned in
+`.node-version` and `.nvmrc`; CI reads the same pin. npm workflows fail before
+loading Vite, Vitest, Electron, or release tooling when the runtime is too old.
 
 ```powershell
+npm run check:runtime
 npm install
 npm run dev
 ```

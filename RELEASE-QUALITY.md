@@ -1,6 +1,8 @@
 # Release-quality gate
 
-Run the deterministic release gate from a clean Node.js 22 installation:
+Run the deterministic release gate from a clean supported Node installation.
+CI uses the exact version in `.node-version`; every release command enforces
+the `>=22.12.0` contract before loading its tooling.
 
 ```powershell
 npm ci

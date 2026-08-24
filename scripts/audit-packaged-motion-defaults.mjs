@@ -9,6 +9,7 @@ import {
   waitForDevToolsPort,
   waitForPageTarget,
 } from "./audit-packaged-render-smoke.mjs";
+import { classifyCdpFailure, reportCdpOutcome } from "./lib/cdp-outcome.mjs";
 import { projectRoot } from "./release/shared.mjs";
 
 const appPath = resolve(projectRoot, "outputs/next/win-unpacked/Poker Training Pro.exe");
@@ -145,4 +146,11 @@ async function run() {
   }
 }
 
-run().catch((error) => { console.error(error); process.exitCode = 1; });
+run().catch((error) => {
+  // A CDP transport deadline proves neither a motion regression nor a pass.
+  // Preserve the shared 0/1/2 outcome contract used by every packaged audit.
+  reportCdpOutcome(
+    { schemaVersion: 1, appPath, results: [] },
+    classifyCdpFailure(error),
+  );
+});

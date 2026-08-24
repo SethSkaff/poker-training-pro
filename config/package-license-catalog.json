@@ -1197,19 +1197,6 @@
       },
       "repository": "git+https://github.com/toyobayashi/wasm-util.git",
       "tarball": "https://registry.npmjs.org/@tybys/wasm-util/-/wasm-util-0.10.3.tgz"
-    },
-    {
-      "name": "undici",
-      "version": "7.28.0",
-      "license": "MIT",
-      "evidence": {
-        "kind": "npm-registry-version-metadata",
-        "field": "license",
-        "value": "MIT",
-        "url": "https://registry.npmjs.org/undici/7.28.0"
-      },
-      "repository": "git+https://github.com/nodejs/undici.git",
-      "tarball": "https://registry.npmjs.org/undici/-/undici-7.28.0.tgz"
     }
   ]
 }

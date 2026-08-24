@@ -89,7 +89,7 @@ league remains the decision-level sentinel.
 ## Current boundary
 
 The application currently exposes one Rational implementation version
-(`rational-v2`) and one Normal implementation seeded as `normal-policy-v1`.
+(`rational-v4`) and one Normal implementation seeded as `normal-policy-v1`.
 Therefore the harness compares the current implementation against its frozen
 versioned report and compares all current Normal profiles; it cannot run an
 older executable policy implementation side-by-side because no policy registry

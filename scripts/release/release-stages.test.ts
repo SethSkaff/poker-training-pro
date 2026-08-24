@@ -46,6 +46,15 @@ describe("release verification stages", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it("generates ignored release evidence before validating document links", () => {
+    const names = stages.map((stage) => stage.name);
+    expect(
+      names.indexOf("Complete third-party dependency/asset audit generation"),
+    ).toBeLessThan(
+      names.indexOf("Versioned release-operations documentation gate"),
+    );
+  });
+
   it("passes script arguments after `--` for vite-node stages", () => {
     // vite-node consumes its own flags first; a bare `--check` after the
     // script path is silently eaten rather than reaching the script, so the

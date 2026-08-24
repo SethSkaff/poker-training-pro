@@ -205,6 +205,30 @@ describe("tournament director", () => {
       4,
     );
   });
+
+  it("ties a hand-for-hand elimination batch across table-local hand IDs", () => {
+    const state = createTournament(
+      "hand-for-hand-elimination",
+      AUTHENTIC_MAIN_EVENT_STRUCTURE,
+      entrants(12),
+      "hand-for-hand-seed",
+    );
+    state.handForHand = true;
+    const first = state.players.find((player) => player.tableId === state.tables[0].id);
+    const second = state.players.find((player) => player.tableId === state.tables[1].id);
+    if (!first?.tableId || !second?.tableId) throw new Error("Expected two occupied tables");
+    const records = [
+      { playerId: first.id, handId: "table-a-hand-19", tableId: first.tableId, startedHandWith: 900 },
+      { playerId: second.id, handId: "table-b-hand-23", tableId: second.tableId, startedHandWith: 4_000 },
+    ] as const;
+
+    const forward = recordEliminations(state, records);
+    const reverse = recordEliminations(state, [...records].reverse());
+    for (const result of [forward, reverse]) {
+      expect(result.players.find((player) => player.id === first.id)?.finishPlace).toBe(11);
+      expect(result.players.find((player) => player.id === second.id)?.finishPlace).toBe(11);
+    }
+  });
 });
 
 describe("information-set projection", () => {

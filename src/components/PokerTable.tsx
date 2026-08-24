@@ -92,6 +92,7 @@ import {
   type HeroFoldState,
 } from "../lib/heroFoldPresentation";
 import { PlayingCard } from "./PlayingCard";
+import { DecorativeSceneErrorBoundary } from "./DecorativeSceneErrorBoundary";
 import { PokerReferenceContent } from "./PokerReference";
 import {
   describeOpponentCharacter,
@@ -1734,9 +1735,23 @@ export function PokerTable({
   const [cameraZoom, setCameraZoom] = useState(0);
   const [activeCameraFrame, setActiveCameraFrame] = useState<ActiveCameraFrame | null>(null);
   const onCameraFrame = useCallback((frame: ActiveCameraFrame) => {
-    // Publish every renderer frame. A camera step smaller than the old
-    // epsilon can still move a close-lens numeral by several CSS pixels.
-    setActiveCameraFrame(frame);
+    // TableScene3D enriches the renderer pose with viewport dimensions, so it
+    // necessarily hands us a fresh object on every draw. Preserve the current
+    // identity when its numeric projection is unchanged: React can then bail
+    // out instead of rerendering the entire table at the scene frame rate.
+    // Actual interpolation steps still publish exactly, keeping DOM hit
+    // targets and accessible controls aligned with the rendered camera.
+    setActiveCameraFrame((current) =>
+      current &&
+      current.position.every((value, index) => value === frame.position[index]) &&
+      current.target.every((value, index) => value === frame.target[index]) &&
+      current.yaw === frame.yaw &&
+      current.fov === frame.fov &&
+      current.viewportWidth === frame.viewportWidth &&
+      current.viewportHeight === frame.viewportHeight
+        ? current
+        : frame,
+    );
   }, []);
   // Motion preferences govern *automatic* movement only.  A player turning
   // their view with the mouse is direct manipulation, so it must stay usable
@@ -4071,21 +4086,27 @@ export function PokerTable({
                 take the game away from a player whose device cannot draw it.
               */}
               {settings.spatialScene && (
-                <Suspense fallback={null}>
-                  <TableScene3D
-                    seats={sceneSnapshot.seats}
-                    pot={sceneSnapshot.pot}
-                    boardCards={sceneSnapshot.boardCards}
-                    cameraPan={sceneSnapshot.cameraPan}
-                    cameraView={sceneSnapshot.cameraView}
-                    cameraMotion={sceneSnapshot.cameraMotion}
-                    reducedMotion={sceneSnapshot.reducedMotion}
-                    snapshot={sceneSnapshot}
-                    suspended={paused}
-                    onAvailabilityChange={setSceneAvailability}
-                    onCameraFrame={onCameraFrame}
-                  />
-                </Suspense>
+                <DecorativeSceneErrorBoundary
+                  onFailure={() =>
+                    setSceneAvailability({ status: "failed", reason: "blocked" })
+                  }
+                >
+                  <Suspense fallback={null}>
+                    <TableScene3D
+                      seats={sceneSnapshot.seats}
+                      pot={sceneSnapshot.pot}
+                      boardCards={sceneSnapshot.boardCards}
+                      cameraPan={sceneSnapshot.cameraPan}
+                      cameraView={sceneSnapshot.cameraView}
+                      cameraMotion={sceneSnapshot.cameraMotion}
+                      reducedMotion={sceneSnapshot.reducedMotion}
+                      snapshot={sceneSnapshot}
+                      suspended={paused}
+                      onAvailabilityChange={setSceneAvailability}
+                      onCameraFrame={onCameraFrame}
+                    />
+                  </Suspense>
+                </DecorativeSceneErrorBoundary>
               )}
               {/*
                 Skip lives over the table, where the player is already looking

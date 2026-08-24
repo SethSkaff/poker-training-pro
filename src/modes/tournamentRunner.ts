@@ -843,11 +843,10 @@ export async function advanceTournamentRunnerOneStepAsync(
 
 /**
  * Deterministic async counterpart to {@link advanceTournamentRunnerToHero}. It
- * offloads the Rational equity Monte Carlo to `estimateEquity` (typically a
- * worker) so a large decision cannot block the UI thread. For a fixed seed and
- * work budget the resulting runner is bit-for-bit identical to the synchronous
- * loop. The sync loop is retained unchanged for replay, tests, and fallback
- * execution.
+ * delegates Rational equity Monte Carlo to `estimateEquity`. Plain browser
+ * renderers normally supply a worker; Electron currently supplies the capped
+ * synchronous fallback. For a fixed seed and work budget the resulting runner
+ * is bit-for-bit identical to the synchronous loop.
  */
 export async function advanceTournamentRunnerToHeroAsync(
   source: TournamentRunner,
@@ -889,8 +888,8 @@ export function applyHeroTournamentAction(
 /**
  * Async counterpart to {@link applyHeroTournamentAction}. It applies the hero's
  * committed action synchronously (no simulation), then advances through the
- * opponents off-thread via the equity worker. Deterministic and identical to
- * the synchronous path for a fixed seed.
+ * opponents through the injected estimator. It is off-thread only when that
+ * estimator is worker-backed, and remains deterministic for a fixed seed.
  */
 export async function applyHeroTournamentActionAsync(
   source: TournamentRunner,
@@ -911,7 +910,7 @@ export async function applyHeroTournamentActionAsync(
 
 export const CURRENT_ENGINE_VERSION = "tournament-session-v1";
 export const CURRENT_CONTENT_VERSION = "career-events-v1";
-export const CURRENT_POLICY_VERSION = "normal-rational-v2";
+export const CURRENT_POLICY_VERSION = "normal-rational-v4";
 
 /** Thrown when a replay was produced by a build that would reconstruct differently. */
 export class TournamentReplayVersionError extends Error {

@@ -67,6 +67,15 @@ describe("seated camera controls", () => {
     expect(table).not.toContain("if (cameraFixed && cameraPan !== 0)");
   });
 
+  it("does not rerender the React table for unchanged renderer camera frames", () => {
+    expect(table).toContain("setActiveCameraFrame((current) =>");
+    expect(table).toContain("current.position.every");
+    expect(table).toContain("current.target.every");
+    expect(table).toContain("current.viewportWidth === frame.viewportWidth");
+    expect(table).toContain("current.viewportHeight === frame.viewportHeight");
+    expect(table).toContain("? current");
+  });
+
   it("exposes sensitivity, zoom, and an automatic-camera-motion switch", () => {
     expect(settingsPanel).toContain("cameraSensitivity: value");
     expect(settingsPanel).toContain("cameraView: value");
