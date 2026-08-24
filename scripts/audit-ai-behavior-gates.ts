@@ -17,7 +17,9 @@
 
 import { measureAiBehavior, type AiBehaviorMetrics } from "./measure-ai-behavior";
 
-const SEEDS = 5;
+// Eight deterministic seeds keeps the pacing median from being dominated by
+// one early hero bust while remaining cheap enough for the release gate.
+const SEEDS = 8;
 
 interface Bound {
   label: string;
