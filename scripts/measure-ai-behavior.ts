@@ -49,9 +49,11 @@ const MS_PER_HAND = 75_000;
 export interface AiBehaviorMetrics {
   mode: "normal" | "rational";
   seeds: number;
-  /** Number of events that reached a terminal tournament state. */
+  /** Number of hero sessions that reached a terminal placement. */
   completedEvents: number;
-  /** Events stopped by a harness safety cap before the tournament finished. */
+  /** Number of measured fields that reached a single-winner state. */
+  fieldCompletedEvents: number;
+  /** Hero sessions stopped by a harness safety cap before placement. */
   cappedEvents: number;
   /** One explicit outcome timeline per requested seed. */
   eventTimelines: readonly AiBehaviorEventTimeline[];
@@ -74,6 +76,7 @@ export interface AiBehaviorMetrics {
   raiseOverPot: { mean: number; median: number };
   raiseOverEffectiveStack: { mean: number; median: number };
   handsToFirstElimination: { mean: number; median: number; samples: number };
+  fieldHandsToHeadsUp: { mean: number; median: number; samples: number };
   handsToHeadsUp: { mean: number; median: number; samples: number };
   handsToFinish: { mean: number; median: number; samples: number };
 }
@@ -88,9 +91,24 @@ export type AiBehaviorEventTermination = "finished" | "hand-cap" | "action-cap";
 export interface AiBehaviorEventTimeline {
   seed: string;
   handsPlayed: number;
+  /**
+   * The production session is hero-scoped: it closes as soon as the hero is
+   * eliminated or wins. It does not continue dealing hands after a hero bust,
+   * so `finished` below must not be read as "the six-player field is over".
+   */
+  completionScope: "hero-session";
   termination: AiBehaviorEventTermination;
+  /** True only when the core tournament director also has a winner. */
+  fieldFinished: boolean;
+  /** Active field size at the moment the hero session stopped or was capped. */
+  activePlayersAtTermination: number;
+  heroFinishPlace?: number;
   handsToFirstElimination?: number;
+  /** Field milestone, regardless of whether the measured hero is still live. */
+  fieldHandsToHeadsUp?: number;
+  /** Hero-scoped heads-up milestone; only set while the hero is active. */
   handsToHeadsUp?: number;
+  /** Hero-scoped terminal placement; not a full-field finish milestone. */
   handsToFinish?: number;
 }
 
@@ -127,6 +145,7 @@ interface EventAccumulator {
   raiseOverPot: number[];
   raiseOverStack: number[];
   handsToFirstElimination?: number;
+  fieldHandsToHeadsUp?: number;
   handsToHeadsUp?: number;
   handsToFinish?: number;
   timeline?: AiBehaviorEventTimeline;
@@ -331,7 +350,17 @@ function playEvent(
     ) {
       accumulator.handsToFirstElimination = handIndex;
     }
-    if (accumulator.handsToHeadsUp === undefined && remaining <= 2) {
+    const heroStillActive = session.tournament.players.some(
+      (player) => player.id === session.heroId && player.status === "active",
+    );
+    if (accumulator.fieldHandsToHeadsUp === undefined && remaining === 2) {
+      accumulator.fieldHandsToHeadsUp = handIndex;
+    }
+    if (
+      accumulator.handsToHeadsUp === undefined &&
+      remaining === 2 &&
+      heroStillActive
+    ) {
       accumulator.handsToHeadsUp = handIndex;
     }
     if (!freezeBlinds) {
@@ -348,13 +377,28 @@ function playEvent(
   // A safety cap is right-censored data, not a completed tournament. Never
   // report the cap itself as a finish milestone.
   if (termination === "finished") accumulator.handsToFinish = handIndex;
+  const hero = session.tournament.players.find(
+    (player) => player.id === session.heroId,
+  );
+  const activePlayersAtTermination = session.tournament.players.filter(
+    (player) => player.status === "active",
+  ).length;
   accumulator.timeline = {
     seed,
     handsPlayed: handIndex,
+    completionScope: "hero-session",
     termination,
+    fieldFinished: session.tournament.status === "complete",
+    activePlayersAtTermination,
+    ...(hero?.finishPlace === undefined
+      ? {}
+      : { heroFinishPlace: hero.finishPlace }),
     ...(accumulator.handsToFirstElimination === undefined
       ? {}
       : { handsToFirstElimination: accumulator.handsToFirstElimination }),
+    ...(accumulator.fieldHandsToHeadsUp === undefined
+      ? {}
+      : { fieldHandsToHeadsUp: accumulator.fieldHandsToHeadsUp }),
     ...(accumulator.handsToHeadsUp === undefined
       ? {}
       : { handsToHeadsUp: accumulator.handsToHeadsUp }),
@@ -377,8 +421,10 @@ function milestoneStats(values: number[]): AiBehaviorMilestoneStats {
 
 export interface AiBehaviorTimelineSummary {
   completedEvents: number;
+  fieldCompletedEvents: number;
   cappedEvents: number;
   handsToFirstElimination: AiBehaviorMilestoneStats;
+  fieldHandsToHeadsUp: AiBehaviorMilestoneStats;
   handsToHeadsUp: AiBehaviorMilestoneStats;
   handsToFinish: AiBehaviorMilestoneStats;
 }
@@ -393,7 +439,10 @@ export function summarizeEventTimelines(
 ): AiBehaviorTimelineSummary {
   const values = (key: keyof Pick<
     AiBehaviorEventTimeline,
-    "handsToFirstElimination" | "handsToHeadsUp" | "handsToFinish"
+    | "handsToFirstElimination"
+    | "fieldHandsToHeadsUp"
+    | "handsToHeadsUp"
+    | "handsToFinish"
   >) =>
     timelines.flatMap((timeline) =>
       timeline[key] === undefined ? [] : [timeline[key] as number],
@@ -402,10 +451,14 @@ export function summarizeEventTimelines(
     completedEvents: timelines.filter(
       (timeline) => timeline.termination === "finished",
     ).length,
+    fieldCompletedEvents: timelines.filter(
+      (timeline) => timeline.fieldFinished,
+    ).length,
     cappedEvents: timelines.filter(
       (timeline) => timeline.termination !== "finished",
     ).length,
     handsToFirstElimination: milestoneStats(values("handsToFirstElimination")),
+    fieldHandsToHeadsUp: milestoneStats(values("fieldHandsToHeadsUp")),
     handsToHeadsUp: milestoneStats(values("handsToHeadsUp")),
     handsToFinish: milestoneStats(values("handsToFinish")),
   };
@@ -458,6 +511,7 @@ export function measureAiBehavior(options: {
     mode: options.mode,
     seeds: seedCount,
     completedEvents: timelineSummary.completedEvents,
+    fieldCompletedEvents: timelineSummary.fieldCompletedEvents,
     cappedEvents: timelineSummary.cappedEvents,
     eventTimelines: timelines,
     maxRaiseChain: chains.length ? Math.max(...chains) : 0,
@@ -501,6 +555,7 @@ export function measureAiBehavior(options: {
       median: median(raiseOverStack),
     },
     handsToFirstElimination: timelineSummary.handsToFirstElimination,
+    fieldHandsToHeadsUp: timelineSummary.fieldHandsToHeadsUp,
     handsToHeadsUp: timelineSummary.handsToHeadsUp,
     handsToFinish: timelineSummary.handsToFinish,
   };

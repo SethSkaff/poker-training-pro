@@ -110,17 +110,26 @@ which.
 
 | Harness | Question it answers | Standing |
 |---|---|---|
-| `measure-ai-behavior.ts` → `audit-ai-behavior-gates.ts` | Does the action mix over whole tournaments stay inside documented bands? | **Release gate.** Runs in `run-release-verification.mjs`. |
+| `measure-ai-behavior.ts` → `audit-ai-behavior-gates.ts` | Does the action mix over hero-scoped tournament sessions stay inside documented bands? | **Release gate.** Runs in `run-release-verification.mjs`. |
 | `measure-exploitability.ts` → `audit-exploitability-gates.ts` | Can a crude fixed counter-strategy beat the table? | **Release gate.** Runs in `run-release-verification.mjs`. |
 | `critic-harness.ts` → `report-critic-harness.ts` | Does a hand *read* as something a person would do? | **Research only.** Deliberately not a gate; a test asserts it stays out of release verification. |
 
 ### Behavior gates (E14-001)
 
-Whole-tournament statistics at realistic 300 BB depth: raise-chain length,
-aggression mix, all-in rates, raise sizing, and pacing. Every bound carries the
-value measured when it was set and the reason it exists. This is what caught the
-2026-07-25 defect — a 631-action raise chain produced by decisions that each
-looked defensible in isolation.
+Hero-session statistics at realistic 300 BB depth: raise-chain length,
+aggression mix, all-in rates, raise sizing, and pacing. `tournamentSession`
+closes when the measured hero busts or wins; it does not play the remaining
+field after a hero bust. The measurement timeline records both the hero-session
+terminal state and whether the core field also reached a single winner, so a
+hero finish is never misreported as full-tournament completion. Every bound
+carries the value measured when it was set and the reason it exists. This is
+what caught the 2026-07-25 defect — a 631-action raise chain produced by
+decisions that each looked defensible in isolation.
+
+The report keeps two heads-up milestones: field heads-up (exactly two active
+players) and hero heads-up (the same state with the measured hero still active).
+A hero eliminated in the hand that creates a two-player field contributes only
+to the field milestone, not to the surviving-hero pacing statistic.
 
 ### Exploitability gates (E11-004)
 
