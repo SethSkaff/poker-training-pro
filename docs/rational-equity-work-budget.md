@@ -31,18 +31,20 @@ during an asynchronous request cannot change later samples.
 | Runtime | Estimator used by live progression | UI-thread consequence |
 | --- | --- | --- |
 | Browser renderer without `window.desktop` | Vite module Web Worker | Monte Carlo runs off the renderer thread. |
-| Electron renderer with the desktop bridge, including the packaged Windows app | Deterministic synchronous fallback | The bounded Monte Carlo runs on the renderer thread. |
-| Unit tests or runtimes without `Worker` | Synchronous fallback unless a worker factory is injected | The calling thread performs the work. |
+| Electron renderer with the desktop bridge, including the packaged Windows app | Deterministic cooperatively sliced fallback | Monte Carlo remains on the renderer thread but yields a macrotask between fixed simulation-count slices. |
+| Unit tests or runtimes without `Worker` | Cooperatively sliced fallback unless a worker factory or explicit synchronous estimator is injected | The calling thread performs bounded slices and yields between them. |
 
 Electron takes the fallback deliberately. Its sandboxed module-worker bootstrap
 currently emits a `sandbox_bundle` `startupData` error in packaged builds. The
 service therefore does not attempt a worker whenever the desktop bridge is
-present. This avoids a known-broken bootstrap, but it also means the packaged
-app cannot yet claim complete UI-thread isolation.
+present. This avoids a known-broken bootstrap. The fallback now yields between
+deterministic slices, so painting, lifecycle IPC, and cancellation can proceed,
+but the packaged app still cannot claim complete UI-thread isolation.
 
 Both execution paths use the same serializable request and estimator state
 machine. For fixed public information, legal actions, seed, simulation count,
-and slice size, worker and synchronous results are bit-for-bit identical.
+and slice size, worker, cooperative, and synchronous results are bit-for-bit
+identical.
 
 ## Cancellation, staleness, and persistence
 
@@ -56,11 +58,12 @@ The tournament runner also checks an abort signal before applying an awaited
 policy result. Pausing or disposing the table invalidates the current worker
 request, leaving the authoritative runner at the previous committed boundary.
 
-The synchronous Electron fallback is importantly different: its estimate
-finishes in the call that starts it, before another renderer event can request
-cancellation. `cancelPending()` therefore cannot preempt work already executing
-on that path. The 60-simulation live budget and 1,200 ceiling bound the exposure,
-but neither is a substitute for moving the packaged path off-thread.
+The Electron fallback observes cancellation only between completed slices, not
+inside a slice. `cancelPending()` rejects the obsolete request immediately; its
+cooperative estimator sees the cancelled token at its next yield and stops.
+The 60-simulation live budget, 32-simulation maximum slice, and 1,200 ceiling
+bound the remaining per-slice renderer exposure, but they are not a substitute
+for moving the packaged path off-thread.
 
 No partially completed Monte Carlo state or worker token is persisted. Saves
 and replays retain the deterministic runner inputs and policy simulation count;
@@ -80,6 +83,7 @@ The Rational and equity-service suites verify:
 - identical fixed-seed decision, distribution, metrics, ranges, explanation,
   and audit across the async boundary;
 - explicit cancellation, supersession, and late-result rejection;
+- cooperative fallback yielding and cancellation between slices;
 - tournament-runner aborts do not apply an obsolete awaited decision; and
 - frozen bot-league and replay compatibility gates remain deterministic.
 

@@ -844,9 +844,9 @@ export async function advanceTournamentRunnerOneStepAsync(
 /**
  * Deterministic async counterpart to {@link advanceTournamentRunnerToHero}. It
  * delegates Rational equity Monte Carlo to `estimateEquity`. Plain browser
- * renderers normally supply a worker; Electron currently supplies the capped
- * synchronous fallback. For a fixed seed and work budget the resulting runner
- * is bit-for-bit identical to the synchronous loop.
+ * renderers normally supply a worker; Electron supplies the capped,
+ * cooperatively sliced fallback. For a fixed seed and work budget the
+ * resulting runner is bit-for-bit identical to the synchronous loop.
  */
 export async function advanceTournamentRunnerToHeroAsync(
   source: TournamentRunner,

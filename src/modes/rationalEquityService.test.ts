@@ -232,6 +232,28 @@ describe("rational equity service determinism", () => {
     });
     expect(async).toEqual(sync);
   });
+
+  it("cooperatively yields and can cancel in-thread work between deterministic slices", async () => {
+    const service = createRationalEquityService();
+    const request = {
+      informationSet: makeSpot(),
+      legalActions: facingBetLegal(makeSpot()),
+      seed: "cooperative-fallback",
+      simulations: 1_200,
+      simulationsPerSlice: 8,
+    };
+    let resolved = false;
+    const pending = service.estimate(request);
+    void pending.then(() => {
+      resolved = true;
+    }, () => undefined);
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(resolved).toBe(false);
+    service.cancelPending();
+    await expect(pending).rejects.toBeInstanceOf(CancelledEquityRequestError);
+    service.dispose();
+  });
 });
 
 describe("rational equity service cancellation and staleness", () => {

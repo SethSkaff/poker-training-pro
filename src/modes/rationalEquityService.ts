@@ -1,5 +1,6 @@
 import {
   estimateRangeEquity,
+  estimateRangeEquitySliced,
   type EquityEstimate,
   type EquityEstimator,
   type EquityRequest,
@@ -67,6 +68,14 @@ export interface CreateRationalEquityServiceOptions {
   /** Synchronous fallback; defaults to the deterministic in-thread estimator. */
   synchronousEstimate?: (request: EquityRequest) => EquityEstimate;
   /**
+   * Injectable cooperative fallback. Production uses deterministic simulation
+   * slices so runtimes without a Worker do not monopolize the renderer thread.
+   */
+  fallbackEstimate?: (
+    request: EquityRequest,
+    isCancelled: () => boolean,
+  ) => EquityEstimate | Promise<EquityEstimate>;
+  /**
    * When true (the default), a single pending request is enforced: dispatching
    * a new request supersedes and rejects the previous one with
    * {@link StaleEquityRequestError}. This mirrors live tournament progression,
@@ -91,12 +100,36 @@ const defaultSynchronousEstimate = (request: EquityRequest): EquityEstimate =>
     { simulationsPerSlice: request.simulationsPerSlice },
   );
 
+const defaultFallbackEstimate: NonNullable<
+  CreateRationalEquityServiceOptions["fallbackEstimate"]
+> = (request, isCancelled) =>
+  estimateRangeEquitySliced(
+    request.informationSet,
+    request.legalActions,
+    request.seed,
+    request.simulations,
+    {
+      simulationsPerSlice: request.simulationsPerSlice,
+      yieldControl: async () => {
+        // A macrotask lets Electron paint, process lifecycle IPC, and cancel a
+        // stale decision. Scheduling never feeds the seeded estimator.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (isCancelled()) throw new CancelledEquityRequestError();
+      },
+    },
+  );
+
 export function createRationalEquityService(
   options: CreateRationalEquityServiceOptions = {},
 ): RationalEquityService {
   const supersedePending = options.supersedePending ?? true;
   const synchronousEstimate =
     options.synchronousEstimate ?? defaultSynchronousEstimate;
+  const fallbackEstimate =
+    options.fallbackEstimate ??
+    (options.synchronousEstimate
+      ? (request: EquityRequest) => synchronousEstimate(request)
+      : defaultFallbackEstimate);
   const worker = options.createWorker ? options.createWorker() : null;
   const pending = new Map<number, PendingRequest>();
   let nextToken = 1;
@@ -148,16 +181,41 @@ export function createRationalEquityService(
     nextToken += 1;
 
     if (!worker) {
-      // In-thread fallback (tests or no worker support). A newer
-      // request cannot arrive before this resolves, so no staleness is possible.
+      // Cooperative in-thread fallback for Electron and runtimes without
+      // Worker support. It uses the same deterministic simulation slices as
+      // the worker, while this pending-token boundary rejects stale results.
       supersede(() => new StaleEquityRequestError());
-      try {
-        return Promise.resolve(synchronousEstimate(request));
-      } catch (error) {
-        return Promise.reject(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
+      return new Promise<EquityEstimate>((resolve, reject) => {
+        const entry: PendingRequest = {
+          token,
+          resolve,
+          reject,
+          settled: false,
+        };
+        pending.set(token, entry);
+        void Promise.resolve()
+          .then(() =>
+            fallbackEstimate(
+              request,
+              () => disposed || !pending.has(token),
+            ),
+          )
+          .then(
+            (estimate) => {
+              const current = pending.get(token);
+              if (current) settle(current, () => current.resolve(estimate));
+            },
+            (error) => {
+              const current = pending.get(token);
+              if (!current) return;
+              settle(current, () =>
+                current.reject(
+                  error instanceof Error ? error : new Error(String(error)),
+                ),
+              );
+            },
+          );
+      });
     }
 
     supersede(() => new StaleEquityRequestError());
@@ -197,16 +255,16 @@ export function createRationalEquityService(
 
 /**
  * Constructs the renderer service. A browser without the Electron desktop
- * bridge receives a Vite module worker; Electron deliberately receives the
- * deterministic in-thread fallback until its packaged sandbox can bootstrap
- * that worker reliably. Tests and runtimes without `Worker` also fall back.
+ * bridge receives a Vite module worker. Electron uses the deterministic,
+ * cooperatively sliced fallback until its packaged sandbox can bootstrap that
+ * worker reliably. Tests and runtimes without `Worker` also fall back.
  */
 export function createDesktopEquityService(): RationalEquityService {
   // Electron's hardened renderer uses Chromium's sandbox. Its module Worker
   // bootstrap currently emits a sandbox_bundle startupData error in packaged
   // builds, so every renderer exposing the desktop bridge takes the explicit
-  // fallback. It is deterministic and strictly capped, but still occupies the
-  // renderer thread; browser-only builds keep the worker-backed boundary.
+  // fallback. It is deterministic, strictly capped, and yields between fixed
+  // simulation-count slices; browser-only builds keep the worker boundary.
   const sandboxedElectronRenderer =
     typeof window !== "undefined" && Boolean(window.desktop);
   if (typeof Worker === "undefined" || sandboxedElectronRenderer) {

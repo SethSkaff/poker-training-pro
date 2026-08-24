@@ -15,6 +15,11 @@ const path = require("node:path");
 
 const AUTOSAVE_FORMAT = "poker-training-pro-autosave";
 const AUTOSAVE_VERSION = 1;
+// Match the reviewed import/export ceilings. IPC is an untrusted boundary even
+// with context isolation: reject oversized structured data before parsing,
+// checksumming, rotating, or writing it in the main process.
+const MAX_AUTOSAVE_PAYLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_AUTOSAVE_REPLAY_BYTES = 2 * 1024 * 1024;
 const CURRENT_FILENAME = "autosave.json";
 const PREVIOUS_FILENAME = "autosave.previous.json";
 const LAST_KNOWN_GOOD_FILENAME = "autosave.last-known-good.json";
@@ -44,6 +49,9 @@ function assertSavePayload(serializedSave) {
   if (typeof serializedSave !== "string" || serializedSave.length === 0) {
     throw new TypeError("Autosave payload must be a non-empty JSON string");
   }
+  if (Buffer.byteLength(serializedSave, "utf8") > MAX_AUTOSAVE_PAYLOAD_BYTES) {
+    throw new TypeError("Autosave payload is too large");
+  }
   let parsed;
   try {
     parsed = JSON.parse(serializedSave);
@@ -63,8 +71,15 @@ function assertSavePayload(serializedSave) {
 
 function sanitizeReplayMetadata(metadata) {
   if (metadata === undefined) return undefined;
+  if (!isRecord(metadata)) {
+    throw new TypeError("Replay metadata must be an object");
+  }
   assertJsonSafe(metadata, new Set());
-  return JSON.parse(JSON.stringify(metadata));
+  const serialized = JSON.stringify(metadata);
+  if (Buffer.byteLength(serialized, "utf8") > MAX_AUTOSAVE_REPLAY_BYTES) {
+    throw new TypeError("Replay metadata is too large");
+  }
+  return JSON.parse(serialized);
 }
 
 function assertJsonSafe(value, ancestors) {
@@ -535,6 +550,8 @@ function withCode(message, code) {
 module.exports = {
   AUTOSAVE_FORMAT,
   AUTOSAVE_VERSION,
+  MAX_AUTOSAVE_PAYLOAD_BYTES,
+  MAX_AUTOSAVE_REPLAY_BYTES,
   CURRENT_FILENAME,
   LAST_KNOWN_GOOD_FILENAME,
   PREVIOUS_FILENAME,

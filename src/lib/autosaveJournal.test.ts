@@ -15,6 +15,8 @@ const require = createRequire(import.meta.url);
 const saveStore = require("../../electron/save-store.cjs") as {
   CURRENT_FILENAME: string;
   PREVIOUS_FILENAME: string;
+  MAX_AUTOSAVE_PAYLOAD_BYTES: number;
+  MAX_AUTOSAVE_REPLAY_BYTES: number;
   createAutosaveRecord(
     serializedSave: string,
     options: Record<string, unknown>,
@@ -186,5 +188,27 @@ describe("crash-safe tournament autosave generations", () => {
         replay: { players: [{ holeCards: ["As", "Ah"] }] },
       }),
     ).toThrow(/cannot contain holeCards/i);
+  });
+
+  it("rejects oversized save and replay values at the main-process journal boundary", () => {
+    const oversizedSave = JSON.stringify({
+      format: "poker-training-pro-save",
+      version: 1,
+      data: { padding: "x".repeat(saveStore.MAX_AUTOSAVE_PAYLOAD_BYTES) },
+    });
+    expect(() =>
+      saveStore.createAutosaveRecord(oversizedSave, { boundary: "action" }),
+    ).toThrow(/payload is too large/i);
+
+    expect(() =>
+      saveStore.createAutosaveRecord(save("Replay bounded"), {
+        boundary: "action",
+        replay: {
+          publicActionLog: [
+            "x".repeat(saveStore.MAX_AUTOSAVE_REPLAY_BYTES),
+          ],
+        },
+      }),
+    ).toThrow(/replay metadata is too large/i);
   });
 });

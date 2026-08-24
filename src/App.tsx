@@ -442,7 +442,7 @@ export default function App() {
     toEventId: string;
   } | null>(null);
   // Shared equity boundary. A plain browser renderer uses the worker service;
-  // Electron currently selects its deterministic, capped in-thread fallback.
+  // Electron selects its deterministic, cooperatively sliced in-thread fallback.
   // Both paths feed the same async runner contract and produce identical work.
   const equityServiceRef = useRef<RationalEquityService | null>(null);
   const decisionAbortRef = useRef<{ aborted: boolean } | null>(null);
@@ -1228,10 +1228,9 @@ export default function App() {
     (isPaused: boolean) => {
       const nowMs = Date.now();
       if (isPaused) {
-        // Cancel pending browser-worker work and invalidate its eventual
-        // transition. Electron's in-thread fallback cannot be interrupted once
-        // entered, but it also cannot commit through this callback after an
-        // abort has been observed. The runner stays at its prior boundary.
+        // Cancel pending worker or cooperative fallback work and invalidate its
+        // eventual transition. Electron observes cancellation at the next
+        // deterministic slice boundary. The runner stays at its prior boundary.
         if (decisionAbortRef.current) decisionAbortRef.current.aborted = true;
         equityServiceRef.current?.cancelPending();
         tournamentPausedAtRef.current ??= nowMs;
