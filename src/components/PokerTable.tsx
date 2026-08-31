@@ -1301,6 +1301,36 @@ export function pokerMathQuestionSegments(
   return segments;
 }
 
+/**
+ * Training actions are judged by EV metadata, but their availability comes
+ * from the visible state. Keeping those concerns separate lets a player try a
+ * fold, call/check, raise, or all-in even when the authored rating omits that
+ * branch; the grader can then mark the choice as wrong or unmodeled.
+ */
+export function isTrainingActionLegal(
+  scenario: RatedTrainingScenario,
+  action: PokerAction,
+): boolean {
+  const hero = scenario.players.find((player) => player.seat === scenario.heroSeat);
+  const heroStack = hero?.stack ?? 0;
+  const amountToCall = scenario.amountToCall;
+
+  switch (action) {
+    case "fold":
+      return true;
+    case "check":
+      return amountToCall === 0;
+    case "call":
+      return amountToCall > 0 && heroStack >= amountToCall;
+    case "raise":
+      return scenario.minimumRaise > 0 && heroStack > amountToCall;
+    case "all-in":
+      return heroStack > 0;
+    default:
+      return false;
+  }
+}
+
 function MathPanel({
   scenario,
   answer,
@@ -2060,8 +2090,6 @@ export function PokerTable({
   // coach detect the first Elo change once a graded attempt resolves.
   const eloBaseline = useRef(progress.decisionElo + progress.mathElo);
   const ratedScenario = scenario as RatedTrainingScenario;
-  const trainingMeta =
-    "training" in scenario ? scenario.training : undefined;
   const cameraStep =
     settings.cameraSensitivity === "low"
       ? 0.6
@@ -2607,10 +2635,7 @@ export function PokerTable({
       ) {
         return;
       }
-      if (
-        mode === "training" &&
-        trainingMeta?.actionEvs[nextAction] === undefined
-      ) {
+      if (mode === "training" && !isTrainingActionLegal(ratedScenario, nextAction)) {
         setActionError(formatMessage("table.error.actionUnavailable"));
         gameAudio.play("error");
         return;
@@ -2781,7 +2806,6 @@ export function PokerTable({
       raiseAmount,
       scenario,
       speed,
-      trainingMeta,
       tournament,
       isTwoDMode,
       offerPrompt,
@@ -2798,8 +2822,8 @@ export function PokerTable({
     ) => {
       const raiseAvailable =
         mode === "training"
-          ? trainingMeta?.actionEvs.raise !== undefined ||
-            trainingMeta?.actionEvs["all-in"] !== undefined
+          ? isTrainingActionLegal(scenario as RatedTrainingScenario, "raise") ||
+            isTrainingActionLegal(scenario as RatedTrainingScenario, "all-in")
           : Boolean(
               tournament?.legalActions.raise ||
                 tournament?.legalActions.bet ||
@@ -2860,8 +2884,8 @@ export function PokerTable({
           if (
             !action &&
             (mode === "training"
-              ? trainingMeta?.actionEvs.raise !== undefined ||
-                trainingMeta?.actionEvs["all-in"] !== undefined
+              ? isTrainingActionLegal(scenario as RatedTrainingScenario, "raise") ||
+                isTrainingActionLegal(scenario as RatedTrainingScenario, "all-in")
               : Boolean(
                   tournament?.legalActions.raise ||
                     tournament?.legalActions.bet ||
@@ -2997,7 +3021,6 @@ export function PokerTable({
     scenario.heroSeat,
     scenario.players,
     settings.controlBindings,
-    trainingMeta,
     tournament?.legalActions,
     cameraStep,
   ]);
@@ -3225,8 +3248,8 @@ export function PokerTable({
   );
   const canRaise =
     mode === "training"
-      ? trainingMeta?.actionEvs.raise !== undefined ||
-        trainingMeta?.actionEvs["all-in"] !== undefined
+      ? isTrainingActionLegal(ratedScenario, "raise") ||
+        isTrainingActionLegal(ratedScenario, "all-in")
       : Boolean(
           tournament?.legalActions.raise ||
             tournament?.legalActions.bet ||
@@ -4708,7 +4731,7 @@ export function PokerTable({
                 type="button"
                 disabled={
                   mode === "training"
-                    ? trainingMeta?.actionEvs.fold === undefined
+                    ? !isTrainingActionLegal(ratedScenario, "fold")
                     : !tournament?.legalActions.fold || presentationActive
                 }
                 onClick={() => handleAction("fold")}
@@ -4721,7 +4744,7 @@ export function PokerTable({
                 type="button"
                 disabled={
                   mode === "training"
-                    ? trainingMeta?.actionEvs[callAction] === undefined
+                    ? !isTrainingActionLegal(ratedScenario, callAction)
                     : callAction === "call"
                       ? !tournament?.legalActions.call || presentationActive
                       : !tournament?.legalActions.check || presentationActive

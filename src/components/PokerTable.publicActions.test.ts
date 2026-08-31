@@ -1,14 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
+  isTrainingActionLegal,
   presentationEventLabel,
   publicActionLabel,
   publicPresentationSound,
   seatPresentationUpdate,
 } from "./PokerTable";
+import { trainingScenarios } from "../data/trainingScenarios";
 
 const handId = "hand-public-actions";
 
 describe("public tournament action presentation", () => {
+  it("keeps Training Lab moves available independently of EV coverage", () => {
+    const scenario = trainingScenarios.find(
+      (item) => item.id === "turn-spr-commitment",
+    );
+
+    expect(scenario).toBeDefined();
+    expect(scenario?.training.actionEvs.fold).toBeUndefined();
+    expect(isTrainingActionLegal(scenario!, "fold")).toBe(true);
+    expect(isTrainingActionLegal(scenario!, "check")).toBe(true);
+    expect(isTrainingActionLegal(scenario!, "raise")).toBe(true);
+    expect(isTrainingActionLegal(scenario!, "all-in")).toBe(true);
+  });
+
   it.each([
     ["fold", "Folds"],
     ["check", "Checks"],

@@ -38,7 +38,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
       "Calling needs 40% equity. AKo has about 46% against the stated range, making the call profitable in chip EV.",
     mathQuestion: {
       topic: "pot-odds",
-      prompt: "What equity percentage is required to call 1,800 into a final pot of 4,500?",
+      prompt: "What equity percentage is required to call at the current price?",
       unit: "%",
       correctValue: 40,
       tolerance: 1.5,
@@ -137,7 +137,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
     mathQuestion: {
       topic: "implied-odds",
       prompt:
-        "Using the practical 12-to-1 set-mining guideline, how many additional chips beyond the current 1,700 final pot must you expect to win to justify the 600 call?",
+        "Using the practical set-mining guideline, how many additional chips beyond the current final pot must you expect to win to justify the call?",
       unit: "chips",
       correctValue: 5500,
       tolerance: 300,
@@ -242,7 +242,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
     mathQuestion: {
       topic: "outs",
       prompt:
-        "You have eight nominal open-ended straight outs. If both heart outs count as half-outs, how many clean-equivalent outs do you have?",
+        "After discounting the risky heart outs, how many clean-equivalent outs remain?",
       unit: "outs",
       correctValue: 7,
       tolerance: 0,
@@ -293,7 +293,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
       "A range may need to continue often, but this specific low-equity combination is an appropriate fold within that range.",
     mathQuestion: {
       topic: "minimum-defense-frequency",
-      prompt: "Against a 3,000 bet into 4,500, what is the theoretical minimum defense frequency?",
+      prompt: "Against the current bet, what is the theoretical minimum defense frequency?",
       unit: "%",
       correctValue: 60,
       tolerance: 1.5,
@@ -398,7 +398,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
       "The effective SPR is only 0.6. Against the stated top-pair-heavy continuing range, moving all-in captures more value than checking.",
     mathQuestion: {
       topic: "stack-to-pot-ratio",
-      prompt: "What is the effective stack-to-pot ratio with 6,000 behind and a 10,000 pot?",
+      prompt: "What is the effective stack-to-pot ratio?",
       unit: "ratio",
       correctValue: 0.6,
       tolerance: 0.05,
@@ -451,7 +451,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
     mathQuestion: {
       topic: "expected-value",
       prompt:
-        "Ignoring draw equity for this sub-calculation, what is the immediate-fold EV of betting 6,000 into 8,000 if Villain folds 45%?",
+        "Ignoring draw equity for this sub-calculation, what is the immediate-fold EV of the modeled bet at the stated fold frequency?",
       unit: "chips",
       correctValue: 300,
       tolerance: 150,
@@ -504,7 +504,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
       "Calling needs 25% wins and the stated range bluffs 30%, so the bluff-catch is profitable.",
     mathQuestion: {
       topic: "pot-odds",
-      prompt: "What equity is required to call 2,000 when the pot before your call is 6,000?",
+      prompt: "What equity is required to call at the current river price?",
       unit: "%",
       correctValue: 25,
       tolerance: 1.5,
@@ -557,7 +557,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
       "The blocker improves the composition of Villain's remaining range, and the modeled fold frequency exceeds the half-pot bluff threshold.",
     mathQuestion: {
       topic: "expected-value",
-      prompt: "What fold percentage makes a 6,000 pure bluff into a 12,000 pot break even?",
+      prompt: "What fold percentage makes the modeled pure-bluff EV break even?",
       unit: "%",
       correctValue: 33.33,
       tolerance: 1.5,
@@ -613,7 +613,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
     mathQuestion: {
       topic: "tournament-pressure",
       prompt:
-        "The chip-EV call threshold is 38.89%, while the ICM threshold is 48%. How many percentage points of risk premium does ICM add?",
+        "How many percentage points of risk premium does the stated ICM threshold add to the current chip-EV call threshold?",
       unit: "%",
       correctValue: 9.11,
       tolerance: 1,

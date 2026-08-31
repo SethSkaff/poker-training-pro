@@ -93,6 +93,24 @@ describe("training scenario release-quality audit", () => {
     expect(scenario?.training.actionEvs.call).toBeTypeOf("number");
   });
 
+  it("keeps the stack-to-pot-ratio question focused on the displayed context", () => {
+    const scenario = trainingScenarios.find(
+      (item) => item.id === "turn-spr-commitment",
+    );
+
+    expect(scenario).toBeDefined();
+    expect(scenario?.mathQuestion.prompt).toBe(
+      "What is the effective stack-to-pot ratio?",
+    );
+    expect(scenario?.mathQuestion.prompt).not.toMatch(/\d/);
+  });
+
+  it("keeps every math prompt contextual instead of repeating numeric table inputs", () => {
+    for (const scenario of trainingScenarios) {
+      expect(scenario.mathQuestion.prompt, scenario.id).not.toMatch(/\d/);
+    }
+  });
+
   it("teaches from the decision-time information rather than the runout", () => {
     for (const scenario of trainingScenarios) {
       const teachingCopy = [
