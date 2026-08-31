@@ -58,6 +58,10 @@ import {
   type RationalPolicyInput,
   type RationalTournamentContext,
 } from "./rational";
+import {
+  TWO_D_FEMALE_NAMES,
+  TWO_D_MALE_NAMES,
+} from "../lib/twoDAvatarModels";
 
 export const SESSION_TABLE_SIZE = 6;
 export const SESSION_FORMAT = "compressed-six-seat" as const;
@@ -194,17 +198,11 @@ export interface SessionPolicyOptions {
 
 /**
  * Names are composed from independent given/family parts rather than a fixed
- * list, so the identity pool is large enough that a career does not cycle back
- * to the same five faces. Both lists are deliberately mixed in origin and
- * carry no gender or nationality signal that the appearance derivation could
- * pick up — appearance is keyed to the resulting id and nothing else.
+ * list, so a career does not cycle back to the same five faces. The given-name
+ * pool is the same authored 100-player library used by the 2D table: 75 male
+ * names and 25 female names. That keeps tournament names and portraits aligned.
  */
-const GIVEN_NAMES = [
-  "Alex", "Blair", "Casey", "Devon", "Emery", "Frankie",
-  "Gale", "Harper", "Indigo", "Jordan", "Kai", "Lennon",
-  "Marlow", "Noor", "Onyx", "Paz", "Quinn", "Rio",
-  "Sasha", "Tam", "Umi", "Vesper", "Wren", "Zuri",
-] as const;
+const GIVEN_NAMES = [...TWO_D_MALE_NAMES, ...TWO_D_FEMALE_NAMES] as const;
 
 const FAMILY_NAMES = [
   "Moreno", "Woods", "Park", "Ellis", "Ross", "Vale",

@@ -86,6 +86,7 @@ function playerIdsForEvent(event: TournamentPresentationEvent): readonly string[
   if (event.kind === "hole-cards-dealt") return event.playerIds;
   if (event.kind === "blinds-posted") return event.posts.map((post) => post.playerId);
   if (event.kind === "bets-collected") return event.collections.map((collection) => collection.playerId);
+  if (event.kind === "cards-collected") return event.playerIds;
   return [];
 }
 

@@ -12,7 +12,7 @@ import {
 import { classifyCdpFailure, reportCdpOutcome } from "./lib/cdp-outcome.mjs";
 import { projectRoot } from "./release/shared.mjs";
 
-const appPath = resolve(projectRoot, "outputs/next/win-unpacked/Poker Training Pro.exe");
+const appPath = resolve(projectRoot, "outputs/current/win-unpacked/Poker Training Pro.exe");
 const timeoutMs = 45_000;
 
 const settings = {

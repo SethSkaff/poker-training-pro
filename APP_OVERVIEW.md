@@ -278,7 +278,7 @@ available as an always-on poker rules/math aid.
   packaging inputs.
 - `scripts/`, `config/`, and `docs/` — repeatable audits, release policy, asset
   rights, architecture, and support documentation.
-- `outputs/current` — approved runnable package; `outputs/next` — one candidate.
+- `outputs/current` — approved runnable package used by the desktop shortcut.
 
 The current desktop source and package are feature-complete for the intended v1
 training-game scope, but the product is not a public release. Remaining

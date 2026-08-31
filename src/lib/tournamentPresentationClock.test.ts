@@ -67,6 +67,14 @@ describe("tournament presentation clock", () => {
 
     expect(presentationEventDelayMs(deal, 1, settings)).toBe(2_000);
     expect(presentationEventDelayMs(fold, 1, settings)).toBe(1_960);
+
+    const collection: TournamentPresentationEvent = {
+      id: "3:hand-1:cards-collected:0",
+      kind: "cards-collected",
+      handId: "hand-1",
+      playerIds: ["hero", "opponent"],
+    };
+    expect(presentationEventDelayMs(collection, 1, settings)).toBe(900);
   });
 
   it("uses a deterministic rate without feeding presentation speed into the engine", () => {

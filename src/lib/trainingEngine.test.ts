@@ -120,6 +120,20 @@ describe("EV-regret-aware action grading", () => {
     expect(result.regret).toBeCloseTo(0.44, 8);
   });
 
+  it("grades a call in the short-stack shove spot instead of treating it as unavailable", () => {
+    const result = evaluateAction(
+      scenario("preflop-button-shove-fold-equity"),
+      "call",
+    );
+
+    expect(result.chosenEv).toBeTypeOf("number");
+    expect(result.correct).toBe(false);
+    expect(result.score).toBe(0);
+    expect(result.regret).toBeGreaterThan(
+      scenario("preflop-button-shove-fold-equity").training.partialCreditRegret,
+    );
+  });
+
   it("accepts both actions inside a genuine EV-equivalence band", () => {
     const closeSpot = scenario("turn-close-flush-price");
 

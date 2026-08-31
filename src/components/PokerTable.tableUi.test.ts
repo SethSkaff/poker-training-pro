@@ -44,7 +44,9 @@ describe("table UI restraint and card peek", () => {
     expect(table.indexOf('data-card-control="hero"')).toBeGreaterThan(
       table.indexOf('"data-hero-identity": "true"'),
     );
-    expect(table).toContain("appearance={isTwoDMode ? twoDAppearances.get(player.id) : undefined}");
+    expect(table).toContain(
+      "avatarModel={isTwoDMode ? twoDPlayerIdentities.get(player.id)?.model : undefined}",
+    );
     expect(styles).toContain("--rail-gap");
     expect(styles).toContain("background: #101214");
     expect(styles).toContain(".table-screen--2d .hero-card-control");

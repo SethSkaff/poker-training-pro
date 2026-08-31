@@ -16,7 +16,7 @@ node scripts/audit-packaged-render-smoke.mjs
 
 The default executable is:
 
-`outputs/next/win-unpacked/Poker Training Pro.exe`
+`outputs/current/win-unpacked/Poker Training Pro.exe`
 
 An explicit package and hard timeout can be supplied:
 

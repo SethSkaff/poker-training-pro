@@ -47,7 +47,7 @@ const VISIBLE_OBSERVATION_MS = 1_500;
 const appPath = resolve(
   projectRoot,
   argumentValue("--app") ??
-    "outputs/next/win-unpacked/Poker Training Pro.exe",
+    "outputs/current/win-unpacked/Poker Training Pro.exe",
 );
 const reportPath = resolve(
   projectRoot,

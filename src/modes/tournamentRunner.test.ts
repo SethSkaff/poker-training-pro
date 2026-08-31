@@ -409,6 +409,9 @@ describe("tournament runner", () => {
     const awardIndex = events.findIndex((event) => event.kind === "pot-awarded");
     expect(resultIndex).toBeGreaterThan(-1);
     expect(resultIndex).toBeLessThan(awardIndex);
+    const collectionIndex = events.findIndex((event) => event.kind === "cards-collected");
+    expect(collectionIndex).toBeGreaterThan(awardIndex);
+    expect(events[events.length - 1]?.kind).toBe("cards-collected");
     const handResult = events[resultIndex];
     expect(["hand-result", "showdown"]).toContain(handResult.kind);
     if (handResult.kind === "hand-result") {

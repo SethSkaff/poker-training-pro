@@ -36,6 +36,7 @@ import {
   cameraPose,
   TABLE_MARKER_GAP,
   TABLE_MARKER_RADIUS,
+  TABLE_MARKER_SLOT_OFFSET,
   tableMarkerPosition,
   seatLocalPoint,
   seatPoses,
@@ -618,13 +619,24 @@ describe("protected seat occupancy", () => {
     }
   });
 
-  it("uses one rigid rack, cards, marker, wager depth order at all six seats", () => {
+  it("uses one rigid rack, attached buttons, and a separate wager depth at all six seats", () => {
     for (const pose of seatPoses(6)) {
       const card = seatLocalPoint(pose, pose.feltPosition);
       const layout = seatOccupancyLayout(pose, 15_000);
       const rack = seatLocalPoint(pose, layout.rackOrigin);
       const wager = seatLocalPoint(pose, layout.wager);
       const marker = seatLocalPoint(pose, tableMarkerPosition(pose, "D", 15_000));
+      const smallBlind = seatLocalPoint(pose, tableMarkerPosition(pose, "SB", 15_000));
+      const markerSide = layout.rackSide === 0 ? CHIP_STACK_LOCAL_LEFT_SIDE : layout.rackSide;
+      const rackCentreX = rack[0] + (layout.rackBounds.minX + layout.rackBounds.maxX) / 2;
+      const rackCentreZ = rack[2] + (layout.rackBounds.minZ + layout.rackBounds.maxZ) / 2;
+      const rackHalfX = Math.max(
+        CHIP_PHYSICAL_RADIUS,
+        (layout.rackBounds.maxX - layout.rackBounds.minX) / 2,
+      );
+      const expectedMarkerX = rackCentreX + markerSide * (
+        rackHalfX + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS
+      );
 
       expect(rack[0], `seat ${pose.seat} rack player-left`).toBeGreaterThan(card[0]);
       expect(rack[2], `seat ${pose.seat} rack closest to rail`).toBeLessThan(
@@ -633,11 +645,20 @@ describe("protected seat occupancy", () => {
       expect(wager[2], `seat ${pose.seat} bet beyond cards`).toBeGreaterThan(
         card[2] + CARD_ZONE_LOCAL_MAX_Z,
       );
-      expect(marker[2], `seat ${pose.seat} marker beyond cards`).toBeGreaterThan(
-        card[2] + CARD_ZONE_LOCAL_MAX_Z,
+      expect(marker[0], `seat ${pose.seat} button beside rack`).toBeCloseTo(
+        expectedMarkerX,
+        9,
       );
-      expect(Math.abs(marker[0] - wager[0]), `seat ${pose.seat} marker beside bet`)
-        .toBeCloseTo(BET_CIRCLE_RADIUS + TABLE_MARKER_RADIUS + TABLE_MARKER_GAP, 9);
+      expect(marker[2], `seat ${pose.seat} button follows rack depth`).toBeCloseTo(
+        rackCentreZ,
+        9,
+      );
+      expect(smallBlind[0] - marker[0], `seat ${pose.seat} second button slot`)
+        .toBeCloseTo(markerSide * TABLE_MARKER_SLOT_OFFSET, 9);
+      expect(smallBlind[2], `seat ${pose.seat} second button depth`).toBeCloseTo(
+        rackCentreZ,
+        9,
+      );
     }
   });
 
@@ -708,6 +729,8 @@ describe("protected seat occupancy", () => {
           for (const markerLabel of ["D", "SB", "BB"] as const) {
             const firstMarker = tablePoints([tableMarkerPosition(poses[first], markerLabel, amount)])[0];
             const secondMarker = tablePoints([tableMarkerPosition(poses[second], markerLabel, amount)])[0];
+            expect(circleOverlapsPolygon({ centre: firstMarker, radius: TABLE_MARKER_RADIUS }, secondCard), `${amount} marker ${first}/card ${second}`).toBe(false);
+            expect(circleOverlapsPolygon({ centre: secondMarker, radius: TABLE_MARKER_RADIUS }, firstCard), `${amount} marker ${second}/card ${first}`).toBe(false);
             expect(circleOverlapsPolygon({ centre: firstMarker, radius: TABLE_MARKER_RADIUS }, secondRack), `${amount} marker ${first}/rack ${second}`).toBe(false);
             expect(circleOverlapsPolygon({ centre: firstMarker, radius: TABLE_MARKER_RADIUS }, secondLabel), `${amount} marker ${first}/label ${second}`).toBe(false);
             expect(circleOverlapsPolygon({ centre: secondMarker, radius: TABLE_MARKER_RADIUS }, firstRack), `${amount} marker ${second}/rack ${first}`).toBe(false);
@@ -756,41 +779,78 @@ describe("protected seat occupancy", () => {
       }
     }
   });
+
+  it("keeps the full folded-card muck envelope clear of every player rack", () => {
+    // The card mesh is 88 x 123 mm. These conservative half-extents also cover
+    // the muck's three-column x spread, twelve-card row depth, and its authored
+    // table-plane yaw, so the check matches what can actually be rendered.
+    const muckHalfWidth = 0.070;
+    const muckHalfDepth = 0.100;
+    const [muckX, , muckZ] = TABLE_ANCHORS.muck;
+    const muckRect = [
+      [muckX - muckHalfWidth, muckZ - muckHalfDepth],
+      [muckX + muckHalfWidth, muckZ - muckHalfDepth],
+      [muckX + muckHalfWidth, muckZ + muckHalfDepth],
+      [muckX - muckHalfWidth, muckZ + muckHalfDepth],
+    ] as const;
+
+    expect(distance(TABLE_ANCHORS.muck, TABLE_ANCHORS.mainPot)).toBeGreaterThan(0.18);
+    expect(distance(TABLE_ANCHORS.muck, TABLE_ANCHORS.dealerShoe)).toBeGreaterThan(0.18);
+    for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
+      for (const pose of seatPoses(6)) {
+        const rack = tablePoints(rackWorldCorners(pose, seatOccupancyLayout(pose, amount)));
+        expect(polygonsOverlap(muckRect, rack), `amount ${amount} muck/rack ${pose.seat}`).toBe(false);
+      }
+    }
+  });
 });
 
 describe("dealer and blind markers", () => {
-  it("inherits the exact wager radial delta and preserves fixed lateral pockets", () => {
-    const baseLateral = BET_CIRCLE_RADIUS + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS;
+  it("places every button directly beside the represented chip rack", () => {
     for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
       for (const pose of seatPoses(6)) {
-        const card = seatLocalPoint(pose, pose.feltPosition);
-        const wager = seatLocalPoint(pose, betCirclePosition(pose));
-        const previousMarkerDepth = card[2] + PREVIOUS_BET_CIRCLE_FORWARD;
+        const layout = seatOccupancyLayout(pose, amount);
+        const rack = seatLocalPoint(pose, layout.rackOrigin);
+        const markerSide = layout.rackSide === 0 ? CHIP_STACK_LOCAL_LEFT_SIDE : layout.rackSide;
+        const rackCentreX = rack[0] + (layout.rackBounds.minX + layout.rackBounds.maxX) / 2;
+        const rackCentreZ = rack[2] + (layout.rackBounds.minZ + layout.rackBounds.maxZ) / 2;
+        const rackHalfX = Math.max(
+          CHIP_PHYSICAL_RADIUS,
+          (layout.rackBounds.maxX - layout.rackBounds.minX) / 2,
+        );
+        const expectedMarkerX = rackCentreX + markerSide * (
+          rackHalfX + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS
+        );
         for (const label of ["D", "SB", "BB"] as const) {
           const marker = seatLocalPoint(pose, tableMarkerPosition(pose, label, amount));
-          const expectedLateral = baseLateral + (label === "SB" ? 0.065 : 0);
-
-          expect(marker[2] - previousMarkerDepth, `seat ${pose.seat} ${label} radial delta`)
-            .toBeCloseTo(WAGER_OWNERWARD_LOCAL_DELTA, 12);
-          expect(marker[2], `seat ${pose.seat} ${label} shared depth`)
-            .toBeCloseTo(wager[2], 12);
-          expect(marker[0] - wager[0], `seat ${pose.seat} ${label} signed lateral pocket`)
-            .toBeCloseTo(-expectedLateral, 12);
+          const expectedSlot = label === "SB" ? markerSide * TABLE_MARKER_SLOT_OFFSET : 0;
+          expect(marker[0], `seat ${pose.seat} ${label} rack-side slot`).toBeCloseTo(
+            expectedMarkerX + expectedSlot,
+            12,
+          );
+          expect(marker[2], `seat ${pose.seat} ${label} rack-depth slot`).toBeCloseTo(
+            rackCentreZ,
+            12,
+          );
         }
       }
     }
   });
 
-  it("sit beside their owner's wager, clear of cards and the chip rack", () => {
+  it("stay visibly tied to their owner while remaining separate from the wager", () => {
     for (const pose of seatPoses(6)) {
+      const layout = seatOccupancyLayout(pose, 15_000);
       const stack = restingChipStackPosition(pose);
       const marker = tableMarkerPosition(pose);
       const wager = betCirclePosition(pose);
       const gap = distance(marker, stack);
-      expect(gap, `seat ${pose.seat}`).toBeGreaterThanOrEqual(0.2);
+      expect(gap, `seat ${pose.seat}`).toBeLessThan(0.2);
       expect(distance(marker, wager)).toBeGreaterThanOrEqual(
         TABLE_MARKER_RADIUS + BET_CIRCLE_RADIUS + TABLE_MARKER_GAP,
       );
+      expect(distance(marker, stack), `seat ${pose.seat} marker/rack origin`)
+        .toBeGreaterThan(TABLE_MARKER_RADIUS + TABLE_MARKER_GAP);
+      expect(layout.markerBase).toEqual(tableMarkerPosition(pose));
     }
   });
 

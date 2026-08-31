@@ -84,11 +84,11 @@ export const trainingScenarios: RatedTrainingScenario[] = [
       "It folds to you on the button with 11 big blinds. The blinds fold often enough that a shove is profitable. Choose your action.",
     recommendedAction: "all-in",
     actionReason:
-      "A5 suited combines an ace blocker with usable equity when called. At 11bb, the modeled shove gains more than a small raise or fold.",
+      "A5 suited combines an ace blocker with usable equity when called. At 11bb, the modeled shove gains more than flat-calling, a small raise, or folding.",
     mathQuestion: {
       topic: "expected-value",
       prompt:
-        "Ignoring showdown equity for this sub-calculation, what fold percentage would a risk of 11,000 need to win the current 2,625 pot?",
+        "Ignoring showdown equity for this sub-calculation, what fold percentage would you need when going all-in to win the current pot?",
       unit: "%",
       correctValue: 80.73,
       tolerance: 1.5,
@@ -98,7 +98,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
     training: {
       decisionDifficulty: 1210,
       mathDifficulty: 1180,
-      actionEvs: { fold: 0, raise: 0.18, "all-in": 0.62 },
+      actionEvs: { fold: 0, call: -0.34, raise: 0.18, "all-in": 0.62 },
       actionEpsilon: 0.06,
       partialCreditRegret: 0.5,
       transferGroup: "aggression-threshold",
@@ -183,13 +183,13 @@ export const trainingScenarios: RatedTrainingScenario[] = [
       { id: "hero", name: "You", stack: 7800, seat: 5, status: "active", bet: 0 },
     ],
     prompt:
-      "Your opponent is all-in, so a call guarantees both turn and river. Treat the nine remaining hearts as clean outs. Choose your action.",
+      "Your opponent is all-in, so a call guarantees both turn and river. You have a nut-flush draw. Choose your action.",
     recommendedAction: "call",
     actionReason:
       "The nut-flush draw arrives by the river about 35% of the time, comfortably above the 25% call threshold.",
     mathQuestion: {
       topic: "equity",
-      prompt: "Approximately how often will nine clean outs hit by the river from the flop?",
+      prompt: "What is your approximate chance to hit a flush by the river?",
       unit: "%",
       correctValue: 34.97,
       tolerance: 2,
@@ -346,7 +346,7 @@ export const trainingScenarios: RatedTrainingScenario[] = [
       "The price is close to your discounted equity. Calling is slightly higher EV, but folding is within the scenario's numerical-equivalence band.",
     mathQuestion: {
       topic: "equity",
-      prompt: "Using nine clean flush outs only, what is your approximate chance to hit on the river?",
+      prompt: "What is your approximate chance to hit a flush on the river?",
       unit: "%",
       correctValue: 19.57,
       tolerance: 2,

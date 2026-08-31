@@ -6,7 +6,7 @@ import {
   PackagedSession,
 } from "./lib/packaged-cdp-session.mjs";
 
-const appPath = resolve(projectRoot, "outputs/next/win-unpacked/Poker Training Pro.exe");
+const appPath = resolve(projectRoot, "outputs/current/win-unpacked/Poker Training Pro.exe");
 const timeoutMs = 75_000;
 const modes = ["normal", "rational"];
 const results = [];

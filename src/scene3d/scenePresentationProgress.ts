@@ -16,6 +16,21 @@ export interface SceneProgressCursor {
 }
 
 /**
+ * React renders the next queue item once before its effect can install the
+ * fresh delay. During that one render `progress` still belongs to the
+ * previous item, which is normally 1. Treat a new event as being at its
+ * authored start instead of letting that stale terminal sample make the
+ * renderer complete the whole motion before the clock has started.
+ */
+export function presentationProgressForEvent(
+  cursor: SceneProgressCursor,
+  eventId: string,
+  progress: number,
+): number {
+  return cursor.eventId === eventId ? clampSceneProgress(progress) : 0;
+}
+
+/**
  * Keep one public presentation event moving forward even if React or the
  * renderer briefly exposes an older delay sample. A new event may begin at
  * zero; an existing event must never move its physical choreography backward.
@@ -25,9 +40,7 @@ export function monotonicScenePresentationProgress(
   eventId: string,
   progress: number,
 ): number {
-  const bounded = Number.isFinite(progress)
-    ? Math.min(1, Math.max(0, progress))
-    : 1;
+  const bounded = clampSceneProgress(progress);
   if (cursor.eventId !== eventId) {
     cursor.eventId = eventId;
     cursor.progress = bounded;
@@ -35,6 +48,12 @@ export function monotonicScenePresentationProgress(
   }
   cursor.progress = Math.max(cursor.progress, bounded);
   return cursor.progress;
+}
+
+function clampSceneProgress(progress: number): number {
+  return Number.isFinite(progress)
+    ? Math.min(1, Math.max(0, progress))
+    : 1;
 }
 
 /**

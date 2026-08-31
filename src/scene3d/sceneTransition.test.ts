@@ -82,6 +82,21 @@ describe("scene transition", () => {
     });
   });
 
+  it("names every settled card for the explicit pre-deal collection beat", () => {
+    const event: TournamentPresentationEvent = {
+      id: "collect-cards",
+      kind: "cards-collected",
+      handId: "h1",
+      playerIds: ["hero", "villain"],
+    };
+    expect(createSceneTransition(event, 0.4, false)).toMatchObject({
+      handId: "h1",
+      action: undefined,
+      playerIds: ["hero", "villain"],
+      progress: 0.4,
+    });
+  });
+
   it("keeps every non-seat presentation event except public collection inert in the scene", () => {
     const passiveEvents: readonly TournamentPresentationEvent[] = [
       { id: "button", kind: "button-moved", handId: "h1", buttonSeat: 0 },

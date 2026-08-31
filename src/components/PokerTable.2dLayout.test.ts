@@ -21,6 +21,22 @@ describe("isolated 2D table layout contract", () => {
     expect(tableSource).toContain("setFoldProgress(0);");
   });
 
+  it("keeps the 2D surface quiet while making bets and cards unambiguous", () => {
+    expect(tableSource).toContain("showCurrentBet={isTwoDMode}");
+    expect(tableSource).toContain('className="seat-current-bet"');
+    expect(twoDStyles).toContain("--table-height: 68%;");
+    expect(twoDStyles).toContain("border-radius: 46%;");
+    expect(twoDStyles).toContain("--side-upper-y: calc(var(--table-top) + 17%);");
+    expect(twoDStyles).toContain("--side-lower-y: calc(var(--table-top) + 51%);");
+    expect(twoDStyles).toContain(".table-screen--2d .seat-figure-accessory--visor");
+    expect(twoDStyles).toContain(".table-screen--2d .hero-card-control");
+    expect(twoDStyles).toContain(".table-screen--2d .fold-release-zone");
+    expect(twoDStyles).toContain(".table-screen--2d .hero-hole-cards-visual .hero-card-wrap small");
+    expect(twoDStyles).toContain("flex-direction: row-reverse;");
+    expect(twoDStyles).toContain(".table-screen--2d .community-placeholder");
+    expect(twoDStyles).toContain(".table-screen--2d .hero-hole-cards__cards");
+  });
+
   it("anchors every 2D seat to the rail and keeps opponent cards inside the viewport", () => {
     expect(twoDStyles).toContain("overflow: visible;");
     expect(twoDStyles).toContain("--rail-gap: clamp(5px, 0.55vw, 8px);");
@@ -37,6 +53,8 @@ describe("isolated 2D table layout contract", () => {
   });
 
   it("preserves a large flat table at desktop and a readable compact breakpoint", () => {
+    expect(twoDStyles).toContain("display: block;");
+    expect(twoDStyles).toContain("height: 100%;");
     expect(twoDStyles).toContain("--table-left: 5%;");
     expect(twoDStyles).toContain("--table-width: 90%;");
     expect(twoDStyles).toContain("--table-top: 13%;");
@@ -46,6 +64,18 @@ describe("isolated 2D table layout contract", () => {
     expect(twoDStyles).toContain("top: calc(var(--table-bottom) + var(--avatar-size) + var(--rail-gap) + 36px);");
     expect(twoDStyles).toContain("min-width: 146px;");
     expect(twoDStyles).toContain("min-width: 122px;");
+  });
+
+  it("keeps the training question as a top-right overlay instead of a second row", () => {
+    expect(twoDStyles).toContain(
+      '.table-screen--2d[data-game-mode="training"]',
+    );
+    expect(twoDStyles).toContain("> .table-layout");
+    expect(twoDStyles).toContain("> .training-panel");
+    expect(twoDStyles).toContain("> .feedback-panel");
+    expect(twoDStyles).toContain("top: 16px;");
+    expect(twoDStyles).toContain("right: 16px;");
+    expect(twoDStyles).toContain("aspect-ratio: auto;");
   });
 
   it("uses quiet felt/rail/room colors without ambient bloom", () => {

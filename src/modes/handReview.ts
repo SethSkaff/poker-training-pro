@@ -31,6 +31,7 @@ import {
   createCareerTournamentRunner,
   createTimedTournamentRunner,
   heroTournamentLegalActions,
+  tournamentCommandForHeroAction,
   TournamentReplayVersionError,
   type TournamentRunner,
   type TournamentRunnerReplay,
@@ -66,6 +67,13 @@ export type ReviewDecisionType =
   | "bet"
   | "raise"
   | "all-in";
+
+/** Public preflop action state, so a limp is not described as defending a raise. */
+export type ReviewPreflopSituation =
+  | "unopened"
+  | "facing-open"
+  | "facing-3bet"
+  | "facing-4bet-plus";
 
 export type ReviewQuality =
   | "best"
@@ -121,6 +129,8 @@ export interface ReviewDecision {
   notableReason?: string;
   playersRemaining: number;
   blindLevel: number;
+  /** Present only for preflop decisions; postflop has no opening/3-bet label. */
+  preflopSituation?: ReviewPreflopSituation;
   math: ReviewMath;
   /**
    * The hero's own view of the table at the moment of the decision, already
@@ -146,6 +156,8 @@ export interface HandReview {
   eventId: string;
   mode: TournamentRunnerReplay["mode"];
   decisions: ReviewDecision[];
+  /** True when the safety ceiling stopped derivation before replay exhaustion. */
+  truncated: boolean;
   /** Share of decisions that matched the policy's highest-rated action. */
   accuracy: number;
   /** Share within the transparent close-to-best EV-loss threshold. */
@@ -265,6 +277,33 @@ function phaseFor(
   const survived = playersRemaining / Math.max(1, startingPlayers);
   if (survived > 0.75) return "early";
   return survived > 0.5 ? "middle" : "late";
+}
+
+function preflopSituationFor(
+  informationSet: PlayerInformationSet,
+): ReviewPreflopSituation | undefined {
+  if (informationSet.street !== "preflop") return undefined;
+  const aggression = informationSet.actions.filter(
+    (action) =>
+      action.type === "bet" ||
+      action.type === "raise" ||
+      action.type === "all-in",
+  ).length;
+  if (aggression === 0) return "unopened";
+  if (aggression === 1) return "facing-open";
+  if (aggression === 2) return "facing-3bet";
+  return "facing-4bet-plus";
+}
+
+/**
+ * Counts tournament seats that are still in the event. A hand-level all-in
+ * player has a zero stack but remains an active tournament player until the
+ * hand settles, so stack size is intentionally not used here.
+ */
+export function countReviewPlayersRemaining(
+  players: readonly { status: string; stack?: number }[],
+): number {
+  return players.filter((player) => player.status === "active").length;
 }
 
 function riskFor(
@@ -416,21 +455,23 @@ export async function deriveHandReview(
     policy: { simulations: replay.policySimulations },
   });
 
-  let handNumber = 0;
-  let lastHandId: string | undefined;
+  let truncated = false;
 
   for (const entry of replay.actions) {
     if (runner.session.status === "complete") break;
-    if (decisions.length >= maxDecisions) break;
+    if (decisions.length >= maxDecisions) {
+      truncated = true;
+      break;
+    }
     throwIfCancelled();
 
     const hand = runner.session.activeHand;
     const legal = heroTournamentLegalActions(runner);
     if (!hand || !legal) break;
-    if (hand.handId !== lastHandId) {
-      handNumber += 1;
-      lastHandId = hand.handId;
-    }
+    // Use the engine's table counter rather than the review decision count.
+    // Hands without a hero decision still advance the table and must not make
+    // later timeline entries appear to belong to an earlier hand.
+    const handNumber = runner.session.tournament.tables[0]?.handNumber ?? 0;
 
     // Viewer-scoped redaction, exactly as the live table does it. Opponent
     // hole cards are removed here and never re-enter the review.
@@ -445,6 +486,17 @@ export async function deriveHandReview(
       ]?.bigBlind ?? 1,
     );
 
+    // Resolve the player-facing request before evaluating it. The review must
+    // include the exact engine command so a custom-but-legal bet/raise is not
+    // compared against the nearest fixed sizing preset.
+    const chosenCommand = tournamentCommandForHeroAction(legal, entry.request);
+    const chosenType = commandType(chosenCommand.type);
+    // `all-in` carries its target in the legal-action set rather than on the
+    // command object. Retain that target so an all-in that shares a target with
+    // a generated raise/bet candidate still matches canonically.
+    const chosenTo =
+      chosenCommand.type === "all-in" ? legal.allInTo : chosenCommand.to;
+
     // The same policy the AI uses, run from the hero's seat. This is the
     // game's own evaluation model, not an oracle -- the UI labels it as such.
     const evaluation = decideRationalAction({
@@ -455,17 +507,12 @@ export async function deriveHandReview(
       simulations,
       temperature: 0.48,
       tournament: tournamentPolicyContextForSession(runner.session, heroId),
+      additionalActions:
+        chosenCommand.type === "bet" || chosenCommand.type === "raise"
+          ? [chosenCommand]
+          : undefined,
     });
 
-    const chosenType = commandType(
-      entry.request.action === "raise" && entry.request.raiseTo === undefined
-        ? "raise"
-        : entry.request.action,
-    );
-    const chosenTo =
-      entry.request.action === "all-in"
-        ? legal.allInTo
-        : entry.request.raiseTo;
     const actionValues = evaluation.distribution.map((option) => ({
       id: option.id,
       type: commandType(option.command.type),
@@ -488,9 +535,13 @@ export async function deriveHandReview(
         ? Math.max(0, chosenTo - (heroSeat?.streetCommitted ?? 0))
         : costToCall;
     const effectiveStack = metrics.effectiveStack;
-    const playersRemaining = runner.session.tournament.players.filter(
-      (player) => player.stack > 0,
-    ).length;
+    // A player who has committed their stack is still alive until the hand is
+    // settled. Counting positive stacks here mislabels the review as
+    // heads-up/qualification during an all-in runout and feeds the wrong
+    // phase into segment scores.
+    const playersRemaining = countReviewPlayersRemaining(
+      runner.session.tournament.players,
+    );
 
     const math: ReviewMath = {
       potBefore: informationSet.pot,
@@ -534,6 +585,7 @@ export async function deriveHandReview(
       quality: canonical.quality,
       playersRemaining,
       blindLevel: runner.session.tournament.levelIndex,
+      preflopSituation: preflopSituationFor(informationSet),
       math,
       informationSet,
     };
@@ -564,6 +616,7 @@ export async function deriveHandReview(
     eventId: replay.eventId,
     mode: replay.mode,
     decisions,
+    truncated,
     accuracy: decisions.length ? best / decisions.length : 0,
     goodAccuracy: decisions.length ? good / decisions.length : 0,
     meanRegretBigBlinds: decisions.length ? regret / decisions.length : 0,

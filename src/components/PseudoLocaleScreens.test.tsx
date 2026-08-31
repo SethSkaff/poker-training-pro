@@ -57,6 +57,7 @@ import { formatChips, formatFixedDecimal } from "../lib/format";
 import { describeTrainingContext } from "../lib/trainingScenarioContext";
 import { formatMessage } from "../lib/localeMessages";
 import { defaultProgress, defaultSettings } from "../lib/storage";
+import { unique2DPlayerIdentities } from "../lib/twoDAvatarModels";
 import type { TournamentSessionResult } from "../modes/tournamentSession";
 import { SESSION_TABLE_SIZE } from "../modes/tournamentSession";
 import { AboutSupport } from "./AboutSupport";
@@ -72,7 +73,6 @@ import {
 import { PlayableTutorial } from "./PlayableTutorial";
 import { PlayChipAcknowledgment } from "./PlayChipAcknowledgment";
 import {
-  firstNameFor2DPlayer,
   PokerTable,
   pokerMathQuestionSegments,
 } from "./PokerTable";
@@ -443,6 +443,9 @@ describe("pseudo-locale completeness sweep", () => {
       .split("-")
       .map((word) => word[0].toUpperCase() + word.slice(1))
       .join(" ");
+    const twoDNames = unique2DPlayerIdentities(
+      scenario.players.map((player) => ({ id: player.id, name: player.name })),
+    );
     expectScreenIsPseudoLocalized(markup, [
       scenario.title,
       scenario.prompt,
@@ -450,7 +453,9 @@ describe("pseudo-locale completeness sweep", () => {
         (segment) => segment.text.trim(),
       ),
       mathTopicTitle,
-      ...scenario.players.map((player) => firstNameFor2DPlayer(player.id)),
+      ...[...twoDNames.values()].map((identity) => identity.displayName),
+      // The flat-table bet badge is a compact data label, not UI prose.
+      "BET",
     ]);
   });
 

@@ -16,7 +16,6 @@
  * bundle, so the scene still builds synchronously on the first frame.
  */
 import {
-  AdditiveBlending,
   ACESFilmicToneMapping,
   AmbientLight,
   BufferGeometry,
@@ -375,7 +374,7 @@ interface TableSceneResources {
   /** Tiled surface maps for the felt, the carpet, and the panelled walls. */
   surfaceTexture(kind: "felt" | "carpet" | "wall", repeatX: number, repeatY: number): Texture | null;
   surfaceTextureEstimateMiB(): number;
-  potPlaqueMaterial(label: string, kind: "main" | "side"): MeshBasicMaterial;
+  potPlaqueMaterial(label: string, kind: "main" | "side"): MeshStandardMaterial;
   cardTextureEstimateMiB(): number;
 }
 
@@ -464,7 +463,7 @@ function createTableSceneResources(): TableSceneResources {
   const faceMaterials = new Map<string, MeshStandardMaterial>();
   const deckBackMaterials = new Map<DeckColour, MeshStandardMaterial>();
   const markerMaterials = new Map<string, MeshLambertMaterial>();
-  const potPlaqueMaterials = new Map<string, MeshBasicMaterial>();
+  const potPlaqueMaterials = new Map<string, MeshStandardMaterial>();
   const potPlaqueCanvases = new Map<"main" | "side", HTMLCanvasElement>();
   const potPlaqueTextures = new Map<"main" | "side", CanvasTexture>();
   const potPlaqueLabels = new Map<"main" | "side", string>();
@@ -732,7 +731,7 @@ function createTableSceneResources(): TableSceneResources {
     markerMaterials.set(label, material);
     return material;
   };
-  const potPlaqueMaterial = (label: string, kind: "main" | "side"): MeshBasicMaterial => {
+  const potPlaqueMaterial = (label: string, kind: "main" | "side"): MeshStandardMaterial => {
     /*
       A pot total changes every action, but it is not a new GPU asset every
       action.  The former `${kind}:${label}` cache held one CanvasTexture and
@@ -753,12 +752,10 @@ function createTableSceneResources(): TableSceneResources {
       canvas.width = 256;
       canvas.height = 80;
       const context = canvas.getContext("2d");
-      if (!context) return track(new MeshBasicMaterial({
-      color: kind === "main" ? 0xf6d36d : 0x9bc8ff,
-      transparent: true,
-      opacity: 0.82,
-      blending: AdditiveBlending,
-      depthWrite: false,
+      if (!context) return track(new MeshStandardMaterial({
+        color: kind === "main" ? 0xb38a42 : 0x6f8eae,
+        roughness: 0.88,
+        metalness: 0,
       }));
       texture = track(new CanvasTexture(canvas));
       texture.generateMipmaps = false;
@@ -768,7 +765,11 @@ function createTableSceneResources(): TableSceneResources {
     }
     const context = canvas.getContext("2d");
     if (!context) {
-      return cached ?? track(new MeshBasicMaterial({ color: kind === "main" ? 0xf6d36d : 0x9bc8ff }));
+      return cached ?? track(new MeshStandardMaterial({
+        color: kind === "main" ? 0xb38a42 : 0x6f8eae,
+        roughness: 0.88,
+        metalness: 0,
+      }));
     }
     const accent = kind === "main" ? "#f6d36d" : "#9bc8ff";
     context.clearRect(0, 0, canvas.width, canvas.height);
@@ -790,7 +791,15 @@ function createTableSceneResources(): TableSceneResources {
     texture.needsUpdate = true;
     potPlaqueLabels.set(kind, label);
     if (cached) return cached;
-    const material = track(new MeshBasicMaterial({ map: texture, transparent: true, opacity: 1, depthWrite: true }));
+    const material = track(new MeshStandardMaterial({
+      map: texture,
+      color: 0xd6c39a,
+      transparent: true,
+      opacity: 0.94,
+      depthWrite: true,
+      roughness: 0.9,
+      metalness: 0,
+    }));
     potPlaqueMaterials.set(kind, material);
     return material;
   };
@@ -1373,6 +1382,13 @@ export function createTableScene(
           at: TABLE_ANCHORS.board,
         });
       }
+      if (renderTransition?.kind === "cards-collected") {
+        dealerWork.push({
+          task: "collect",
+          progress: renderTransition.progress,
+          at: TABLE_ANCHORS.board,
+        });
+      }
       /*
         The dealer works the table.
 
@@ -1926,7 +1942,8 @@ function placeMarker(
   marker.visible = Boolean(pose);
   marker.userData.publicPlayerId = pose ? playerId : null;
   if (!pose) return;
-  // Share the stack's lateral column, but leave a clear foreground gap.
+  // Keep the button in the same physical lane as the represented rack. The
+  // model reserves separate D/SB slots, so this never reads as a central bet.
   marker.position.set(...tableMarkerPosition(pose, label, stackAmount));
 }
 
@@ -2273,11 +2290,15 @@ function applySeat(
         || transition.kind === "hole-cards-dealt"
         || transition.kind === "all-in-reveal"
         || transition.kind === "showdown"
-        || transition.kind === "pot-awarded"),
+        || transition.kind === "pot-awarded"
+        || transition.kind === "cards-collected"),
   );
   const progress = transitionAffectsSeat
     ? transition?.progress ?? localProgress
     : localProgress;
+  const handClearProgress = transition?.kind === "cards-collected"
+    ? smoothSceneProgress(progress)
+    : 0;
 
   /*
     The hero has no body, because the camera is the hero.
@@ -2295,8 +2316,10 @@ function applySeat(
   const folded = seat.folded || transition?.foldedPlayerIds.includes(seat.id) === true;
   const beat = animationBeatFor(transition, seat.id);
   const gesture = sceneGestureFor(seat.action, progress, seat.acting, folded);
+  const clearingHand = transition?.kind === "cards-collected";
   view.cards.visible = foldFrame !== undefined
     || holeDealFrame !== undefined
+    || (clearingHand && !folded && handClearProgress < 1)
     || (!folded && privateCardsDealt);
   const allInReveal = transition?.kind === "all-in-reveal" && !folded;
   const showdownReveal = transition?.kind === "showdown" && !folded;
@@ -2369,34 +2392,47 @@ function applySeat(
     const winning = showdownReveal && Boolean(code && winningCodes.includes(code));
     const revealLift = (allInReveal || winning) ? 0.014 : 0;
     const revealInward = (allInReveal || winning) ? 0.014 : 0;
-    card.position.set(
+    const restingLocal = [
       local[0] + toPlayersLeft,
       local[1] + (cardCanBeSqueezed ? HERO_HOLE_CARD_PLACEMENT.squeezedYOffset : 0) + revealLift,
       local[2] + (cardCanBeSqueezed ? HERO_HOLE_CARD_PLACEMENT.squeezedZOffset : 0) + revealInward,
+    ] as const;
+    const clearLocal = seatLocalPoint(pose, handClearCardTarget(index));
+    card.position.set(
+      interpolateSceneNumber(restingLocal[0], clearLocal[0], handClearProgress),
+      interpolateSceneNumber(restingLocal[1], clearLocal[1], handClearProgress),
+      interpolateSceneNumber(restingLocal[2], clearLocal[2], handClearProgress),
     );
     // The card's *geometry* now flexes, rather than rotating an entire rigid
     // rectangle. Keeping the packet level preserves the printed orientation
     // and prevents the upside-down full-card reveal reported in playtests.
-    card.rotation.x = 0;
-    card.rotation.y = foldCardPose
+    const restingYaw = foldCardPose
       ? foldCardPose.rotation[1] - pose.facing
       : cardCanBeSqueezed
         ? (index === 0 ? HERO_HOLE_CARD_PLACEMENT.squeezedYaw : -HERO_HOLE_CARD_PLACEMENT.squeezedYaw)
         : 0;
+    card.rotation.x = Math.PI * handClearProgress;
+    card.rotation.y = restingYaw * (1 - handClearProgress);
     card.scale.setScalar(1);
     if (winning) card.scale.multiplyScalar(1.045);
     const mesh = card as Mesh;
-    mesh.visible = holeDealFrame
+    mesh.visible = handClearProgress < 1 && (holeDealFrame
       ? dealCardFrame?.visible === true
       : foldFrame
         ? foldFrame.ownership !== "discard-pile"
-        : true;
-    mesh.userData.cardPhase = dealCardFrame?.phase ?? foldFrame?.phase ?? "settled";
-    mesh.userData.cardOwnership = dealCardFrame?.ownership
-      ?? foldFrame?.ownership
-      ?? "recipient";
-    mesh.userData.cardContact = dealCardFrame?.contact
-      ?? (foldFrame?.contact.felt ? "felt" : "none");
+        : true);
+    mesh.userData.cardPhase = clearingHand
+      ? "collect"
+      : dealCardFrame?.phase ?? foldFrame?.phase ?? "settled";
+    mesh.userData.cardOwnership = clearingHand
+      ? "muck"
+      : dealCardFrame?.ownership
+        ?? foldFrame?.ownership
+        ?? "recipient";
+    mesh.userData.cardContact = clearingHand
+      ? "muck"
+      : dealCardFrame?.contact
+        ?? (foldFrame?.contact.felt ? "felt" : "none");
     mesh.userData.cardQuaternion = [0, 0, 0, 1];
     const deckBack = resources.deckBackMaterial(deckColourForHand(handId ?? transition?.handId));
     // One grouped geometry keeps the planted back and printed bent underside
@@ -2408,10 +2444,11 @@ function applySeat(
       : (allInReveal || showdownReveal) && code
         ? resources.cardFaceMaterial(code)
         : deckBack;
+    if (handClearProgress > 0) mesh.material = deckBack;
     mesh.userData.privateCodeAuthorised = cardCanBeSqueezed && Boolean(code);
   });
 
-  view.hand.visible = squeezeAvailable;
+  view.hand.visible = squeezeAvailable && !clearingHand;
   if (squeezeAvailable) {
     const local = seatLocalPoint(pose, pose.feltPosition);
     /*
@@ -2725,7 +2762,10 @@ function setChipStack(
       faces.setMatrixAt(instance, matrix);
       body.setHex(paletteFor(column.denomination).color);
       stack.setColorAt(instance, body);
-      edge.copy(body).lerp(cream, 0.55);
+      // A real chip has a printed edge spot, not a white light ring. Keep the
+      // contrast readable under the pendant while letting the denomination
+      // colour remain the dominant material response.
+      edge.copy(body).lerp(cream, 0.28);
       spots.setColorAt(instance, edge);
       inlay.copy(edge);
       faces.setColorAt(instance, inlay);
@@ -3004,25 +3044,14 @@ function setPotLanes(
     const lane = new Group();
     const chips = new Group();
     chips.name = "pot-chip-stack";
-    const beam = new Mesh(
-      resources.ledger.track(new CylinderGeometry(POT_HOLOGRAM.beamRadius, POT_HOLOGRAM.beamRadius, 1, 8)),
-      resources.ledger.track(new MeshBasicMaterial({
-        color: 0xf6d36d,
-        transparent: true,
-        opacity: 0.82,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      })),
-    );
-    beam.name = "pot-hologram-beam";
     const plaque = new Mesh(
       resources.ledger.track(new PlaneGeometry(...POT_HOLOGRAM.labelSize)),
       resources.potPlaqueMaterial("POT 0", "main"),
     );
     plaque.name = "pot-amount-plaque";
-    /* It projects above the pile rather than covering cards or betting circles. */
+    /* A small, matte table plaque clears the pile without projecting light. */
     plaque.position.set(0, POT_HOLOGRAM.labelHeight, POT_HOLOGRAM_FORWARD);
-    lane.add(chips, beam, plaque);
+    lane.add(chips, plaque);
     group.add(lane);
   }
   while (group.children.length > publicPots.length) group.remove(group.children[group.children.length - 1]);
@@ -3049,20 +3078,11 @@ function setPotLanes(
       : pot.amount;
     lane.userData.publicPotAmount = amount;
     const chips = lane.getObjectByName("pot-chip-stack") as Group | undefined;
-    const beam = lane.getObjectByName("pot-hologram-beam") as Mesh | undefined;
     const plaque = lane.getObjectByName("pot-amount-plaque") as Mesh | undefined;
-    if (!chips || !beam || !plaque) return;
+    if (!chips || !plaque) return;
     setChipStack(chips, amount, resources);
     plaque.visible = amount > 0;
-    beam.visible = amount > 0;
     plaque.material = resources.potPlaqueMaterial(potHologramLabel(pot.kind, amount), pot.kind);
-    /*
-      The hologram projects straight up from the pile centre. It does not track
-      stack height, which prevents the indicator from turning back into a rope.
-    */
-    const beamLength = POT_HOLOGRAM.labelHeight - POT_HOLOGRAM.beamStartHeight;
-    beam.position.set(0, POT_HOLOGRAM.beamStartHeight + beamLength / 2, POT_HOLOGRAM_FORWARD);
-    beam.scale.set(1, beamLength, 1);
     plaque.position.set(0, POT_HOLOGRAM.labelHeight, POT_HOLOGRAM_FORWARD);
   });
 }
@@ -3163,7 +3183,9 @@ function setDealerCardEquipment(
   while (muck.children.length > count) muck.remove(muck.children[muck.children.length - 1]);
   muck.children.forEach((card, index) => {
     const mesh = card as Mesh;
-    mesh.material = resources.deckBackMaterial(active);
+    // Mucked cards belong to the hand that just ended. Do not recolour them
+    // when the live/prep packs switch for the next hand; that is the visible
+    // source of the old-red/new-blue blink.
     mesh.position.set((index % 3 - 1) * 0.012, index * 0.0018, Math.floor(index / 3) * 0.009);
     mesh.rotation.set(0, (index % 4 - 1.5) * 0.08, (index % 3 - 1) * 0.06);
   });
@@ -3194,10 +3216,47 @@ function setBoardCards(
   }
   group.children.forEach((card, index) => {
     const mesh = card as Mesh;
+    const isCollectingHand = transition?.kind === "cards-collected";
+    const collectProgress = isCollectingHand
+      ? smoothSceneProgress(transition?.progress ?? 0)
+      : 0;
     const isDealingThisCard = transition?.kind === "board-card-dealt"
       && boardStreetFrame?.cardIndex === index;
     const isWinningCard = transition?.kind === "showdown"
       && Boolean(codes[index] && transition.winningCardCodes?.includes(codes[index]));
+    if (isCollectingHand) {
+      const target = communityCardTarget(index);
+      const clearTarget = handClearCardTarget(index + 2);
+      mesh.position.set(
+        interpolateSceneNumber(
+          target[0] - TABLE_ANCHORS.board[0],
+          clearTarget[0] - TABLE_ANCHORS.board[0],
+          collectProgress,
+        ),
+        interpolateSceneNumber(
+          target[1] - TABLE_ANCHORS.board[1],
+          clearTarget[1] - TABLE_ANCHORS.board[1],
+          collectProgress,
+        ),
+        interpolateSceneNumber(
+          target[2] - TABLE_ANCHORS.board[2],
+          clearTarget[2] - TABLE_ANCHORS.board[2],
+          collectProgress,
+        ),
+      );
+      mesh.rotation.set(Math.PI * collectProgress, 0, 0);
+      mesh.visible = collectProgress < 1;
+      mesh.material = collectProgress < 0.45
+        ? resources.cardFaceMaterial(codes[index] ?? "")
+        : resources.deckBackMaterial(deckColourForHand(handId ?? transition.handId));
+      mesh.scale.setScalar(BOARD_CARD_SCALE);
+      mesh.userData.cardPhase = "collect";
+      mesh.userData.cardOwnership = "muck";
+      mesh.userData.cardContact = "muck";
+      mesh.userData.cardQuaternion = [0, 0, 0, 1];
+      mesh.userData.publicCode = codes[index] ?? null;
+      return;
+    }
     if (isDealingThisCard) {
       const cardFrame = boardStreetFrame.boardCard;
       mesh.position.set(
@@ -3234,6 +3293,25 @@ function setBoardCards(
     mesh.scale.setScalar(BOARD_CARD_SCALE * (isWinningCard ? 1.045 : 1));
     mesh.userData.publicCode = codes[index] ?? null;
   });
+}
+
+function interpolateSceneNumber(from: number, to: number, progress: number): number {
+  const t = Math.min(1, Math.max(0, progress));
+  return from + (to - from) * t;
+}
+
+function smoothSceneProgress(progress: number): number {
+  const t = Math.min(1, Math.max(0, progress));
+  return t * t * (3 - 2 * t);
+}
+
+function handClearCardTarget(index: number): readonly [number, number, number] {
+  const [x, y, z] = TABLE_ANCHORS.muck;
+  return [
+    x + (index % 3 - 1) * 0.014,
+    y + 0.004 + Math.floor(index / 3) * 0.0018,
+    z + (Math.floor(index / 3) % 3) * 0.009,
+  ];
 }
 
 function publicObjectCode(object: Object3D): string | null {

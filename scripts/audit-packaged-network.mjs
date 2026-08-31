@@ -23,7 +23,7 @@ const projectRoot = resolve(new URL("..", import.meta.url).pathname.slice(1));
 const appArgument = argumentValue("--app");
 const appPath = resolve(
   projectRoot,
-  appArgument ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
+  appArgument ?? "outputs/current/win-unpacked/Poker Training Pro.exe",
 );
 const observationMs = numberArgument("--duration-ms", 45_000);
 const reportPath = resolve(projectRoot, "work", "packaged-network-audit.json");
