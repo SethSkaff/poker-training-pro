@@ -20,7 +20,7 @@ import {
 const PROFILE_PREFIX = "poker-training-pro-recovery-smoke-";
 const appPath = resolve(
   projectRoot,
-  argumentValue("--app") ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
+  argumentValue("--app") ?? "outputs/current/win-unpacked/Poker Training Pro.exe",
 );
 const reportPath = resolve(projectRoot, "work", "packaged-save-recovery-smoke.json");
 const timeoutMs = 30_000;

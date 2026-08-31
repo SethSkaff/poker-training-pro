@@ -23,7 +23,7 @@ const PROFILE_PREFIX = "poker-training-pro-mode-completion-";
 const MODES = Object.freeze(["normal", "rational", "timed"]);
 const appPath = resolve(
   projectRoot,
-  argumentValue("--app") ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
+  argumentValue("--app") ?? "outputs/current/win-unpacked/Poker Training Pro.exe",
 );
 const requestedMode = argumentValue("--mode");
 const modes = requestedMode ? [requestedMode] : [...MODES];

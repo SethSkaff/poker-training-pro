@@ -78,7 +78,7 @@
     "productName": "Poker Training Pro",
     "asar": true,
     "directories": {
-      "output": "outputs/next",
+      "output": "outputs/current",
       "buildResources": "build"
     },
     "files": [

@@ -2,7 +2,7 @@
 
 This smoke test launches the already-packaged Windows application with an
 isolated Chromium profile. It never edits bytes in the canonical
-`outputs/next/win-unpacked` package.
+`outputs/current/win-unpacked` package.
 
 Electron's custom `poker-training-pro://` resource responses bypass Chrome
 DevTools Protocol `Fetch` interception. The package also enables embedded ASAR

@@ -49,6 +49,21 @@ describe("tournament pressure context", () => {
     expect(adjustment.riskPremium).toBeGreaterThan(0.1);
     expect(adjustment.blindUrgency).toBe(0);
   });
+
+  it("removes qualification pressure after the qualifying places are locked", () => {
+    const locked = tournamentPressureAdjustment(
+      { playersRemaining: 2, placesToQualification: 0 },
+      10_000,
+      1_000,
+    );
+    const noQualificationBoundary = tournamentPressureAdjustment(
+      { playersRemaining: 2 },
+      10_000,
+      1_000,
+    );
+
+    expect(locked).toEqual(noQualificationBoundary);
+  });
 });
 
 const suits: Record<string, Suit> = {

@@ -15,7 +15,7 @@ node scripts/profile-packaged-runtime.mjs
 ```
 
 The default target is
-`outputs/next/win-unpacked/Poker Training Pro.exe`. Optional arguments are:
+`outputs/current/win-unpacked/Poker Training Pro.exe`. Optional arguments are:
 
 ```powershell
 node scripts/profile-packaged-runtime.mjs `

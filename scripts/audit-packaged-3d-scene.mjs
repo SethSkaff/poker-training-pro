@@ -73,7 +73,7 @@ const compositionViewports = Object.freeze([
 ]);
 const appPath = resolve(
   projectRoot,
-  argumentValue("--app") ?? "outputs/next/win-unpacked/Poker Training Pro.exe",
+  argumentValue("--app") ?? "outputs/current/win-unpacked/Poker Training Pro.exe",
 );
 const motionMode = argumentValue("--motion") ?? "full";
 const sceneAuditSeed = argumentValue("--seed") ?? "runner-showdown-3";

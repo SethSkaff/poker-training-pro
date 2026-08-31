@@ -163,6 +163,13 @@ export type TournamentPresentationEvent =
       kind: "eliminated";
       handId: string;
       playerId: string;
+    }
+  | {
+      id: string;
+      /** The settled hand's public cards are cleared before a new deal starts. */
+      kind: "cards-collected";
+      handId: string;
+      playerIds: readonly string[];
     };
 
 /** One deterministic engine transition plus the public milestones it produced. */
@@ -576,6 +583,12 @@ function progressHandPresentationEvents(
       handId: result.handId,
       playerId,
     });
+  });
+  events.push({
+    id: presentationEventId(source, result.handId, "cards-collected"),
+    kind: "cards-collected",
+    handId: result.handId,
+    playerIds: previousHand.information.players.map((player) => player.id),
   });
   return events;
 }

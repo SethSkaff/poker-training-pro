@@ -216,7 +216,7 @@ function auditInputs({
   if (disclosures.packagedAsar === false) {
     findings.push({
       type: "missing play-chip disclosure",
-      path: "outputs/next/win-unpacked/resources/app.asar",
+      path: "outputs/current/win-unpacked/resources/app.asar",
       evidence: "Packaged renderer is stale or omits the required disclosure.",
     });
   }

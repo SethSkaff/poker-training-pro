@@ -47,6 +47,12 @@ export interface RationalPolicyInput {
   tournament?: RationalTournamentContext;
   /** Higher values mix more; lower values concentrate on the best EV action. */
   temperature?: number;
+  /**
+   * Extra legal commands to score exactly, in addition to the policy's
+   * canonical sizing candidates. Used by replay review so a wager between two
+   * preset sizes is not silently scored as the nearest preset.
+   */
+  additionalActions?: readonly BettingActionCommand[];
 }
 
 export interface OpponentRangeSummary {
@@ -1234,7 +1240,13 @@ export function tournamentPressureAdjustment(
     if (bubbleDistance <= 2) premium += 0.07;
     else if (bubbleDistance <= 5) premium += 0.035;
   }
-  if (context.placesToQualification !== undefined) {
+  // A zero distance means the hero is already guaranteed a qualifying place.
+  // Do not keep charging a qualification premium once no place remains to be
+  // won; qualification pressure is about the bubble, not final placement.
+  if (
+    context.placesToQualification !== undefined &&
+    context.placesToQualification > 0
+  ) {
     if (context.placesToQualification <= 1) premium += 0.07;
     else if (context.placesToQualification <= 3) premium += 0.04;
   }
@@ -1304,6 +1316,7 @@ function buildCandidates(
   informationSet: PlayerInformationSet,
   legal: LegalActionSet,
   bigBlind: number,
+  additionalActions: readonly BettingActionCommand[] = [],
 ): CandidateAction[] {
   const hero = informationSet.players.find(
     (player) => player.id === informationSet.viewerId,
@@ -1388,6 +1401,54 @@ function buildCandidates(
         Math.max(0, legal.allInTo - hero.streetCommitted),
       );
     }
+  }
+
+  for (const command of additionalActions) {
+    switch (command.type) {
+      case "fold":
+        if (!legal.fold) throw new Error("Additional fold action is not legal");
+        break;
+      case "check":
+        if (!legal.check) throw new Error("Additional check action is not legal");
+        break;
+      case "call":
+        if (!legal.call) throw new Error("Additional call action is not legal");
+        break;
+      case "all-in":
+        if (!legal.allIn) throw new Error("Additional all-in action is not legal");
+        break;
+      case "bet":
+        if (
+          !legal.bet ||
+          command.to === undefined ||
+          !Number.isSafeInteger(command.to) ||
+          command.to < legal.bet.min ||
+          command.to > legal.bet.max
+        ) {
+          throw new Error("Additional bet action is not legal");
+        }
+        break;
+      case "raise":
+        if (
+          !legal.raise ||
+          command.to === undefined ||
+          !Number.isSafeInteger(command.to) ||
+          command.to < legal.raise.minTo ||
+          command.to > legal.raise.maxTo
+        ) {
+          throw new Error("Additional raise action is not legal");
+        }
+        break;
+    }
+    const additionalRisk =
+      command.type === "call"
+        ? legal.callAmount
+        : command.type === "all-in"
+          ? Math.max(0, legal.allInTo - hero.streetCommitted)
+          : command.to === undefined
+            ? 0
+            : Math.max(0, command.to - hero.streetCommitted);
+    addCandidate(candidates, { ...command }, additionalRisk);
   }
 
   return [...candidates.values()];
@@ -1977,6 +2038,7 @@ function assembleRationalDecision(
     informationSet,
     legalActions,
     input.bigBlind,
+    input.additionalActions,
   );
   const scored = scoreCandidates(
     candidates,

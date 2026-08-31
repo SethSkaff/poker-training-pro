@@ -13,6 +13,7 @@ import { createInformationSet } from "../engine/tournament";
 import {
   assertReviewIsRedacted,
   canonicalReviewResult,
+  countReviewPlayersRemaining,
   deriveHandReview,
   filterDecisions,
   HandReviewCancelledError,
@@ -47,7 +48,53 @@ function playRound(seed: string, handLimit = 6): TournamentRunnerReplay {
   return createTournamentRunnerReplay(runner, 50);
 }
 
+/** Finds an opening postflop bet, which the UI records as a `raise` request. */
+function playOpeningBet(seed: string): TournamentRunnerReplay {
+  let runner = advanceTournamentRunnerToHero(
+    createCareerTournamentRunner({
+      eventId: "local-qualifier",
+      hero,
+      mode: "normal",
+      seed,
+    }),
+    { policy: { simulations: 50 } },
+  );
+
+  for (let index = 0; index < 80; index += 1) {
+    if (runner.session.status === "complete") break;
+    const legal = heroTournamentLegalActions(runner);
+    if (!legal) break;
+    if (legal.bet && legal.bet.max > legal.bet.min) {
+      const target = legal.bet.min + 1;
+      runner = applyHeroTournamentAction(
+        runner,
+        { action: "raise", raiseTo: target },
+        { nowMs: index * 1_000, policy: { simulations: 50 } },
+      );
+      return createTournamentRunnerReplay(runner, 50);
+    }
+    const action = legal.check ? "check" : legal.call ? "call" : "fold";
+    runner = applyHeroTournamentAction(
+      runner,
+      { action },
+      { nowMs: index * 1_000, policy: { simulations: 50 } },
+    );
+  }
+
+  throw new Error("Seed did not reach an opening postflop bet");
+}
+
 describe("hand review derivation", () => {
+  it("counts zero-stack all-in seats until tournament settlement", () => {
+    expect(
+      countReviewPlayersRemaining([
+        { status: "active", stack: 0 },
+        { status: "active", stack: 125 },
+        { status: "eliminated", stack: 0 },
+      ]),
+    ).toBe(2);
+  });
+
   it("uses one canonical EV ranking for recommendation, regret, badge, and good score", () => {
     const result = canonicalReviewResult(
       [
@@ -67,6 +114,35 @@ describe("hand review derivation", () => {
     expect(result.regretBigBlinds).toBeLessThanOrEqual(GOOD_MOVE_MAX_EV_LOSS_BB);
   });
 
+  it("scores an opening bet using the engine command, not the UI raise label", async () => {
+    const replay = playOpeningBet("review-opening-bet");
+    const review = await deriveHandReview(replay, {
+      simulations: 50,
+      yieldControl: async () => undefined,
+    });
+    const decision = review.decisions.find((entry) => entry.chosen.type === "bet");
+
+    expect(decision).toBeDefined();
+    expect(decision?.chosen.to).toBeDefined();
+    expect(
+      decision?.math.actionValues.some(
+        (option) => option.type === "bet" && option.to === decision?.chosen.to,
+      ),
+    ).toBe(true);
+  }, 60_000);
+
+  it("marks a review that reaches its safety ceiling as truncated", async () => {
+    const replay = playRound("review-truncated", 6);
+    const review = await deriveHandReview(replay, {
+      simulations: 50,
+      maxDecisions: 1,
+      yieldControl: async () => undefined,
+    });
+
+    expect(review.decisions).toHaveLength(1);
+    expect(review.truncated).toBe(true);
+  }, 60_000);
+
   it("annotates every hero decision in the replay", async () => {
     const replay = playRound("review-basic");
     const review = await deriveHandReview(replay, {
@@ -77,6 +153,7 @@ describe("hand review derivation", () => {
     expect(review.decisions.length).toBeGreaterThan(0);
     expect(review.decisions.length).toBeLessThanOrEqual(replay.actions.length);
     expect(review.eventId).toBe(replay.eventId);
+    expect(review.truncated).toBe(false);
     expect(review.goodAccuracy).toBeGreaterThanOrEqual(review.accuracy);
     expect(review.goodAccuracy).toBeLessThanOrEqual(1);
     for (const decision of review.decisions) {
@@ -84,6 +161,18 @@ describe("hand review derivation", () => {
       expect(decision.math.evRegretBigBlinds).toBeGreaterThanOrEqual(0);
       expect(decision.math.simulations).toBe(60);
       expect(["preflop", "flop", "turn", "river"]).toContain(decision.street);
+      const handNumber = decision.handId.match(/:hand-(\d+)$/)?.[1];
+      expect(handNumber).toBe(String(decision.handNumber));
+      if (decision.street === "preflop") {
+        expect([
+          "unopened",
+          "facing-open",
+          "facing-3bet",
+          "facing-4bet-plus",
+        ]).toContain(decision.preflopSituation);
+      } else {
+        expect(decision.preflopSituation).toBeUndefined();
+      }
       expect(decision.recommended.type).toBeTruthy();
       const best = [...decision.math.actionValues].sort(
         (left, right) => right.expectedValueBigBlinds - left.expectedValueBigBlinds,

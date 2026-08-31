@@ -43,4 +43,16 @@ describe("PokerTable queued-action cancellation wiring", () => {
     expect(source).toContain("target.isContentEditable");
     expect(source).toContain("if (isEditableTarget) return;");
   });
+
+  it("publishes 3D call and fold input without the AI-style pre-submit wait", () => {
+    const branchStart = source.indexOf(
+      'if (!isTwoDMode && (nextAction === "call" || nextAction === "fold"))',
+    );
+    const branchEnd = source.indexOf("const publicPotOdds", branchStart);
+    expect(branchStart).toBeGreaterThan(-1);
+    expect(branchEnd).toBeGreaterThan(branchStart);
+    const branch = source.slice(branchStart, branchEnd);
+    expect(branch).toContain("tournament.onAction(request);");
+    expect(branch).toContain("return;");
+  });
 });

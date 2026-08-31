@@ -64,6 +64,35 @@ describe("training scenario release-quality audit", () => {
     }
   });
 
+  it("does not reveal the flush-out count before the player estimates", () => {
+    const flushDrawScenarios = trainingScenarios.filter((scenario) =>
+      scenario.tags.includes("flush-draw"),
+    );
+
+    expect(flushDrawScenarios.length).toBeGreaterThan(0);
+    for (const scenario of flushDrawScenarios) {
+      const decisionCopy = scenario.prompt;
+      const questionCopy = scenario.mathQuestion.prompt;
+
+      expect(decisionCopy, scenario.id).not.toMatch(/\b\d+\s+(?:clean\s+)?outs?\b/i);
+      expect(questionCopy, scenario.id).not.toMatch(/\b\d+\s+(?:clean\s+)?outs?\b/i);
+      expect(questionCopy, scenario.id).not.toMatch(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:clean\s+)?outs?\b/i);
+    }
+  });
+
+  it("uses contextual language for the shove math question and evaluates a call", () => {
+    const scenario = trainingScenarios.find(
+      (item) => item.id === "preflop-button-shove-fold-equity",
+    );
+
+    expect(scenario).toBeDefined();
+    expect(scenario?.mathQuestion.prompt).toBe(
+      "Ignoring showdown equity for this sub-calculation, what fold percentage would you need when going all-in to win the current pot?",
+    );
+    expect(scenario?.mathQuestion.prompt).not.toMatch(/\d/);
+    expect(scenario?.training.actionEvs.call).toBeTypeOf("number");
+  });
+
   it("teaches from the decision-time information rather than the runout", () => {
     for (const scenario of trainingScenarios) {
       const teachingCopy = [

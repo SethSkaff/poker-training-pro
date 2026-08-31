@@ -34,6 +34,7 @@ import {
 } from "../scene3d/sceneTransition";
 import {
   monotonicScenePresentationProgress,
+  presentationProgressForEvent,
   sampleScenePresentationProgress,
 } from "../scene3d/scenePresentationProgress";
 import {
@@ -92,6 +93,7 @@ import {
   type HeroFoldState,
 } from "../lib/heroFoldPresentation";
 import { PlayingCard } from "./PlayingCard";
+import { TwoDAvatar } from "./TwoDAvatar";
 import { DecorativeSceneErrorBoundary } from "./DecorativeSceneErrorBoundary";
 import { PokerReferenceContent } from "./PokerReference";
 import {
@@ -99,8 +101,11 @@ import {
   describeOpponentAppearance,
   opponentAppearanceStyle,
   type OpponentAppearance,
-  unique2DPlayerAppearances,
 } from "../lib/opponentAppearance";
+import {
+  type TwoDAvatarModel,
+  unique2DPlayerIdentities,
+} from "../lib/twoDAvatarModels";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
 import {
   useTableAnnouncer,
@@ -271,6 +276,8 @@ export function presentationEventLabel(event: TournamentPresentationEvent): stri
       return `Side pot formed: ${formatChips(event.amount)}`;
     case "pot-awarded":
       return `Pot awarded: ${formatChips(event.amount)}`;
+    case "cards-collected":
+      return "Cards collected";
     case "eliminated":
       return "Player eliminated";
   }
@@ -584,6 +591,8 @@ const seatPositions = [
   "lower-right",
 ] as const;
 
+const EMPTY_DISPLAYED_BOARD: readonly Card[] = [];
+
 /**
  * A concise, player-relevant live announcement. It deliberately omits the
  * dealer, room art, avatar animation, and other decorative scenery so a screen
@@ -742,58 +751,40 @@ function SeatChipStack({
 
 /** Stable visual identity, intentionally unrelated to policy/personality. */
 export function avatarVariantForPlayerId(playerId: string): number {
-  let hash = 2166136261;
-  for (const character of playerId) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) % 6;
+  return twoDAvatarModelForPlayerId(playerId).index;
 }
 
-const TWO_D_FIRST_NAMES = {
-  male: ["Adrian", "Caleb", "Darius", "Elias", "Jonah", "Mateo", "Nolan", "Rafael"],
-  female: ["Amara", "Elena", "Isla", "Juno", "Lena", "Maya", "Nadia", "Talia"],
-} as const;
-
-/** Deterministic random-looking first name for the 2D portrait label. */
-export function firstNameFor2DPlayer(playerId: string, offset = 0): string {
-  const gender = describeOpponentCharacter(playerId).gender;
-  const names = TWO_D_FIRST_NAMES[gender];
-  const index = (avatarVariantForPlayerId(`${playerId}:name`) + offset) % names.length;
-  return names[index];
+function twoDAvatarModelForPlayerId(playerId: string): TwoDAvatarModel {
+  return unique2DPlayerIdentities([playerId]).get(playerId)!.model;
 }
 
-/** Resolve the six visible portrait cells without allowing a duplicate cell. */
-export function unique2DAvatarVariants(playerIds: readonly string[]): ReadonlyMap<string, number> {
-  const variants = new Map<string, number>();
-  const used = new Set<number>();
-  for (const playerId of [...playerIds].sort()) {
-    const preferred = avatarVariantForPlayerId(playerId);
-    let variant = preferred;
-    for (let step = 0; used.has(variant) && step < 6; step += 1) {
-      variant = (preferred + step + 1) % 6;
-    }
-    used.add(variant);
-    variants.set(playerId, variant);
-  }
-  return variants;
+/** Deterministic random-looking first name for the authored 2D portrait. */
+export function firstNameFor2DPlayer(playerId: string, playerName?: string): string {
+  return unique2DPlayerIdentities([{ id: playerId, name: playerName }]).get(playerId)!.displayName;
 }
 
-/** Give a visible 2D table a collision-free, gender-matched first-name roster. */
-export function unique2DDisplayNames(playerIds: readonly string[]): ReadonlyMap<string, string> {
-  const names = new Map<string, string>();
-  const used = new Set<string>();
-  for (const playerId of [...playerIds].sort()) {
-    for (let offset = 0; offset < TWO_D_FIRST_NAMES.male.length; offset += 1) {
-      const candidate = firstNameFor2DPlayer(playerId, offset);
-      if (!used.has(candidate)) {
-        used.add(candidate);
-        names.set(playerId, candidate);
-        break;
-      }
-    }
-  }
-  return names;
+/** Resolve the visible 2D model library without allowing a duplicate model. */
+export function unique2DAvatarVariants(
+  playerIds: readonly string[],
+): ReadonlyMap<string, number> {
+  return new Map(
+    [...unique2DPlayerIdentities(playerIds)].map(([playerId, identity]) => [
+      playerId,
+      identity.model.index,
+    ]),
+  );
+}
+
+/** Give a visible 2D table a collision-free, gender-matched name roster. */
+export function unique2DDisplayNames(
+  players: readonly (string | { readonly id: string; readonly name?: string })[],
+): ReadonlyMap<string, string> {
+  return new Map(
+    [...unique2DPlayerIdentities(players)].map(([playerId, identity]) => [
+      playerId,
+      identity.displayName,
+    ]),
+  );
 }
 
 /**
@@ -839,7 +830,10 @@ interface PlayerSeatProps {
   stackAnchor?: { readonly xPercent: number; readonly yPercent: number };
   betAnchor?: { readonly xPercent: number; readonly yPercent: number };
   displayName?: string;
+  avatarModel?: TwoDAvatarModel;
   appearance?: OpponentAppearance;
+  /** Render the current street bet in the seat label for the flat table. */
+  showCurrentBet?: boolean;
 }
 
 /**
@@ -942,7 +936,9 @@ function PlayerSeat({
   stackAnchor,
   betAnchor,
   displayName,
+  avatarModel,
   appearance: suppliedAppearance,
+  showCurrentBet = false,
 }: PlayerSeatProps) {
   const appearance = suppliedAppearance ?? describeOpponentAppearance(player.id);
   const isMucking = isSeatFoldedForPresentation(
@@ -1020,7 +1016,7 @@ function PlayerSeat({
       {...sceneSeatDomAttributes(sceneSeat)}
       aria-label={playerSeatAriaLabel({
         isHero,
-        name: player.name,
+        name: displayName ?? player.name,
         stack: player.stack,
         status: seatStatus,
         showingCards: isShowingCards,
@@ -1040,33 +1036,39 @@ function PlayerSeat({
         <div className="opponent-cards" aria-hidden={!hasRevealedCards}>
           {shouldHoldCards && <i className="opponent-card-hand" aria-hidden="true" />}
           {hasRevealedCards
-            ? revealedCards.map((card) => (
-                <PlayingCard
-                  key={cardLabel(card)}
-                  card={card}
-                  small
-                  className={
-                    winningCardLabels?.has(cardLabel(card))
-                      ? "showdown-card is-winning"
-                      : "showdown-card is-unused"
-                  }
-                />
-              ))
+            ? revealedCards.map((card) => {
+                const index = revealedCards.indexOf(card);
+                return (
+                  <PlayingCard
+                    key={cardLabel(card)}
+                    card={card}
+                    small
+                    className={
+                      [
+                        "deal-card",
+                        `deal-card--${index + 1}`,
+                        winningCardLabels?.has(cardLabel(card))
+                          ? "showdown-card is-winning"
+                          : "showdown-card is-unused",
+                      ].join(" ")
+                    }
+                  />
+                );
+              })
             : Array.from({ length: visiblePrivateCardCount }, (_, index) => (
                 <PlayingCard
                   key={index}
                   card={{ rank: "A", suit: "spades" }}
                   hidden
                   small
+                  className={`deal-card deal-card--${index + 1}`}
                 />
               ))}
         </div>
       )}
-      {/* A seated figure rather than a floating portrait: chair, torso, and a
-          ground shadow anchor the opponent to the felt. Every dimension is
-          derived from the player id alone (see lib/opponentAppearance), so the
-          same person keeps the same look as the button rotates them around the
-          table, and no visual detail can encode how they play. */}
+      {/* The 2D view uses an authored blocky model selected from the 100-model
+          library. The 3D/fallback view keeps its seated procedural figure. In
+          both cases the identity is stable across seat rotation and replay. */}
       <div
         className={`seat-figure seat-figure--body-${appearance.bodyType} seat-figure--posture-${appearance.posture} seat-figure--age-${appearance.agePresentation}`}
         style={opponentAppearanceStyle(appearance)}
@@ -1076,17 +1078,29 @@ function PlayerSeat({
         <i className="seat-figure-chair" />
         <i className="seat-figure-torso" />
         <div
-            className={`seat-avatar seat-avatar--variant-${appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
+            className={`seat-avatar ${avatarModel ? "seat-avatar--model" : ""} seat-avatar--variant-${appearance.portrait} seat-avatar--face-${appearance.faceShape}`}
             data-avatar-face={appearance.faceShape}
             data-avatar-hair={appearance.hairStyle}
             data-avatar-shirt={appearance.clothing.name}
+            {...(avatarModel
+              ? {
+                  "data-avatar-model": avatarModel.id,
+                  "data-avatar-gender": avatarModel.gender,
+                }
+              : {})}
           >
-          <span className="seat-avatar-name">{displayName ?? player.name.split(" ")[0]}</span>
-          <i className={`seat-figure-hair seat-figure-hair--${appearance.hairStyle}`} />
-          {appearance.accessory !== "none" && (
-            <i
-              className={`seat-figure-accessory seat-figure-accessory--${appearance.accessory}`}
-            />
+          {avatarModel ? (
+            <TwoDAvatar model={avatarModel} />
+          ) : (
+            <>
+              <span className="seat-avatar-name">{displayName ?? player.name.split(" ")[0]}</span>
+              <i className={`seat-figure-hair seat-figure-hair--${appearance.hairStyle}`} />
+              {appearance.accessory !== "none" && (
+                <i
+                  className={`seat-figure-accessory seat-figure-accessory--${appearance.accessory}`}
+                />
+              )}
+            </>
           )}
           {isActing && (
             <i className="thinking-ring" />
@@ -1111,6 +1125,12 @@ function PlayerSeat({
       >
         <span className="seat-name">{isHero ? formatMessage("table.seat.you") : displayName ?? player.name.split(" ")[0]}</span>
         <strong>{formatChips(player.stack)}</strong>
+        {showCurrentBet && (
+          <span className="seat-current-bet">
+            <small>BET</small>
+            <b>{formatChips(player.bet)}</b>
+          </span>
+        )}
       </div>
       {/*
         The hero's committed wager sits at the hero's seat, exactly as every
@@ -1207,6 +1227,11 @@ const POKER_MATH_GLOSSARY: readonly PokerMathGlossaryEntry[] = [
     term: "equity",
     definition: "Your share of the pot based on how often you expect to win.",
     learnMore: "Compare estimated equity with the equity required by pot odds. Continue when your range estimate and future betting justify the price; fold when they do not.",
+  },
+  {
+    term: "flush",
+    definition: "A hand with five cards of the same suit.",
+    learnMore: "A flush draw needs one more card of the suit to complete. Count the unseen cards that help, then estimate the chance of completing it by the next street or river.",
   },
   {
     term: "outs",
@@ -1730,9 +1755,58 @@ export function PokerTable({
   const [cameraPan, setCameraPan] = useState(
     initialTrainingPresentation?.cameraPan ?? 0,
   );
+  const cameraPanRef = useRef(cameraPan);
+  cameraPanRef.current = cameraPan;
   // A temporary, player-controlled lens adjustment. Unlike the saved framing
   // preference, this follows the player through every hand in the round.
   const [cameraZoom, setCameraZoom] = useState(0);
+  const cameraZoomRef = useRef(cameraZoom);
+  cameraZoomRef.current = cameraZoom;
+  const pendingCameraPanRef = useRef<number | null>(null);
+  const cameraPanFrameRef = useRef<number | null>(null);
+  const pendingCameraZoomRef = useRef<number | null>(null);
+  const cameraZoomFrameRef = useRef<number | null>(null);
+
+  const scheduleCameraPan = useCallback((next: number) => {
+    cameraPanRef.current = next;
+    pendingCameraPanRef.current = next;
+    if (cameraPanFrameRef.current !== null) return;
+    cameraPanFrameRef.current = window.requestAnimationFrame(() => {
+      cameraPanFrameRef.current = null;
+      const value = pendingCameraPanRef.current;
+      pendingCameraPanRef.current = null;
+      if (value !== null) {
+        setCameraPan((current) => current === value ? current : value);
+      }
+    });
+  }, []);
+
+  const scheduleCameraZoom = useCallback((event: Pick<WheelEvent, "deltaY" | "deltaMode">) => {
+    const current = cameraZoomRef.current;
+    const next = cameraZoomFromWheel(current, event.deltaY, event.deltaMode);
+    cameraZoomRef.current = next;
+    pendingCameraZoomRef.current = next;
+    if (cameraZoomFrameRef.current !== null) return;
+    cameraZoomFrameRef.current = window.requestAnimationFrame(() => {
+      cameraZoomFrameRef.current = null;
+      const value = pendingCameraZoomRef.current;
+      pendingCameraZoomRef.current = null;
+      if (value !== null) {
+        setCameraZoom((current) => current === value ? current : value);
+      }
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (cameraPanFrameRef.current !== null) {
+      window.cancelAnimationFrame(cameraPanFrameRef.current);
+      cameraPanFrameRef.current = null;
+    }
+    if (cameraZoomFrameRef.current !== null) {
+      window.cancelAnimationFrame(cameraZoomFrameRef.current);
+      cameraZoomFrameRef.current = null;
+    }
+  }, []);
   const [activeCameraFrame, setActiveCameraFrame] = useState<ActiveCameraFrame | null>(null);
   const onCameraFrame = useCallback((frame: ActiveCameraFrame) => {
     // TableScene3D enriches the renderer pose with viewport dimensions, so it
@@ -1792,7 +1866,7 @@ export function PokerTable({
     cameraDragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
-      startPan: cameraPan,
+      startPan: cameraPanRef.current,
     };
     // Cancel the browser's native text-selection gesture at its source.  The
     // HUD is deliberately not an editable document, and selection can steal a
@@ -1802,7 +1876,7 @@ export function PokerTable({
     // so a look begun on open felt keeps updating even after the cursor crosses
     // a plaque or leaves the canvas bounds.
     event.currentTarget.setPointerCapture(event.pointerId);
-  }, [cameraPan]);
+  }, []);
 
   const updateCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = cameraDragRef.current;
@@ -1815,11 +1889,11 @@ export function PokerTable({
       drag.startX,
       event.clientX,
     );
-    setCameraPan((current) => (current === next ? current : next));
+    scheduleCameraPan(next);
     // Avoid selecting felt labels while panning, without consuming the initial
     // press that cards and action controls need for their own gestures.
     event.preventDefault();
-  }, []);
+  }, [scheduleCameraPan]);
 
   const endCameraDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = cameraDragRef.current;
@@ -1845,11 +1919,8 @@ export function PokerTable({
     ) {
       return;
     }
-    setCameraZoom((current) => {
-      const next = cameraZoomFromWheel(current, event.deltaY, event.deltaMode);
-      return current === next ? current : next;
-    });
-  }, []);
+    scheduleCameraZoom(event);
+  }, [scheduleCameraZoom]);
   const [sceneAvailability, setSceneAvailability] =
     useState<SceneAvailability>({ status: "idle" });
   /*
@@ -2299,6 +2370,12 @@ export function PokerTable({
         if (pendingPresentationEvent.current === delay) {
           pendingPresentationEvent.current = null;
         }
+        if (event.kind === "cards-collected") {
+          // Keep the cleared hand from reappearing during the one React render
+          // between the collection event and the next hand's opening event.
+          setCardsDealtHandId(null);
+          setStagedBoard([]);
+        }
         onComplete();
       },
       // Betting is already closed once the all-in hands are face up, so the
@@ -2485,12 +2562,22 @@ export function PokerTable({
       );
       return;
     }
+    if (event?.kind === "cards-collected") return;
+    if (event && event.handId !== scenario.id) {
+      setStagedBoard([]);
+      return;
+    }
+    // After the terminal collection beat the runner briefly has no active
+    // hand. Keep the just-cleared board empty during that bridge; restoring
+    // `scenario.board` here would put the old hand back on the felt before the
+    // next hand's opening event arrives.
+    if (!event && tournament && cardsDealtHandId !== scenario.id) return;
     setStagedBoard((current) =>
       current.length === scenario.board.length
         ? current
         : scenario.board.map((card) => ({ ...card })),
     );
-  }, [scenario.board, tournament?.presentationEvent]);
+  }, [cardsDealtHandId, scenario.board, scenario.id, tournament]);
 
   useEffect(() => {
     if (tournament?.showArrival) setArrivalVisible(true);
@@ -2630,6 +2717,18 @@ export function PokerTable({
           // not the running per-hand total this used to send (E27-004).
           decisionElapsedMs: blindClock.current.drain(),
         };
+        /*
+          In the 3D table the player's input is the start of the visible beat.
+          Waiting here for the old AI-style thinking delay meant the DOM showed
+          the action while the seated player and their chips stayed still. The
+          2D table keeps its existing queue pacing; call/fold in 3D publish on
+          the same input turn and the normal presentation clock still owns the
+          movement duration after that.
+        */
+        if (!isTwoDMode && (nextAction === "call" || nextAction === "fold")) {
+          tournament.onAction(request);
+          return;
+        }
         const publicPotOdds =
           scenario.amountToCall /
           Math.max(1, scenario.pot + scenario.amountToCall);
@@ -2684,6 +2783,7 @@ export function PokerTable({
       speed,
       trainingMeta,
       tournament,
+      isTwoDMode,
       offerPrompt,
     ],
   );
@@ -3133,7 +3233,23 @@ export function PokerTable({
             tournament?.legalActions.allIn,
         );
   const presentationActive = Boolean(tournament?.presentationEvent);
-  const cardsDealt = cardsDealtHandId === scenario.id;
+  /*
+    The next hand is computed before its snapshot is committed so the public
+    button/blind/deal beats can play continuously. During that bridge the
+    scenario still contains the previous hand, but its cards and board have
+    already been collected; keep them out of both renderers immediately.
+  */
+  const newHandPresentation = Boolean(
+    tournament?.presentationEvent &&
+      tournament.presentationEvent.handId !== scenario.id,
+  );
+  const displayedBoard = newHandPresentation
+    ? EMPTY_DISPLAYED_BOARD
+    : stagedBoard;
+  const sceneHandId =
+    tournament?.presentationEvent?.handId ??
+    (tournament ? `tournament:hand-${tournament.handNumber}` : scenario.id);
+  const cardsDealt = !newHandPresentation && cardsDealtHandId === scenario.id;
   const heroDecisionActive =
     mode === "training" || tournament?.heroDecision !== false;
   const callAction = scenario.amountToCall > 0 ? "call" : "check";
@@ -3179,11 +3295,8 @@ export function PokerTable({
     const rightDistance = (right.seat - scenario.heroSeat + 10) % 10;
     return leftDistance - rightDistance;
   });
-  const twoDAppearances = unique2DPlayerAppearances(
-    scenario.players.map((player) => player.id),
-  );
-  const twoDDisplayNames = unique2DDisplayNames(
-    scenario.players.map((player) => player.id),
+  const twoDPlayerIdentities = unique2DPlayerIdentities(
+    scenario.players.map((player) => ({ id: player.id, name: player.name })),
   );
 
   /*
@@ -3192,10 +3305,17 @@ export function PokerTable({
     disagree, the DOM is right, because it is the layer the engine and the
     accessibility audits both talk to.
   */
+  const activeEventProgress = tournament?.presentationEvent
+    ? presentationProgressForEvent(
+        sceneProgressCursorRef.current,
+        tournament.presentationEvent.id,
+        sceneEventProgress,
+      )
+    : sceneEventProgress;
   const baseSceneTransition = tournament?.presentationEvent
     ? createSceneTransition(
       tournament.presentationEvent,
-      sceneEventProgress,
+      activeEventProgress,
       settings.reducedMotion || settings.transitionMotion === "off",
     )
     : undefined;
@@ -3220,7 +3340,7 @@ export function PokerTable({
     // The presentation event is intentionally short-lived; handNumber is the
     // stable identity that keeps both physical packs and every dealt back in
     // lockstep for the entire round.
-    handId: tournament ? `tournament:hand-${tournament.handNumber}` : scenario.id,
+    handId: sceneHandId,
     players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status })),
     heroId: scenario.players.find((player) => player.seat === scenario.heroSeat)?.id ?? "",
     actingPlayerId: scenario.actingPlayerId,
@@ -3234,8 +3354,8 @@ export function PokerTable({
       kind: pot.kind === "side" ? "side" as const : "main" as const,
       amount: pot.amount,
     })),
-    boardCards: stagedBoard.length,
-    publicBoardCardCodes: stagedBoard.map(cardLabel),
+    boardCards: displayedBoard.length,
+    publicBoardCardCodes: displayedBoard.map(cardLabel),
     heroCardCodes: scenario.heroCards.map(cardLabel),
     revealedCardCodesByPlayer: tournament?.presentationEvent?.kind === "showdown"
       ? Object.fromEntries(tournament.presentationEvent.reveals.map((reveal) => [reveal.playerId, reveal.cards.map(cardLabel)]))
@@ -3423,7 +3543,7 @@ export function PokerTable({
     setAllInEquity(undefined);
     const publicCardSeed = [
       allInRevealEvent.handId,
-      ...stagedBoard.map(cardLabel),
+      ...displayedBoard.map(cardLabel),
       ...allInRevealEvent.reveals.flatMap((reveal) => [
         reveal.playerId,
         ...reveal.cards.map(cardLabel),
@@ -3432,7 +3552,7 @@ export function PokerTable({
     void estimatePublicAllInEquitySliced(
       {
         players: allInRevealEvent.reveals,
-        board: stagedBoard,
+        board: displayedBoard,
         seed: `public-all-in:${publicCardSeed}`,
         simulations: 500,
         simulationsPerSlice: 25,
@@ -3445,7 +3565,7 @@ export function PokerTable({
       // authoritative engine is already progressing independently.
     });
     return () => { controller.abort(); };
-  }, [allInRevealEvent, stagedBoard]);
+  }, [allInRevealEvent, displayedBoard]);
   useEffect(() => {
     if (!allInEquity) {
       const empty = new Map<string, number>();
@@ -3484,7 +3604,7 @@ export function PokerTable({
   const winningCardLabels = winningCardLabelsForAwards(
     showdownEvent?.awards ?? [],
   );
-  const winningShowdownHands = winningHandsForShowdown(showdownEvent, stagedBoard);
+  const winningShowdownHands = winningHandsForShowdown(showdownEvent, displayedBoard);
   /*
     Who won this hand, held for as long as the hand is paying out (E27-003).
 
@@ -3520,7 +3640,8 @@ export function PokerTable({
   const resultPhaseActive =
     Boolean(resultEvent) ||
     resultPhaseKind === "pot-awarded" ||
-    resultPhaseKind === "side-pot-formed";
+    resultPhaseKind === "side-pot-formed" ||
+    resultPhaseKind === "cards-collected";
   const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
   const tableAnnouncement = buildPokerTableAnnouncement({
     action,
@@ -4236,7 +4357,7 @@ export function PokerTable({
                   role="group"
                   aria-label={formatMessage("table.communityCards.ariaLabel")}
                 >
-                  {stagedBoard.map((card, index) => (
+                  {displayedBoard.map((card, index) => (
                     <span
                       className={
                         tournament?.presentationEvent?.kind === "board-card-dealt" &&
@@ -4258,7 +4379,7 @@ export function PokerTable({
                       />
                     </span>
                   ))}
-                  {Array.from({ length: 5 - stagedBoard.length }).map(
+                  {Array.from({ length: 5 - displayedBoard.length }).map(
                     (_, index) => (
                       <span
                         className="community-placeholder"
@@ -4411,8 +4532,9 @@ export function PokerTable({
                           )
                       : undefined
                   }
-                  displayName={isTwoDMode ? twoDDisplayNames.get(player.id) : undefined}
-                  appearance={isTwoDMode ? twoDAppearances.get(player.id) : undefined}
+                  displayName={isTwoDMode ? twoDPlayerIdentities.get(player.id)?.displayName : undefined}
+                  avatarModel={isTwoDMode ? twoDPlayerIdentities.get(player.id)?.model : undefined}
+                  showCurrentBet={isTwoDMode}
                 />
               );
             })}
@@ -4479,13 +4601,15 @@ export function PokerTable({
                     <PlayingCard
                       card={card}
                       hidden={!peeked && !showdownHeroRevealed}
-                      className={
+                      className={[
+                        "deal-card",
+                        `deal-card--${index + 1}`,
                         showdownHeroRevealed
                           ? winningCardLabels.has(cardLabel(card))
                             ? "showdown-card is-winning"
                             : "showdown-card is-unused"
-                          : undefined
-                      }
+                          : "",
+                      ].filter(Boolean).join(" ")}
                     />
                     {(peeked || showdownHeroRevealed) && index === heroDealtCardCount - 1 && (
                       <small>{cardLabel(card)}</small>

@@ -393,6 +393,10 @@ export const TABLE_ANCHORS = {
    * is where it is picked up, this is where it is released.
    */
   dealerThrow: [0.12, TABLE_HEIGHT + 0.105, -(TABLE_DEPTH / 2 - 0.16)] as const,
-  /** The muck, in front of the dealer. */
-  muck: [-0.42, TABLE_HEIGHT + 0.01, -(TABLE_DEPTH / 2 - 0.2)] as const,
+  /**
+   * The muck, in a dedicated dealer-right lane. Keeping it off the player
+   * racks prevents the folded packet from visually merging with a stack while
+   * preserving a short, believable sweep from the dealer's right hand.
+   */
+  muck: [-0.18, TABLE_HEIGHT + 0.01, -(TABLE_DEPTH / 2 - 0.12)] as const,
 } as const;

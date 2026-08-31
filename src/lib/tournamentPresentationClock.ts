@@ -40,6 +40,8 @@ export function presentationEventDelayMs(
         1_500
       : event.kind === "hole-cards-dealt"
         ? HOLE_CARD_DEAL_DURATION_MS
+        : event.kind === "cards-collected"
+          ? 900
         : event.kind === "board-card-dealt"
           ? context.allInRunout
             ? 1_500

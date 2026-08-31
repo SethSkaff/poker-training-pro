@@ -36,4 +36,15 @@ describe("hole-card deal presentation", () => {
     expect(styles).toContain("@keyframes hero-card-deal");
     expect(styles).toContain(".poker-table.is-dealing-hole-cards .hero-hole-cards");
   });
+
+  it("holds the prior hand's deck identity until its cards-collected beat completes", () => {
+    expect(tableSource).toContain('if (event?.kind === "cards-collected") return;');
+    expect(tableSource).toContain(
+      "if (!event && tournament && cardsDealtHandId !== scenario.id) return;",
+    );
+    expect(tableSource).toContain("const sceneHandId =");
+    expect(tableSource).toContain(
+      "tournament?.presentationEvent?.handId ??",
+    );
+  });
 });

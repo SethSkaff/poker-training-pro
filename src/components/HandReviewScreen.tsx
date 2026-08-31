@@ -257,6 +257,13 @@ export function HandReviewScreen({
           <p className="review-approximation">
             {formatMessage("review.approximationNotice")}
           </p>
+          {review.truncated ? (
+            <p className="review-truncated" role="status">
+              {formatMessage("review.truncated", {
+                count: review.decisions.length,
+              })}
+            </p>
+          ) : null}
         </header>
 
         <div className="review-segments">
@@ -362,6 +369,15 @@ export function HandReviewScreen({
                     count: decision.playersRemaining,
                   })}
                 </p>
+                {decision.preflopSituation ? (
+                  <p className="review-context">
+                    {formatMessage("review.preflopContext", {
+                      context: formatMessage(
+                        `review.preflop.${decision.preflopSituation}`,
+                      ),
+                    })}
+                  </p>
+                ) : null}
               </header>
 
               <div className="review-cards">

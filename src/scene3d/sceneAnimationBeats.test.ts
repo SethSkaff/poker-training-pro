@@ -61,4 +61,17 @@ describe("presentation-event animation beats", () => {
       owner: "dealer", phase: "burn", source: "deck", destination: "muck",
     });
   });
+
+  it("leaves the explicit card-collection path to the renderer", () => {
+    const collection: SceneTransition = {
+      id: "collect-cards",
+      kind: "cards-collected",
+      handId: "h1",
+      playerIds: ["p1", "p2"],
+      progress: 0.5,
+      foldedPlayerIds: [],
+    };
+    expect(animationBeatFor(collection, "p1")).toBeUndefined();
+    expect(animationBeatFor(collection)).toBeUndefined();
+  });
 });

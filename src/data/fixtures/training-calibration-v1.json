@@ -1,5 +1,5 @@
 {
-  "calibrationVersion": "training-calibration-1.1.0",
+  "calibrationVersion": "training-calibration-1.1.1",
   "scenarioSchemaVersion": "1.0.0",
   "scenarioContentVersion": "2026.07.23.1",
   "evidenceKind": "synthetic-regression-only",
@@ -144,6 +144,10 @@
         [
           "all-in",
           0.62
+        ],
+        [
+          "call",
+          -0.34
         ],
         [
           "fold",

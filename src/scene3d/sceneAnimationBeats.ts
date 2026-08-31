@@ -59,6 +59,10 @@ export function animationBeatFor(
     if (t < 0.86) return beat(transition.id, "dealer", "transfer", segment(t, 0.18, 0.86), segment(t, 0.18, 0.86), "pot", "winner");
     return beat(transition.id, "dealer", "recover", segment(t, 0.86, 1), 1, "pot", "winner");
   }
+  // The renderer owns the card path for this beat. It is deliberately not a
+  // seat action or a second dealer card beat, so no generic deal/muck beat
+  // should make an arm reach or overwrite collection diagnostics.
+  if (transition.kind === "cards-collected") return undefined;
   if (!ownsSeatBeat) return undefined;
 
   if (transition.action === "check") {

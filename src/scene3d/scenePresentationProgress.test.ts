@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   monotonicScenePresentationProgress,
+  presentationProgressForEvent,
   sampleScenePresentationProgress,
   scenePresentationProgress,
   type ScenePresentationDelay,
@@ -33,6 +34,13 @@ class Frames {
 }
 
 describe("scene presentation progress", () => {
+  it("starts a newly rendered event at zero until its clock publishes a sample", () => {
+    const cursor = { eventId: "old-event", progress: 1 };
+
+    expect(presentationProgressForEvent(cursor, "new-event", 1)).toBe(0);
+    expect(presentationProgressForEvent(cursor, "old-event", 0.35)).toBe(0.35);
+  });
+
   it("never regresses progress within one public event", () => {
     const cursor = { eventId: null, progress: 1 };
     expect(monotonicScenePresentationProgress(cursor, "event-1", 0)).toBe(0);

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageRoot": "outputs/next/win-unpacked",
+  "packageRoot": "outputs/current/win-unpacked",
   "maximumTotalBytes": 67108864,
   "electronPackage": {
     "name": "electron",

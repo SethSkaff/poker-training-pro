@@ -3171,10 +3171,10 @@ body:has(.table-screen--3d),
   bottom: 150px;
   left: 0;
   transform: translateX(var(--camera-pan));
-  /* Free-look is driven continuously by held-pointer movement.  A long eased
-     transition made that motion feel like delayed, discrete seat jumps even
-     though the camera value was a float. */
-  transition: transform 55ms linear;
+  /* Free-look is already coalesced to one render per frame in React. A CSS
+     transition here would add a second trailing camera and make the view move
+     in visible sections when pointer/wheel input arrives in bursts. */
+  transition: none;
 }
 
 /*
@@ -4411,7 +4411,7 @@ body:has(.table-screen--3d),
 .seat-chip-stack i[data-denomination="100000"] { background: #c985b9; }
 
 /* Under ten big blinds, preserve the short-rack cue without changing value. */
-.seat-chip-stack--short i { box-shadow: 0 0 0 1px rgba(255, 209, 63, 0.38); }
+.seat-chip-stack--short i { box-shadow: 0 0 0 1px rgba(205, 169, 86, 0.22), 0 1px 2px rgba(0, 0, 0, 0.42); }
 
 .chip-stack {
   position: relative;
@@ -4426,9 +4426,10 @@ body:has(.table-screen--3d),
   left: 0;
   width: 18px;
   height: 7px;
-  border: 2px dotted #dcfaf1;
+  border: 1px solid rgba(238, 226, 194, 0.58);
   border-radius: 50%;
-  background: #267d6c;
+  background: #31775d;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .chip-stack i:nth-child(1) {
@@ -4448,7 +4449,7 @@ body:has(.table-screen--3d),
 }
 
 .chip-stack--bet i {
-  background: #9e603a;
+  background: #8b5637;
 }
 
 .player-seat {
@@ -4999,7 +5000,7 @@ body:has(.table-screen--3d),
 
 .chip-travel .chip-stack {
   transform: translate(-50%, -50%) scale(1.2);
-  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .45));
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .42));
 }
 
 @keyframes chip-travel {
@@ -5034,18 +5035,17 @@ body:has(.table-screen--3d),
   to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
 }
 
-.poker-table.is-dealing-hole-cards .opponent-cards {
-  animation: opponent-card-deal 620ms cubic-bezier(.18,.82,.22,1) both;
-  transform-origin: 50% -160px;
+.poker-table.is-dealing-hole-cards .opponent-cards,
+.poker-table.is-dealing-hole-cards .hero-hole-cards {
+  animation: none;
 }
 
-.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(2) .opponent-cards { animation-delay: 80ms; }
-.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(3) .opponent-cards { animation-delay: 150ms; }
-.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(4) .opponent-cards { animation-delay: 220ms; }
-.poker-table.is-dealing-hole-cards .player-seat:nth-of-type(5) .opponent-cards { animation-delay: 290ms; }
-
-.poker-table.is-dealing-hole-cards .hero-hole-cards {
-  animation: hero-card-deal 620ms 360ms cubic-bezier(.18,.82,.22,1) both;
+/* The public deal clock adds each card only after it reaches its owner. The
+   card itself therefore gets the arrival motion; animating the whole two-card
+   group made both cards appear together and hid the first-card peek window. */
+.poker-table.is-dealing-hole-cards .deal-card {
+  animation: deal-card-arrive 240ms cubic-bezier(.18,.82,.22,1) both;
+  transform-origin: 50% -120px;
 }
 
 .player-seat.is-folded .opponent-cards {
@@ -5079,6 +5079,11 @@ body:has(.table-screen--3d),
 
 @keyframes opponent-card-deal {
   from { opacity: 0; transform: translateY(-38px) scale(0.82) rotate(-7deg); }
+  to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+
+@keyframes deal-card-arrive {
+  from { opacity: 0; transform: translateY(-22px) scale(0.9) rotate(-4deg); }
   to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
 }
 
@@ -10838,6 +10843,17 @@ body:has(.table-screen--3d),
   text-transform: uppercase;
 }
 
+.review-context {
+  color: #b9b5a9;
+  font-size: 11px;
+}
+
+.review-truncated {
+  margin: 6px 0 0;
+  color: #e29465;
+  font-size: 11px;
+}
+
 .review-cards {
   display: flex;
   flex-wrap: wrap;
@@ -11589,6 +11605,7 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .table-layout {
+  display: block;
   height: calc(100dvh - 66px);
   min-height: 0;
   grid-template-columns: minmax(0, 1fr);
@@ -11598,12 +11615,41 @@ body:has(.table-screen--2d),
 
 .table-screen--2d .table-stage {
   min-height: 0;
+  height: 100%;
   overflow: visible;
   border-color: #282c2f;
   border-radius: 10px;
   box-shadow: none;
   cursor: default;
   touch-action: manipulation;
+}
+
+/*
+   Training uses the same full-height table composition as every other 2D
+   table. The question is an overlay, not a second grid row that compresses
+   the felt and action controls. Keep the feedback card in the same location
+   after an answer so the player's visual anchor does not jump.
+*/
+.table-screen--2d[data-game-mode="training"]
+  > .table-layout
+  > .training-panel,
+.table-screen--2d[data-game-mode="training"]
+  > .table-layout
+  > .feedback-panel {
+  position: absolute;
+  z-index: 45;
+  top: 16px;
+  right: 16px;
+  bottom: auto;
+  left: auto;
+  width: min(340px, calc(100% - 32px));
+  max-width: none;
+  height: auto;
+  max-height: calc(100% - 180px);
+  aspect-ratio: auto;
+  overflow: auto;
+  pointer-events: auto;
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.48);
 }
 
 .table-screen--2d .mode-preview-panel,
@@ -11617,14 +11663,18 @@ body:has(.table-screen--2d),
   --table-left: 5%;
   --table-width: 90%;
   --table-top: 13%;
-  --table-height: 58%;
+  /* Keep the wide footprint, but give the lower half of the table room to
+     breathe. The top edge remains fixed while the bottom edge moves down. */
+  --table-height: 68%;
   --table-right: calc(var(--table-left) + var(--table-width));
   --table-bottom: calc(var(--table-top) + var(--table-height));
   --avatar-size: clamp(48px, 5vw, 66px);
   --avatar-half: calc(var(--avatar-size) / 2);
   --rail-gap: clamp(5px, 0.55vw, 8px);
-  --side-upper-y: calc(var(--table-top) + 13%);
-  --side-lower-y: calc(var(--table-top) + 38%);
+  /* Place the side rows at matching table-relative depths rather than using
+     two fixed offsets that crowd them toward the top as the table grows. */
+  --side-upper-y: calc(var(--table-top) + 17%);
+  --side-lower-y: calc(var(--table-top) + 51%);
   top: 8px;
   right: 0;
   bottom: 120px;
@@ -11640,7 +11690,7 @@ body:has(.table-screen--2d),
   width: var(--table-width);
   height: var(--table-height);
   border: clamp(10px, 1.2vw, 18px) solid var(--two-d-rail);
-  border-radius: 50%;
+  border-radius: 46%;
   outline: 3px solid var(--two-d-rail-edge);
   outline-offset: 3px;
   background-color: var(--two-d-felt);
@@ -11782,6 +11832,7 @@ body:has(.table-screen--2d),
 .table-screen--2d .player-seat--lower-right .opponent-cards {
   right: 50%;
   left: auto;
+  flex-direction: row-reverse;
 }
 
 .table-screen--2d .player-seat--hero {
@@ -11876,9 +11927,49 @@ body:has(.table-screen--2d),
   opacity: 0.85;
 }
 
+/* The visor reads as an unexplained translucent brown strip across the face in
+   the flat portrait treatment. Hair and the face shape already provide enough
+   identity without that extra bar. */
+.table-screen--2d .seat-figure-accessory--visor {
+  display: none;
+}
+
+/*
+   Authored 2D model portraits.
+
+   The old 2D surface was a circular crop of a six-cell sprite with a CSS face
+   layered on top. These portraits are intentionally a little more like a
+   polished player badge: a rounded square, a graphic backdrop, shoulders, and
+   a complete blocky SVG face. The SVG owns the pixels; the seat still owns the
+   acting ring, fold grade, and all gameplay labels.
+*/
+.table-screen--2d .seat-avatar--model {
+  border: 2px solid rgba(221, 235, 226, 0.72);
+  border-radius: 17px;
+  background: #172329;
+  box-shadow:
+    0 0 0 2px #0b0d0e,
+    0 6px 12px rgba(0, 0, 0, 0.36);
+}
+
+.table-screen--2d .seat-avatar--model::before,
+.table-screen--2d .seat-avatar--model > span {
+  display: none;
+}
+
+.table-screen--2d .two-d-avatar {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .table-screen--2d .seat-label {
   min-width: 92px;
-  min-height: 37px;
+  min-height: 48px;
   flex-direction: column;
   align-items: center;
   gap: 2px;
@@ -11906,6 +11997,29 @@ body:has(.table-screen--2d),
   line-height: 1.05;
 }
 
+.table-screen--2d .seat-current-bet {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: #d9e9df;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.table-screen--2d .seat-current-bet small {
+  color: #aebdb5;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.table-screen--2d .seat-current-bet b {
+  color: #e0c47e;
+  font-size: 10px;
+  font-weight: 850;
+}
+
 .table-screen--2d .player-seat--upper-left .seat-label,
 .table-screen--2d .player-seat--lower-left .seat-label {
   position: relative;
@@ -11919,6 +12033,7 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .seat-bet {
+  display: none;
   top: 17px;
   left: calc(50% + var(--avatar-half) * 0.55);
   width: 43px;
@@ -12018,6 +12133,14 @@ body:has(.table-screen--2d),
   display: none;
 }
 
+/* The cards remain the direct-manipulation target. The instructional button,
+   drag-release banner, and card-code chip add noise to the compact 2D surface
+   without adding a capability the cards do not already provide. */
+.table-screen--2d .hero-hole-cards-visual .hero-card-wrap small,
+.table-screen--2d .fold-release-zone {
+  display: none;
+}
+
 .table-screen--2d .hero-card-control {
   position: absolute;
   z-index: 31;
@@ -12041,6 +12164,10 @@ body:has(.table-screen--2d),
   transform: translateX(-50%);
 }
 
+.table-screen--2d .hero-card-control {
+  display: none;
+}
+
 .table-screen--2d .hero-card-control:hover,
 .table-screen--2d .hero-card-control:focus-visible {
   border-color: #8b7547;
@@ -12061,6 +12188,26 @@ body:has(.table-screen--2d),
 
 .table-screen--2d .action-context {
   display: none;
+}
+
+/* Match the five future card slots to the rendered card dimensions. The row is
+   centered once, but its width no longer grows when a placeholder is replaced,
+   so the flop's resting positions remain fixed through the turn and river. */
+.table-screen--2d .community-placeholder {
+  width: clamp(47px, 4.7vw, 64px);
+  height: clamp(66px, 6.6vw, 90px);
+}
+
+.table-screen--2d .opponent-cards {
+  /* Two small card slots keep the first deal anchored even before its mate
+     arrives. Right-side seats reverse the row above so new cards add inward. */
+  width: 62px;
+  min-height: 40px;
+}
+
+.table-screen--2d .hero-hole-cards__cards {
+  width: calc(2 * clamp(50px, 5.2vw, 68px) + 8px);
+  justify-content: flex-start;
 }
 
 .table-screen--2d .action-dock,
@@ -12152,6 +12299,18 @@ body:has(.table-screen--2d),
     padding: 5px 6px 5px;
   }
 
+  .table-screen--2d[data-game-mode="training"]
+    > .table-layout
+    > .training-panel,
+  .table-screen--2d[data-game-mode="training"]
+    > .table-layout
+    > .feedback-panel {
+    top: 8px;
+    right: 8px;
+    width: min(300px, calc(100% - 16px));
+    max-height: calc(100% - 140px);
+  }
+
   .table-screen--2d .poker-scene {
     --table-left: 12.5%;
     --table-width: 75%;
@@ -12170,7 +12329,7 @@ body:has(.table-screen--2d),
 
   .table-screen--2d .seat-label {
     min-width: 72px;
-    min-height: 32px;
+    min-height: 42px;
     padding: 3px 5px 4px;
   }
 
@@ -12184,10 +12343,12 @@ body:has(.table-screen--2d),
   .table-screen--2d .community-cards { gap: 3px; }
   .table-screen--2d .community-cards .playing-card { width: 36px; height: 51px; }
   .table-screen--2d .community-cards .playing-card b { font-size: 12px; }
+  .table-screen--2d .community-placeholder { width: 36px; height: 51px; }
   .table-screen--2d .table-readout { font-size: 10px; padding: 4px 8px; }
   .table-screen--2d .pot-groups { transform: translateX(-50%) scale(0.78); }
   .table-screen--2d .hero-hole-cards-visual { top: calc(var(--table-bottom) - 66px); }
   .table-screen--2d .hero-hole-cards-visual .playing-card { width: 42px; height: 59px; }
+  .table-screen--2d .hero-hole-cards__cards { width: 92px; }
   .table-screen--2d .hero-card-control { top: calc(var(--table-bottom) + var(--avatar-size) + 33px); min-width: 122px; min-height: 30px; font-size: 8px; }
   .table-screen--2d .action-dock { width: calc(100% - 12px); gap: 4px; padding: 4px; }
   .table-screen--2d .action-button { min-height: 52px; gap: 4px; }
