@@ -630,33 +630,33 @@ describe("protected seat occupancy", () => {
       const markerSide = layout.rackSide === 0 ? CHIP_STACK_LOCAL_LEFT_SIDE : layout.rackSide;
       const rackCentreX = rack[0] + (layout.rackBounds.minX + layout.rackBounds.maxX) / 2;
       const rackCentreZ = rack[2] + (layout.rackBounds.minZ + layout.rackBounds.maxZ) / 2;
-      const rackHalfX = Math.max(
+      const rackHalfZ = Math.max(
         CHIP_PHYSICAL_RADIUS,
-        (layout.rackBounds.maxX - layout.rackBounds.minX) / 2,
+        (layout.rackBounds.maxZ - layout.rackBounds.minZ) / 2,
       );
-      const expectedMarkerX = rackCentreX + markerSide * (
-        rackHalfX + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS
-      );
+      const expectedMarkerZ = rackCentreZ + rackHalfZ + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS;
 
-      expect(rack[0], `seat ${pose.seat} rack player-left`).toBeGreaterThan(card[0]);
+      // Tight corner stations may use the opposite lateral fallback to keep
+      // the full rack and its forward markers out of a neighbour's lane.
+      expect(Math.abs(rack[0] - card[0]), `seat ${pose.seat} rack offset`).toBeGreaterThan(0.1);
       expect(rack[2], `seat ${pose.seat} rack closest to rail`).toBeLessThan(
         card[2] + CARD_ZONE_LOCAL_CENTER_Z,
       );
       expect(wager[2], `seat ${pose.seat} bet beyond cards`).toBeGreaterThan(
         card[2] + CARD_ZONE_LOCAL_MAX_Z,
       );
-      expect(marker[0], `seat ${pose.seat} button beside rack`).toBeCloseTo(
-        expectedMarkerX,
+      expect(marker[0], `seat ${pose.seat} button centered in front row`).toBeCloseTo(
+        rackCentreX,
         9,
       );
-      expect(marker[2], `seat ${pose.seat} button follows rack depth`).toBeCloseTo(
-        rackCentreZ,
+      expect(marker[2], `seat ${pose.seat} button in front of rack`).toBeCloseTo(
+        expectedMarkerZ,
         9,
       );
       expect(smallBlind[0] - marker[0], `seat ${pose.seat} second button slot`)
         .toBeCloseTo(markerSide * TABLE_MARKER_SLOT_OFFSET, 9);
-      expect(smallBlind[2], `seat ${pose.seat} second button depth`).toBeCloseTo(
-        rackCentreZ,
+      expect(smallBlind[2], `seat ${pose.seat} second button front depth`).toBeCloseTo(
+        expectedMarkerZ,
         9,
       );
     }
@@ -780,7 +780,7 @@ describe("protected seat occupancy", () => {
     }
   });
 
-  it("keeps the full folded-card muck envelope clear of every player rack", () => {
+  it("keeps the full folded-card muck envelope on the green felt and clear of racks", () => {
     // The card mesh is 88 x 123 mm. These conservative half-extents also cover
     // the muck's three-column x spread, twelve-card row depth, and its authored
     // table-plane yaw, so the check matches what can actually be rendered.
@@ -794,6 +794,18 @@ describe("protected seat occupancy", () => {
       [muckX - muckHalfWidth, muckZ + muckHalfDepth],
     ] as const;
 
+    const feltRadius = TABLE_DEPTH / 2;
+    const feltStraightHalfRun = TABLE_WIDTH / 2 - feltRadius;
+    const insideFelt = ([x, z]: readonly [number, number]) => {
+      const capX = Math.max(0, Math.abs(x) - feltStraightHalfRun);
+      return capX * capX + z * z <= feltRadius * feltRadius;
+    };
+    for (const x of [muckX - muckHalfWidth, muckX + muckHalfWidth]) {
+      for (const z of [muckZ - muckHalfDepth, muckZ + muckHalfDepth]) {
+        expect(insideFelt([x, z]), `muck corner ${x},${z}`).toBe(true);
+      }
+    }
+    // Keep the visible discard lane separate from the pot and dealer shoe.
     expect(distance(TABLE_ANCHORS.muck, TABLE_ANCHORS.mainPot)).toBeGreaterThan(0.18);
     expect(distance(TABLE_ANCHORS.muck, TABLE_ANCHORS.dealerShoe)).toBeGreaterThan(0.18);
     for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
@@ -806,7 +818,7 @@ describe("protected seat occupancy", () => {
 });
 
 describe("dealer and blind markers", () => {
-  it("places every button directly beside the represented chip rack", () => {
+  it("places every button directly in front of the represented chip rack", () => {
     for (const amount of [25, 150, 14_950, 15_000, 45_000, 90_000]) {
       for (const pose of seatPoses(6)) {
         const layout = seatOccupancyLayout(pose, amount);
@@ -814,22 +826,20 @@ describe("dealer and blind markers", () => {
         const markerSide = layout.rackSide === 0 ? CHIP_STACK_LOCAL_LEFT_SIDE : layout.rackSide;
         const rackCentreX = rack[0] + (layout.rackBounds.minX + layout.rackBounds.maxX) / 2;
         const rackCentreZ = rack[2] + (layout.rackBounds.minZ + layout.rackBounds.maxZ) / 2;
-        const rackHalfX = Math.max(
+        const rackHalfZ = Math.max(
           CHIP_PHYSICAL_RADIUS,
-          (layout.rackBounds.maxX - layout.rackBounds.minX) / 2,
+          (layout.rackBounds.maxZ - layout.rackBounds.minZ) / 2,
         );
-        const expectedMarkerX = rackCentreX + markerSide * (
-          rackHalfX + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS
-        );
+        const expectedMarkerZ = rackCentreZ + rackHalfZ + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS;
         for (const label of ["D", "SB", "BB"] as const) {
           const marker = seatLocalPoint(pose, tableMarkerPosition(pose, label, amount));
           const expectedSlot = label === "SB" ? markerSide * TABLE_MARKER_SLOT_OFFSET : 0;
-          expect(marker[0], `seat ${pose.seat} ${label} rack-side slot`).toBeCloseTo(
-            expectedMarkerX + expectedSlot,
+          expect(marker[0], `seat ${pose.seat} ${label} front-row slot`).toBeCloseTo(
+            rackCentreX + expectedSlot,
             12,
           );
-          expect(marker[2], `seat ${pose.seat} ${label} rack-depth slot`).toBeCloseTo(
-            rackCentreZ,
+          expect(marker[2], `seat ${pose.seat} ${label} front-depth slot`).toBeCloseTo(
+            expectedMarkerZ,
             12,
           );
         }
@@ -850,7 +860,10 @@ describe("dealer and blind markers", () => {
       );
       expect(distance(marker, stack), `seat ${pose.seat} marker/rack origin`)
         .toBeGreaterThan(TABLE_MARKER_RADIUS + TABLE_MARKER_GAP);
-      expect(layout.markerBase).toEqual(tableMarkerPosition(pose));
+      const markerBase = tableMarkerPosition(pose);
+      expect(layout.markerBase[0]).toBeCloseTo(markerBase[0], 12);
+      expect(layout.markerBase[1]).toBeCloseTo(markerBase[1], 12);
+      expect(layout.markerBase[2]).toBeCloseTo(markerBase[2], 12);
     }
   });
 

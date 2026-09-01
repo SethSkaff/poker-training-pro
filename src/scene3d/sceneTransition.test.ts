@@ -82,6 +82,25 @@ describe("scene transition", () => {
     });
   });
 
+  it("keeps tied showdown recipients available for winner-card emphasis", () => {
+    const event: TournamentPresentationEvent = {
+      id: "showdown-push",
+      kind: "showdown",
+      handId: "h1",
+      playerIds: ["hero", "villain"],
+      reveals: [],
+      awards: [
+        { potId: "main", playerId: "hero", amount: 125 },
+        { potId: "main", playerId: "villain", amount: 125 },
+      ],
+    };
+    expect(createSceneTransition(event, 0.4, false)).toMatchObject({
+      playerIds: [],
+      winningPlayerIds: ["hero", "villain"],
+      winningCardCodes: [],
+    });
+  });
+
   it("names every settled card for the explicit pre-deal collection beat", () => {
     const event: TournamentPresentationEvent = {
       id: "collect-cards",

@@ -126,6 +126,13 @@ try {
     "#play-chip-ack-title ~ .startup-gate__actions button",
     "play-chip acknowledgement mouse input",
   );
+  await expectSelector(client, ".table-view-stage", "table view selection");
+  await expectMouseClick(
+    client,
+    ".table-view-choices button:first-child",
+    undefined,
+    "new 2D table view mouse input",
+  );
   await expectSelector(client, ".mode-stage", "mode selection");
   await expectMouseClick(client, ".mode-stage__choice--training", undefined, "Training mouse input");
   await expectSelector(client, ".poker-table", "Training table");
@@ -149,6 +156,13 @@ try {
   await expectMouseClick(client, ".table-exit", undefined, "table exit mouse input");
   await expectSelector(client, ".home-reference", "home after table exit");
   await expectMouseClick(client, 'button[aria-label="Play"]', undefined, "Play tournament run");
+  await expectSelector(client, ".table-view-stage", "table view selection second run");
+  await expectMouseClick(
+    client,
+    ".table-view-choices button:first-child",
+    undefined,
+    "new 2D table view second run",
+  );
   await expectSelector(client, ".mode-stage", "mode selection second run");
   await expectMouseClick(client, ".mode-stage__choice--normal", undefined, "Normal mode mouse input");
   await expectMouseClick(client, "button", "Enter event", "enter event mouse input");
@@ -162,6 +176,37 @@ try {
   await dismissContextCoachIfPresent(client);
   await captureStableTableScene(client);
   await expectClearTableInformationLanes(client);
+
+  // The replacement 2D surface intentionally omits the generic action-context
+  // history strip; the visible 2D action rail is its complete interaction
+  // surface. Keep testing history when the 3D surface is active, but record
+  // the intentional 2D omission instead of treating it as a missing target.
+  const isTwoDTable = await evaluateValue(
+    client,
+    "document.querySelector('.table-screen--2d') !== null",
+  );
+  if (isTwoDTable === true) {
+    record("2D surface intentionally omits the generic hand-history strip", true);
+  } else {
+    await expectBoolean(
+      client,
+      `(() => {
+        const button = document.querySelector('.action-context button');
+        if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+        const box = button.getBoundingClientRect();
+        return box.width > 2 && box.height > 2;
+      })()`,
+      "hand-history control ready",
+    );
+    await expectMouseClick(client, ".action-context button", undefined, "hand-history mouse input");
+    await expectSelector(client, ".hand-history-popover", "public hand history");
+    await expectMouseClick(client, ".hand-history-popover button", undefined, "close hand history mouse input");
+    await expectBoolean(
+      client,
+      "document.querySelector('.hand-history-popover') === null",
+      "hand history closes cleanly",
+    );
+  }
 
   // Exercise the production Gamepad API polling path while the live table is
   // still visible. The later lifecycle smoke deliberately minimizes this
@@ -194,14 +239,6 @@ try {
   await expectHeroDecisionDrainingPresentation(client, "table advances after Gamepad action");
 
   await expectMinimizePausesAndRestores(client);
-  await expectMouseClick(client, ".action-context button", undefined, "hand-history mouse input");
-  await expectSelector(client, ".hand-history-popover", "public hand history");
-  await expectMouseClick(client, ".hand-history-popover button", undefined, "close hand history mouse input");
-  await expectBoolean(
-    client,
-    "document.querySelector('.hand-history-popover') === null",
-    "hand history closes cleanly",
-  );
   // Exercise one whole live decision before raise sizing. This is both a real
   // action path and the packaged regression for E01-001: engine state must
   // advance without replacing the table DOM node. `sceneStateVersion` changes
@@ -411,7 +448,7 @@ async function describeScreen(cdp) {
         const marks = {
           ceremony: has('.ceremony-board'),
           table: has('.poker-table'),
-          arrival: has('.room-progress-overlay'),
+          tableView: has('.table-view-stage'),
           flythrough: has('.room-flight'),
           actionDock: has('.action-dock'),
           skipButton: has('button.skip-hand'),
@@ -543,10 +580,16 @@ async function expectClearTableInformationLanes(cdp) {
           expression: `document.documentElement.dataset.interfaceScale = ${JSON.stringify(scale)}`,
           awaitPromise: false,
         });
-        // `zoom` changes layout on the next rendering turn. Sampling after a
-        // frame makes this a real stylesheet/DOM geometry assertion rather
-        // than an attribute-only source check.
-        await delay(40);
+        // `zoom` and CDP metrics changes update layout on the next rendering
+        // turn. In the 3D view the scene also has to republish its projected
+        // seat anchors; sampling before that happens makes every plaque appear
+        // at the fallback origin (20px, 45px) and reports a false collision.
+        await waitForBoolean(
+          cdp,
+          "document.querySelector('.table-screen--3d') === null || document.querySelector('.poker-scene[data-spatial-scene=\"ready\"]') !== null",
+          4_000,
+        );
+        await delay(120);
         const observation = await inspectTableInformationLanes(cdp);
         observations.push({ viewport, scale, ...observation });
       }
@@ -606,14 +649,24 @@ async function inspectTableInformationLanes(cdp) {
               bet: bet ? roundRect(bet.getBoundingClientRect()) : null,
               cards: cards.map((card) => roundRect(card.getBoundingClientRect())),
             },
-          cardsOverlap: cards.length === 2 && intersects(
+            cardsOverlap: cards.length === 2 && intersects(
               cards[0].getBoundingClientRect(), cards[1].getBoundingClientRect(),
             ),
-            betOverlapsStack: Boolean(label && bet && intersects(
+            // The active 2D surface puts the current bet inside the seat-label
+            // and intentionally hides the legacy standalone seat-bet node.
+            // Only a painted standalone bet can overlap the stack or fail the
+            // readability contract below.
+            betVisible: Boolean(
+              bet && getComputedStyle(bet).display !== 'none' &&
+              bet.getBoundingClientRect().width > 2 &&
+              bet.getBoundingClientRect().height > 2,
+            ),
+            betOverlapsStack: Boolean(label && bet &&
+              getComputedStyle(bet).display !== 'none' && intersects(
               label.getBoundingClientRect(), bet.getBoundingClientRect(),
             )),
             labelReadable: readable(label),
-            betReadable: !bet || readable(bet),
+            betReadable: !bet || getComputedStyle(bet).display === 'none' || readable(bet),
             dealerReadable: !seat.querySelector('.dealer-button') || readable(seat.querySelector('.dealer-button')),
             positionReadable: !seat.querySelector('.seat-position-marker') || readable(seat.querySelector('.seat-position-marker')),
           };
@@ -648,14 +701,34 @@ async function inspectTableInformationLanes(cdp) {
         const isReadable = readable(element);
         const overCards = Boolean(heroCardsRect && intersects(rect, heroCardsRect));
         const overActions = Boolean(actionDockRect && intersects(rect, actionDockRect));
-        const ok = isReadable && !overCards && !overActions;
+        const readyCommunityCards = document.querySelector(
+          '.poker-scene[data-spatial-scene="ready"] .community-cards[data-card-count]:not([data-card-count="0"])',
+        );
+        const readyCommunityRect = readyCommunityCards?.getBoundingClientRect();
+        const showdownStage = document.querySelector('.all-in-showdown-stage');
+        const showdownStageRect = showdownStage?.getBoundingClientRect();
+        const overReadyCommunity = Boolean(
+          readyCommunityRect && intersects(rect, readyCommunityRect),
+        );
+        const overShowdownStage = Boolean(
+          showdownStageRect && intersects(rect, showdownStageRect),
+        );
+        const isEquityReadout = selector === '.all-in-equity-strip';
+        const ok = isReadable && !overCards && !overActions &&
+          (!isEquityReadout || (!overReadyCommunity && !overShowdownStage));
         return {
           present: true,
           ok,
           ...(ok
             ? {}
             : {
-                why: { readable: isReadable, overCards, overActions },
+                why: {
+                  readable: isReadable,
+                  overCards,
+                  overActions,
+                  overReadyCommunity: isEquityReadout ? overReadyCommunity : false,
+                  overShowdownStage: isEquityReadout ? overShowdownStage : false,
+                },
                 rect: {
                   x: Math.round(rect.x), y: Math.round(rect.y),
                   w: Math.round(rect.width), h: Math.round(rect.height),

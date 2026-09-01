@@ -9,6 +9,12 @@ const styleSource = readFileSync(path.join(componentDirectory, "..", "styles.css
 const twoDStyles = styleSource.slice(styleSource.lastIndexOf("Isolated 2D table pass"));
 
 describe("isolated 2D table layout contract", () => {
+  it("ships only the current isolated 2D pass", () => {
+    expect(styleSource.match(/Isolated 2D table pass/g)).toHaveLength(1);
+    expect(styleSource).not.toContain("The fallback is a deliberate flat table");
+    expect(twoDStyles).toContain("Authored 2D model portraits.");
+  });
+
   it("keeps the identity, stack, bet, fold, and peek layers separate", () => {
     expect(tableSource).toContain('data-hero-identity": "true"');
     expect(tableSource).toContain('<span className="seat-name">{isHero ? formatMessage("table.seat.you")');
@@ -50,6 +56,15 @@ describe("isolated 2D table layout contract", () => {
     expect(twoDStyles).toContain("left: 50%;");
     expect(twoDStyles).toContain(".player-seat--upper-right .opponent-cards");
     expect(twoDStyles).toContain("right: 50%;");
+  });
+
+  it("puts each position marker in front of its owner's stack", () => {
+    expect(twoDStyles).toContain(".table-screen--2d .player-seat--top .seat-position-marker");
+    expect(twoDStyles).toContain("top: calc(100% + 8px);");
+    expect(twoDStyles).toContain(".table-screen--2d .player-seat--hero .seat-position-marker");
+    expect(twoDStyles).toContain("bottom: calc(100% + 8px);");
+    expect(twoDStyles).toContain("left: calc(100% + 8px);");
+    expect(twoDStyles).toContain("right: calc(100% + 8px);");
   });
 
   it("preserves a large flat table at desktop and a readable compact breakpoint", () => {

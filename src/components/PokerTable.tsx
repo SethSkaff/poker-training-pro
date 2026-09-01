@@ -75,6 +75,7 @@ import {
 import { gameAudio, type SoundName } from "../lib/audio";
 import { describeCallAction } from "../lib/actionLabels";
 import { isShortStack } from "../lib/chipStackDepth";
+import { isPushAwardSet } from "../lib/potOutcome";
 import { describeTrainingContext } from "../lib/trainingScenarioContext";
 import { cameraPanFromHorizontalDrag, cameraZoomFromWheel } from "../lib/tableCameraControls";
 import { createTournamentDecisionClock } from "../lib/tournamentDecisionClock";
@@ -225,7 +226,6 @@ interface TournamentTableControls {
   elapsedMs: number;
   durationMs?: number;
   actionHistory: string[];
-  showArrival: boolean;
   /**
    * Career tier of the event being played. Drives room scale, crowd density,
    * and lighting at the seated table, so a world championship does not look
@@ -236,8 +236,6 @@ interface TournamentTableControls {
   openingBigBlind?: number;
   /** Finishing places that qualify or cash in this event. */
   qualifyingPlaces?: number;
-  /** Actual prior-hand pot award recipients, never inferred from stack size. */
-  lastPotWinnerIds?: readonly string[];
   /**
    * Real per-player amounts from the engine's own pot-award resolution for
    * the most recently finished hand, used only to announce the public
@@ -355,9 +353,11 @@ export function winningCardLabelsForAwards(
 }
 
 /**
- * The public, authoritative cards to place in the short end-of-hand tableau.
- * This deliberately consumes the runner's showdown award rather than trying to
- * reconstruct a winner from stacks or from a player's concealed hole cards.
+ * The public, authoritative best-five cards associated with each showdown
+ * award. This deliberately consumes the runner's showdown award rather than
+ * trying to reconstruct a winner from stacks or from a player's concealed
+ * hole cards; callers can use it for card-level presentation without inventing
+ * a result label.
  */
 export function winningHandsForShowdown(
   event: Extract<TournamentPresentationEvent, { kind: "showdown" }> | undefined,
@@ -1157,11 +1157,6 @@ function PlayerSeat({
         {...(isHero ? { "data-hero-identity": "true" } : {})}
       >
         <span className="seat-name">{isHero ? formatMessage("table.seat.you") : displayName ?? player.name.split(" ")[0]}</span>
-        {wonPot && (
-          <span className="seat-winner-badge" aria-hidden="true">
-            {formatMessage("table.seat.winner")}
-          </span>
-        )}
         <strong>{formatChips(player.stack)}</strong>
         {showCurrentBet && (
           <span className="seat-current-bet">
@@ -2061,9 +2056,6 @@ export function PokerTable({
   );
   const [activePrompt, setActivePrompt] =
     useState<ContextualPrompt | null>(null);
-  const [arrivalVisible, setArrivalVisible] = useState(
-    Boolean(tournament?.showArrival),
-  );
   const [paused, setPaused] = useState(
     initialTrainingPresentation?.paused ?? false,
   );
@@ -2098,7 +2090,6 @@ export function PokerTable({
   const previousTrainingScenarioIdRef = useRef(scenario.id);
   const previousSceneVersionRef = useRef(tournament?.sceneStateVersion);
   const previousHandIdRef = useRef(scenario.id);
-  const arrivalDelayRef = useRef<FreezableDelay | null>(null);
   const freezeGroupRef = useRef<DelayFreezeGroup>(new DelayFreezeGroup());
   const pauseCoordinatorRef = useRef<LifecyclePauseCoordinator>(
     new LifecyclePauseCoordinator(),
@@ -2406,27 +2397,6 @@ export function PokerTable({
     };
   }, [requestPause]);
 
-  useEffect(() => {
-    if (!arrivalVisible) return;
-    const group = freezeGroupRef.current;
-    const delay = new FreezableDelay(
-      realFreezableDelayHost,
-      settings.reducedMotion || settings.transitionMotion === "off"
-        ? 450
-        : settings.transitionMotion === "reduced"
-          ? 900
-          : 1_650,
-      () => setArrivalVisible(false),
-    );
-    arrivalDelayRef.current = delay;
-    group.add(delay);
-    return () => {
-      delay.cancel();
-      group.remove(delay);
-      if (arrivalDelayRef.current === delay) arrivalDelayRef.current = null;
-    };
-  }, [arrivalVisible, settings.reducedMotion, settings.transitionMotion]);
-
   // Consume exactly one public runner event at a time. The delay is registered
   // with the same freeze group as arrival/action delays, so pause/resume keeps
   // its exact remaining duration instead of replaying or skipping the event.
@@ -2667,10 +2637,6 @@ export function PokerTable({
         : scenario.board.map((card) => ({ ...card })),
     );
   }, [cardsDealtHandId, scenario.board, scenario.id, tournament]);
-
-  useEffect(() => {
-    if (tournament?.showArrival) setArrivalVisible(true);
-  }, [tournament?.showArrival]);
 
   useEffect(() => {
     const event = tournament?.presentationEvent;
@@ -3748,19 +3714,15 @@ export function PokerTable({
   const winningCardLabels = winningCardLabelsForAwards(
     showdownEventForDisplay?.awards ?? [],
   );
-  const winningShowdownHands = winningHandsForShowdown(
-    showdownEventForDisplay,
-    displayedBoard,
-  );
   /*
-    Who won this hand, held for as long as the hand is paying out (E27-003).
+    The public award set, held for as long as the hand is paying out (E27-003).
 
     `lastPotAwards` is derived from `session.lastHand`, which is not populated
     until the hand is over -- so during the `pot-awarded` milestones, which are
     the payout of the very result being shown, the awards array is empty and the
-    winner strip blanked. Remembering the last non-empty awards for this hand id
-    keeps the outcome on screen while its chips are still moving, and drops it
-    automatically when a new hand starts.
+    winner state would otherwise blank. Remembering the last non-empty awards
+    for this hand id keeps the card emphasis on screen while chips are still
+    moving, and drops it automatically when a new hand starts.
   */
   const liveAwards =
     resultEvent?.awards ??
@@ -3782,17 +3744,7 @@ export function PokerTable({
       : rememberedAwards.current?.handId === scenario.id
         ? rememberedAwards.current.awards
         : [];
-  /*
-    The stretch of the queue that belongs to "who won this hand": the result
-    itself and every milestone that pays it out. Keeping the winner on screen
-    across all of them is what makes the outcome readable (E27-003).
-  */
   const resultPhaseKind = tournament?.presentationEvent?.kind;
-  const resultPhaseActive =
-    Boolean(resultEvent) ||
-    resultPhaseKind === "pot-awarded" ||
-    resultPhaseKind === "side-pot-formed" ||
-    resultPhaseKind === "cards-collected";
   const showdownVisualActive =
     Boolean(showdownEventForDisplay) && resultPhaseKind !== "cards-collected";
   const showdownWinnerIds = new Set(
@@ -3837,6 +3789,7 @@ export function PokerTable({
           hadSidePot:
             Boolean(tournament?.lastHandHadSidePot) ||
             new Set(showdownAwards.map((award) => award.potId)).size > 1,
+          isPush: isPushAwardSet(showdownAwards),
         }
       : undefined;
 
@@ -4133,70 +4086,6 @@ export function PokerTable({
               ) : null}
             </aside>
           ) : null}
-          {/*
-            The result stays up through the whole payout, not just the single
-            `showdown` frame (E27-003). It used to be gated on `resultEvent`
-            alone, so the moment the queue moved to `side-pot-formed` or
-            `pot-awarded` the winner disappeared -- measured in the packaged
-            build as the result being on screen for about one second while the
-            chips it was describing were still moving. Those events *are* the
-            result being paid out, so they belong to the same readable moment.
-          */}
-          {showdownAwards.length > 0 && (resultPhaseActive || arrivalVisible) ? (
-            <aside className="showdown-result-strip" role="status" aria-live="polite" aria-atomic="true">
-              <span>
-                {showdownEvent
-                  ? "Showdown result"
-                  : handResultEvent || resultPhaseActive
-                    ? // Still paying out: the hand is resolving, not history.
-                      "Hand result"
-                    : "Previous hand result"}
-              </span>
-              {showdownAwards.map((award) => {
-                const winner = scenario.players.find((player) => player.id === award.playerId);
-                const winnerName = winner?.seat === scenario.heroSeat ? "You" : (winner?.name ?? award.playerId);
-                return (
-                  <p key={`${award.potId}:${award.playerId}`}>
-                    <b>{award.potId}</b> · <strong>{winnerName}</strong> wins {formatChips(award.amount)}
-                    {award.hand ? ` with ${award.hand.displayName}` : ""}
-                  </p>
-                );
-              })}
-            </aside>
-          ) : null}
-          {/*
-            A fold has an award but no public hand.  Only a genuine showdown
-            gets this lifted five-card tableau, and every card in it comes from
-            the engine's already-public award payload.
-          */}
-          {!isTwoDMode && showdownVisualActive && winningShowdownHands.length > 0 ? (
-            <section className="showdown-tableau" aria-label="Winning poker hands">
-              {winningShowdownHands.map((hand) => {
-                const winner = scenario.players.find((player) => player.id === hand.playerId);
-                const winnerName = winner?.seat === scenario.heroSeat ? "You" : (winner?.name ?? hand.playerId);
-                return (
-                  <div className="showdown-tableau__hand" key={`${hand.potId}:${hand.playerId}`}>
-                    <header>
-                      <strong>{hand.handName}</strong>
-                      <span>{winnerName} wins {formatChips(hand.amount)}</span>
-                    </header>
-                    <div className="showdown-tableau__cards" aria-label={`${hand.handName} winning cards`}>
-                      {hand.cards.map(({ card, source }, index) => (
-                        <span
-                          className={`showdown-tableau__card showdown-tableau__card--${source}`}
-                          style={{ "--showdown-index": index } as CSSProperties}
-                          key={cardLabel(card)}
-                        >
-                          <PlayingCard card={card} className="showdown-card is-winning" />
-                        </span>
-                      ))}
-                    </div>
-                    <small>Dealer presents the winning five</small>
-                  </div>
-                );
-              })}
-            </section>
-          ) : null}
           {sidePotEvent ? (
             <aside className="side-pot-strip" role="status" aria-live="polite" aria-atomic="true">
               <span>{formatMessage("table.sidePot.label")}</span>
@@ -4278,34 +4167,6 @@ export function PokerTable({
               <X size={16} aria-hidden="true" /> {actionError}
             </p>
           ) : null}
-          {arrivalVisible && tournament && (
-            <div className="room-progress-overlay" aria-live="polite">
-              <div>
-                <span>{formatMessage("table.arrival.progressLabel")}</span>
-                <strong>
-                  {formatMessage("table.arrival.handRemain", {
-                    handNumber: tournament.handNumber,
-                    tournamentPlayersRemaining:
-                      tournament.tournamentPlayersRemaining,
-                  })}
-                </strong>
-              </div>
-              <i>
-                <b
-                  style={{
-                    width: `${Math.max(
-                      4,
-                      ((tournament.fieldSize -
-                        tournament.tournamentPlayersRemaining) /
-                        Math.max(1, tournament.fieldSize - 1)) *
-                        100,
-                    )}%`,
-                  }}
-                />
-              </i>
-              <small>{formatMessage("table.arrival.settling")}</small>
-            </div>
-          )}
           {/*
             Depth layers behind the table. Each moves at a different fraction
             of the camera pan (see --camera-pan consumers in styles.css), which
@@ -4640,9 +4501,7 @@ export function PokerTable({
                   dealer={player.seat === scenario.buttonSeat}
                   wonPot={
                     presentation.wonPot ||
-                    (showdownVisualActive && showdownWinnerIds.has(player.id)) ||
-                    (arrivalVisible &&
-                      Boolean(tournament?.lastPotWinnerIds?.includes(player.id)))
+                    (showdownVisualActive && showdownWinnerIds.has(player.id))
                   }
                   recentAction={presentation.action}
                   recentActionLabel={presentation.label}
@@ -4763,6 +4622,12 @@ export function PokerTable({
               } ${
                 showdownVisualActive && showdownHeroRevealed
                   ? "is-showdown-revealed"
+                  : ""
+              } ${
+                showdownVisualActive &&
+                showdownHeroRevealed &&
+                showdownWinnerIds.has(heroPlayerId)
+                  ? "is-showdown-winner"
                   : ""
               } ${
                 heroHoleCardHitBounds ? "has-spatial-hit-target" : ""

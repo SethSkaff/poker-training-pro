@@ -167,14 +167,15 @@ try {
     method: "live",
     properties: ["animationName", "animationDuration"],
   });
-  // The transition overlay exists only while a room change is in flight, so
-  // polling cannot reliably catch it. A probe element carrying the real class
-  // measures the same shipped rules through the same cascade.
+  // The ceremony is the remaining transition-owned surface. It is not live
+  // while the table is open, so a probe carrying the real class measures the
+  // shipped rules through the same cascade without reviving the removed
+  // per-hand progress overlay.
   motion.effect.transition = await measureTier(session, {
     dataset: "motionTransition",
-    selectors: [".room-progress-overlay"],
+    selectors: [".ceremony-board"],
     method: "probe",
-    probeHtml: '<div class="room-progress-overlay"></div>',
+    probeHtml: '<div class="ceremony-board" data-outcome="win"></div>',
     properties: ["animationName", "animationDuration"],
   });
   direction.screens.push(await auditDirection(session, "table"));
@@ -532,6 +533,14 @@ async function reachModeSelect(activeSession) {
   await activeSession.clickSelector('button[aria-label="Play"]', "play button");
   await activeSession.clickIfPresent(
     "#play-chip-ack-title ~ .startup-gate__actions button",
+  );
+  // Play now has an explicit table-view step. Select the current 3D surface
+  // before entering the game-mode selector so this audit measures the shipped
+  // spatial presentation rather than waiting on a removed direct route.
+  await activeSession.waitFor(".table-view-stage", "table view selection");
+  await activeSession.clickSelector(
+    ".table-view-choices button:last-child",
+    "new 3D table view",
   );
   await activeSession.waitFor(".mode-stage", "mode selection");
 }

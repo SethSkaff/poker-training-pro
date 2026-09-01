@@ -102,6 +102,25 @@ describe("deriveTableAnnouncements (pure transition logic)", () => {
     );
   });
 
+  it("explicitly calls a fully shared award set a push", () => {
+    const finishing = baseSnapshot({ handNumber: 9 });
+    const nextHand = baseSnapshot({
+      handNumber: 10,
+      potResult: {
+        id: "hand-9",
+        winnerNames: ["You", "Jules"],
+        amount: 1_000,
+        hadSidePot: false,
+        isPush: true,
+      },
+    });
+
+    const [announcement] = deriveTableAnnouncements(finishing, nextHand);
+    expect(announcement.text).toBe(
+      "Push: You and Jules split the pot of 1,000.",
+    );
+  });
+
   it("never re-announces a result with the same public hand id", () => {
     const snapshot = baseSnapshot({
       handNumber: 3,

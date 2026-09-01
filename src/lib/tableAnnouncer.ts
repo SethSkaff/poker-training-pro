@@ -27,6 +27,8 @@ export interface TablePotResultSnapshot {
    *  contestable pot (a genuine side pot), sourced from the engine's real
    *  pot-building result -- never fabricated. */
   hadSidePot: boolean;
+  /** True when every resolved contestable pot was shared by multiple players. */
+  isPush?: boolean;
 }
 
 /**
@@ -107,7 +109,7 @@ export function deriveTableAnnouncements(
     next.potResult.winnerNames.length > 0 &&
     next.potResult.id !== previous.potResult?.id
   ) {
-    const { winnerNames, amount, hadSidePot } = next.potResult;
+    const { winnerNames, amount, hadSidePot, isPush } = next.potResult;
     const names = winnerNames.join(
       winnerNames.length > 1 ? formatMessage("table.announce.namesJoiner") : "",
     );
@@ -116,9 +118,11 @@ export function deriveTableAnnouncements(
       priority: "polite",
       text: [
         formatMessage(
-          winnerNames.length > 1
-            ? "table.announce.handWinnerSplit"
-            : "table.announce.handWinner",
+          isPush
+            ? "table.announce.handPush"
+            : winnerNames.length > 1
+              ? "table.announce.handWinnerSplit"
+              : "table.announce.handWinner",
           { names, amount: formatChips(amount) },
         ),
         hadSidePot ? formatMessage("table.announce.sidePotFormed") : "",

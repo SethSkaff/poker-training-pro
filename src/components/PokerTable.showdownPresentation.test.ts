@@ -160,12 +160,16 @@ describe("2D showdown presentation", () => {
     expect(source).toContain("showdownEventForDisplay");
     expect(source).toContain('resultPhaseKind !== "cards-collected"');
     expect(source).toContain("showdownWinnerIds");
+    expect(source).not.toContain('className="showdown-result-strip"');
+    expect(source).not.toContain('className="showdown-tableau"');
+    expect(styles).not.toContain(".showdown-result-strip");
+    expect(styles).not.toContain(".showdown-tableau");
   });
 
   it("puts revealed hands in the 2D seat lane and marks the winner", () => {
     expect(source).toContain("showdownRevealed");
     expect(source).toContain('"is-showdown-revealed"');
-    expect(source).toContain('className="seat-winner-badge"');
+    expect(source).not.toContain('className="seat-winner-badge"');
     expect(source).toContain('"board-card-winning"');
     expect(styles).toContain(
       ".table-screen--2d .player-seat.is-showdown-revealed .opponent-cards",
@@ -173,6 +177,10 @@ describe("2D showdown presentation", () => {
     expect(styles).toContain(
       ".table-screen--2d .community-cards > .board-card-winning",
     );
+    expect(styles).toContain(
+      ".table-screen--2d .player-seat--upper-left.is-showdown-revealed.is-winner .opponent-cards",
+    );
+    expect(styles).toContain("is-showdown-winner");
     expect(styles).toContain("showdown-board-lift");
   });
 

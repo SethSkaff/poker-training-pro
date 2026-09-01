@@ -136,8 +136,6 @@ describe("PokerTable live event-announcement regions", () => {
           activeOpponents: 1,
           elapsedMs: 0,
           actionHistory: ["Maya: raise to 200", "Jules: call"],
-          showArrival: false,
-          lastPotWinnerIds: ["maya"],
           lastPotAwards: [{ potId: "main", playerId: "maya", amount: 640 }],
           lastHandHadSidePot: false,
         }}

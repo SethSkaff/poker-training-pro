@@ -349,6 +349,13 @@ const ACTION_MS = 620;
  * centre mark, which is where a dealer lays it and where it has to stay.
  */
 const BOARD_CARD_SCALE = 1.5;
+/** Subtle winner treatment: cards stay anchored to their seat, but lean into
+ * the felt and grow enough to read as the hand's visual answer. */
+const SHOWDOWN_WINNER_CARD_SCALE = 1.085;
+const SHOWDOWN_WINNER_CARD_LIFT = 0.024;
+const SHOWDOWN_WINNER_CARD_INWARD = 0.055;
+const SHOWDOWN_WINNER_BOARD_SCALE = 1.06;
+const SHOWDOWN_WINNER_BOARD_LIFT = 0.022;
 
 interface TableSceneResources {
   readonly ledger: SceneResourceLedger;
@@ -368,6 +375,7 @@ interface TableSceneResources {
   chipEdgeMaterial(): MeshStandardMaterial;
   chipMaterial(): MeshStandardMaterial;
   cardFaceMaterial(code: string): MeshStandardMaterial;
+  winningCardFaceMaterial(code: string): MeshStandardMaterial;
   /** A restrained lift for the steep underside used only during a private peek. */
   heroPeekFaceMaterial(code: string): MeshStandardMaterial;
   markerMaterial(label: "D" | "SB" | "BB", color: number): MeshLambertMaterial;
@@ -566,6 +574,20 @@ function createTableSceneResources(): TableSceneResources {
     roughness: 0.96,
     metalness: 0,
   }));
+  const winningCardFaceMaterials = new Map<string, MeshStandardMaterial>();
+  const winningCardFaceMaterial = (code: string): MeshStandardMaterial => {
+    const cached = winningCardFaceMaterials.get(code);
+    if (cached) return cached;
+    const source = cardFaceMaterial(code);
+    const material = track(source.clone());
+    material.name = `showdown-winner-face-${code}`;
+    // A warm paper tint and slightly tighter roughness catch the pendant light
+    // without turning a physical card into an emissive UI badge.
+    material.color.set(0xffeac0);
+    material.roughness = 0.84;
+    winningCardFaceMaterials.set(code, material);
+    return material;
+  };
   const heroPeekFaceMaterials = new Map<string, MeshStandardMaterial>();
   const heroPeekFaceMaterial = (code: string): MeshStandardMaterial => {
     const cached = heroPeekFaceMaterials.get(code);
@@ -830,6 +852,7 @@ function createTableSceneResources(): TableSceneResources {
     chipMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0 })),
     chipEdgeMaterial: () => track(new MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 })),
     cardFaceMaterial,
+    winningCardFaceMaterial,
     heroPeekFaceMaterial,
     markerMaterial,
     potPlaqueMaterial,
@@ -1416,7 +1439,7 @@ export function createTableScene(
       diagnosticDealerPhase = choreographyPhase;
       diagnosticCardPhase = choreographyPhase;
       diagnosticPresentationEventId = activeDealerWork && renderTransition?.id
-        ? `${renderTransition.id}:${cardKind}:${activeDealerWork.task}:${activeDealerWork.at.map((value) => value.toFixed(3)).join(",")}`
+        ? `${renderTransition.id}:${cardKind}:${activeDealerWork.task}:${activeDealerWork.at.map((value) => value.toFixed(3)).join(",")}:${holeDealFrame?.activeAssignment?.sequenceIndex ?? ""}`
         : null;
       const gesture = dealerGestureFor(
         activeDealerWork,
@@ -1945,8 +1968,9 @@ function placeMarker(
   marker.visible = Boolean(pose);
   marker.userData.publicPlayerId = pose ? playerId : null;
   if (!pose) return;
-  // Keep the button in the same physical lane as the represented rack. The
-  // model reserves separate D/SB slots, so this never reads as a central bet.
+  // Keep the button in the same physical lane as the represented rack, just
+  // forward of its chips toward the table centre. The model reserves separate
+  // D/SB slots, so this never reads as a central bet or a neighbouring seat's.
   marker.position.set(...tableMarkerPosition(pose, label, stackAmount));
 }
 
@@ -2287,8 +2311,12 @@ function applySeat(
   const localProgress = reducedMotion
     ? 1
     : Math.min(1, (nowMs - started) / ACTION_MS);
+  const folded = seat.folded || transition?.foldedPlayerIds.includes(seat.id) === true;
+  const showdownWinner = transition?.kind === "showdown"
+    && !folded
+    && Boolean(transition.winningPlayerIds?.includes(seat.id));
   const transitionAffectsSeat = Boolean(
-    (transition?.playerIds.includes(seat.id) || transition?.payoutPlayerId === seat.id)
+    (transition?.playerIds.includes(seat.id) || transition?.payoutPlayerId === seat.id || showdownWinner)
       && (transition.action === seat.action
         || transition.kind === "hole-cards-dealt"
         || transition.kind === "all-in-reveal"
@@ -2316,7 +2344,6 @@ function applySeat(
     const card = new Mesh(resources.cardGeometry, resources.cardBackMaterial);
     view.cards.add(card);
   }
-  const folded = seat.folded || transition?.foldedPlayerIds.includes(seat.id) === true;
   const beat = animationBeatFor(transition, seat.id);
   const gesture = sceneGestureFor(seat.action, progress, seat.acting, folded);
   const clearingHand = transition?.kind === "cards-collected";
@@ -2327,6 +2354,9 @@ function applySeat(
   const allInReveal = transition?.kind === "all-in-reveal" && !folded;
   const showdownReveal = transition?.kind === "showdown" && !folded;
   const winningCodes = transition?.winningCardCodes ?? [];
+  const showdownEmphasis = showdownWinner
+    ? smoothSceneProgress(progress)
+    : 0;
   /*
     The hero is an ordinary seat now.
 
@@ -2392,9 +2422,13 @@ function applySeat(
       ? 0
       : index === 0 ? spread : -spread;
     const code = seat.publicCardCodes?.[index];
-    const winning = showdownReveal && Boolean(code && winningCodes.includes(code));
-    const revealLift = (allInReveal || winning) ? 0.014 : 0;
-    const revealInward = (allInReveal || winning) ? 0.014 : 0;
+    const winning = showdownWinner && Boolean(code && winningCodes.includes(code));
+    const revealLift = allInReveal
+      ? 0.014
+      : showdownEmphasis * SHOWDOWN_WINNER_CARD_LIFT;
+    const revealInward = allInReveal
+      ? 0.014
+      : showdownEmphasis * SHOWDOWN_WINNER_CARD_INWARD;
     const restingLocal = [
       local[0] + toPlayersLeft,
       local[1] + (cardCanBeSqueezed ? HERO_HOLE_CARD_PLACEMENT.squeezedYOffset : 0) + revealLift,
@@ -2416,8 +2450,9 @@ function applySeat(
         : 0;
     card.rotation.x = Math.PI * handClearProgress;
     card.rotation.y = restingYaw * (1 - handClearProgress);
-    card.scale.setScalar(1);
-    if (winning) card.scale.multiplyScalar(1.045);
+    card.scale.setScalar(
+      1 + showdownEmphasis * (SHOWDOWN_WINNER_CARD_SCALE - 1),
+    );
     const mesh = card as Mesh;
     mesh.visible = handClearProgress < 1 && (holeDealFrame
       ? dealCardFrame?.visible === true
@@ -2445,7 +2480,9 @@ function applySeat(
     mesh.material = cardCanBeSqueezed
       ? [deckBack, code ? resources.heroPeekFaceMaterial(code) : resources.cardMaterial]
       : (allInReveal || showdownReveal) && code
-        ? resources.cardFaceMaterial(code)
+        ? winning
+          ? resources.winningCardFaceMaterial(code)
+          : resources.cardFaceMaterial(code)
         : deckBack;
     if (handClearProgress > 0) mesh.material = deckBack;
     mesh.userData.privateCodeAuthorised = cardCanBeSqueezed && Boolean(code);
@@ -3227,6 +3264,9 @@ function setBoardCards(
       && boardStreetFrame?.cardIndex === index;
     const isWinningCard = transition?.kind === "showdown"
       && Boolean(codes[index] && transition.winningCardCodes?.includes(codes[index]));
+    const showdownEmphasis = isWinningCard
+      ? smoothSceneProgress(transition?.progress ?? 1)
+      : 0;
     if (isCollectingHand) {
       const target = communityCardTarget(index);
       const clearTarget = handClearCardTarget(index + 2);
@@ -3282,18 +3322,22 @@ function setBoardCards(
       const target = communityCardTarget(index);
       mesh.position.set(
         target[0] - TABLE_ANCHORS.board[0],
-        target[1] - TABLE_ANCHORS.board[1] + (isWinningCard ? 0.016 : 0),
-        target[2] - TABLE_ANCHORS.board[2] + (isWinningCard ? 0.012 : 0),
+        target[1] - TABLE_ANCHORS.board[1] + showdownEmphasis * SHOWDOWN_WINNER_BOARD_LIFT,
+        target[2] - TABLE_ANCHORS.board[2],
       );
       mesh.quaternion.identity();
       mesh.visible = true;
-      mesh.material = resources.cardFaceMaterial(codes[index] ?? "");
+      mesh.material = isWinningCard
+        ? resources.winningCardFaceMaterial(codes[index] ?? "")
+        : resources.cardFaceMaterial(codes[index] ?? "");
       mesh.userData.cardPhase = "settled";
       mesh.userData.cardOwnership = "community-board";
       mesh.userData.cardContact = "community-board";
       mesh.userData.cardQuaternion = [0, 0, 0, 1];
     }
-    mesh.scale.setScalar(BOARD_CARD_SCALE * (isWinningCard ? 1.045 : 1));
+    mesh.scale.setScalar(
+      BOARD_CARD_SCALE * (1 + showdownEmphasis * (SHOWDOWN_WINNER_BOARD_SCALE - 1)),
+    );
     mesh.userData.publicCode = codes[index] ?? null;
   });
 }

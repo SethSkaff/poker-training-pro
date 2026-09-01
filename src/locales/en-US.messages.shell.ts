@@ -121,7 +121,7 @@ export const SHELL_MESSAGES = Object.freeze({
     "Deal, fold, chip-push, and opponent thinking effects.",
   "settings.motion.transition.label": "Screen transitions",
   "settings.motion.transition.description":
-    "Mode changes and the between-hand progress overlay.",
+    "Mode changes and the table's hand-to-hand transitions.",
   "settings.controls.heading": "Controls",
   "settings.controls.hint":
     "Rebind keyboard and controller actions. Conflicts and reserved system keys are flagged; reset either device to its defaults.",

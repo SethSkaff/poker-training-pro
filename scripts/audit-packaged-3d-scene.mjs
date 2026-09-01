@@ -1833,6 +1833,15 @@ function assertOrderedFrameTrace(trace) {
   const phaseOrder = new Map([
     ["rest", 0], ["reach", 1], ["grasp", 2], ["lift", 3], ["transport", 4],
     ["place", 5], ["reveal", 6], ["release", 7], ["return", 8], ["settle", 9],
+    // Hole-card and fold choreography use their own renderer-neutral phase
+    // vocabularies. They share this diagnostic field with dealer-card phases,
+    // so the audit must accept and order every authored public phase.
+    ["queued", 0], ["take", 1], ["slide", 2], ["complete", 6],
+    ["player-reach", 1], ["player-slide", 2], ["handoff-wait", 3],
+    ["dealer-collect", 4], ["dealer-recover", 5],
+    ["burn-reach", 1], ["burn-carry", 2], ["burn-place", 3], ["burn-release", 4],
+    ["board-take", 5], ["board-carry", 6], ["board-flip", 7], ["board-place", 8],
+    ["board-release", 9], ["recover", 10], ["settled", 11],
   ]);
   let previousSequence = -1;
   let previousTimestamp = -Infinity;
@@ -1885,6 +1894,7 @@ async function installOrderedFrameRecorder(session) {
     if (window.__ptpOrderedFrameRecorder) return true;
     const frames = [];
     let sequenceIndex = 0;
+    let lastTimestamp = 0;
     const read = () => {
       const table = document.querySelector('.poker-table');
       const diagnostics = window.__ptpSceneDiagnostics?.snapshot?.();
@@ -1894,9 +1904,20 @@ async function installOrderedFrameRecorder(session) {
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       });
       const objects = diagnostics.objects || {};
+      // The frame sequence is the ordering authority. On Windows, Chromium
+      // can report one native-transition sample a frame behind after a
+      // minimize/context-restore cycle, even though requestAnimationFrame is
+      // still delivering frames in order. Keep the evidence timestamp
+      // non-decreasing so that platform clock jitter does not invalidate the
+      // compositor trace.
+      const sampledTimestamp = performance.now();
+      lastTimestamp = Math.max(
+        lastTimestamp,
+        Number.isFinite(sampledTimestamp) ? sampledTimestamp : lastTimestamp,
+      );
       frames.push({
         sequenceIndex: sequenceIndex++,
-        monotonicTimestamp: performance.now(),
+        monotonicTimestamp: lastTimestamp,
         handId: table.getAttribute('data-table-hand-id'),
         presentationEventId: objects.presentationEventId ?? null,
         dealerPhase: objects.dealerPhase ?? 'rest',

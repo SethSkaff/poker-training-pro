@@ -540,17 +540,19 @@ function markerPocketCentres(
 ): readonly (readonly [number, number, number])[] {
   const rackCentreX = rackOrigin[0] + (bounds.minX + bounds.maxX) / 2;
   const rackCentreZ = rackOrigin[2] + (bounds.minZ + bounds.maxZ) / 2;
-  const rackHalfX = Math.max(
+  const rackHalfZ = Math.max(
     CHIP_PHYSICAL_RADIUS,
-    (bounds.maxX - bounds.minX) / 2,
+    (bounds.maxZ - bounds.minZ) / 2,
   );
-  const markerX = rackCentreX + markerSide * (
-    rackHalfX + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS
-  );
+  // Markers sit in front of the represented rack, toward the table centre.
+  // The old lateral slot put D/SB/BB beside the stack, which made ownership
+  // ambiguous from the seated camera and pushed the pucks toward the rail.
+  const markerZ = rackCentreZ + rackHalfZ + TABLE_MARKER_GAP + TABLE_MARKER_RADIUS;
+  const markerX = rackCentreX;
   return [0, TABLE_MARKER_SLOT_OFFSET].map((slotOffset) => seatWorldPoint(pose, [
     markerX + markerSide * slotOffset,
     TABLE_HEIGHT + 0.012,
-    rackCentreZ,
+    markerZ,
   ]));
 }
 
@@ -1037,11 +1039,12 @@ export function restingChipStackPosition(
 }
 
 /**
- * Place a dealer/blind marker beside the owner's physical chip rack.
+ * Place a dealer/blind marker in front of the owner's physical chip rack.
  *
  * The puck is not a wager and never replaces one: it owns a dedicated physical
- * slot just outside the rack that represents that player's remaining stack.
- * This makes D/SB/BB legible as player markers instead of central-table UI.
+ * slot just toward the table centre from the rack that represents that player's
+ * remaining stack. This makes D/SB/BB legible as player markers instead of
+ * central-table UI, while making the owner relationship obvious at a glance.
  */
 export function tableMarkerPosition(
   pose: SeatPose,
@@ -1053,8 +1056,8 @@ export function tableMarkerPosition(
   const markerSide = layout.rackSide === 0
     ? CHIP_STACK_LOCAL_LEFT_SIDE
     : layout.rackSide;
-  // Heads-up poker gives one player both D and SB. The SB uses a second
-  // lateral pocket farther along the same side of the owner's rack.
+  // Heads-up poker gives one player both D and SB. The SB uses a second pocket
+  // across the same forward row, rather than leaving the owner's lane.
   const slotOffset = label === "SB" ? markerSide * TABLE_MARKER_SLOT_OFFSET : 0;
   return seatWorldPoint(pose, [
     base[0] + slotOffset,

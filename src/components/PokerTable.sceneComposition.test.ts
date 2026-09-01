@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(path.join(sourceRoot, "styles.css"), "utf8");
 const table = readFileSync(path.join(sourceRoot, "components", "PokerTable.tsx"), "utf8");
+const smokeAudit = readFileSync(
+  path.join(sourceRoot, "..", "scripts", "audit-packaged-input-smoke.mjs"),
+  "utf8",
+);
 
 describe("scene-ready table composition", () => {
   it("reveals the ready WebGL furniture without unmounting the DOM surface", () => {
@@ -50,5 +54,17 @@ describe("scene-ready table composition", () => {
     expect(mirror).toContain("pointer-events: none");
     expect(styles).toContain('.poker-scene[data-spatial-scene="ready"] .community-cards .community-placeholder');
     expect(styles).toContain("display: none");
+  });
+
+  it("puts ready-3D all-in odds below the community mirror and away from revealed hands", () => {
+    const oddsLane = styles.match(
+      /\.table-stage:has\(\.poker-scene\[data-spatial-scene="ready"\]\) \.all-in-equity-strip \{([\s\S]*?)\n\}/,
+    )?.[1] ?? "";
+    expect(oddsLane).toContain(
+      "top: calc(clamp(12px, 2.5vh, 28px) + clamp(48px, 4.8vw, 64px) + 30px)",
+    );
+    expect(oddsLane).toContain("right: clamp(12px, 2vw, 28px)");
+    expect(smokeAudit).toContain("overReadyCommunity");
+    expect(smokeAudit).toContain("overShowdownStage");
   });
 });

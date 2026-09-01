@@ -429,12 +429,6 @@ export default function App() {
   const [trainingScenario, setTrainingScenario] = useState(
     () => trainingScenarios[0],
   );
-  const lastPresentedHand = useRef<string | null>(null);
-  // Set when the fly-through hands off to the table, so the table's first hand
-  // opens with the same settling overlay a between-hand arrival gets. Without
-  // it the screen swap is a hard cut: the venue vanishes and the felt appears
-  // fully lit mid-deal (E09-004).
-  const arrivingFromFlythrough = useRef(false);
   // The leg of the circuit currently being travelled (E20-003). Finishing an
   // event used to drop straight back to a lobby list, which is what made the
   // career read as a menu with tournaments behind it rather than a circuit.
@@ -1733,7 +1727,6 @@ export default function App() {
           }
           settings={effectiveSettings}
           onComplete={() => {
-            arrivingFromFlythrough.current = true;
             setScreen("tournament-table");
           }}
         />
@@ -1762,12 +1755,6 @@ export default function App() {
       raisingReopened: false,
     };
     const handNumber = runner.session.tournament.tables[0]?.handNumber ?? 1;
-    const handPresentationKey = `${runner.session.id}:${handNumber}`;
-    const showArrival =
-      (handNumber > 1 || arrivingFromFlythrough.current) &&
-      lastPresentedHand.current !== handPresentationKey;
-    lastPresentedHand.current = handPresentationKey;
-    arrivingFromFlythrough.current = false;
     const presentationEvent = pendingPresentation?.events[pendingPresentation.index];
     /*
       Between hands the runner stays at the completed-hand boundary until the
@@ -1880,15 +1867,7 @@ export default function App() {
                 : ` to ${formatChips(decision.command.to)}`;
             return `${name}: ${decision.command.type}${amount}`;
           }),
-          showArrival,
           tier: runner.session.event.tier,
-          lastPotWinnerIds: Array.from(
-            new Set(
-              (runner.session.lastHand?.awards ?? []).map(
-                (award) => award.playerId,
-              ),
-            ),
-          ),
           lastPotAwards: (runner.session.lastHand?.awards ?? []).map(
             (award) => ({
               potId: award.potId,

@@ -477,7 +477,7 @@ async function readPresentationSignals(cdp) {
           ? Number.parseFloat(getComputedStyle(chip).animationDuration) * 1000
           : 0,
         heroFolded: Boolean(document.querySelector('.player-seat--hero.is-folded')),
-        handResultVisible: Boolean(document.querySelector('.showdown-result-strip')),
+        handResultOverlayVisible: false,
         boardEntering: Boolean(document.querySelector('.board-card-entering')),
         communityCardCount: document.querySelectorAll('.community-cards .playing-card').length,
         dealerMoving: Boolean(document.querySelector('.dealer-button-travel')),
@@ -508,7 +508,7 @@ function summarizePerceptualSignals(rawFrames) {
       animationDurationsMs: chipTravelFrames.map((signal) => signal.chipAnimationMs),
     },
     heroFolded: {
-      observed: heroFoldedFrames.length > 0 && heroFoldedFrames.some((signal) => signal.handResultVisible === false),
+      observed: heroFoldedFrames.length > 0 && heroFoldedFrames.some((signal) => signal.handResultOverlayVisible === false),
       frameCount: heroFoldedFrames.length,
     },
     boardProgression: {
@@ -621,7 +621,6 @@ async function waitForSelector(cdp, child, output, deadline, selector, label, al
           table: has('.poker-table'),
           ceremony: has('.ceremony-board'),
           flythrough: has('.room-flight'),
-          arrival: has('.room-progress-overlay'),
           modeStage: has('.mode-stage'),
           home: has('.home-reference'),
           actionDock: has('.action-dock'),

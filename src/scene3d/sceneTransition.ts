@@ -17,6 +17,8 @@ export interface SceneTransition {
   readonly payoutAmount?: number;
   /** Exact evaluator-selected cards to lift during the showdown beat. */
   readonly winningCardCodes?: readonly string[];
+  /** Public seats whose revealed cards won at least one contestable pot. */
+  readonly winningPlayerIds?: readonly string[];
   /** Public seats affected by this transition. */
   readonly playerIds: readonly string[];
   /** Public temporary piles kept while the next authoritative street has no bets. */
@@ -54,6 +56,9 @@ export function createSceneTransition(
       : undefined,
     winningCardCodes: event.kind === "showdown"
       ? [...new Set(event.awards.flatMap((award) => award.hand?.cards.map(cardLabel) ?? []))]
+      : undefined,
+    winningPlayerIds: event.kind === "showdown"
+      ? [...new Set(event.awards.map((award) => award.playerId))]
       : undefined,
     playerIds: playerIdsForEvent(event),
     collectedBets: event.kind === "bets-collected" ? event.collections : undefined,

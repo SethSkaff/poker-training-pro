@@ -394,9 +394,10 @@ export const TABLE_ANCHORS = {
    */
   dealerThrow: [0.12, TABLE_HEIGHT + 0.105, -(TABLE_DEPTH / 2 - 0.16)] as const,
   /**
-   * The muck, in a dedicated dealer-right lane. Keeping it off the player
-   * racks prevents the folded packet from visually merging with a stack while
-   * preserving a short, believable sweep from the dealer's right hand.
+   * The muck, in a dedicated dealer-right lane well inside the felt. The
+   * renderer spreads up to twelve 88 x 123 mm cards across this anchor; the
+   * extra felt inset keeps the full packet, including its outer corners, off
+   * the rail instead of leaving the discarded cards visually outside the table.
    */
-  muck: [-0.18, TABLE_HEIGHT + 0.01, -(TABLE_DEPTH / 2 - 0.12)] as const,
+  muck: [-0.30, TABLE_HEIGHT + 0.01, -(TABLE_DEPTH / 2 - 0.24)] as const,
 } as const;

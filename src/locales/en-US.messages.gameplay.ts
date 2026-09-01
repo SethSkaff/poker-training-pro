@@ -413,6 +413,7 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.announce.blindsIncreased": "Blinds increased to {smallBlind}/{bigBlind}.",
   "table.announce.handWinner": "{names} won the pot of {amount}.",
   "table.announce.handWinnerSplit": "{names} split the pot of {amount}.",
+  "table.announce.handPush": "Push: {names} split the pot of {amount}.",
   "table.announce.namesJoiner": " and ",
   "table.announce.sidePotFormed": "A side pot was contested this hand.",
   "table.announce.heroAllIn": "You are all-in for {amount}.",
@@ -423,7 +424,6 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.seat.allIn": "All-in",
   "table.seat.out": "Out",
   "table.seat.wonPot": "Won pot",
-  "table.seat.winner": "Winner",
 
   // Composed into the seat's accessible name (PlayerSeat aria-label).
   "table.seat.ariaBase": "{name}, {chips} chips, {status}",
@@ -528,11 +528,6 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.error.mathEstimateGeneric": "Enter a valid {unit} estimate.",
   "table.recap.callToContinue": "Call {amount} to continue, raise, or fold.",
   "table.recap.checkBetOrFold": "Check, bet, or fold.",
-
-  "table.arrival.progressLabel": "Championship progress",
-  "table.arrival.handRemain":
-    "Hand {handNumber} · {tournamentPlayersRemaining} players remain in tournament",
-  "table.arrival.settling": "Settling into the next hand",
 
   "table.camera.left": "Look one seat left",
   "table.camera.right": "Look one seat right",

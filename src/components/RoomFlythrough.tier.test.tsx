@@ -112,13 +112,17 @@ describe("arrival hands off to play without a hard cut", () => {
     );
   });
 
-  it("opens the first hand with the arrival settle, like any later hand", () => {
-    // `handNumber > 1` alone meant the hand you arrive on -- the only one that
-    // follows a fly-through -- was the single hand that got no settle at all.
-    expect(app).toContain("arrivingFromFlythrough.current = true");
-    expect(app).toContain(
-      "handNumber > 1 || arrivingFromFlythrough.current",
+  it("hands off directly without adding a recurring table overlay", () => {
+    // The venue fly-through remains the arrival presentation. The table should
+    // not add a second progress banner on every hand after the handoff.
+    const table = readFileSync(
+      path.join(sourceRoot, "components", "PokerTable.tsx"),
+      "utf8",
     );
+    expect(app).not.toContain("arrivingFromFlythrough.current");
+    expect(app).not.toContain("showArrival");
+    expect(table).not.toContain("room-progress-overlay");
+    expect(css).not.toContain(".room-progress-overlay");
   });
 });
 
