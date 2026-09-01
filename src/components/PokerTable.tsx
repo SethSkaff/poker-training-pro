@@ -3258,9 +3258,12 @@ export function PokerTable({
   const presentationActive = Boolean(tournament?.presentationEvent);
   /*
     The next hand is computed before its snapshot is committed so the public
-    button/blind/deal beats can play continuously. During that bridge the
-    scenario still contains the previous hand, but its cards and board have
-    already been collected; keep them out of both renderers immediately.
+    button/blind/deal beats can play continuously. During the result/collection
+    bridge and the opening button/blind beats, the scenario still contains the
+    previous hand, but its cards and board have already been collected; keep
+    them out of both renderers immediately. When the deal beat begins, App
+    supplies the viewer-safe next-hand snapshot so the arriving private card is
+    sourced from the hand being presented.
   */
   const newHandPresentation = Boolean(
     tournament?.presentationEvent &&

@@ -1,6 +1,6 @@
 {
   "name": "poker-training-pro",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "A game-like desktop poker statistics trainer and tournament simulator.",
   "main": "electron/main.cjs",

@@ -30,4 +30,12 @@ describe("tournament table scene identity", () => {
     expect(table).toContain('"data-table-state-version": tournament.sceneStateVersion');
     expect(table).not.toContain("key={[");
   });
+
+  it("switches to the viewer-safe next-hand snapshot when the deal begins", () => {
+    const app = appSource();
+    expect(app).toContain('presentationEvent?.kind === "hole-cards-dealt"');
+    expect(app).toContain("pendingPresentation.next.session.activeHand?.handId");
+    expect(app).toContain("createPokerTableSnapshot(pendingPresentation.next.session)");
+    expect(app).toContain("scenario={snapshotForPresentation}");
+  });
 });
