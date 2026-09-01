@@ -28,7 +28,7 @@ describe("release documentation gate", () => {
     });
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
-      packageVersion: "0.1.0",
+      packageVersion: "0.1.1",
       releaseBlockers: 10,
       status: "pre-release-blocked",
     });
@@ -54,7 +54,7 @@ describe("release documentation gate", () => {
     writeFileSync(
       changelogPath,
       readFileSync(changelogPath, "utf8").replace(
-        "## [0.1.0] - Unreleased",
+        "## [0.1.1] - Unreleased",
         "## [9.9.9] - Unreleased",
       ),
       "utf8",

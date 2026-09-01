@@ -210,7 +210,8 @@ export interface ResumeRecapInput {
   reason?: LifecyclePauseReason;
   inactiveMs: number;
   potChips?: number;
-  playersRemaining?: number;
+  /** Tournament-wide survivors; explicitly not a current-hand count. */
+  tournamentPlayersRemaining?: number;
   lastAction?: string;
   currentDecision?: string;
   handNumber?: number;
@@ -251,10 +252,10 @@ export function buildResumeRecap(input: ResumeRecapInput): ResumeRecap {
   }
   if (input.potChips !== undefined) {
     lines.push(
-      input.playersRemaining !== undefined
-        ? formatMessage("resumeRecap.line.potPlayers", {
+      input.tournamentPlayersRemaining !== undefined
+        ? formatMessage("resumeRecap.line.potTournamentPlayers", {
             chips: formatChips(input.potChips),
-            playersRemaining: input.playersRemaining,
+            tournamentPlayersRemaining: input.tournamentPlayersRemaining,
           })
         : formatMessage("resumeRecap.line.pot", {
             chips: formatChips(input.potChips),

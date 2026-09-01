@@ -24,6 +24,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -107,6 +108,7 @@ import {
   unique2DPlayerIdentities,
 } from "../lib/twoDAvatarModels";
 import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
+import { derivePlayerCountSemantics } from "../lib/playerCountSemantics";
 import {
   useTableAnnouncer,
   type TableAnnouncerSnapshot,
@@ -210,7 +212,12 @@ interface TournamentTableControls {
   sceneStateVersion: number;
   handNumber: number;
   fieldSize: number;
-  playersRemaining: number;
+  /** Tournament-wide survivors; never use this for current-hand math. */
+  tournamentPlayersRemaining: number;
+  /** Explicit current-hand counts projected by the session owner. */
+  playersDealtIn: number;
+  activePlayersInHand: number;
+  activeOpponents: number;
   /** Current blind level, 1-based, for the tournament HUD (E27-004/E27-008). */
   blindLevel?: number;
   /** Milliseconds until the blinds next rise, so the schedule is inspectable. */
@@ -679,21 +686,21 @@ export function tablePositionLabelForSeat({
   buttonSeat,
   smallBlindSeat,
   bigBlindSeat,
-  playerCount,
+  tableSize,
 }: {
   seat: number;
   buttonSeat?: number;
   smallBlindSeat?: number;
   bigBlindSeat?: number;
-  playerCount: number;
+  tableSize: number;
 }): string {
   if (seat === buttonSeat) return formatMessage("table.position.button");
   if (seat === smallBlindSeat) return formatMessage("table.position.smallBlind");
   if (seat === bigBlindSeat) return formatMessage("table.position.bigBlind");
-  if (bigBlindSeat === undefined || playerCount <= 0) return "";
-  const distance = (seat - bigBlindSeat + playerCount) % playerCount;
+  if (bigBlindSeat === undefined || tableSize <= 0) return "";
+  const distance = (seat - bigBlindSeat + tableSize) % tableSize;
   if (distance === 1) return formatMessage("table.position.utg");
-  if (distance === playerCount - 1) return formatMessage("table.position.cutoff");
+  if (distance === tableSize - 1) return formatMessage("table.position.cutoff");
   return distance === 2
     ? formatMessage("table.position.hijack")
     : formatMessage("table.position.middle");
@@ -819,6 +826,14 @@ interface PlayerSeatProps {
   positionLabel?: string;
   revealedCards?: readonly Card[];
   winningCardLabels?: ReadonlySet<string>;
+  /** True while a completed hand is being shown face up in the 2D seat lane. */
+  showdownRevealed?: boolean;
+  /** True when this seat's cards are publicly face up during an all-in. */
+  allInRevealed?: boolean;
+  /** True only on the initial all-in reveal beat, when the cards should flip. */
+  allInRevealBeat?: boolean;
+  /** Public all-in equity shown above the revealed cards in 2D mode. */
+  allInWinProbability?: number;
   /** Adapter-owned public projection used for DOM/scene parity diagnostics. */
   sceneSeat?: SceneSnapshotSeat;
   /**
@@ -931,6 +946,10 @@ function PlayerSeat({
   positionLabel,
   revealedCards,
   winningCardLabels,
+  showdownRevealed = false,
+  allInRevealed = false,
+  allInRevealBeat = false,
+  allInWinProbability,
   sceneSeat,
   railAnchor,
   stackAnchor,
@@ -962,6 +981,8 @@ function PlayerSeat({
   const visiblePrivateCardCount = Math.max(0, Math.min(2, Math.floor(dealtCardCount)));
   const isShowingCards = !isHero && !isOut && visiblePrivateCardCount > 0 && !isFolded;
   const hasRevealedCards = revealedCards?.length === 2;
+  const isShowdownRevealed = showdownRevealed && hasRevealedCards;
+  const isAllInRevealed = allInRevealed && hasRevealedCards;
   const shouldHoldCards =
     isShowingCards && !hasRevealedCards && player.status === "active" && !isMucking;
   const gesture = seatGestureForPublicState({
@@ -981,7 +1002,11 @@ function PlayerSeat({
         isHero ? "player-seat--hero" : ""
       } ${isFolded ? "is-folded" : ""} ${isAllIn ? "is-all-in" : ""} ${
         isOut ? "is-out" : ""
-      } ${wonPot ? "is-winner" : ""} ${hasRevealedCards ? "is-revealed" : ""}`}
+      } ${wonPot ? "is-winner" : ""} ${hasRevealedCards ? "is-revealed" : ""} ${
+        isShowdownRevealed ? "is-showdown-revealed" : ""
+      } ${
+        isAllInRevealed ? "is-all-in-revealed" : ""
+      }`}
       role="group"
       {...(
         // Stable public action kind for packaged still-frame evidence. The
@@ -1034,6 +1059,11 @@ function PlayerSeat({
       )}
       {isShowingCards && (
         <div className="opponent-cards" aria-hidden={!hasRevealedCards}>
+          {isAllInRevealed && allInWinProbability !== undefined && (
+            <span className="all-in-win-probability">
+              {formatFixedDecimal(allInWinProbability * 100, 1)}%
+            </span>
+          )}
           {shouldHoldCards && <i className="opponent-card-hand" aria-hidden="true" />}
           {hasRevealedCards
             ? revealedCards.map((card) => {
@@ -1050,6 +1080,9 @@ function PlayerSeat({
                         winningCardLabels?.has(cardLabel(card))
                           ? "showdown-card is-winning"
                           : "showdown-card is-unused",
+                        isAllInRevealed && allInRevealBeat
+                          ? "all-in-reveal-card"
+                          : "",
                       ].join(" ")
                     }
                   />
@@ -1124,6 +1157,11 @@ function PlayerSeat({
         {...(isHero ? { "data-hero-identity": "true" } : {})}
       >
         <span className="seat-name">{isHero ? formatMessage("table.seat.you") : displayName ?? player.name.split(" ")[0]}</span>
+        {wonPot && (
+          <span className="seat-winner-badge" aria-hidden="true">
+            {formatMessage("table.seat.winner")}
+          </span>
+        )}
         <strong>{formatChips(player.stack)}</strong>
         {showCurrentBet && (
           <span className="seat-current-bet">
@@ -1680,8 +1718,12 @@ function ModeSidePanel({
         <small>
           {formatMessage("table.modePreview.handSummary", {
             handNumber: tournament.handNumber,
-            playersRemaining: tournament.playersRemaining,
-            fieldSize: tournament.fieldSize,
+            tournamentPlayersRemaining: tournament.tournamentPlayersRemaining,
+          })}
+          <br />
+          {formatMessage("table.modePreview.handPlayers", {
+            playersDealtIn: tournament.playersDealtIn,
+            activePlayersInHand: tournament.activePlayersInHand,
           })}
         </small>
       </div>
@@ -2053,6 +2095,7 @@ export function PokerTable({
   const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
   const actionGateRef = useRef(createTableActionGate());
+  const previousTrainingScenarioIdRef = useRef(scenario.id);
   const previousSceneVersionRef = useRef(tournament?.sceneStateVersion);
   const previousHandIdRef = useRef(scenario.id);
   const arrivalDelayRef = useRef<FreezableDelay | null>(null);
@@ -2085,9 +2128,10 @@ export function PokerTable({
   const mathStartedAt = useRef<number | null>(null);
   const mathElapsedMs = useRef(0);
   const pauseStartedAt = useRef<number | null>(null);
-  // Combined Elo captured when this table was entered. The table remounts per
-  // scenario/hand, so this baseline is stable within a scenario and lets the
-  // coach detect the first Elo change once a graded attempt resolves.
+  // Combined Elo captured when this table was entered. The table stays mounted
+  // across Training scenarios, so this baseline remains stable for the whole
+  // sitting and lets the coach detect the first Elo change once a graded
+  // attempt resolves.
   const eloBaseline = useRef(progress.decisionElo + progress.mathElo);
   const ratedScenario = scenario as RatedTrainingScenario;
   const cameraStep =
@@ -2142,7 +2186,7 @@ export function PokerTable({
         openingBigBlind: tournament?.openingBigBlind,
         currentBigBlind: scenario.blinds[1],
         fieldSize: tournament?.fieldSize,
-        playersRemaining: tournament?.playersRemaining,
+        tournamentPlayersRemaining: tournament?.tournamentPlayersRemaining,
         qualifyingPlaces: tournament?.qualifyingPlaces,
         eloBaseline: eloBaseline.current,
         eloCurrent: progress.decisionElo + progress.mathElo,
@@ -2164,7 +2208,7 @@ export function PokerTable({
     tournament?.legalActions,
     tournament?.openingBigBlind,
     tournament?.fieldSize,
-    tournament?.playersRemaining,
+    tournament?.tournamentPlayersRemaining,
     tournament?.qualifyingPlaces,
     progress.decisionElo,
     progress.mathElo,
@@ -2195,7 +2239,7 @@ export function PokerTable({
     pot: number;
     amountToCall: number;
     street: string;
-    playersRemaining?: number;
+    tournamentPlayersRemaining?: number;
     handNumber?: number;
     lastAction?: string;
   }>({ pot: scenario.pot, amountToCall: scenario.amountToCall, street: scenario.street });
@@ -2203,7 +2247,9 @@ export function PokerTable({
     pot: scenario.pot,
     amountToCall: scenario.amountToCall,
     street: scenario.street,
-    ...(tournament ? { playersRemaining: tournament.playersRemaining } : {}),
+    ...(tournament
+      ? { tournamentPlayersRemaining: tournament.tournamentPlayersRemaining }
+      : {}),
     ...(tournament ? { handNumber: tournament.handNumber } : {}),
     ...(tournament?.actionHistory.at(-1)
       ? { lastAction: tournament.actionHistory.at(-1) }
@@ -2238,8 +2284,8 @@ export function PokerTable({
             reason: pauseReasonRef.current,
             inactiveMs: transition.inactiveMs,
             potChips: data.pot,
-            ...(data.playersRemaining !== undefined
-              ? { playersRemaining: data.playersRemaining }
+            ...(data.tournamentPlayersRemaining !== undefined
+              ? { tournamentPlayersRemaining: data.tournamentPlayersRemaining }
               : {}),
             ...(data.lastAction ? { lastAction: data.lastAction } : {}),
             currentDecision:
@@ -2495,8 +2541,23 @@ export function PokerTable({
     setSpeed(1);
     mathStartedAt.current = null;
     mathElapsedMs.current = 0;
+    setCardsDealtHandId(scenario.id);
+    setStagedBoard(scenario.board.map((card) => ({ ...card })));
     actionGateRef.current.release();
-  }, [scenario.minimumRaise]);
+  }, [scenario.board, scenario.id, scenario.minimumRaise]);
+
+  useLayoutEffect(() => {
+    if (mode !== "training") {
+      previousTrainingScenarioIdRef.current = scenario.id;
+      return;
+    }
+    if (previousTrainingScenarioIdRef.current === scenario.id) return;
+
+    previousTrainingScenarioIdRef.current = scenario.id;
+    resetHand();
+    setHistoryOpen(false);
+    setActivePrompt(null);
+  }, [mode, resetHand, scenario.id]);
 
   // Authoritative table state changes must update this mounted scene rather
   // than recreate it. A hand transition clears only hand-specific visuals;
@@ -2771,7 +2832,7 @@ export function PokerTable({
           uncertainty: Math.min(
             1,
             scenario.board.length / 10 +
-              tournament.playersRemaining / tournament.fieldSize / 2,
+              tournament.tournamentPlayersRemaining / tournament.fieldSize / 2,
           ),
           tempo:
             mode === "rational"
@@ -3174,6 +3235,37 @@ export function PokerTable({
     tournament?.skipTerminalFoldedPlayerIds,
   );
   const heroStack = heroPlayer?.stack ?? scenario.minimumRaise;
+  const fallbackTournamentPlayersRemaining = scenario.players.filter(
+    (player) => player.status !== "out",
+  ).length;
+  const fallbackHandCounts = heroPlayer
+    ? derivePlayerCountSemantics(
+        scenario.players
+          .filter((player) => player.status !== "out")
+          .map((player) => ({ id: player.id, status: player.status })),
+        heroPlayer.id,
+        tournament?.tournamentPlayersRemaining ??
+          fallbackTournamentPlayersRemaining,
+      )
+    : {
+        tournamentPlayersRemaining:
+          tournament?.tournamentPlayersRemaining ??
+          fallbackTournamentPlayersRemaining,
+        playersDealtIn: scenario.players.filter(
+          (player) => player.status !== "out",
+        ).length,
+        activePlayersInHand: scenario.players.filter(
+          (player) => player.status === "active" || player.status === "all-in",
+        ).length,
+        activeOpponents: Math.max(
+          0,
+          scenario.players.filter(
+            (player) => player.status === "active" || player.status === "all-in",
+          ).length - 1,
+        ),
+      };
+  const activePlayersInHand =
+    tournament?.activePlayersInHand ?? fallbackHandCounts.activePlayersInHand;
   /*
     Whether the hero has folded is read from the authoritative seat status, not
     from the local `action` state (E27-001). `action` is transient -- it is
@@ -3207,7 +3299,7 @@ export function PokerTable({
       buttonSeat: scenario.buttonSeat,
       smallBlindSeat: scenario.smallBlindSeat,
       bigBlindSeat: scenario.bigBlindSeat,
-      playerCount: scenario.players.length,
+      tableSize: scenario.players.length,
     });
   const heroPositionLabel = positionLabelForSeat(scenario.heroSeat);
   const dealerMoveEvent =
@@ -3557,6 +3649,11 @@ export function PokerTable({
     (tournament?.presentationEvent?.kind === "all-in-reveal"
       ? tournament.presentationEvent
       : undefined);
+  const allInRevealPlayerIds = new Set(
+    allInRevealEvent?.reveals.map((reveal) => reveal.playerId) ?? [],
+  );
+  const allInRevealBeat =
+    isTwoDMode && tournament?.presentationEvent?.kind === "all-in-reveal";
   useEffect(() => {
     if (!allInRevealEvent || allInRevealEvent.reveals.length < 2) {
       setAllInEquity(undefined);
@@ -3621,16 +3718,40 @@ export function PokerTable({
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
   }, [allInEquity, settings.reducedMotion, settings.transitionMotion]);
+  const rememberedShowdownRef = useRef<
+    Extract<TournamentPresentationEvent, { kind: "showdown" }> | null
+  >(null);
+  useEffect(() => {
+    if (showdownEvent) rememberedShowdownRef.current = showdownEvent;
+  }, [showdownEvent?.id]);
+  const presentationHandId =
+    tournament?.presentationEvent?.handId ?? scenario.id;
+  const rememberedShowdownEvent =
+    rememberedShowdownRef.current?.handId === presentationHandId
+      ? rememberedShowdownRef.current
+      : undefined;
+  /*
+    The runner advances from `showdown` through side-pot and payout milestones
+    without changing the authoritative snapshot. Keep the already-public
+    showdown event attached to that same hand so the cards do not vanish while
+    the result is being paid out. A new hand id automatically drops this view.
+  */
+  const showdownEventForDisplay = showdownEvent ?? rememberedShowdownEvent;
   const revealedCardsByPlayer = new Map(
-    publicRevealsForPresentation(
-      tournament?.presentationEvent,
-      allInRevealEvent,
+    (showdownEventForDisplay?.reveals ??
+      publicRevealsForPresentation(
+        tournament?.presentationEvent,
+        allInRevealEvent,
+      )
     ).map((reveal) => [reveal.playerId, reveal.cards]),
   );
   const winningCardLabels = winningCardLabelsForAwards(
-    showdownEvent?.awards ?? [],
+    showdownEventForDisplay?.awards ?? [],
   );
-  const winningShowdownHands = winningHandsForShowdown(showdownEvent, displayedBoard);
+  const winningShowdownHands = winningHandsForShowdown(
+    showdownEventForDisplay,
+    displayedBoard,
+  );
   /*
     Who won this hand, held for as long as the hand is paying out (E27-003).
 
@@ -3641,7 +3762,11 @@ export function PokerTable({
     keeps the outcome on screen while its chips are still moving, and drops it
     automatically when a new hand starts.
   */
-  const liveAwards = resultEvent?.awards ?? tournament?.lastPotAwards ?? [];
+  const liveAwards =
+    resultEvent?.awards ??
+    showdownEventForDisplay?.awards ??
+    tournament?.lastPotAwards ??
+    [];
   const rememberedAwards = useRef<{
     handId: string;
     awards: typeof liveAwards;
@@ -3668,7 +3793,19 @@ export function PokerTable({
     resultPhaseKind === "pot-awarded" ||
     resultPhaseKind === "side-pot-formed" ||
     resultPhaseKind === "cards-collected";
+  const showdownVisualActive =
+    Boolean(showdownEventForDisplay) && resultPhaseKind !== "cards-collected";
+  const showdownWinnerIds = new Set(
+    showdownAwards.map((award) => award.playerId),
+  );
   const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
+  const heroAllInRevealed =
+    isTwoDMode &&
+    allInRevealPlayerIds.has(heroPlayerId) &&
+    showdownHeroRevealed;
+  const heroAllInWinProbability = heroAllInRevealed
+    ? displayedAllInEquity.get(heroPlayerId)
+    : undefined;
   const tableAnnouncement = buildPokerTableAnnouncement({
     action,
     latestPublicAction: tournament?.actionHistory.at(-1),
@@ -3729,6 +3866,7 @@ export function PokerTable({
       data-camera-motion={settings.cameraMotion}
       data-table-motion={settings.tableMotion}
       data-transition-motion={settings.transitionMotion}
+      {...(showdownVisualActive ? { "data-table-phase": "showdown" } : {})}
       style={tableStyle}
       {...localeTextAttributes()}
     >
@@ -3784,14 +3922,13 @@ export function PokerTable({
               field, exactly as every other mode does.
             */}
             {mode === "training"
-              ? formatMessage("table.status.streetPlayersRemain", {
+              ? formatMessage("table.status.streetPlayersInHand", {
                   street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
-                  playersRemaining: trainingContext.players,
+                  playersInHand: trainingContext.activePlayersInHand,
                 })
-              : formatMessage("table.status.streetPlayersRemain", {
+              : formatMessage("table.status.streetPlayersInHand", {
                   street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
-                  playersRemaining:
-                    tournament?.playersRemaining ?? scenario.players.length,
+                  playersInHand: activePlayersInHand,
                 })}
           </span>
         </div>
@@ -3914,9 +4051,15 @@ export function PokerTable({
               </span>
             ) : null}
             <span>
-              <b>{formatMessage("table.hud.players")}</b>
-              {tournament?.playersRemaining ?? scenario.players.length}
+              <b>{formatMessage("table.hud.handPlayers")}</b>
+              {activePlayersInHand}
             </span>
+            {tournament ? (
+              <span>
+                <b>{formatMessage("table.hud.tournamentPlayers")}</b>
+                {tournament.tournamentPlayersRemaining}
+              </span>
+            ) : null}
           </aside>
           {/*
             The situation, stated (E27-013). The reported ace-five all-in could
@@ -3935,7 +4078,7 @@ export function PokerTable({
                 blinds: `${formatChips(trainingContext.smallBlind)}/${formatChips(trainingContext.bigBlind)}`,
                 pot: formatChips(trainingContext.pot),
                 toCall: formatChips(trainingContext.amountToCall),
-                players: trainingContext.players,
+                activePlayersInHand: trainingContext.activePlayersInHand,
               })}
             >
               <span>
@@ -3966,8 +4109,12 @@ export function PokerTable({
                 {formatChips(trainingContext.bigBlind)}
               </span>
               <span>
-                <b>{formatMessage("table.context.players")}</b>
-                {trainingContext.players}
+                <b>{formatMessage("table.context.activePlayers")}</b>
+                {trainingContext.activePlayersInHand}
+              </span>
+              <span>
+                <b>{formatMessage("table.context.dealtIn")}</b>
+                {trainingContext.playersDealtIn}
               </span>
               <span>
                 <b>{formatMessage("table.context.pot")}</b>
@@ -4022,7 +4169,7 @@ export function PokerTable({
             gets this lifted five-card tableau, and every card in it comes from
             the engine's already-public award payload.
           */}
-          {showdownEvent && winningShowdownHands.length > 0 ? (
+          {!isTwoDMode && showdownVisualActive && winningShowdownHands.length > 0 ? (
             <section className="showdown-tableau" aria-label="Winning poker hands">
               {winningShowdownHands.map((hand) => {
                 const winner = scenario.players.find((player) => player.id === hand.playerId);
@@ -4091,7 +4238,7 @@ export function PokerTable({
               <small>{formatMessage("table.allIn.runoutHint")}</small>
             </aside>
           ) : null}
-          {allInRevealEvent ? (
+          {!isTwoDMode && allInRevealEvent ? (
             <>
             <section className="all-in-showdown-stage" aria-label="All-in hands revealed">
               {allInRevealEvent.reveals.map((reveal) => {
@@ -4099,7 +4246,7 @@ export function PokerTable({
                 return (
                   <div key={reveal.playerId} className="all-in-showdown-hand">
                     <b>{player?.seat === scenario.heroSeat ? "You" : (player?.name ?? reveal.playerId)}</b>
-                    <span>{reveal.cards.map((card) => <PlayingCard key={cardLabel(card)} card={card} small />)}</span>
+                    <span>{reveal.cards.map((card) => <PlayingCard key={cardLabel(card)} card={card} small className="all-in-reveal-card" />)}</span>
                   </div>
                 );
               })}
@@ -4138,7 +4285,8 @@ export function PokerTable({
                 <strong>
                   {formatMessage("table.arrival.handRemain", {
                     handNumber: tournament.handNumber,
-                    playersRemaining: tournament.playersRemaining,
+                    tournamentPlayersRemaining:
+                      tournament.tournamentPlayersRemaining,
                   })}
                 </strong>
               </div>
@@ -4147,7 +4295,8 @@ export function PokerTable({
                   style={{
                     width: `${Math.max(
                       4,
-                      ((tournament.fieldSize - tournament.playersRemaining) /
+                      ((tournament.fieldSize -
+                        tournament.tournamentPlayersRemaining) /
                         Math.max(1, tournament.fieldSize - 1)) *
                         100,
                     )}%`,
@@ -4380,31 +4529,37 @@ export function PokerTable({
 
                 <div
                   className="community-cards"
+                  data-card-count={displayedBoard.length}
                   role="group"
                   aria-label={formatMessage("table.communityCards.ariaLabel")}
                 >
-                  {displayedBoard.map((card, index) => (
-                    <span
-                      className={
-                        tournament?.presentationEvent?.kind === "board-card-dealt" &&
-                        tournament.presentationEvent.cardIndex === index
-                          ? "board-card-entering"
-                          : undefined
-                      }
-                      key={`${card.rank}-${index}`}
-                    >
-                      <PlayingCard
-                        card={card}
-                        className={
-                          showdownEvent
-                            ? winningCardLabels.has(cardLabel(card))
-                              ? "showdown-card is-winning"
-                              : "showdown-card is-unused"
-                            : undefined
-                        }
-                      />
-                    </span>
-                  ))}
+                  {displayedBoard.map((card, index) => {
+                    const boardCardIsWinning =
+                      showdownVisualActive && winningCardLabels.has(cardLabel(card));
+                    const boardCardIsEntering =
+                      tournament?.presentationEvent?.kind === "board-card-dealt" &&
+                      tournament.presentationEvent.cardIndex === index;
+                    return (
+                      <span
+                        className={[
+                          boardCardIsEntering ? "board-card-entering" : "",
+                          boardCardIsWinning ? "board-card-winning" : "",
+                        ].filter(Boolean).join(" ") || undefined}
+                        key={`${card.rank}-${index}`}
+                      >
+                        <PlayingCard
+                          card={card}
+                          className={
+                            showdownVisualActive
+                              ? boardCardIsWinning
+                                ? "showdown-card is-winning"
+                                : "showdown-card is-unused"
+                              : undefined
+                          }
+                        />
+                      </span>
+                    );
+                  })}
                   {Array.from({ length: 5 - displayedBoard.length }).map(
                     (_, index) => (
                       <span
@@ -4485,6 +4640,7 @@ export function PokerTable({
                   dealer={player.seat === scenario.buttonSeat}
                   wonPot={
                     presentation.wonPot ||
+                    (showdownVisualActive && showdownWinnerIds.has(player.id)) ||
                     (arrivalVisible &&
                       Boolean(tournament?.lastPotWinnerIds?.includes(player.id)))
                   }
@@ -4500,6 +4656,20 @@ export function PokerTable({
                   positionLabel={positionLabelForSeat(player.seat)}
                   revealedCards={revealedCardsByPlayer.get(player.id)}
                   winningCardLabels={winningCardLabels}
+                  showdownRevealed={
+                    isTwoDMode &&
+                    showdownVisualActive &&
+                    revealedCardsByPlayer.has(player.id)
+                  }
+                  allInRevealed={
+                    isTwoDMode && allInRevealPlayerIds.has(player.id)
+                  }
+                  allInRevealBeat={allInRevealBeat}
+                  allInWinProbability={
+                    isTwoDMode && allInRevealPlayerIds.has(player.id)
+                      ? displayedAllInEquity.get(player.id)
+                      : undefined
+                  }
                   sceneSeat={seatSceneSeat}
                   railAnchor={
                     sceneReadyForPlaques && seatSceneSeat
@@ -4589,6 +4759,12 @@ export function PokerTable({
               className={`hero-hole-cards hero-hole-cards-visual ${peeked ? "is-peeked" : ""} ${
                 dragging ? "is-dragging" : ""
               } ${heroFolded ? "is-folded" : ""} ${
+                heroAllInRevealed ? "is-all-in-revealed" : ""
+              } ${
+                showdownVisualActive && showdownHeroRevealed
+                  ? "is-showdown-revealed"
+                  : ""
+              } ${
                 heroHoleCardHitBounds ? "has-spatial-hit-target" : ""
               }`}
               type="button"
@@ -4621,6 +4797,11 @@ export function PokerTable({
               // back onto the table for the rest of the hand.
               disabled={Boolean(action) || heroDealtCardCount === 0 || heroFolded}
             >
+              {heroAllInWinProbability !== undefined && (
+                <span className="all-in-win-probability">
+                  {formatFixedDecimal(heroAllInWinProbability * 100, 1)}%
+                </span>
+              )}
               <span className="hero-hole-cards__cards">
                 {scenario.heroCards.slice(0, heroDealtCardCount).map((card, index) => (
                   <span className="hero-card-wrap" key={cardLabel(card)}>
@@ -4634,6 +4815,9 @@ export function PokerTable({
                           ? winningCardLabels.has(cardLabel(card))
                             ? "showdown-card is-winning"
                             : "showdown-card is-unused"
+                          : "",
+                        heroAllInRevealed && allInRevealBeat
+                          ? "all-in-reveal-card"
                           : "",
                       ].filter(Boolean).join(" ")}
                     />

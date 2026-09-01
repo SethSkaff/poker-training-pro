@@ -529,7 +529,10 @@ function createTableSceneResources(): TableSceneResources {
       context.font = `800 ${Math.round(canvas.height * 0.245)}px Georgia, serif`;
       context.fillText(face.rank, canvas.width * 0.135, canvas.height * 0.205);
       context.font = `700 ${Math.round(canvas.height * 0.175)}px Georgia, serif`;
-      context.fillText(face.glyph, canvas.width * 0.145, canvas.height * 0.345);
+      // Give the suit a little breathing room below the rank. At a grazing
+      // camera angle the two glyphs visually closed up and could read as one
+      // mark, especially on narrow ranks such as 7 and J.
+      context.fillText(face.glyph, canvas.width * 0.145, canvas.height * 0.38);
     };
     index();
     context.save();

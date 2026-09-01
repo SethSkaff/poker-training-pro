@@ -514,7 +514,7 @@ export function createTournament(
   };
 }
 
-function activeAtTable(
+function tournamentActivePlayersAtTable(
   state: TournamentState,
   tableId: string,
 ): TournamentPlayerState[] {
@@ -539,7 +539,7 @@ function nextBigBlindPlayer(
   state: TournamentState,
   table: TournamentTableState,
 ): TournamentPlayerState {
-  const players = activeAtTable(state, table.id);
+  const players = tournamentActivePlayersAtTable(state, table.id);
   if (players.length < 2) throw new Error("Cannot find a big blind at a broken table");
   const occupied = players.map((player) => player.seat as number);
 
@@ -577,7 +577,7 @@ function chooseWorstOpenSeat(
   state: TournamentState,
   table: TournamentTableState,
 ): number {
-  const occupied = activeAtTable(state, table.id).map(
+  const occupied = tournamentActivePlayersAtTable(state, table.id).map(
     (player) => player.seat as number,
   );
   const open = Array.from({ length: table.maxSeats }, (_, index) => index + 1).filter(
@@ -630,7 +630,7 @@ export function planTableBalance(
   const ranked = playing
     .map((table) => ({
       table,
-      count: activeAtTable(state, table.id).length,
+      count: tournamentActivePlayersAtTable(state, table.id).length,
     }))
     .sort(
       (left, right) =>
@@ -671,7 +671,7 @@ export function applyTableMove(
     throw new Error("Invalid table move");
   }
   if (
-    activeAtTable(state, move.toTableId).some(
+    tournamentActivePlayersAtTable(state, move.toTableId).some(
       (entry) => entry.seat === move.toSeat,
     )
   ) {
@@ -684,18 +684,20 @@ export function applyTableMove(
 }
 
 export function planTableBreak(state: TournamentState): TableBreakPlan | null {
-  const activePlayers = state.players.filter((player) => player.status === "active");
+  const tournamentActivePlayers = state.players.filter(
+    (player) => player.status === "active",
+  );
   const playingTables = state.tables.filter((table) => table.status === "playing");
   if (playingTables.length <= 1) return null;
   const capacityWithoutOne =
     (playingTables.length - 1) * state.structure.maxSeats;
-  if (activePlayers.length > capacityWithoutOne) return null;
+  if (tournamentActivePlayers.length > capacityWithoutOne) return null;
 
   const tableId =
     state.breakingOrder.find((candidate) =>
       playingTables.some((table) => table.id === candidate),
     ) ?? playingTables[playingTables.length - 1].id;
-  const leaving = activeAtTable(state, tableId).sort(
+  const leaving = tournamentActivePlayersAtTable(state, tableId).sort(
     (left, right) => (left.seat as number) - (right.seat as number),
   );
   const destinations = playingTables.filter((table) => table.id !== tableId);
@@ -707,7 +709,7 @@ export function planTableBreak(state: TournamentState): TableBreakPlan | null {
       .map((table) => ({
         table,
         count:
-          activeAtTable(state, table.id).length +
+          tournamentActivePlayersAtTable(state, table.id).length +
           (reserved.get(table.id)?.size ?? 0),
       }))
       .sort(
@@ -715,7 +717,9 @@ export function planTableBreak(state: TournamentState): TableBreakPlan | null {
           left.count - right.count || left.table.id.localeCompare(right.table.id),
       )[0].table;
     const occupied = new Set([
-      ...activeAtTable(state, target.id).map((entry) => entry.seat as number),
+      ...tournamentActivePlayersAtTable(state, target.id).map(
+        (entry) => entry.seat as number,
+      ),
       ...(reserved.get(target.id) ?? []),
     ]);
     const seat = Array.from(
@@ -824,11 +828,11 @@ export function recordEliminations(
     }),
     tables: source.tables.map((table) => ({ ...table })),
   };
-  const remaining = state.players.filter(
+  const tournamentPlayersRemaining = state.players.filter(
     (player) => player.status === "active",
   );
-  if (remaining.length === 1) {
-    const winner = remaining[0];
+  if (tournamentPlayersRemaining.length === 1) {
+    const winner = tournamentPlayersRemaining[0];
     winner.finishPlace = 1;
     state.status = "complete";
   }

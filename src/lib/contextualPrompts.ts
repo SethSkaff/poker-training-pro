@@ -232,8 +232,8 @@ export interface ContextualPromptSignals {
   currentBigBlind?: number;
   /** Total entrants in the tournament. */
   fieldSize?: number;
-  /** Players still active. */
-  playersRemaining?: number;
+  /** Tournament-wide survivors, used for elimination/qualification prompts. */
+  tournamentPlayersRemaining?: number;
   /** Finishing places that qualify or cash. */
   qualifyingPlaces?: number;
   /** Combined Elo captured when the table was entered. */
@@ -252,7 +252,7 @@ export function detectContextualPromptOccurrences(
     openingBigBlind,
     currentBigBlind,
     fieldSize,
-    playersRemaining,
+    tournamentPlayersRemaining,
     qualifyingPlaces,
     eloBaseline,
     eloCurrent,
@@ -299,17 +299,17 @@ export function detectContextualPromptOccurrences(
   }
   if (
     typeof fieldSize === "number" &&
-    typeof playersRemaining === "number" &&
-    playersRemaining < fieldSize
+    typeof tournamentPlayersRemaining === "number" &&
+    tournamentPlayersRemaining < fieldSize
   ) {
     occurrences.push("elimination");
   }
   if (
     typeof qualifyingPlaces === "number" &&
     qualifyingPlaces > 0 &&
-    typeof playersRemaining === "number" &&
-    playersRemaining > 0 &&
-    playersRemaining <= qualifyingPlaces
+    typeof tournamentPlayersRemaining === "number" &&
+    tournamentPlayersRemaining > 0 &&
+    tournamentPlayersRemaining <= qualifyingPlaces
   ) {
     occurrences.push("qualification");
   }

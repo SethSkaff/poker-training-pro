@@ -12,12 +12,19 @@ export interface AllInPresentationPlayer {
 export function isUncontestedAllInRunout(
   players: readonly AllInPresentationPlayer[],
 ): boolean {
-  const live = players.filter((player) => player.status !== "folded" && player.status !== "out");
-  if (live.length < 2 || !live.every((player) => player.status === "all-in")) return false;
+  const activePlayersInHand = players.filter(
+    (player) => player.status !== "folded" && player.status !== "out",
+  );
+  if (
+    activePlayersInHand.length < 2 ||
+    !activePlayersInHand.every((player) => player.status === "all-in")
+  ) {
+    return false;
+  }
 
   // Different live all-in caps mean there is an unmatched layer (a side pot or
   // refund) and this focused heads-up presentation would be misleading.
-  return new Set(live.map((player) => player.totalCommitted)).size === 1;
+  return new Set(activePlayersInHand.map((player) => player.totalCommitted)).size === 1;
 }
 
 export const ALL_IN_EQUITY_TRANSITION_MS = 250;

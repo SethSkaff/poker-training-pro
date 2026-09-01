@@ -23,9 +23,16 @@ import type {
   HandActionRecord,
   PlayerInformationSet,
 } from "../engine/tournament";
+import {
+  assertPlayerCountSemantics,
+  derivePlayerCountSemantics,
+  opponentsAbleToRespond,
+  type PlayerCountSemantics,
+} from "../lib/playerCountSemantics";
 
 export interface RationalTournamentContext {
-  playersRemaining: number;
+  /** Tournament-wide survivors; never used to size the current hand. */
+  tournamentPlayersRemaining: number;
   paidPlaces?: number;
   placesToQualification?: number;
   averageStack?: number;
@@ -61,15 +68,26 @@ export interface OpponentRangeSummary {
   aggression: number;
   estimatedTopRangePercent: number;
   weightedCombos: number;
+  rangeState: "public-action-conditioned" | "revealed";
   description: string;
 }
 
 export interface EquityEstimate {
+  /** Showdown share against the current hand's active opponent ranges. */
+  showdownEquity: number;
+  /** Compatibility alias for older callers; prefer `showdownEquity`. */
   equity: number;
   wins: number;
   ties: number;
   losses: number;
   simulations: number;
+  standardError: number;
+  confidenceInterval: readonly [number, number];
+  /** Counts derived only from the current information-set hand. */
+  currentHandCounts: Pick<
+    PlayerCountSemantics,
+    "playersDealtIn" | "activePlayersInHand" | "activeOpponents"
+  >;
   opponentRanges: OpponentRangeSummary[];
   /** Compact sufficient statistics reused by every candidate wager. */
   responseSamples: EquityResponseSample[];
@@ -88,6 +106,9 @@ export interface EquityResponseSample {
 
 export interface RationalActionResponseAudit {
   modelVersion: "range-response-v1";
+  /** Probability every opponent who can respond folds. */
+  allFoldProbability: number;
+  /** Compatibility alias for older review payloads. */
   foldProbability: number;
   callProbability: number;
   reRaiseProbability: number;
@@ -97,6 +118,8 @@ export interface RationalActionResponseAudit {
   reRaiseEquity: number;
   expectedContinuingOpponents: number;
   expectedOpponentContribution: number;
+  opponentsAbleToRespond: number;
+  respondingOpponentIds: string[];
   simulations: number;
 }
 
@@ -133,6 +156,8 @@ export interface RationalActionOption {
   command: BettingActionCommand;
   probability: number;
   utilityBigBlinds: number;
+  /** Approximate 95% uncertainty in action utility, in BB. */
+  uncertaintyBigBlinds: number;
   foldEquity: number;
   role: RationalActionRole;
   rationale: string;
@@ -144,6 +169,9 @@ export interface RationalDecisionAudit {
   informationBoundary: string;
   equityWork: EquityWorkMetrics;
   metrics: {
+    /** Showdown share against current-hand ranges, not action EV. */
+    showdownEquity: number;
+    /** Compatibility alias for older consumers. */
     equity: number;
     potOdds: number;
     requiredEquity: number;
@@ -151,6 +179,13 @@ export interface RationalDecisionAudit {
     effectiveStack: number;
     effectiveStackBigBlinds: number;
     stackToPotRatio: number;
+    tournamentPlayersRemaining?: number;
+    playersDealtIn: number;
+    activePlayersInHand: number;
+    activeOpponents: number;
+    requiredEquityApplicable: boolean;
+    equityStandardError: number;
+    equityConfidenceInterval: readonly [number, number];
     positionScore: number;
     inPosition: boolean;
     drawPotential: number;
@@ -176,8 +211,15 @@ export interface RationalDecisionAudit {
     Pick<
       RationalActionOption,
       "id" | "utilityBigBlinds" | "foldEquity" | "role" | "rationale"
-    > & { response?: RationalActionResponseAudit }
+    > & {
+      response?: RationalActionResponseAudit;
+      uncertaintyBigBlinds: number;
+    }
   >;
+  confidence: "low" | "medium" | "high";
+  evaluationSource:
+    | "preflop-continuation-rollout"
+    | "postflop-range-response-rollout";
   summary: string;
 }
 
@@ -214,7 +256,8 @@ interface CandidateAction {
 }
 
 interface PublicPressureContext {
-  activeOpponents: number;
+  /** Current-hand opponents with chips before a candidate wager is chosen. */
+  activeOpponentsWithChips: number;
   position: number;
   streetAggression: number;
   preflopAggression: number;
@@ -268,6 +311,130 @@ const RANK_VALUE: Readonly<Record<Card["rank"], number>> = {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function equityConfidence(
+  points: number,
+  pointsSquared: number,
+  simulations: number,
+): { standardError: number; interval: readonly [number, number] } {
+  if (simulations <= 1) {
+    const mean = simulations === 1 ? points : 0;
+    return { standardError: 0, interval: [mean, mean] };
+  }
+  const mean = points / simulations;
+  const populationVariance = Math.max(
+    0,
+    pointsSquared / simulations - mean * mean,
+  );
+  const sampleVariance = populationVariance * simulations / (simulations - 1);
+  const standardError = Math.sqrt(sampleVariance / simulations);
+  return {
+    standardError,
+    interval: [
+      clamp(mean - 1.96 * standardError, 0, 1),
+      clamp(mean + 1.96 * standardError, 0, 1),
+    ],
+  };
+}
+
+function confidenceLabel(standardError: number, simulations: number): "low" | "medium" | "high" {
+  if (simulations < 200 || standardError > 0.035) return "low";
+  if (simulations < 500 || standardError > 0.02) return "medium";
+  return "high";
+}
+
+function assertProbability(value: number, label: string): void {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`${label} must be a probability from 0 to 1`);
+  }
+}
+
+export interface RaiseBranchEvInput {
+  /** Pot at the hero's decision boundary; prior hero chips are sunk. */
+  pot: number;
+  /** Additional chips the hero puts in with the candidate wager. */
+  additionalRisk: number;
+  allFoldProbability: number;
+  callProbability: number;
+  reRaiseProbability: number;
+  /** Hero's showdown share conditional on the ordinary call branch. */
+  calledEquity: number;
+  /** Opponent chips expected to enter the pot on the ordinary call branch. */
+  expectedOpponentContribution?: number;
+}
+
+/**
+ * Evaluates the mutually exclusive raise branches used by policy and review.
+ * Keeping this as a pure function makes it impossible for the UI audit to use
+ * a different fold/call/re-raise equation than the live policy.
+ */
+export function evaluateRaiseBranchEv(input: RaiseBranchEvInput): number {
+  if (
+    !Number.isFinite(input.pot) ||
+    input.pot < 0 ||
+    !Number.isFinite(input.additionalRisk) ||
+    input.additionalRisk < 0
+  ) {
+    throw new Error("Raise EV requires non-negative finite pot and risk");
+  }
+  assertProbability(input.allFoldProbability, "All-fold probability");
+  assertProbability(input.callProbability, "Call probability");
+  assertProbability(input.reRaiseProbability, "Re-raise probability");
+  assertProbability(input.calledEquity, "Called equity");
+  const branchTotal =
+    input.allFoldProbability +
+    input.callProbability +
+    input.reRaiseProbability;
+  if (Math.abs(branchTotal - 1) > 1e-6) {
+    throw new Error("Raise EV branches must be mutually exclusive and exhaustive");
+  }
+  const expectedOpponentContribution = input.expectedOpponentContribution ?? 0;
+  if (!Number.isFinite(expectedOpponentContribution) || expectedOpponentContribution < 0) {
+    throw new Error("Expected opponent contribution must be non-negative");
+  }
+  return (
+    input.allFoldProbability * input.pot +
+    input.callProbability *
+      (input.calledEquity *
+        (input.pot + input.additionalRisk + expectedOpponentContribution) -
+        input.additionalRisk) +
+    input.reRaiseProbability * -input.additionalRisk
+  );
+}
+
+/** Pot-commitment EV for a call, optionally discounted for future-street realization. */
+export function evaluateCallActionEv(input: {
+  pot: number;
+  callAmount: number;
+  showdownEquity: number;
+  continuationRealization?: number;
+}): number {
+  if (
+    !Number.isFinite(input.pot) ||
+    input.pot < 0 ||
+    !Number.isFinite(input.callAmount) ||
+    input.callAmount < 0
+  ) {
+    throw new Error("Call EV requires non-negative finite pot and call amount");
+  }
+  assertProbability(input.showdownEquity, "Showdown equity");
+  const realization = input.continuationRealization ?? 1;
+  assertProbability(realization, "Continuation realization");
+  return (
+    input.showdownEquity * (input.pot + input.callAmount) * realization -
+    input.callAmount
+  );
+}
+
+/** Joint all-fold probability for independent current-hand defenders. */
+export function aggregateIndependentAllFoldProbability(
+  foldProbabilities: readonly number[],
+): number {
+  return foldProbabilities.reduce((product, probability, index) => {
+    assertProbability(probability, `Fold probability ${index + 1}`);
+    return product * probability;
+  }, 1);
 }
 
 function roundChips(value: number, unit: number): number {
@@ -394,12 +561,35 @@ function buildRange(
   features: readonly RangeComboFeatures[],
   actions: readonly HandActionRecord[],
 ): WeightedRange {
+  const opponentActions = actions.filter((action) => action.playerId === opponent.id);
   const aggression = aggressionFor(actions, opponent.id);
-  const publicActions = actions.filter((action) => action.playerId === opponent.id)
-    .length;
-  const tightness = clamp(0.8 + aggression * 0.75, 0.8, 3.4);
+  const publicActions = opponentActions.length;
+  const checks = opponentActions.filter((action) => action.type === "check").length;
+  const calls = opponentActions.filter((action) => action.type === "call").length;
+  const aggressiveActions = opponentActions.filter(
+    (action) =>
+      action.type === "bet" || action.type === "raise" || action.type === "all-in",
+  ).length;
+  // Observable actions condition the range before any candidate action is
+  // considered. A check is not equivalent to no information, and a bet/raise
+  // is not left at the unconditional starting distribution.
+  const actionStrengthShift = clamp(
+    aggressiveActions * 0.045 - checks * 0.025 + calls * 0.01,
+    -0.08,
+    0.18,
+  );
+  const tightness = clamp(
+    0.8 + aggression * 0.75 + actionStrengthShift * 1.5,
+    0.65,
+    3.4,
+  );
   const combos = features.map(({ cards, strategicStrength, draw }) => {
-    const valueWeight = Math.exp((strategicStrength - 0.48) * tightness * 2.2);
+    const conditionedStrength = clamp(
+      strategicStrength + actionStrengthShift,
+      0,
+      1,
+    );
+    const valueWeight = Math.exp((conditionedStrength - 0.48) * tightness * 2.2);
     // Preserve a low-frequency weak tail so aggression can represent bluffs.
     const bluffTail =
       aggression > 0
@@ -409,7 +599,7 @@ function buildRange(
       cards,
       weight: Math.max(0.0001, valueWeight + bluffTail),
       rangeQuantile: 0,
-      strategicStrength,
+      strategicStrength: conditionedStrength,
     };
   });
 
@@ -441,17 +631,20 @@ function buildRange(
     cumulativeWeights,
     totalWeight,
     summary: {
-      opponentId: opponent.id,
-      publicActions,
-      aggression: Number(aggression.toFixed(3)),
-      estimatedTopRangePercent: Number(topPercent.toFixed(1)),
-      weightedCombos: combos.length,
-      description:
-        aggression >= 1.2
-          ? "Public aggression weights this range toward made hands, strong draws, and a protected bluff tail."
-          : aggression > 0
-            ? "Calls and modest aggression retain a medium-width range with value and drawing hands."
-            : "With little public action, the estimate remains broad and position-neutral.",
+          opponentId: opponent.id,
+          publicActions,
+          aggression: Number(aggression.toFixed(3)),
+          estimatedTopRangePercent: Number(topPercent.toFixed(1)),
+          weightedCombos: combos.length,
+          rangeState: "public-action-conditioned",
+          description:
+            aggression >= 1.2
+              ? "Public aggression conditions this range toward made hands, strong draws, and a protected bluff tail."
+              : checks > 0
+                ? "Observed checks keep the range broad but cap its strongest weighting before the next action."
+                : aggression > 0
+                  ? "Calls and modest aggression condition a medium-width range with value and drawing hands."
+                  : "With no voluntary action, the estimate remains broad and position-neutral.",
     },
   };
 }
@@ -654,6 +847,7 @@ interface RangeEquityWorkState {
   ties: number;
   losses: number;
   equityPoints: number;
+  equityPointsSquared: number;
   responseSamples: EquityResponseSample[];
 }
 
@@ -747,6 +941,7 @@ function createRangeEquityWork(
     ties: 0,
     losses: 0,
     equityPoints: 0,
+    equityPointsSquared: 0,
     responseSamples: [],
   };
 }
@@ -796,6 +991,7 @@ function advanceRangeEquityWork(state: RangeEquityWorkState): void {
     const winners = values.filter(
       (candidate) => compareHandValues(candidate.value, best.value) === 0,
     );
+    let sampleEquity = 0;
     state.responseSamples.push({
       opponents: state.opponents
         .slice()
@@ -820,11 +1016,13 @@ function advanceRangeEquityWork(state: RangeEquityWorkState): void {
       state.losses += 1;
     } else if (winners.length === 1) {
       state.wins += 1;
-      state.equityPoints += 1;
+      sampleEquity = 1;
     } else {
       state.ties += 1;
-      state.equityPoints += 1 / winners.length;
+      sampleEquity = 1 / winners.length;
     }
+    state.equityPoints += sampleEquity;
+    state.equityPointsSquared += sampleEquity * sampleEquity;
     state.completed += 1;
   }
   state.slices += 1;
@@ -836,12 +1034,31 @@ function finishRangeEquityWork(state: RangeEquityWorkState): EquityEstimate {
       `Equity work is incomplete (${state.completed}/${state.simulations}).`,
     );
   }
+  const showdownEquity = state.equityPoints / state.simulations;
+  const confidence = equityConfidence(
+    state.equityPoints,
+    state.equityPointsSquared,
+    state.simulations,
+  );
+  const currentHandCounts = derivePlayerCountSemantics(
+    state.informationSet.players,
+    state.informationSet.viewerId,
+    0,
+  );
   return {
-    equity: state.equityPoints / state.simulations,
+    showdownEquity,
+    equity: showdownEquity,
     wins: state.wins,
     ties: state.ties,
     losses: state.losses,
     simulations: state.simulations,
+    standardError: confidence.standardError,
+    confidenceInterval: confidence.interval,
+    currentHandCounts: {
+      playersDealtIn: currentHandCounts.playersDealtIn,
+      activePlayersInHand: currentHandCounts.activePlayersInHand,
+      activeOpponents: currentHandCounts.activeOpponents,
+    },
     opponentRanges: state.opponents.map((opponent) => {
       const range = state.ranges.get(opponent.id);
       return (
@@ -856,6 +1073,7 @@ function finishRangeEquityWork(state: RangeEquityWorkState): EquityEstimate {
           ),
           estimatedTopRangePercent: 0,
           weightedCombos: 1,
+          rangeState: "revealed",
           description: "The hand is publicly revealed, so no hidden range is inferred.",
         }
       );
@@ -1060,15 +1278,15 @@ export async function estimatePublicAllInEquitySliced(
 }
 
 function positionScore(informationSet: PlayerInformationSet): number {
-  const active = informationSet.players.filter(
+  const activePlayersInHand = informationSet.players.filter(
     (player) => player.status !== "folded" && player.status !== "out",
   );
-  if (active.length <= 1) return 1;
+  if (activePlayersInHand.length <= 1) return 1;
   const tableSize = Math.max(
     informationSet.buttonSeat,
     ...informationSet.players.map((player) => player.seat),
   );
-  const order = [...active].sort((left, right) => {
+  const order = [...activePlayersInHand].sort((left, right) => {
     const leftDistance =
       (left.seat - informationSet.buttonSeat + tableSize) % tableSize || tableSize;
     const rightDistance =
@@ -1123,17 +1341,16 @@ function publicPressureContext(
       action.playerId === informationSet.viewerId &&
       (action.type === "bet" || action.type === "raise" || action.type === "all-in"),
   );
-  const activeOpponents = informationSet.players.filter(
+  const activeOpponentsWithChips = informationSet.players.filter(
     (player) =>
       player.id !== informationSet.viewerId &&
-      player.status !== "folded" &&
-      player.status !== "out" &&
-      player.status !== "all-in",
+      player.status === "active" &&
+      player.stack > 0,
   );
   const opponentsActedThisStreet = currentStreetActions.filter(
     (action) => action.playerId !== informationSet.viewerId && action.type !== "pending",
   ).length;
-  const cappedOpponents = activeOpponents.filter(
+  const cappedOpponents = activeOpponentsWithChips.filter(
     (opponent) => aggressionFor(informationSet.actions, opponent.id) < 0.65,
   ).length;
   const unopened = streetAggression === 0;
@@ -1148,8 +1365,8 @@ function publicPressureContext(
   const squeezeOpportunity =
     informationSet.street === "preflop" &&
     preflopAggression >= 1 &&
-    activeOpponents.length >= 2
-      ? clamp(0.25 + (activeOpponents.length - 2) * 0.15 + position * 0.2, 0.2, 0.7)
+    activeOpponentsWithChips.length >= 2
+      ? clamp(0.25 + (activeOpponentsWithChips.length - 2) * 0.15 + position * 0.2, 0.2, 0.7)
       : 0;
   const continuationOpportunity =
     informationSet.street === "flop" && viewerWasPreflopAggressor && streetAggression === 0
@@ -1160,7 +1377,7 @@ function publicPressureContext(
     streetAggression === 0 &&
     !viewerWasPreflopAggressor &&
     opponentsActedThisStreet > 0
-      ? clamp(0.18 + (cappedOpponents / Math.max(1, activeOpponents.length)) * 0.32, 0.12, 0.5)
+      ? clamp(0.18 + (cappedOpponents / Math.max(1, activeOpponentsWithChips.length)) * 0.32, 0.12, 0.5)
       : 0;
   const stackPressure = clamp((14 - effectiveStack / bigBlind) / 14, 0, 1);
   const lowSprValuePressure = clamp(
@@ -1170,7 +1387,7 @@ function publicPressureContext(
   );
 
   return {
-    activeOpponents: activeOpponents.length,
+    activeOpponentsWithChips: activeOpponentsWithChips.length,
     position,
     streetAggression,
     preflopAggression,
@@ -1189,7 +1406,7 @@ function publicPressureContext(
 
 function pressureOpportunity(context: PublicPressureContext): number {
   const cappedShare =
-    context.cappedOpponents / Math.max(1, context.activeOpponents);
+    context.cappedOpponents / Math.max(1, context.activeOpponentsWithChips);
   const opportunity =
     context.latePositionOpen * 0.95 +
     context.threeBetOpportunity * 0.82 +
@@ -1234,9 +1451,10 @@ export function tournamentPressureAdjustment(
   let premium = context.handForHand ? 0.055 : 0;
   if (
     context.paidPlaces !== undefined &&
-    context.playersRemaining > context.paidPlaces
+    context.tournamentPlayersRemaining > context.paidPlaces
   ) {
-    const bubbleDistance = context.playersRemaining - context.paidPlaces;
+    const bubbleDistance =
+      context.tournamentPlayersRemaining - context.paidPlaces;
     if (bubbleDistance <= 2) premium += 0.07;
     else if (bubbleDistance <= 5) premium += 0.035;
   }
@@ -1463,53 +1681,65 @@ function responseForCandidate(
   position: number,
 ): RationalActionResponseAudit | undefined {
   if (!["bet", "raise", "all-in"].includes(candidate.command.type)) return undefined;
-  const opponents = informationSet.players
-    .filter((player) =>
-      player.id !== informationSet.viewerId &&
-      player.status !== "folded" &&
-      player.status !== "out",
-    )
-    .slice()
-    .sort((left, right) => left.id.localeCompare(right.id));
-  const foldable = opponents.filter((opponent) => opponent.status !== "all-in");
   const hero = informationSet.players.find((player) => player.id === informationSet.viewerId);
   if (!hero) throw new Error("Hero is missing");
   const heroTarget = hero.streetCommitted + candidate.additionalRisk;
-  // Minimum-defence frequency: a bluff risks W to win P, so the table may
-  // fold W/(P+W). Split that fold target symmetrically across live defenders;
-  // retaining the top weighted range percent makes larger wagers narrower.
-  // An out-of-position defender realizes less of a marginal hand's equity
-  // because the in-position bettor observes their action on later streets.
-  // Apply that public information disadvantage to the *range boundary*, not
-  // hero equity or EV: late-position pressure therefore retains fewer
-  // marginal combos while early-position wagers face a slightly wider range.
-  const positionalRealizationGap = clamp((position - 0.5) * 0.16, -0.06, 0.08);
-  const foldThresholdFor = (opponent: (typeof opponents)[number]): number => {
-    if (opponent.status === "all-in" || foldable.length === 0) return 0;
-    // A covered defender can only call its effective remaining stack. Its MDF
-    // must be priced from that public effective call, not hero's uncapped
-    // wager; otherwise a 10-BB stack incorrectly folds as if facing 300 BB.
+  const opponentPlayers = informationSet.players
+    .filter(
+      (player) =>
+        player.id !== informationSet.viewerId &&
+        player.status !== "folded" &&
+        player.status !== "out",
+    )
+    .slice()
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const ableToRespond = opponentsAbleToRespond(
+    opponentPlayers,
+    informationSet.viewerId,
+    heroTarget,
+  );
+  const forcedResponders = opponentPlayers.filter(
+    (opponent) => opponent.status === "all-in",
+  );
+  const responseOpponents = [...forcedResponders, ...ableToRespond];
+  const wager = Math.max(0, candidate.additionalRisk);
+  const foldThresholdFor = (opponent: (typeof opponentPlayers)[number]): number => {
+    if (opponent.status === "all-in") return 0;
     const effectiveCall = Math.min(
       opponent.stack,
       Math.max(0, heroTarget - opponent.streetCommitted),
     );
-    const tableFoldTarget = effectiveCall /
-      Math.max(1, informationSet.pot + effectiveCall);
-    const minimumDefenceFoldThreshold =
-      tableFoldTarget ** (1 / foldable.length);
+    if (effectiveCall <= 0) return 0;
+    // This is an individual defender model. It deliberately does not take a
+    // root across the table: independent defender probabilities are combined
+    // by the sampled joint response event below, so five 80% folders produce
+    // approximately 0.8^5 all-fold probability rather than 80% or 92.5%.
+    const pressureFoldTarget = wager /
+      Math.max(1, informationSet.pot + wager);
+    const aggression =
+      ranges.find((range) => range.opponentId === opponent.id)?.aggression ?? 0;
+    const publicActions =
+      ranges.find((range) => range.opponentId === opponent.id)?.publicActions ?? 0;
+    const actionConditioning = clamp(
+      aggression * 0.06 - Math.min(3, publicActions) * 0.015,
+      -0.08,
+      0.12,
+    );
+    // Position affects the range boundary only. It is intentionally small and
+    // never replaces the branch probability with a global fold heuristic.
+    const positionalAdjustment = clamp((position - 0.5) * 0.12, -0.06, 0.06);
     return clamp(
-      minimumDefenceFoldThreshold +
-        (1 - minimumDefenceFoldThreshold) * positionalRealizationGap,
-      0,
-      0.995,
+      pressureFoldTarget - actionConditioning + positionalAdjustment,
+      0.01,
+      0.92,
     );
   };
-  const continuingRangePercent = foldable.length
-    ? foldable.reduce(
+  const continuingRangePercent = ableToRespond.length
+    ? ableToRespond.reduce(
         (sum, opponent) => sum + (1 - foldThresholdFor(opponent)) * 100,
         0,
-      ) / foldable.length
-    : 100;
+      ) / ableToRespond.length
+    : 0;
   let folds = 0;
   let calls = 0;
   let reRaises = 0;
@@ -1523,7 +1753,7 @@ function responseForCandidate(
     let anyReRaise = false;
     let contribution = 0;
     for (const sampled of sample.opponents) {
-      const opponent = opponents.find((entry) => entry.id === sampled.opponentId);
+      const opponent = responseOpponents.find((entry) => entry.id === sampled.opponentId);
       if (!opponent) continue;
       const forced = opponent.status === "all-in";
       const foldThreshold = foldThresholdFor(opponent);
@@ -1572,11 +1802,20 @@ function responseForCandidate(
   const regularizedEquity = (points: number, observations: number): number =>
     (points + fallbackEquity * priorSamples) /
     (observations + priorSamples);
+  const allFoldProbability = simulations ? folds / simulations : 0;
+  const callProbability = simulations ? calls / simulations : 0;
+  const reRaiseProbability = simulations ? reRaises / simulations : 0;
+  const branchTotal =
+    allFoldProbability + callProbability + reRaiseProbability;
+  if (Math.abs(branchTotal - 1) > 1e-6) {
+    throw new Error("Response branch probabilities are not exhaustive");
+  }
   return {
     modelVersion: "range-response-v1",
-    foldProbability: simulations ? folds / simulations : 0,
-    callProbability: simulations ? calls / simulations : 0,
-    reRaiseProbability: simulations ? reRaises / simulations : 0,
+    allFoldProbability,
+    foldProbability: allFoldProbability,
+    callProbability,
+    reRaiseProbability,
     continuingRangePercent,
     conditionalEquity: regularizedEquity(
       callPoints + reRaisePoints,
@@ -1588,84 +1827,140 @@ function responseForCandidate(
       ? continuingOpponents / simulations
       : 0,
     expectedOpponentContribution: calls ? callContribution / calls : 0,
+    opponentsAbleToRespond: ableToRespond.length,
+    respondingOpponentIds: ableToRespond.map((opponent) => opponent.id),
     simulations,
   };
 }
 
 function actionRole(
   candidate: CandidateAction,
-  equity: number,
+  showdownEquity: number,
+  calledEquity: number,
   potOdds: number,
   draw: number,
-  blockers: number,
+  madeStrength: number,
+  utilityBigBlinds: number,
 ): RationalActionRole {
   if (candidate.command.type === "fold") return "fold";
   if (candidate.command.type === "check" || candidate.command.type === "call") {
     return "showdown";
   }
-  if (equity >= Math.max(0.58, potOdds + 0.16)) return "value";
+  // A raise is value only when the hand remains strong against the range that
+  // actually continues. Raw equity against the pre-action field is not enough
+  // to call a large raise value, especially in a multiway pot.
+  if (
+    utilityBigBlinds >= 0 &&
+    calledEquity >= Math.max(0.62, potOdds + 0.18) &&
+    (madeStrength >= 0.2 || showdownEquity >= 0.82)
+  ) {
+    return "value";
+  }
   if (draw >= 0.16) return "semi-bluff";
-  if (blockers >= 0.08 || equity < potOdds + 0.08) return "bluff";
-  return "value";
+  return "bluff";
 }
 
 function rationaleFor(
   candidate: CandidateAction,
   role: RationalActionRole,
-  equity: number,
+  calledEquity: number,
   requiredEquity: number,
-  foldEquity: number,
-  spr: number,
+  response: RationalActionResponseAudit | undefined,
+  utilityBigBlinds: number,
+  uncertaintyBigBlinds: number,
+  requiredEquityApplicable: boolean,
 ): string {
-  const edge = equity - requiredEquity;
+  const foldEquity = response?.allFoldProbability ?? 0;
+  const callEquity = response?.callEquity ?? calledEquity;
+  const edge = calledEquity - requiredEquity;
   if (role === "fold") {
     return edge < 0
-      ? `Estimated equity trails the risk-adjusted calling threshold by ${formatFixedDecimal(Math.abs(edge * 100), 1)} points.`
-      : "Folding preserves chips, but the modeled equity makes it a low-frequency option.";
+      ? requiredEquityApplicable
+        ? `The called-showdown estimate trails the applicable threshold by ${formatFixedDecimal(Math.abs(edge * 100), 1)} points.`
+        : "Folding has no incremental cost and avoids a low-realization continuation estimate."
+      : "Folding preserves chips, but the modeled continuation branches give up value.";
   }
   if (candidate.command.type === "check") {
-    return "Checking realizes equity without adding chips and protects the checking range.";
+    return `Checking keeps the current pot at zero additional risk; modeled continuation value is ${formatFixedDecimal(utilityBigBlinds, 2)} BB.`;
   }
   if (candidate.command.type === "call") {
-    return `Calling compares ${formatPercentage(equity * 100, undefined, 1)} range equity with a ${formatPercentage(requiredEquity * 100, undefined, 1)} risk-adjusted threshold.`;
+    return requiredEquityApplicable
+      ? `Calling uses ${formatPercentage(callEquity * 100, undefined, 1)} showdown equity against a ${formatPercentage(requiredEquity * 100, undefined, 1)} threshold.`
+      : `Calling uses ${formatPercentage(callEquity * 100, undefined, 1)} showdown equity with future-street realization; immediate pot odds are only a reference.`;
   }
+  const branchCopy =
+    `${formatPercentage(foldEquity * 100, undefined, 1)} all-fold, ` +
+    `${formatPercentage((response?.callProbability ?? 0) * 100, undefined, 1)} call, ` +
+    `${formatPercentage((response?.reRaiseProbability ?? 0) * 100, undefined, 1)} re-raise`;
   if (role === "value") {
-    return `Value aggression leverages the equity edge at ${formatFixedDecimal(spr, 1)} SPR; modeled immediate fold equity is ${formatPercentage(foldEquity * 100, undefined, 1)}.`;
+    return `The continuing range leaves ${formatPercentage(callEquity * 100, undefined, 1)} equity; branches are ${branchCopy}, for ${formatFixedDecimal(utilityBigBlinds, 2)} BB EV.` +
+      ` Uncertainty is about ${formatFixedDecimal(uncertaintyBigBlinds, 2)} BB.`;
   }
   if (role === "semi-bluff") {
-    return `The hand retains draw equity while fold equity of ${formatPercentage(foldEquity * 100, undefined, 1)} can win the pot immediately.`;
+    return `This draw relies on the modeled response branches (${branchCopy}), for ${formatFixedDecimal(utilityBigBlinds, 2)} BB EV.`;
   }
-  return `This is a mathematically mixed bluff supported by blockers/range pressure and ${formatPercentage(foldEquity * 100, undefined, 1)} modeled fold equity.`;
+  return `This raise is a bluff only if the modeled all-fold branch (${formatPercentage(foldEquity * 100, undefined, 1)}) supports its ${formatFixedDecimal(utilityBigBlinds, 2)} BB EV; no generic aggression bonus is applied.`;
 }
 
 function scoreCandidates(
   candidates: readonly CandidateAction[],
   informationSet: PlayerInformationSet,
-  equity: number,
+  showdownEquity: number,
+  equityStandardError: number,
   potOdds: number,
   riskPremium: number,
   effectiveStack: number,
   bigBlind: number,
   position: number,
   draw: number,
-  blockers: number,
   ranges: readonly OpponentRangeSummary[],
   responseSamples: readonly EquityResponseSample[],
-  pressure: PublicPressureContext,
-  tournamentPressure: TournamentPressureAdjustment,
+  requiredEquityApplicable: boolean,
 ): Array<Omit<RationalActionOption, "probability">> {
   const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
-  const spr = effectiveStack / Math.max(1, informationSet.pot);
-  const equityEdge = equity - requiredEquity;
-  const aggression = streetAggressionCount(informationSet);
-  const aggressionCommitment =
-    clamp((potOdds - 0.2) / 0.22, 0, 1) * clamp(aggression / 2, 0, 1);
-  const continuationSignal = clamp(
-    (equity - (requiredEquity - 0.1)) / 0.25,
-    0,
-    1,
+  const activeOpponents = informationSet.players.filter(
+    (player) =>
+      player.id !== informationSet.viewerId &&
+      player.status !== "folded" &&
+      player.status !== "out",
+  ).length;
+  const hero = informationSet.players.find(
+    (player) => player.id === informationSet.viewerId,
   );
-  const boardVolatility = clamp(draw * 1.35 + (informationSet.board.length < 5 ? 0.12 : 0), 0, 1);
+  if (!hero) throw new Error("Hero is missing");
+  const heroCards = hero.holeCards ?? [];
+  const madeStrength = madeHandStrength(heroCards as [Card, Card], informationSet.board);
+  const preflop = informationSet.street === "preflop";
+  const futureStreetCount = Math.max(0, (5 - informationSet.board.length));
+
+  // A non-all-in preflop decision is not a one-card purchase. This explicit
+  // realization factor represents the value of seeing future streets and then
+  // folding when the hand no longer has a profitable continuation. It is a
+  // conservative fallback because this build has no trusted preflop solver or
+  // chart; it is never added as an arbitrary equity bonus.
+  const continuationRealization = (additionalRisk: number): number => {
+    if (additionalRisk <= 0 || futureStreetCount === 0) return 1;
+    if (!preflop) {
+      return clamp(
+        0.68 + position * 0.12 + (futureStreetCount === 1 ? 0.04 : 0),
+        0.55,
+        0.92,
+      );
+    }
+    const stackBigBlinds = effectiveStack / Math.max(1, bigBlind);
+    const depthFactor = clamp(0.58 + Math.min(100, stackBigBlinds) / 500, 0.58, 0.78);
+    const positionFactor = 0.9 + position * 0.1;
+    const multiwayPenalty = Math.max(0, activeOpponents - 1) * 0.045;
+    const pairSetMiningFactor =
+      heroCards.length === 2 && heroCards[0].rank === heroCards[1].rank && stackBigBlinds >= 25
+        ? 0.07
+        : 0;
+    return clamp(
+      depthFactor * positionFactor - multiwayPenalty + pairSetMiningFactor,
+      0.4,
+      0.88,
+    );
+  };
 
   return candidates.map((candidate) => {
     const type = candidate.command.type;
@@ -1674,187 +1969,94 @@ function scoreCandidates(
       informationSet,
       ranges,
       responseSamples,
-      equity,
+      showdownEquity,
       position,
     );
-    const foldEquity = response?.foldProbability ?? 0;
-    const candidateEquity = response?.conditionalEquity ?? equity;
-    const role = actionRole(candidate, candidateEquity, potOdds, draw, blockers);
+    const foldEquity = response?.allFoldProbability ?? 0;
+    const calledEquity = response?.callEquity ?? showdownEquity;
     let chipUtility = 0;
 
     if (type === "fold") {
+      // Incremental regret convention: chips already in the pot are sunk, so
+      // folding is exactly zero at the current decision boundary.
       chipUtility = 0;
-      if (informationSet.currentBet === 0) chipUtility -= bigBlind * 2;
-      if (informationSet.street === "preflop") {
-        chipUtility -=
-          bigBlind * tournamentPressure.blindUrgency * continuationSignal * 0.7;
-      }
     } else if (type === "check") {
-      chipUtility =
-        equity * informationSet.pot +
-        position * bigBlind * 0.12 +
-        (1 - Math.min(1, draw)) * bigBlind * 0.03;
+      chipUtility = showdownEquity * informationSet.pot * continuationRealization(0);
     } else if (type === "call") {
       const call = candidate.additionalRisk;
-      chipUtility =
-        equity * (informationSet.pot + call) -
-        call -
-        riskPremium * call * 1.8 +
-        position * bigBlind * 0.08;
-      // Large aggression is often polarized. Strong bluff-catchers and value
-      // hands can retain the opponent's bluffs by calling, especially on less
-      // volatile boards; marginal hands receive no such reward.
-      const strongDefense = clamp((equity - requiredEquity - 0.08) / 0.24, 0, 1);
-      chipUtility +=
-        bigBlind * strongDefense * aggressionCommitment *
-        (0.38 + (1 - boardVolatility) * 0.3);
+      const isAllInCall =
+        call >= hero.stack ||
+        effectiveStack <= 0 ||
+        informationSet.board.length === 5;
+      const realization = isAllInCall ? 1 : continuationRealization(call);
+      chipUtility = evaluateCallActionEv({
+        pot: informationSet.pot,
+        callAmount: call,
+        showdownEquity,
+        continuationRealization: realization,
+      });
     } else {
       const wager = candidate.additionalRisk;
-      const calledEquity = response?.callEquity ?? equity;
-      const calledPot =
-        informationSet.pot + wager +
-        (response?.expectedOpponentContribution ?? wager);
-
-      // Three outcomes, not two. The previous model priced a raise as "they
-      // fold, or they call and we see a showdown", which made raising again
-      // self-reinforcing: the fold-equity reward scaled with the pot the war
-      // itself had created, while the cost grew only by a flat increment. The
-      // missing branch is the one that actually happens in a raise war -- the
-      // opponent comes back over the top and the chips just wagered are dead.
-      const called = response?.callProbability ?? Math.max(0, 1 - foldEquity);
+      const called = response?.callProbability ?? 0;
       const reRaisedShare = response?.reRaiseProbability ?? 0;
-      // At this one-decision boundary a re-raise is treated as a fold; a later
-      // policy decision, if played, will evaluate continuing afresh. This
-      // keeps the explicit escalation cost from recursively rewarding raise
-      // wars.
-      const reRaisedValue = -wager;
-
-      chipUtility =
-        foldEquity * informationSet.pot +
-        called * (calledEquity * calledPot - wager) +
-        reRaisedShare * reRaisedValue;
-
-      chipUtility -= riskPremium * wager * (1.4 + Math.min(1, wager / Math.max(1, effectiveStack)));
-      chipUtility += position * bigBlind * 0.1;
-      const strongValue = clamp((equity - requiredEquity - 0.12) / 0.24, 0, 1);
-      if (aggression > 0) {
-        // Re-raising surrenders the option to realize equity at the current
-        // price and re-opens action to a range which has already shown
-        // strength. Charge that public option cost in proportion to escalation
-        // depth, wager, and the sampled re-raise branch. This is zero for an
-        // unopened pot and discounted (not erased) for robust value.
-        const reopenRate = clamp(
-          0.07 + Math.max(0, aggression - 1) * 0.04 + reRaisedShare * 0.15,
-          0.07,
-          0.3,
-        );
-        chipUtility -= wager * reopenRate * (1 - strongValue * 0.55);
-      }
-      // Once a large aggressor has committed chips, robust value can punish
-      // that commitment. Dynamic boards favor raising now; dry boards retain
-      // more trapping weight in the call branch above.
-      chipUtility +=
-        bigBlind * strongValue * aggressionCommitment *
-        (0.28 + boardVolatility * 0.5);
-      chipUtility -=
-        bigBlind * aggressionCommitment *
-        clamp((requiredEquity + 0.04 - equity) / 0.2, 0, 1) * 0.48;
-      if (
-        informationSet.street === "preflop" &&
-        equity >= requiredEquity - 0.06
-      ) {
-        chipUtility +=
-          bigBlind * tournamentPressure.blindUrgency *
-          (role === "value" ? 0.62 : 0.24);
-      }
-      if (role === "bluff") {
-        chipUtility += blockers * bigBlind * 0.8 + draw * bigBlind * 0.5;
-      }
-      // Pressure is paid only for a public opportunity. This keeps late
-      // opens, 3-bets, squeezes, and stab/c-bet spots distinct from random
-      // aggression when the table has already shown strength.
-      const strategicPressure = pressureOpportunity(pressure);
-      const pressureMultiplier =
-        type === "all-in"
-          ? pressure.lowSprValuePressure * 0.72 + pressure.stackPressure * 0.42
-          : 0.55 + pressure.position * 0.25;
-      // Rational play must be measurably different from Normal play in the
-      // spots where public information supports it.  Give a raise a bounded
-      // utility lift only for a visible three-bet, squeeze, or continuation
-      // opportunity, and only when the hand is close enough to the
-      // risk-adjusted threshold that escalating is defensible.  This keeps the
-      // distinction strategic rather than turning Rational into a loose
-      // aggression switch.
-      const supportedRaiseBonus =
-        type === "raise" && equity >= requiredEquity - 0.06
-          ? bigBlind * (
-              pressure.threeBetOpportunity * 0.9 +
-              pressure.squeezeOpportunity * 0.45 +
-              pressure.continuationOpportunity * 0.25
-            )
-          : 0;
-      chipUtility +=
-        strategicPressure * pressureMultiplier * bigBlind *
-        (role === "bluff" ? 0.58 : 1) +
-        supportedRaiseBonus;
-
-      // Normalized fold equity is deliberately bounded. A naked bluff needs a
-      // meaningful blocker/draw and a capped public range; it cannot become a
-      // profitable all-in simply because the pot is large.
-      if (role === "bluff") {
-        const credibleBluff =
-          (draw >= 0.16 || blockers >= 0.1) &&
-          foldEquity >= 0.18 &&
-          pressure.streetAggression <= 1 &&
-          pressure.cappedOpponents > 0;
-        if (!credibleBluff) chipUtility -= bigBlind * 1.1;
-        if (type === "all-in" && draw < 0.2) chipUtility -= effectiveStack * 0.45;
-        if (pressure.streetAggression >= 2) chipUtility -= bigBlind * 0.45;
-      }
-
-      if (type === "all-in" && equity < 0.55 && pressure.lowSprValuePressure < 0.35) {
-        chipUtility -= bigBlind * 0.8;
-      }
-      if (spr <= 2 && equity >= 0.55) chipUtility += bigBlind * 0.35;
-      if (spr >= 8 && wager > informationSet.pot && equity < 0.7) {
-        chipUtility -= bigBlind * 0.5;
-      }
-
-      // Stack-preservation brake. Busting out of a tournament is worse than
-      // the chip-EV arithmetic says, and the old model had no term at all for
-      // it: the risk premium alone computes to 0.04-0.07 in career play, which
-      // never restrained a deep-stack shove.
-      //
-      // It engages only past a threshold share of the effective stack. A
-      // brake that applied from zero suppressed ordinary value betting too
-      // (measured: Normal's raise rate fell to 2.8%), which is the opposite
-      // failure -- the goal is a table that stops shoving 300 BB with a
-      // marginal edge, not one that never raises.
-      const committedShare = clamp(wager / Math.max(1, effectiveStack), 0, 1);
-      const exposure = Math.max(0, committedShare - 0.25) / 0.75;
-      const survivalWeight = clamp(0.55 + riskPremium * 3, 0.55, 1.6);
-      chipUtility -=
-        exposure * exposure *
-        effectiveStack * survivalWeight * clamp(0.62 - equity, 0, 0.62);
-
+      // The fold, call, and re-raise branches are mutually exclusive and
+      // exhaustive. A re-raise is conservatively valued at -wager because the
+      // review stops at this hero decision; it cannot silently award future
+      // equity without modeling the next decision.
+      chipUtility = evaluateRaiseBranchEv({
+        pot: informationSet.pot,
+        additionalRisk: wager,
+        allFoldProbability: foldEquity,
+        callProbability: called,
+        reRaiseProbability: reRaisedShare,
+        calledEquity,
+        expectedOpponentContribution: response?.expectedOpponentContribution,
+      });
     }
 
-    // Reward continuing only when range equity clears the relevant threshold.
-    if (type === "call") chipUtility += equityEdge * bigBlind * 1.2;
+    // Tournament risk is deliberately applied after base chip EV is complete.
+    // It changes the risk-adjusted ranking, never the current-hand ranges or
+    // the number of opponents in any equity/response calculation.
+    if (type !== "fold") {
+      chipUtility -= riskPremium * candidate.additionalRisk;
+    }
     const utilityBigBlinds = chipUtility / bigBlind;
+    const role = actionRole(
+      candidate,
+      showdownEquity,
+      calledEquity,
+      potOdds,
+      draw,
+      madeStrength,
+      utilityBigBlinds,
+    );
+    const branchUncertainty = response
+      ? Math.sqrt(
+          Math.max(0, foldEquity * (1 - foldEquity)) /
+            Math.max(1, response.simulations),
+        ) * Math.max(1, informationSet.pot + candidate.additionalRisk) / bigBlind
+      : 0;
+    const uncertaintyBigBlinds = Math.max(
+      1.96 * equityStandardError *
+        Math.max(1, informationSet.pot + candidate.additionalRisk) / bigBlind,
+      1.96 * branchUncertainty,
+    );
     return {
       id: candidate.id,
       command: { ...candidate.command },
       utilityBigBlinds,
+      uncertaintyBigBlinds,
       foldEquity,
       role,
       rationale: rationaleFor(
         candidate,
         role,
-        candidateEquity,
+        calledEquity,
         requiredEquity,
-        foldEquity,
-        spr,
+        response,
+        utilityBigBlinds,
+        uncertaintyBigBlinds,
+        requiredEquityApplicable,
       ),
       ...(response ? { response } : {}),
     };
@@ -2019,10 +2221,12 @@ function assembleRationalDecision(
   );
   const riskPremium = tournamentPressure.riskPremium;
   const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
-  const effectiveStack = Math.min(
-    hero.stack,
-    Math.max(...opponents.map((opponent) => opponent.stack)),
-  );
+  const effectiveOpponentStacks = opponents
+    .filter((opponent) => opponent.status === "active" && opponent.stack > 0)
+    .map((opponent) => opponent.stack);
+  const effectiveStack = effectiveOpponentStacks.length
+    ? Math.min(hero.stack, ...effectiveOpponentStacks)
+    : 0;
   const effectiveStackBigBlinds = effectiveStack / input.bigBlind;
   const spr = effectiveStack / Math.max(1, informationSet.pot);
   const position = positionScore(informationSet);
@@ -2040,21 +2244,38 @@ function assembleRationalDecision(
     input.bigBlind,
     input.additionalActions,
   );
+  const countSemantics = derivePlayerCountSemantics(
+    informationSet.players,
+    informationSet.viewerId,
+    input.tournament?.tournamentPlayersRemaining ?? 0,
+  );
+  assertPlayerCountSemantics(countSemantics);
+  if (
+    equity.currentHandCounts.playersDealtIn !== countSemantics.playersDealtIn ||
+    equity.currentHandCounts.activePlayersInHand !==
+      countSemantics.activePlayersInHand ||
+    equity.currentHandCounts.activeOpponents !== countSemantics.activeOpponents
+  ) {
+    throw new Error("Equity estimate current-hand counts do not match the decision state");
+  }
+  const requiredEquityApplicable =
+    (informationSet.board.length === 5 && legalActions.callAmount > 0) ||
+    (legalActions.callAmount > 0 && legalActions.callAmount >= hero.stack) ||
+    (legalActions.callAmount > 0 && effectiveStack === 0);
   const scored = scoreCandidates(
     candidates,
     informationSet,
-    equity.equity,
+    equity.showdownEquity,
+    equity.standardError,
     potOdds,
     riskPremium,
     effectiveStack,
     input.bigBlind,
     position,
     draw,
-    blockers,
     equity.opponentRanges,
     equity.responseSamples,
-    pressure,
-    tournamentPressure,
+    requiredEquityApplicable,
   );
   const distribution = normalizedDistribution(
     scored,
@@ -2079,13 +2300,23 @@ function assembleRationalDecision(
         "Uses only the viewer's hole cards, public board/actions/stacks, legal actions, and tournament context. Opponent cards and future deck state are not accepted by this policy contract.",
       equityWork: equity.work,
       metrics: {
-        equity: equity.equity,
+        showdownEquity: equity.showdownEquity,
+        equity: equity.showdownEquity,
         potOdds,
         requiredEquity,
-        equityEdge: equity.equity - requiredEquity,
+        equityEdge: equity.showdownEquity - requiredEquity,
         effectiveStack,
         effectiveStackBigBlinds,
         stackToPotRatio: spr,
+        ...(input.tournament
+          ? { tournamentPlayersRemaining: countSemantics.tournamentPlayersRemaining }
+          : {}),
+        playersDealtIn: countSemantics.playersDealtIn,
+        activePlayersInHand: countSemantics.activePlayersInHand,
+        activeOpponents: countSemantics.activeOpponents,
+        requiredEquityApplicable,
+        equityStandardError: equity.standardError,
+        equityConfidenceInterval: equity.confidenceInterval,
         positionScore: position,
         inPosition: position >= 0.67,
         drawPotential: draw,
@@ -2095,7 +2326,7 @@ function assembleRationalDecision(
         boundedBluffOpportunity:
           clamp(
             (draw * 0.7 + blockers * 0.8) *
-              (pressure.cappedOpponents / Math.max(1, pressure.activeOpponents)),
+              (pressure.cappedOpponents / Math.max(1, pressure.activeOpponentsWithChips)),
             0,
             1,
           ),
@@ -2116,16 +2347,26 @@ function assembleRationalDecision(
       },
       opponentRanges: equity.opponentRanges,
       actionEvaluations: distribution.map(
-        ({ id, utilityBigBlinds, foldEquity, role, rationale, response }) => ({
+        ({ id, utilityBigBlinds, uncertaintyBigBlinds, foldEquity, role, rationale, response }) => ({
           id,
           utilityBigBlinds,
+          uncertaintyBigBlinds,
           foldEquity,
           role,
           rationale,
           ...(response ? { response } : {}),
         }),
       ),
-      summary: `${actionLabel(best.command.type)} is the highest-frequency action at ${formatPercentage(best.probability * 100, undefined, 0)}; estimated equity is ${formatPercentage(equity.equity * 100, undefined, 1)} versus a ${formatPercentage(requiredEquity * 100, undefined, 1)} risk-adjusted threshold.`,
+      confidence: confidenceLabel(equity.standardError, equity.simulations),
+      evaluationSource:
+        informationSet.street === "preflop"
+          ? "preflop-continuation-rollout"
+          : "postflop-range-response-rollout",
+      summary:
+        `${actionLabel(best.command.type)} is the highest-frequency action at ${formatPercentage(best.probability * 100, undefined, 0)}; estimated equity (showdown equity) is ${formatPercentage(equity.showdownEquity * 100, undefined, 1)} against current-hand ranges.` +
+        (requiredEquityApplicable
+          ? ` The applicable showdown threshold is ${formatPercentage(requiredEquity * 100, undefined, 1)}.`
+          : " Immediate pot odds are a reference here; future-street realization is included for non-all-in play."),
     },
   };
 }

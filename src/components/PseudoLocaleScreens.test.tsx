@@ -486,9 +486,9 @@ describe("pseudo-locale completeness sweep", () => {
     expect(markup).not.toContain("scenarioProgress");
     const street = `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`;
     expect(markup).toContain(
-      formatMessage("table.status.streetPlayersRemain", {
+      formatMessage("table.status.streetPlayersInHand", {
         street,
-        playersRemaining: describeTrainingContext(scenario).players,
+        playersInHand: describeTrainingContext(scenario).activePlayersInHand,
       }),
     );
     // The decision clock's visible "{seconds}s" label keeps its digits.

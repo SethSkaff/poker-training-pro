@@ -98,8 +98,10 @@ export interface AllInEvent {
   profileId: string;
   blindLevel: number;
   bigBlind: number;
-  playersRemaining: number;
-  playersContestingHand: number;
+  tournamentPlayersRemaining: number;
+  playersDealtIn: number;
+  activePlayersInHand: number;
+  activeOpponents: number;
   kind: "open" | "raise" | "call";
   potBefore: number;
   potBigBlinds: number;
@@ -350,11 +352,17 @@ function recordAllIn(
     profileId: decision.normal.profileId,
     blindLevel: level?.level ?? sessionBefore.tournament.levelIndex + 1,
     bigBlind,
-    playersRemaining: sessionBefore.tournament.players.filter(
-      (player) => player.stack > 0,
+    tournamentPlayersRemaining: sessionBefore.tournament.players.filter(
+      (player) => player.status === "active",
     ).length,
-    playersContestingHand: hand.betting.players.filter(
-      (player) => player.status !== "folded",
+    playersDealtIn: hand.betting.players.length,
+    activePlayersInHand: hand.betting.players.filter(
+      (player) => player.status === "active" || player.status === "all-in",
+    ).length,
+    activeOpponents: hand.betting.players.filter(
+      (player) =>
+        player.id !== actorId &&
+        (player.status === "active" || player.status === "all-in"),
     ).length,
     kind: allInKind(legal, hand.betting.currentBet),
     potBefore: hand.information.pot,

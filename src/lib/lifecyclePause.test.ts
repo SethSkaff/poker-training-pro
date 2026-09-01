@@ -184,7 +184,7 @@ describe("buildResumeRecap", () => {
       reason: "system-suspended",
       inactiveMs: 90_000,
       potChips: 4200,
-      playersRemaining: 5,
+      tournamentPlayersRemaining: 5,
       lastAction: "Riverboat: raise to 1,200",
       currentDecision: "Call 600 to continue",
       handNumber: 12,
@@ -194,7 +194,9 @@ describe("buildResumeRecap", () => {
     expect(recap.title).toBe("Resumed from system sleep");
     expect(recap.lines).toContain("Hand 12 · Turn");
     expect(recap.lines).toContain("Last action: Riverboat: raise to 1,200");
-    expect(recap.lines).toContain("Pot: 4,200 chips · 5 players left");
+    expect(recap.lines).toContain(
+      "Pot: 4,200 chips · 5 players remain in tournament",
+    );
     expect(recap.lines).toContain("Your decision: Call 600 to continue");
     expect(recap.lines.at(-1)).toContain("not counted against your play");
   });

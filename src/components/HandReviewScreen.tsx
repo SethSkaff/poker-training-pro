@@ -14,6 +14,7 @@ import {
   HandReviewCancelledError,
   type HandReview,
   type ReviewDecision,
+  type ReviewPreflopAction,
   type ReviewQuality,
 } from "../modes/handReview";
 import type { TournamentRunnerReplay } from "../modes/tournamentRunner";
@@ -53,10 +54,39 @@ function qualityLabel(quality: ReviewQuality): string {
   return formatMessage(`review.quality.${quality}`);
 }
 
-function actionLabel(action: { type: string; to?: number }): string {
-  return action.to === undefined
-    ? formatMessage(`review.action.${action.type}`)
-    : `${formatMessage(`review.action.${action.type}`)} ${formatChips(action.to)}`;
+function actionLabel(
+  action: { type: string; to?: number },
+  semantic?: ReviewPreflopAction,
+): string {
+  const label = formatMessage(`review.action.${semantic ?? action.type}`);
+  return action.to === undefined ? label : `${label} ${formatChips(action.to)}`;
+}
+
+/** Explicitly names hand-local counts before the separate tournament count. */
+export function reviewPlayerCountSummary(
+  decision: Pick<
+    ReviewDecision,
+    | "activePlayersInHand"
+    | "activeOpponents"
+    | "playersDealtIn"
+    | "tournamentPlayersRemaining"
+  >,
+): string {
+  return [
+    formatMessage("review.handPlayers", {
+      count: decision.activePlayersInHand,
+    }),
+    formatMessage(
+      decision.activeOpponents === 1
+        ? "review.handOpponentSingular"
+        : "review.handOpponentsPlural",
+      { count: decision.activeOpponents },
+    ),
+    formatMessage("review.handDealtIn", { count: decision.playersDealtIn }),
+    formatMessage("review.tournamentPlayersRemaining", {
+      count: decision.tournamentPlayersRemaining,
+    }),
+  ].join(" · ");
 }
 
 export function HandReviewScreen({
@@ -336,7 +366,7 @@ export function HandReviewScreen({
                       })}
                     </strong>
                     <small>
-                      {actionLabel(entry.chosen)} ·{" "}
+                      {actionLabel(entry.chosen, entry.chosenPreflopAction)} ·{" "}
                       {formatMessage("review.potLabel", {
                         pot: formatChips(entry.math.potBefore),
                       })}
@@ -364,11 +394,7 @@ export function HandReviewScreen({
                     street: formatMessage(`review.key.${decision.street}`),
                   })}
                 </h2>
-                <p>
-                  {formatMessage("review.playersRemaining", {
-                    count: decision.playersRemaining,
-                  })}
-                </p>
+                <p>{reviewPlayerCountSummary(decision)}</p>
                 {decision.preflopSituation ? (
                   <p className="review-context">
                     {formatMessage("review.preflopContext", {
@@ -415,10 +441,13 @@ export function HandReviewScreen({
 
               <p className="review-verdict">
                 <strong>{formatMessage("review.youPlayed")}</strong>{" "}
-                {actionLabel(decision.chosen)}
+                {actionLabel(decision.chosen, decision.chosenPreflopAction)}
                 {" · "}
                 <strong>{formatMessage("review.modelPreferred")}</strong>{" "}
-                {actionLabel(decision.recommended)}
+                {actionLabel(
+                  decision.recommended,
+                  decision.recommendedPreflopAction,
+                )}
                 {" · "}
                 <span data-quality={decision.quality}>
                   {qualityLabel(decision.quality)}
@@ -443,21 +472,50 @@ export function HandReviewScreen({
                   <dd>{formatFixedDecimal(decision.math.potOdds * 100, 1)}%</dd>
                 </div>
                 <div>
-                  <dt>{formatMessage("review.math.requiredEquity")}</dt>
+                  <dt>
+                    {formatMessage(
+                      decision.math.requiredEquityApplicable
+                        ? "review.math.requiredEquity"
+                        : "review.math.requiredEquityReference",
+                    )}
+                  </dt>
                   <dd>
                     {formatFixedDecimal(decision.math.requiredEquity * 100, 1)}%
                   </dd>
                 </div>
                 <div>
-                  <dt>{formatMessage("review.math.estimatedEquity")}</dt>
+                  <dt>{formatMessage("review.math.showdownEquity")}</dt>
                   <dd>
-                    {formatFixedDecimal(decision.math.estimatedEquity * 100, 1)}%
+                    {formatFixedDecimal(decision.math.showdownEquity * 100, 1)}%
                   </dd>
                 </div>
                 <div>
                   <dt>{formatMessage("review.math.foldEquity")}</dt>
                   <dd>
                     {formatFixedDecimal(decision.math.foldEquity * 100, 1)}%
+                  </dd>
+                </div>
+                <div>
+                  <dt>
+                    {formatMessage("review.math.opponentsAbleToRespond")}
+                  </dt>
+                  <dd>{decision.math.opponentsAbleToRespond}</dd>
+                </div>
+                <div>
+                  <dt>{formatMessage("review.math.confidence")}</dt>
+                  <dd>
+                    {formatMessage(`review.confidence.${decision.math.confidence}`)} · {formatFixedDecimal(decision.math.equityConfidenceInterval[0] * 100, 1)}–{formatFixedDecimal(decision.math.equityConfidenceInterval[1] * 100, 1)}%
+                  </dd>
+                </div>
+                <div>
+                  <dt>{formatMessage("review.math.source")}</dt>
+                  <dd>
+                    {formatMessage(
+                      decision.math.evaluationSource ===
+                        "preflop-continuation-rollout"
+                        ? "review.source.preflop"
+                        : "review.source.postflop",
+                    )}
                   </dd>
                 </div>
                 <div>
@@ -500,9 +558,12 @@ export function HandReviewScreen({
                   )
                   .map((option) => (
                     <li key={option.id}>
-                      <strong>{actionLabel(option)}</strong>
+                      <strong>{actionLabel(option, option.semantic)}</strong>
                       <span>
                         {formatFixedDecimal(option.expectedValueBigBlinds, 2)} BB
+                        {option.uncertaintyBigBlinds !== undefined
+                          ? ` ± ${formatFixedDecimal(option.uncertaintyBigBlinds, 2)}`
+                          : ""}
                       </span>
                       <small>{option.rationale}</small>
                     </li>

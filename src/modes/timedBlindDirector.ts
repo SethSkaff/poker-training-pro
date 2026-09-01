@@ -28,7 +28,8 @@ export interface TimedBlindDirectorInput {
 export interface TimedBlindDecision extends TimedBlindLevel {
   phase: TimedBlindPhase;
   progress: number;
-  livePlayers: number;
+  /** Tournament-wide players still alive; this director has no hand state. */
+  tournamentPlayersRemaining: number;
   nextReviewMs: number;
   forcedAllInStack: number | null;
   reason: string;
@@ -99,7 +100,7 @@ export function directTimedBlinds(
   assertPositiveInteger(input.current.bigBlind, "bigBlind");
   assertPositiveInteger(input.startingTotalChips, "startingTotalChips");
 
-  const liveStacks = input.players
+  const tournamentStacks = input.players
     .filter((player) => !player.eliminated && player.stack > 0)
     .map((player) => {
       assertPositiveInteger(player.stack, `stack for ${player.id}`);
@@ -114,21 +115,21 @@ export function directTimedBlinds(
   const currentSmallBlind = input.current.smallBlind;
   const nextReviewMs = reviewCadenceMs(durationMs, phase);
 
-  if (liveStacks.length <= 1) {
+  if (tournamentStacks.length <= 1) {
     return {
       ...input.current,
       phase,
       progress,
-      livePlayers: liveStacks.length,
+      tournamentPlayersRemaining: tournamentStacks.length,
       nextReviewMs,
       forcedAllInStack: null,
       reason: "The table is complete, so the blind level is held.",
     };
   }
 
-  const chipsInPlay = liveStacks.reduce((sum, stack) => sum + stack, 0);
-  const averageStack = chipsInPlay / liveStacks.length;
-  const secondLargestStack = liveStacks[1];
+  const chipsInPlay = tournamentStacks.reduce((sum, stack) => sum + stack, 0);
+  const averageStack = chipsInPlay / tournamentStacks.length;
+  const secondLargestStack = tournamentStacks[1];
   let targetBigBlind = currentBigBlind;
   let reason =
     "Opening levels are intentionally stable so the table begins like normal tournament poker.";
@@ -138,7 +139,7 @@ export function directTimedBlinds(
     const desiredAverageBigBlinds = 42 - pressureProgress * 26;
     const stackTarget = averageStack / desiredAverageBigBlinds;
     const populationPressure =
-      1 + Math.max(0, liveStacks.length - 3) * 0.055 * pressureProgress;
+      1 + Math.max(0, tournamentStacks.length - 3) * 0.055 * pressureProgress;
     targetBigBlind = stackTarget * populationPressure;
     reason =
       "Blinds rise gradually from public time, field size, and the average live stack.";
@@ -180,7 +181,7 @@ export function directTimedBlinds(
     bigBlindAnte,
     phase,
     progress,
-    livePlayers: liveStacks.length,
+    tournamentPlayersRemaining: tournamentStacks.length,
     nextReviewMs,
     forcedAllInStack: phase === "deadline" ? secondLargestStack : null,
     reason,

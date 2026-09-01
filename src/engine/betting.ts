@@ -143,11 +143,15 @@ function clockwiseAfter(order: readonly string[], playerId: string): string[] {
   ];
 }
 
-function livePlayers(state: BettingRoundState): BettingPlayerState[] {
+/** Players still contesting the current hand; folded players are excluded. */
+function activePlayersInHand(
+  state: BettingRoundState,
+): BettingPlayerState[] {
   return state.players.filter((player) => player.status !== "folded");
 }
 
-function activePlayers(state: BettingRoundState): BettingPlayerState[] {
+/** Current-hand players who can still receive an action. */
+function playersAbleToAct(state: BettingRoundState): BettingPlayerState[] {
   return state.players.filter(
     (player) => player.status === "active" && player.stack > 0,
   );
@@ -166,14 +170,14 @@ function recomputePending(
   state: BettingRoundState,
   afterPlayerId?: string,
 ): void {
-  if (livePlayers(state).length <= 1) {
+  if (activePlayersInHand(state).length <= 1) {
     state.pending = [];
     state.complete = true;
     state.handComplete = true;
     return;
   }
 
-  const active = activePlayers(state);
+  const active = playersAbleToAct(state);
   if (active.length === 0) {
     state.pending = [];
     state.complete = true;

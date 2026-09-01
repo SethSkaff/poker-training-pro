@@ -452,7 +452,8 @@ function tableForSession(session: TournamentSession) {
   return table;
 }
 
-function activePlayers(session: TournamentSession) {
+/** Tournament survivors currently assigned to this compressed session table. */
+function tournamentActivePlayers(session: TournamentSession) {
   return session.tournament.players
     .filter((player) => player.status === "active")
     .sort((left, right) => (left.seat as number) - (right.seat as number));
@@ -470,7 +471,7 @@ function nextOccupiedSeat(
 }
 
 function clockwisePlayersAfter(
-  players: ReturnType<typeof activePlayers>,
+  players: ReturnType<typeof tournamentActivePlayers>,
   afterSeat: number,
 ) {
   return [...players].sort((left, right) => {
@@ -521,7 +522,7 @@ function postForced(
 }
 
 function informationPlayers(
-  players: ReturnType<typeof activePlayers>,
+  players: ReturnType<typeof tournamentActivePlayers>,
   betting: BettingRoundState,
   holeCards: Readonly<Record<string, readonly Card[]>>,
 ): HandInformationPlayer[] {
@@ -558,7 +559,7 @@ export function beginTournamentSessionHand(
     throw new Error("Cannot start a hand in a completed session");
   }
   if (source.activeHand) throw new Error("The current hand is not complete");
-  const players = activePlayers(source);
+  const players = tournamentActivePlayers(source);
   if (players.length < 2) throw new Error("A hand requires two active players");
 
   const tournament = cloneTournament(source.tournament);
@@ -794,7 +795,7 @@ function createPostflopBetting(
   session: TournamentSession,
   hand: SessionHandState,
 ): BettingRoundState {
-  const players = activePlayers(session).filter((player) =>
+  const players = tournamentActivePlayers(session).filter((player) =>
     hand.betting.players.some((entry) => entry.id === player.id),
   );
   const order = clockwisePlayersAfter(players, hand.buttonSeat).map(
@@ -977,10 +978,10 @@ export function settleTournamentSessionHand(
   if (!hand.betting.complete) {
     throw new Error("Cannot settle while betting is still open");
   }
-  const live = hand.betting.players.filter(
+  const activePlayersInHand = hand.betting.players.filter(
     (player) => player.status !== "folded",
   );
-  if (live.length > 1 && hand.board.length !== 5) {
+  if (activePlayersInHand.length > 1 && hand.board.length !== 5) {
     throw new Error("A contested pot requires a complete board");
   }
 
@@ -1179,10 +1180,12 @@ export function tournamentPolicyContextForSession(
   session: TournamentSession,
   playerId: string,
 ): RationalTournamentContext {
-  const active = session.tournament.players.filter(
+  const tournamentActivePlayers = session.tournament.players.filter(
     (player) => player.status === "active",
   );
-  const occupied = active.map((player) => player.seat as number);
+  const occupied = tournamentActivePlayers.map(
+    (player) => player.seat as number,
+  );
   const currentButton =
     session.activeHand?.buttonSeat ?? session.tournament.tables[0]?.buttonSeat ?? 1;
   let imminentBigBlind = false;
@@ -1193,27 +1196,28 @@ export function tournamentPolicyContextForSession(
         ? nextButton
         : nextOccupiedSeat(occupied, nextButton);
     const nextBigBlind = nextOccupiedSeat(occupied, nextSmallBlind);
-    imminentBigBlind = active.some(
+    imminentBigBlind = tournamentActivePlayers.some(
       (player) => player.id === playerId && player.seat === nextBigBlind,
     );
   }
   const qualifyingPlaces = Math.max(0, session.event.qualifyingPlaces ?? 0);
   const placesToQualification =
     qualifyingPlaces > 0
-      ? Math.max(0, active.length - qualifyingPlaces)
+      ? Math.max(0, tournamentActivePlayers.length - qualifyingPlaces)
       : undefined;
 
   return {
-    playersRemaining: active.length,
+    tournamentPlayersRemaining: tournamentActivePlayers.length,
     // Career events award qualification rather than cash. Do not feed the
     // same boundary into both `paidPlaces` and `placesToQualification`, which
     // would double-count one bubble as two independent risk premiums.
     placesToQualification,
     averageStack:
-      active.reduce((sum, player) => sum + player.stack, 0) /
-      Math.max(1, active.length),
+      tournamentActivePlayers.reduce((sum, player) => sum + player.stack, 0) /
+      Math.max(1, tournamentActivePlayers.length),
     handForHand:
-      qualifyingPlaces > 0 && active.length === qualifyingPlaces + 1,
+      qualifyingPlaces > 0 &&
+      tournamentActivePlayers.length === qualifyingPlaces + 1,
     imminentBigBlind,
   };
 }

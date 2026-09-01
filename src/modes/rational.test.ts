@@ -10,15 +10,54 @@ import {
   estimateRangeEquitySliced,
   MAX_EQUITY_SIMULATIONS_PER_DECISION,
   MAX_EQUITY_SIMULATIONS_PER_SLICE,
+  aggregateIndependentAllFoldProbability,
+  evaluateCallActionEv,
+  evaluateRaiseBranchEv,
   tournamentPressureAdjustment,
   type RationalPolicyInput,
 } from "./rational";
+import { preflopActionFor } from "./handReview";
+
+describe("branch EV contracts", () => {
+  it("keeps fold, call, and re-raise branches mutually exclusive", () => {
+    expect(
+      evaluateRaiseBranchEv({
+        pot: 100,
+        additionalRisk: 50,
+        allFoldProbability: 0.5,
+        callProbability: 0.4,
+        reRaiseProbability: 0.1,
+        calledEquity: 0.75,
+        expectedOpponentContribution: 50,
+      }),
+    ).toBeCloseTo(85, 8);
+    expect(
+      evaluateCallActionEv({
+        pot: 100,
+        callAmount: 50,
+        showdownEquity: 0.6,
+      }),
+    ).toBeCloseTo(40, 8);
+  });
+
+  it("combines independent defender folds into a joint all-fold event", () => {
+    expect(aggregateIndependentAllFoldProbability([0.8])).toBeCloseTo(0.8, 8);
+    expect(aggregateIndependentAllFoldProbability([0.8, 0.8])).toBeCloseTo(
+      0.64,
+      8,
+    );
+    expect(aggregateIndependentAllFoldProbability([0.8, 0.8, 0.8, 0.8, 0.8])).toBeCloseTo(
+      0.32768,
+      8,
+    );
+  });
+});
 
 describe("tournament pressure context", () => {
   it("makes an imminent big blind visible without treating it as pure survival risk", () => {
     const adjustment = tournamentPressureAdjustment(
       {
-        playersRemaining: 6,
+        tournamentPlayersRemaining: 6,
         paidPlaces: 2,
         placesToQualification: 4,
         averageStack: 12_000,
@@ -37,7 +76,7 @@ describe("tournament pressure context", () => {
   it("keeps bubble survival pressure distinct from blind urgency", () => {
     const adjustment = tournamentPressureAdjustment(
       {
-        playersRemaining: 3,
+        tournamentPlayersRemaining: 3,
         paidPlaces: 2,
         placesToQualification: 1,
         averageStack: 10_000,
@@ -52,12 +91,12 @@ describe("tournament pressure context", () => {
 
   it("removes qualification pressure after the qualifying places are locked", () => {
     const locked = tournamentPressureAdjustment(
-      { playersRemaining: 2, placesToQualification: 0 },
+      { tournamentPlayersRemaining: 2, placesToQualification: 0 },
       10_000,
       1_000,
     );
     const noQualificationBoundary = tournamentPressureAdjustment(
-      { playersRemaining: 2 },
+      { tournamentPlayersRemaining: 2 },
       10_000,
       1_000,
     );
@@ -167,6 +206,30 @@ function makeMultiwaySpot(
     opponent("bravo", "Bravo", 2),
   ];
   return spot;
+}
+
+function makeSixPlayerSpot(options: SpotOptions): PlayerInformationSet {
+  const spot = makeSpot(options);
+  const hero = spot.players[0];
+  const firstOpponent = spot.players[1];
+  const extraSeats = [1, 3, 4, 5];
+  const extraOpponents = extraSeats.map((seat, index) => ({
+    ...firstOpponent,
+    id: `opponent-${index + 1}`,
+    name: `Opponent ${index + 1}`,
+    seat,
+    stack: options.villainStack ?? firstOpponent.stack,
+    streetCommitted: 0,
+    totalCommitted: 0,
+  }));
+  return {
+    ...spot,
+    players: [
+      { ...hero, totalCommitted: options.heroCommitted ?? 0 },
+      { ...firstOpponent, totalCommitted: options.currentBet ?? 0 },
+      ...extraOpponents,
+    ],
+  };
 }
 
 function reorderMultiwayOpponents(
@@ -383,6 +446,212 @@ describe("rational policy contract", () => {
     expect(serialized).not.toContain("holeCards");
     expect(serialized).not.toContain("gameRng");
     expect(decision.audit.policyVersion).toBe("rational-v4");
+  });
+
+  it("uses two current-hand players for heads-up EV when six tournament players survive", () => {
+    const spot = makeSpot({
+      heroCards: cards("As", "Kd"),
+      board: cards("Ah", "7d", "4c", "Js", "2h"),
+      pot: 600,
+      currentBet: 200,
+    });
+    spot.players.push(
+      ...Array.from({ length: 4 }, (_, index) => ({
+        ...spot.players[1],
+        id: `folded-${index + 1}`,
+        name: `Folded ${index + 1}`,
+        seat: index + 3,
+        status: "folded" as const,
+        stack: 0,
+        streetCommitted: 200,
+        totalCommitted: 200,
+      })),
+    );
+    const legal = facingBetLegal(spot);
+    const withSixTournamentPlayers = decideRationalAction(
+      input(spot, legal, {
+        seed: "count-semantics",
+        simulations: 160,
+        tournament: { tournamentPlayersRemaining: 6 },
+      }),
+    );
+    const withTwoTournamentPlayers = decideRationalAction(
+      input(spot, legal, {
+        seed: "count-semantics",
+        simulations: 160,
+        tournament: { tournamentPlayersRemaining: 2 },
+      }),
+    );
+
+    const sixMetrics = withSixTournamentPlayers.audit.metrics;
+    expect(sixMetrics.tournamentPlayersRemaining).toBe(6);
+    expect(sixMetrics.playersDealtIn).toBe(6);
+    expect(sixMetrics.activePlayersInHand).toBe(2);
+    expect(sixMetrics.activeOpponents).toBe(1);
+    expect(withSixTournamentPlayers.audit.opponentRanges).toHaveLength(1);
+    const sixPlayerPressure = tournamentPressureAdjustment(
+      { tournamentPlayersRemaining: 6, paidPlaces: 2 },
+      4_000,
+      100,
+    );
+    const twoPlayerPressure = tournamentPressureAdjustment(
+      { tournamentPlayersRemaining: 2, paidPlaces: 2 },
+      4_000,
+      100,
+    );
+    expect(sixPlayerPressure.riskPremium).toBeGreaterThan(
+      twoPlayerPressure.riskPremium,
+    );
+    expect(
+      withSixTournamentPlayers.audit.actionEvaluations
+        .filter((option) => option.response)
+        .every(
+          (option) =>
+            option.response?.opponentsAbleToRespond === 1 &&
+            option.response.respondingOpponentIds.join(",") === "villain",
+        ),
+    ).toBe(true);
+
+    // The global survivor count may change the tournament-pressure adjustment,
+    // but it must not alter the heads-up range/equity or response population.
+    expect(sixMetrics.showdownEquity).toBe(
+      withTwoTournamentPlayers.audit.metrics.showdownEquity,
+    );
+    expect(withSixTournamentPlayers.audit.opponentRanges).toEqual(
+      withTwoTournamentPlayers.audit.opponentRanges,
+    );
+    expect(
+      withSixTournamentPlayers.audit.actionEvaluations.map((option) => ({
+        id: option.id,
+        utilityBigBlinds: option.utilityBigBlinds,
+        foldEquity: option.foldEquity,
+        response: option.response
+          ? {
+              allFoldProbability: option.response.allFoldProbability,
+              opponentsAbleToRespond: option.response.opponentsAbleToRespond,
+              respondingOpponentIds: option.response.respondingOpponentIds,
+            }
+          : undefined,
+      })),
+    ).toEqual(
+      withTwoTournamentPlayers.audit.actionEvaluations.map((option) => ({
+        id: option.id,
+        utilityBigBlinds: option.utilityBigBlinds,
+        foldEquity: option.foldEquity,
+        response: option.response
+          ? {
+              allFoldProbability: option.response.allFoldProbability,
+              opponentsAbleToRespond: option.response.opponentsAbleToRespond,
+              respondingOpponentIds: option.response.respondingOpponentIds,
+            }
+          : undefined,
+      })),
+    );
+  });
+
+  it("treats a deep-stack preflop call in an unopened six-handed pot as a limp", () => {
+    const spot = makeSixPlayerSpot({
+      heroCards: cards("5s", "5h"),
+      board: [],
+      pot: 75,
+      currentBet: 50,
+      heroStack: 20_000,
+      villainStack: 20_000,
+      actions: [
+        { playerId: "opponent-1", type: "small-blind", amount: 25 },
+        { playerId: "villain", type: "big-blind", amount: 50 },
+      ],
+    });
+    const decision = decideRationalAction(
+      input(spot, facingBetLegal(spot), {
+        seed: "preflop-pocket-fives",
+        simulations: 120,
+        tournament: { tournamentPlayersRemaining: 6 },
+      }),
+    );
+    const call = decision.distribution.find(
+      (option) => option.command.type === "call",
+    );
+
+    expect(preflopActionFor(spot, { type: "call" })).toBe("open-limp");
+    expect(decision.audit.evaluationSource).toBe("preflop-continuation-rollout");
+    expect(decision.audit.confidence).toBe("low");
+    expect(decision.audit.metrics.tournamentPlayersRemaining).toBe(6);
+    expect(decision.audit.metrics.playersDealtIn).toBe(6);
+    expect(decision.audit.metrics.activeOpponents).toBe(5);
+    expect(decision.audit.metrics.showdownEquity).toBeLessThan(
+      decision.audit.metrics.requiredEquity,
+    );
+    expect(decision.audit.metrics.requiredEquityApplicable).toBe(false);
+    expect(call?.rationale).toContain("future-street realization");
+  });
+
+  it("prices a multiway flop shove from the same joint response branches it displays", () => {
+    const spot = makeSixPlayerSpot({
+      heroCards: cards("5c", "5h"),
+      board: cards("Jh", "4h", "9s"),
+      pot: 2_100,
+      currentBet: 1_050,
+      heroStack: 14_650,
+      villainStack: 14_650,
+      actions: [
+        { playerId: "opponent-1", type: "check", amount: 0 },
+        { playerId: "opponent-2", type: "check", amount: 0 },
+        { playerId: "opponent-3", type: "check", amount: 0 },
+        { playerId: "opponent-4", type: "check", amount: 0 },
+        { playerId: "villain", type: "bet", amount: 1_050 },
+      ],
+    });
+    const decision = decideRationalAction(
+      input(spot, facingBetLegal(spot), {
+        seed: "flop-pocket-fives-multiway",
+        simulations: 240,
+      }),
+    );
+    const shove = decision.distribution.find(
+      (option) =>
+        option.command.type === "all-in" || option.command.to === 14_650,
+    );
+    const response = shove?.response;
+
+    expect(decision.audit.evaluationSource).toBe("postflop-range-response-rollout");
+    expect(decision.audit.metrics.playersDealtIn).toBe(6);
+    expect(decision.audit.metrics.activePlayersInHand).toBe(6);
+    expect(decision.audit.metrics.activeOpponents).toBe(5);
+    expect(response).toBeDefined();
+    expect(response?.opponentsAbleToRespond).toBe(5);
+    expect(response?.respondingOpponentIds).toEqual([
+      "opponent-1",
+      "opponent-2",
+      "opponent-3",
+      "opponent-4",
+      "villain",
+    ]);
+    expect(shove?.foldEquity).toBe(response?.allFoldProbability);
+    expect(
+      (response?.allFoldProbability ?? 0) +
+        (response?.callProbability ?? 0) +
+        (response?.reRaiseProbability ?? 0),
+    ).toBeCloseTo(1, 8);
+    expect(response?.callProbability).toBeGreaterThan(0);
+    expect(response?.callEquity).not.toBeCloseTo(
+      decision.audit.metrics.showdownEquity,
+      3,
+    );
+    expect(shove?.rationale).toContain("all-fold");
+    expect(response?.allFoldProbability ?? 0).toBeLessThan(0.925);
+    expect(shove?.utilityBigBlinds).toBeCloseTo(
+      evaluateRaiseBranchEv({
+        pot: 2_100,
+        additionalRisk: 14_650,
+        allFoldProbability: response?.allFoldProbability ?? 0,
+        callProbability: response?.callProbability ?? 0,
+        reRaiseProbability: response?.reRaiseProbability ?? 0,
+        calledEquity: response?.callEquity ?? 0,
+        expectedOpponentContribution: response?.expectedOpponentContribution,
+      }) / 100,
+      8,
+    );
   });
 });
 
@@ -973,7 +1242,7 @@ describe("canonical rational spots", () => {
       input(spot, legal, {
         seed: "bubble",
         tournament: {
-          playersRemaining: 10,
+          tournamentPlayersRemaining: 10,
           paidPlaces: 9,
           averageStack: 5_000,
           handForHand: true,

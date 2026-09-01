@@ -141,12 +141,12 @@ describe("detectContextualPromptOccurrences", () => {
   it("detects an elimination when fewer players remain than entered", () => {
     expect(
       detectContextualPromptOccurrences(
-        baseSignals({ fieldSize: 6, playersRemaining: 5 }),
+        baseSignals({ fieldSize: 6, tournamentPlayersRemaining: 5 }),
       ),
     ).toContain("elimination");
     expect(
       detectContextualPromptOccurrences(
-        baseSignals({ fieldSize: 6, playersRemaining: 6 }),
+        baseSignals({ fieldSize: 6, tournamentPlayersRemaining: 6 }),
       ),
     ).not.toContain("elimination");
   });
@@ -154,12 +154,12 @@ describe("detectContextualPromptOccurrences", () => {
   it("detects qualification when the field reaches the paying places", () => {
     expect(
       detectContextualPromptOccurrences(
-        baseSignals({ playersRemaining: 2, qualifyingPlaces: 2 }),
+        baseSignals({ tournamentPlayersRemaining: 2, qualifyingPlaces: 2 }),
       ),
     ).toContain("qualification");
     expect(
       detectContextualPromptOccurrences(
-        baseSignals({ playersRemaining: 3, qualifyingPlaces: 2 }),
+        baseSignals({ tournamentPlayersRemaining: 3, qualifyingPlaces: 2 }),
       ),
     ).not.toContain("qualification");
   });
@@ -189,7 +189,7 @@ describe("detectContextualPromptOccurrences", () => {
       openingBigBlind: 200,
       currentBigBlind: 400,
       fieldSize: 6,
-      playersRemaining: 2,
+      tournamentPlayersRemaining: 2,
       qualifyingPlaces: 2,
       eloBaseline: 2_400,
       eloCurrent: 2_410,

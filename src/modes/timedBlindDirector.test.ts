@@ -143,7 +143,7 @@ describe("timed blind director", () => {
         ],
       }),
     );
-    expect(decision.livePlayers).toBe(2);
+    expect(decision.tournamentPlayersRemaining).toBe(2);
     expect(decision.bigBlind).toBeGreaterThanOrEqual(7_000);
   });
 

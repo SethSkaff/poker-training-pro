@@ -25,6 +25,10 @@ import { createInformationSet, type PlayerInformationSet } from "../engine/tourn
 import { getLegalActions, nextToAct } from "../engine";
 import type { Street } from "../types/poker";
 import {
+  derivePlayerCountSemantics,
+  type PlayerCountSemantics,
+} from "../lib/playerCountSemantics";
+import {
   applyHeroTournamentAction,
   advanceTournamentRunnerToHero,
   CURRENT_POLICY_VERSION,
@@ -36,7 +40,11 @@ import {
   type TournamentRunner,
   type TournamentRunnerReplay,
 } from "./tournamentRunner";
-import { decideRationalAction, type RationalActionOption } from "./rational";
+import {
+  decideRationalAction,
+  type RationalActionOption,
+  type RationalActionResponseAudit,
+} from "./rational";
 import { tournamentPolicyContextForSession } from "./tournamentSession";
 import type { PokerAction } from "../types/poker";
 
@@ -68,6 +76,27 @@ export type ReviewDecisionType =
   | "raise"
   | "all-in";
 
+/**
+ * Player-facing preflop action semantics. The betting engine quite correctly
+ * represents an unopened limp as a `call` of the nominal big blind; review
+ * needs the context-aware poker term as well.
+ */
+export type ReviewPreflopAction =
+  | "open-fold"
+  | "open-limp"
+  | "open-raise"
+  | "limp-fold"
+  | "limp-call"
+  | "limp-raise"
+  | "fold-to-open"
+  | "fold-to-3bet"
+  | "fold-to-4bet-plus"
+  | "call"
+  | "overcall"
+  | "isolation-raise"
+  | "three-bet"
+  | "four-bet-plus";
+
 /** Public preflop action state, so a limp is not described as defending a raise. */
 export type ReviewPreflopSituation =
   | "unopened"
@@ -88,26 +117,40 @@ export interface ReviewMath {
   potAfterCalling: number;
   potOdds: number;
   requiredEquity: number;
+  /** Showdown share against current-hand ranges; not action EV. */
+  showdownEquity: number;
+  /** Compatibility alias for older saved/test consumers. */
   estimatedEquity: number;
   foldEquity: number;
+  opponentsAbleToRespond: number;
   stackToPotRatio: number;
   effectiveStackBigBlinds: number;
   tournamentPressure: number;
   blindUrgency: number;
   imminentBigBlind: boolean;
+  requiredEquityApplicable: boolean;
+  equityStandardError: number;
+  equityConfidenceInterval: readonly [number, number];
+  confidence: "low" | "medium" | "high";
+  evaluationSource:
+    | "preflop-continuation-rollout"
+    | "postflop-range-response-rollout";
   /** EV in big blinds for each action the policy considered. */
   actionValues: Array<{
     id: string;
     type: ReviewDecisionType;
     to?: number;
     expectedValueBigBlinds: number;
+    uncertaintyBigBlinds?: number;
     foldEquity: number;
     role: RationalActionOption["role"];
     rationale: string;
+    semantic?: ReviewPreflopAction;
+    response?: RationalActionResponseAudit;
   }>;
   /** How far the chosen action fell short of the best considered action. */
   evRegretBigBlinds: number;
-  /** Monte Carlo sample count behind `estimatedEquity`. */
+  /** Monte Carlo sample count behind `showdownEquity`. */
   simulations: number;
 }
 
@@ -127,10 +170,15 @@ export interface ReviewDecision {
   quality: ReviewQuality;
   notable: boolean;
   notableReason?: string;
-  playersRemaining: number;
+  tournamentPlayersRemaining: number;
+  playersDealtIn: number;
+  activePlayersInHand: number;
+  activeOpponents: number;
   blindLevel: number;
   /** Present only for preflop decisions; postflop has no opening/3-bet label. */
   preflopSituation?: ReviewPreflopSituation;
+  chosenPreflopAction?: ReviewPreflopAction;
+  recommendedPreflopAction?: ReviewPreflopAction;
   math: ReviewMath;
   /**
    * The hero's own view of the table at the moment of the decision, already
@@ -186,7 +234,7 @@ export interface DeriveHandReviewOptions {
   maxDecisions?: number;
 }
 
-const DEFAULT_SIMULATIONS = 120;
+const DEFAULT_SIMULATIONS = 600;
 const DEFAULT_MAX_DECISIONS = 400;
 /** Below this many samples a segment average is noise, not a finding. */
 const MIN_RELIABLE_SAMPLE = 8;
@@ -254,7 +302,9 @@ export function canonicalReviewResult(
   )[0] ?? ranked[ranked.length - 1];
   const regretBigBlinds = Math.max(
     0,
-    best.expectedValueBigBlinds - matched.expectedValueBigBlinds,
+    best.expectedValueBigBlinds -
+      matched.expectedValueBigBlinds -
+      Math.max(best.uncertaintyBigBlinds ?? 0, matched.uncertaintyBigBlinds ?? 0),
   );
   return {
     best,
@@ -266,24 +316,45 @@ export function canonicalReviewResult(
 }
 
 function phaseFor(
-  playersRemaining: number,
-  startingPlayers: number,
+  tournamentPlayersRemaining: number,
+  startingTournamentPlayers: number,
   qualifyingPlaces: number,
 ): ReviewPhase {
-  if (playersRemaining <= 2) return "heads-up";
-  if (qualifyingPlaces > 0 && playersRemaining <= qualifyingPlaces + 1) {
+  if (tournamentPlayersRemaining <= 2) return "heads-up";
+  if (
+    qualifyingPlaces > 0 &&
+    tournamentPlayersRemaining <= qualifyingPlaces + 1
+  ) {
     return "qualification";
   }
-  const survived = playersRemaining / Math.max(1, startingPlayers);
+  const survived =
+    tournamentPlayersRemaining / Math.max(1, startingTournamentPlayers);
   if (survived > 0.75) return "early";
   return survived > 0.5 ? "middle" : "late";
+}
+
+function preflopActionsFor(
+  informationSet: PlayerInformationSet,
+): PlayerInformationSet["actions"] {
+  const markerIndex = informationSet.actions.findIndex(
+    (action) => action.type === "flop",
+  );
+  return informationSet.actions
+    .slice(0, markerIndex < 0 ? informationSet.actions.length : markerIndex)
+    .filter(
+      (action) =>
+        action.type !== "small-blind" &&
+        action.type !== "big-blind" &&
+        action.type !== "big-blind-ante" &&
+        action.type !== "pending",
+    );
 }
 
 function preflopSituationFor(
   informationSet: PlayerInformationSet,
 ): ReviewPreflopSituation | undefined {
   if (informationSet.street !== "preflop") return undefined;
-  const aggression = informationSet.actions.filter(
+  const aggression = preflopActionsFor(informationSet).filter(
     (action) =>
       action.type === "bet" ||
       action.type === "raise" ||
@@ -295,12 +366,57 @@ function preflopSituationFor(
   return "facing-4bet-plus";
 }
 
+export function preflopActionFor(
+  informationSet: PlayerInformationSet,
+  action: { type: ReviewDecisionType },
+): ReviewPreflopAction | undefined {
+  if (informationSet.street !== "preflop") return undefined;
+  const actions = preflopActionsFor(informationSet);
+  const raises = actions.filter(
+    (entry) =>
+      entry.type === "bet" ||
+      entry.type === "raise" ||
+      entry.type === "all-in",
+  ).length;
+  const callsByOthers = actions.filter(
+    (entry) =>
+      entry.playerId !== informationSet.viewerId && entry.type === "call",
+  ).length;
+  const heroPreviouslyCalled = actions.some(
+    (entry) =>
+      entry.playerId === informationSet.viewerId && entry.type === "call",
+  );
+
+  if (action.type === "fold") {
+    if (heroPreviouslyCalled) return "limp-fold";
+    if (raises === 0 && callsByOthers === 0) return "open-fold";
+    return raises === 1
+      ? "fold-to-open"
+      : raises === 2
+        ? "fold-to-3bet"
+        : "fold-to-4bet-plus";
+  }
+  if (action.type === "call") {
+    if (heroPreviouslyCalled && raises > 0) return "limp-call";
+    if (raises > 0) return callsByOthers > 0 ? "overcall" : "call";
+    return "open-limp";
+  }
+  if (action.type === "bet" || action.type === "raise" || action.type === "all-in") {
+    if (heroPreviouslyCalled) return "limp-raise";
+    if (raises === 0) {
+      return callsByOthers > 0 ? "isolation-raise" : "open-raise";
+    }
+    return raises === 1 ? "three-bet" : "four-bet-plus";
+  }
+  return undefined;
+}
+
 /**
  * Counts tournament seats that are still in the event. A hand-level all-in
  * player has a zero stack but remains an active tournament player until the
  * hand settles, so stack size is intentionally not used here.
  */
-export function countReviewPlayersRemaining(
+export function countTournamentPlayersRemaining(
   players: readonly { status: string; stack?: number }[],
 ): number {
   return players.filter((player) => player.status === "active").length;
@@ -332,20 +448,25 @@ function notabilityFor(
   if (quality === "best" && decisionType === "fold" && math.potOdds > 0.3) {
     return "disciplined-fold";
   }
-  if (quality === "best" && decisionType === "call" && math.evRegretBigBlinds === 0) {
-    const margin = math.estimatedEquity - math.requiredEquity;
+  if (
+    quality === "best" &&
+    decisionType === "call" &&
+    math.evRegretBigBlinds === 0 &&
+    math.requiredEquityApplicable
+  ) {
+    const margin = math.showdownEquity - math.requiredEquity;
     if (Math.abs(margin) < 0.05) return "close-correct-call";
   }
   if (
     (decisionType === "bet" || decisionType === "raise") &&
-    math.estimatedEquity < 0.4
+    math.showdownEquity < 0.4
   ) {
     return "bluff";
   }
   if (
     quality !== "best" &&
     (decisionType === "check" || decisionType === "call") &&
-    math.estimatedEquity > 0.7
+    math.showdownEquity > 0.7
   ) {
     return "missed-value";
   }
@@ -446,7 +567,7 @@ export async function deriveHandReview(
 
   let runner = restoreRunnerForReview(replay);
   const heroId = replay.hero.id;
-  const startingPlayers = runner.session.tournament.players.length;
+  const startingTournamentPlayers = runner.session.tournament.players.length;
   const decisions: ReviewDecision[] = [];
   const firstNowMs = replay.timed?.startedAtMs ?? replay.actions[0]?.nowMs ?? 0;
 
@@ -518,9 +639,13 @@ export async function deriveHandReview(
       type: commandType(option.command.type),
       to: option.command.to,
       expectedValueBigBlinds: option.utilityBigBlinds,
+      uncertaintyBigBlinds: option.uncertaintyBigBlinds,
       foldEquity: option.foldEquity,
       role: option.role,
       rationale: option.rationale,
+      semantic: preflopActionFor(informationSet, {
+        type: commandType(option.command.type),
+      }),
     }));
     const canonical = canonicalReviewResult(actionValues, {
       type: chosenType,
@@ -535,13 +660,20 @@ export async function deriveHandReview(
         ? Math.max(0, chosenTo - (heroSeat?.streetCommitted ?? 0))
         : costToCall;
     const effectiveStack = metrics.effectiveStack;
-    // A player who has committed their stack is still alive until the hand is
-    // settled. Counting positive stacks here mislabels the review as
-    // heads-up/qualification during an all-in runout and feeds the wrong
-    // phase into segment scores.
-    const playersRemaining = countReviewPlayersRemaining(
+    const tournamentPlayersRemaining = countTournamentPlayersRemaining(
       runner.session.tournament.players,
     );
+    const countSemantics: PlayerCountSemantics = derivePlayerCountSemantics(
+      informationSet.players,
+      heroId,
+      tournamentPlayersRemaining,
+    );
+    const chosenPreflopAction = preflopActionFor(informationSet, {
+      type: chosenType,
+    });
+    const recommendedPreflopAction = preflopActionFor(informationSet, {
+      type: canonical.best.type,
+    });
 
     const math: ReviewMath = {
       potBefore: informationSet.pot,
@@ -549,16 +681,24 @@ export async function deriveHandReview(
       potAfterCalling: informationSet.pot + costToCall,
       potOdds: metrics.potOdds,
       requiredEquity: metrics.requiredEquity,
-      estimatedEquity: metrics.equity,
+      showdownEquity: metrics.showdownEquity,
+      estimatedEquity: metrics.showdownEquity,
       foldEquity: canonical.played.foldEquity,
+      opponentsAbleToRespond:
+        canonical.played.response?.opponentsAbleToRespond ?? 0,
       stackToPotRatio: metrics.stackToPotRatio,
       effectiveStackBigBlinds: metrics.effectiveStackBigBlinds,
       tournamentPressure: evaluation.audit.adjustments.tournamentPressure,
       blindUrgency: evaluation.audit.adjustments.blindUrgency,
       imminentBigBlind: evaluation.audit.adjustments.imminentBigBlind,
+      requiredEquityApplicable: metrics.requiredEquityApplicable,
+      equityStandardError: metrics.equityStandardError,
+      equityConfidenceInterval: metrics.equityConfidenceInterval,
+      confidence: evaluation.audit.confidence,
+      evaluationSource: evaluation.audit.evaluationSource,
       actionValues,
       evRegretBigBlinds,
-      simulations,
+      simulations: evaluation.audit.equityWork.completedSimulations,
     };
 
     const partial: Omit<ReviewDecision, "notable" | "notableReason"> = {
@@ -567,8 +707,8 @@ export async function deriveHandReview(
       handId: hand.handId,
       street: hand.street,
       phase: phaseFor(
-        playersRemaining,
-        startingPlayers,
+        countSemantics.tournamentPlayersRemaining,
+        startingTournamentPlayers,
         runner.session.event.qualifyingPlaces ?? 0,
       ),
       riskBucket: riskFor(wager, effectiveStack, chosenType === "all-in"),
@@ -583,9 +723,14 @@ export async function deriveHandReview(
           : { to: canonical.best.to }),
       },
       quality: canonical.quality,
-      playersRemaining,
+      tournamentPlayersRemaining: countSemantics.tournamentPlayersRemaining,
+      playersDealtIn: countSemantics.playersDealtIn,
+      activePlayersInHand: countSemantics.activePlayersInHand,
+      activeOpponents: countSemantics.activeOpponents,
       blindLevel: runner.session.tournament.levelIndex,
       preflopSituation: preflopSituationFor(informationSet),
+      ...(chosenPreflopAction ? { chosenPreflopAction } : {}),
+      ...(recommendedPreflopAction ? { recommendedPreflopAction } : {}),
       math,
       informationSet,
     };

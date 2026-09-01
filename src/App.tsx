@@ -64,6 +64,7 @@ import {
 import { createSaveEnvelope } from "./lib/saveMigration";
 import { formatChips } from "./lib/format";
 import { formatMessage, localeTextAttributes } from "./lib/localeMessages";
+import { derivePlayerCountSemantics } from "./lib/playerCountSemantics";
 import { deriveSafeModeSettings } from "./lib/safeMode";
 import {
   applyOsReducedMotionDefault,
@@ -1617,7 +1618,6 @@ export default function App() {
         }
       >
         <PokerTable
-          key={trainingScenario.id}
           mode="training"
           scenario={trainingScenario}
           settings={effectiveSettings}
@@ -1785,6 +1785,24 @@ export default function App() {
       pendingPresentation.next.session.activeHand?.handId === presentationEvent.handId
         ? createPokerTableSnapshot(pendingPresentation.next.session)
         : snapshot;
+    const presentationSession =
+      pendingPresentation &&
+      presentationEvent?.kind === "hole-cards-dealt" &&
+      presentationEvent.handId !== snapshot.id &&
+      pendingPresentation.next.session.activeHand?.handId === presentationEvent.handId
+        ? pendingPresentation.next.session
+        : runner.session;
+    const tournamentPlayersRemaining = presentationSession.tournament.players.filter(
+      (player) => player.status === "active",
+    ).length;
+    const handPlayerInputs = snapshotForPresentation.players
+      .filter((player) => player.status !== "out")
+      .map((player) => ({ id: player.id, status: player.status }));
+    const handCounts = derivePlayerCountSemantics(
+      handPlayerInputs,
+      presentationSession.heroId,
+      tournamentPlayersRemaining,
+    );
     return (
       <Suspense
         fallback={
@@ -1828,9 +1846,10 @@ export default function App() {
           sceneStateVersion: runner.sequence,
           handNumber,
           fieldSize: runner.session.entrants.length,
-          playersRemaining: runner.session.tournament.players.filter(
-            (player) => player.status === "active",
-          ).length,
+          tournamentPlayersRemaining,
+          playersDealtIn: handCounts.playersDealtIn,
+          activePlayersInHand: handCounts.activePlayersInHand,
+          activeOpponents: handCounts.activeOpponents,
           /*
             The blind schedule, made inspectable (E27-004 / E27-008). The clock
             was corrected but never shown, so a player had no way to see when

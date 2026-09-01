@@ -9,6 +9,26 @@ const tableSource = () =>
   readFileSync(path.join(sourceRoot, "components", "PokerTable.tsx"), "utf8");
 
 describe("tournament table scene identity", () => {
+  it("keeps the Training table mounted when advancing to the next hand", () => {
+    const app = appSource();
+    const start = app.indexOf('if (screen === "practice")');
+    const end = app.indexOf('if (screen === "tutorial")', start);
+    const practiceRender = app.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(practiceRender).toContain('<PokerTable\n');
+    expect(practiceRender).not.toMatch(/<PokerTable\s+key=/);
+  });
+
+  it("resets Training hand state before the new scenario paints", () => {
+    const table = tableSource();
+
+    expect(table).toContain("useLayoutEffect");
+    expect(table).toContain("previousTrainingScenarioIdRef");
+    expect(table).toContain("setStagedBoard(scenario.board.map");
+    expect(table).toContain("setCardsDealtHandId(scenario.id)");
+  });
+
   it("does not key the tournament table on advancing poker state", () => {
     const app = appSource();
     const start = app.indexOf('if (screen === "tournament-table" && runner && !tournamentResult)');

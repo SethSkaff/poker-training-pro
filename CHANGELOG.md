@@ -53,3 +53,15 @@ Status: development preview; **not a public release**.
 
 Comparison and release links are intentionally omitted. The release owner must
 add the final publisher-controlled HTTPS URLs before public distribution.
+
+## [0.1.1] - Unreleased
+
+Status: development preview; **not a public release**.
+
+### Fixed
+
+- Clarified completed hands on 2D tables: every live showdown hand is shown
+  face up at its seat, the winning seat is labelled, and the winning community
+  cards lift and glow with the awarded hand.
+- Kept the public showdown visible through the payout presentation so the
+  winner remains identifiable while chips move.

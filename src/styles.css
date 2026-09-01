@@ -2712,7 +2712,7 @@ body:has(.table-screen--3d),
   belong in front of the player, on their seat, attached to their chips. Those
   moved to the seat. What is left here is what genuinely has nowhere else to
   live: global tournament state that belongs to the room rather than to any
-  seat -- blinds, ante, level, time to the next level, players left.
+  seat -- blinds, ante, level, time to the next level, tournament survivors.
 
   Deliberately a single quiet row of short labels beside numbers. It is a
   readout, not a place for prose.
@@ -2863,6 +2863,20 @@ body:has(.table-screen--3d),
 @keyframes showdown-dealer-lift {
   from { opacity: 0; transform: translateY(28px) rotate(calc((var(--showdown-index) - 2) * 2deg)); }
   to { opacity: 1; transform: translateY(calc(var(--showdown-index) * -2px)) rotate(calc((var(--showdown-index) - 2) * 2deg)); }
+}
+
+/* In the flat table the board is the shared part of every hand. Raise only the
+   exact board cards used by a winning best-five, so the winner's connection to
+   the community cards is visible without moving the rest of the row. */
+.table-screen--2d .community-cards > .board-card-winning {
+  position: relative;
+  z-index: 2;
+  animation: showdown-board-lift 520ms cubic-bezier(.2, .86, .28, 1) both;
+}
+
+@keyframes showdown-board-lift {
+  from { transform: translateY(0); }
+  to { transform: translateY(-13px); }
 }
 
 .side-pot-strip {
@@ -3348,22 +3362,59 @@ body:has(.table-screen--3d),
 }
 
 /*
-  The board is dealt onto the felt, so the DOM community row must not paint a
-  second copy of it floating over the table. Four crisp flat cards hanging in
-  screen space in front of the physical board were the last "UI pasted into the
-  scene" element left in the seated frame, and they were the reason the real
-  cards behind them looked like a mistake.
+  The board is dealt onto the felt, but the physical cards can disappear at a
+  steep camera angle. Keep the same semantic DOM row as a small, screen-space
+  2D mirror in the top-right of a ready 3D scene. This is deliberately scoped
+  to the readiness marker: isolated 2D mode keeps its centred board, and a
+  failed WebGL scene keeps the ordinary DOM fallback without a duplicate.
 
-  Faded, not unmounted: this row carries the accessible community-card label and
-  it is the real cue in the 2.5D fallback, so it stays mounted and stays in the
-  accessibility tree. `animation: none` is required as well -- the deal-in
-  keyframes run with `both`, and a filled animation outranks this opacity.
+  Faded is no longer the visual treatment here: the mirror is the requested
+  readability aid. It remains the single accessible community-card group, so
+  there is no second screen-reader copy to reconcile. `animation: none` keeps
+  the old deal-in keyframes from overriding the settled mirror opacity.
 */
-.poker-scene[data-spatial-scene="ready"] .community-cards,
-.poker-scene[data-spatial-scene="ready"] .community-cards .playing-card {
-  opacity: 0;
+.poker-scene[data-spatial-scene="ready"] .community-cards {
+  top: clamp(12px, 2.5vh, 28px);
+  right: clamp(12px, 2vw, 28px);
+  left: auto;
+  z-index: 32;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid rgba(255, 227, 161, 0.42);
+  border-radius: 10px;
+  background: rgba(8, 16, 13, 0.78);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.38);
+  transform: none;
+  pointer-events: none;
   animation: none;
   transition: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .community-cards[data-card-count="0"] {
+  opacity: 0;
+}
+
+.poker-scene[data-spatial-scene="ready"] .community-cards .playing-card {
+  width: clamp(34px, 3.4vw, 46px);
+  height: clamp(48px, 4.8vw, 64px);
+  border-width: 2px;
+  border-radius: 5px;
+  padding: 3px;
+  opacity: 1;
+  animation: none;
+  transition: none;
+}
+
+.poker-scene[data-spatial-scene="ready"] .community-cards .playing-card b {
+  font-size: clamp(11px, 1.15vw, 15px);
+}
+
+.poker-scene[data-spatial-scene="ready"] .community-cards .playing-card > i {
+  font-size: clamp(14px, 1.45vw, 19px);
+}
+
+.poker-scene[data-spatial-scene="ready"] .community-cards .community-placeholder {
+  display: none;
 }
 
 /*
@@ -4216,6 +4267,11 @@ body:has(.table-screen--3d),
   font-size: 22px;
   font-style: normal;
   line-height: 1;
+  transform: translateY(2px);
+}
+
+.playing-card--small > i {
+  transform: translateY(1px);
 }
 
 .playing-card--diamonds,
@@ -4269,6 +4325,30 @@ body:has(.table-screen--3d),
 .showdown-card.is-unused {
   opacity: 0.56;
   filter: saturate(0.55);
+}
+
+/* Public all-in cards turn in place instead of appearing as a new static
+   face. The longer beat gives the reveal a readable, deliberate flip while
+   remaining shorter than the all-in presentation hold. */
+.all-in-reveal-card {
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  animation: all-in-card-flip 720ms cubic-bezier(.24,.78,.3,1) both;
+}
+
+@keyframes all-in-card-flip {
+  from {
+    opacity: 0.35;
+    transform: perspective(520px) rotateY(88deg) scale(0.96);
+  }
+  58% {
+    opacity: 1;
+    transform: perspective(520px) rotateY(-7deg) scale(1.025);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(520px) rotateY(0) scale(1);
+  }
 }
 
 /* E06-001 step 2: once a hand is legally face up, lift it clear of the seat
@@ -4920,6 +5000,16 @@ body:has(.table-screen--3d),
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.seat-winner-badge {
+  color: #ffe49c;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255, 196, 62, .55);
 }
 
 .seat-bet {
@@ -7729,6 +7819,10 @@ body:has(.table-screen--3d),
 :root[data-motion-table="off"] .chip-travel,
 :root[data-motion-table="off"] .all-in-banner,
 :root[data-motion-table="off"] .all-in-showdown-stage,
+:root[data-motion-table="off"] .all-in-reveal-card,
+:root[data-motion-table="off"] .board-card-winning,
+:root[data-motion-table="off"] .player-seat.is-showdown-revealed .opponent-cards .playing-card,
+:root[data-motion-table="off"] .hero-hole-cards.is-showdown-revealed .playing-card,
 :root[data-motion-table="off"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="off"] .player-seat.is-winner .seat-avatar,
 :root[data-motion-table="off"] .seat-state--winner {
@@ -7748,6 +7842,10 @@ body:has(.table-screen--3d),
 :root[data-motion-table="reduced"] .chip-travel,
 :root[data-motion-table="reduced"] .all-in-banner,
 :root[data-motion-table="reduced"] .all-in-showdown-stage,
+:root[data-motion-table="reduced"] .all-in-reveal-card,
+:root[data-motion-table="reduced"] .board-card-winning,
+:root[data-motion-table="reduced"] .player-seat.is-showdown-revealed .opponent-cards .playing-card,
+:root[data-motion-table="reduced"] .hero-hole-cards.is-showdown-revealed .playing-card,
 :root[data-motion-table="reduced"] .player-seat.is-out .seat-avatar,
 :root[data-motion-table="reduced"] .player-seat.is-winner .seat-avatar,
 :root[data-motion-table="reduced"] .seat-state--winner {
@@ -12129,6 +12227,25 @@ body:has(.table-screen--2d),
   height: clamp(70px, 7.1vw, 94px);
 }
 
+.table-screen--2d .hero-hole-cards.is-showdown-revealed {
+  z-index: 29;
+}
+
+.table-screen--2d .hero-hole-cards.is-showdown-revealed .playing-card {
+  animation: showdown-hero-card-reveal 460ms cubic-bezier(.2, .84, .28, 1) both;
+}
+
+@keyframes showdown-hero-card-reveal {
+  from {
+    opacity: .3;
+    transform: perspective(520px) rotateY(78deg) translateY(8px) scale(.94);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(520px) rotateY(0) translateY(0) scale(1);
+  }
+}
+
 .table-screen--2d .hero-hole-cards-visual .peek-label {
   display: none;
 }
@@ -12208,6 +12325,108 @@ body:has(.table-screen--2d),
 .table-screen--2d .hero-hole-cards__cards {
   width: calc(2 * clamp(50px, 5.2vw, 68px) + 8px);
   justify-content: flex-start;
+}
+
+/* Once betting is closed, public hands belong on the felt with the board. The
+   ordinary 2D card lane sits above each portrait for private face-down cards;
+   this public lane pulls every revealed hand inward without moving the avatar,
+   stack, or seat label. */
+.table-screen--2d .player-seat.is-all-in-revealed .opponent-cards,
+.table-screen--2d .player-seat.is-showdown-revealed .opponent-cards {
+  --all-in-card-width: clamp(40px, 4.1vw, 54px);
+  --all-in-card-height: clamp(56px, 5.6vw, 75px);
+  z-index: 28;
+  top: calc(var(--avatar-half) - var(--all-in-card-height) / 2);
+  width: calc(2 * var(--all-in-card-width) + 4px);
+  min-height: var(--all-in-card-height);
+  gap: 4px;
+  transform: none;
+  transition: none;
+  animation: none;
+}
+
+.table-screen--2d .player-seat.is-all-in-revealed .opponent-cards .playing-card,
+.table-screen--2d .player-seat.is-showdown-revealed .opponent-cards .playing-card {
+  width: var(--all-in-card-width);
+  height: var(--all-in-card-height);
+  border-radius: 6px;
+}
+
+.table-screen--2d .player-seat.is-showdown-revealed .opponent-cards .playing-card {
+  animation: showdown-seat-card-reveal 460ms cubic-bezier(.2, .84, .28, 1) both;
+}
+
+@keyframes showdown-seat-card-reveal {
+  from {
+    opacity: .3;
+    transform: perspective(520px) rotateY(78deg) translateY(6px) scale(.94);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(520px) rotateY(0) translateY(0) scale(1);
+  }
+}
+
+.table-screen--2d .player-seat--top.is-all-in-revealed .opponent-cards,
+.table-screen--2d .player-seat--top.is-showdown-revealed .opponent-cards {
+  top: calc(var(--avatar-size) + var(--rail-gap) + 12px);
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.table-screen--2d .player-seat--upper-left.is-all-in-revealed .opponent-cards,
+.table-screen--2d .player-seat--lower-left.is-all-in-revealed .opponent-cards,
+.table-screen--2d .player-seat--upper-left.is-showdown-revealed .opponent-cards,
+.table-screen--2d .player-seat--lower-left.is-showdown-revealed .opponent-cards {
+  right: auto;
+  left: calc(50% + var(--avatar-half) + var(--rail-gap) + 12px);
+}
+
+.table-screen--2d .player-seat--upper-right.is-all-in-revealed .opponent-cards,
+.table-screen--2d .player-seat--lower-right.is-all-in-revealed .opponent-cards,
+.table-screen--2d .player-seat--upper-right.is-showdown-revealed .opponent-cards,
+.table-screen--2d .player-seat--lower-right.is-showdown-revealed .opponent-cards {
+  right: calc(50% + var(--avatar-half) + var(--rail-gap) + 12px);
+  left: auto;
+}
+
+.table-screen--2d .player-seat.is-showdown-revealed .opponent-cards::before {
+  border-color: rgba(255, 224, 135, .68);
+  background: rgba(25, 31, 21, .9);
+  box-shadow: 0 0 20px rgba(255, 195, 59, .2);
+}
+
+.table-screen--2d .player-seat.is-winner .seat-label {
+  border-color: rgba(255, 211, 93, .78);
+  box-shadow: 0 0 0 1px rgba(255, 194, 48, .22), 0 5px 15px rgba(0, 0, 0, .36);
+}
+
+.table-screen--2d .player-seat.is-winner .seat-winner-badge {
+  color: #fff2bb;
+}
+
+/* A percentage is the only public annotation attached to an all-in hand. */
+.table-screen--2d .all-in-win-probability {
+  position: absolute;
+  z-index: 3;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  min-width: 44px;
+  border: 1px solid rgba(255, 211, 109, 0.68);
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: #fff0b7;
+  background: rgba(35, 27, 14, 0.94);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.34);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .table-screen--2d .action-dock,

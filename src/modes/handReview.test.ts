@@ -13,11 +13,12 @@ import { createInformationSet } from "../engine/tournament";
 import {
   assertReviewIsRedacted,
   canonicalReviewResult,
-  countReviewPlayersRemaining,
+  countTournamentPlayersRemaining,
   deriveHandReview,
   filterDecisions,
   HandReviewCancelledError,
   notableDecisions,
+  preflopActionFor,
   GOOD_MOVE_MAX_EV_LOSS_BB,
 } from "./handReview";
 
@@ -87,12 +88,50 @@ function playOpeningBet(seed: string): TournamentRunnerReplay {
 describe("hand review derivation", () => {
   it("counts zero-stack all-in seats until tournament settlement", () => {
     expect(
-      countReviewPlayersRemaining([
+      countTournamentPlayersRemaining([
         { status: "active", stack: 0 },
         { status: "active", stack: 125 },
         { status: "eliminated", stack: 0 },
       ]),
     ).toBe(2);
+  });
+
+  it("uses context-aware preflop action names for limps, calls, and raises", () => {
+    const base = {
+      handId: "preflop-semantics",
+      viewerId: "hero",
+      street: "preflop" as const,
+      board: [],
+      pot: 300,
+      currentBet: 100,
+      actingPlayerId: "hero",
+      buttonSeat: 1,
+      players: [],
+      actions: [],
+    };
+    const unopened = { ...base } as Parameters<typeof preflopActionFor>[0];
+    expect(preflopActionFor(unopened, { type: "call" })).toBe("open-limp");
+    expect(preflopActionFor(unopened, { type: "raise" })).toBe("open-raise");
+
+    const withLimp = {
+      ...base,
+      actions: [{ playerId: "villain", type: "call" as const, amount: 100 }],
+    } as Parameters<typeof preflopActionFor>[0];
+    expect(preflopActionFor(withLimp, { type: "raise" })).toBe(
+      "isolation-raise",
+    );
+
+    const afterHeroLimp = {
+      ...base,
+      actions: [
+        { playerId: "hero", type: "call" as const, amount: 100 },
+        { playerId: "villain", type: "raise" as const, amount: 300 },
+      ],
+    } as Parameters<typeof preflopActionFor>[0];
+    expect(preflopActionFor(afterHeroLimp, { type: "call" })).toBe("limp-call");
+    expect(preflopActionFor(afterHeroLimp, { type: "raise" })).toBe(
+      "limp-raise",
+    );
   });
 
   it("uses one canonical EV ranking for recommendation, regret, badge, and good score", () => {

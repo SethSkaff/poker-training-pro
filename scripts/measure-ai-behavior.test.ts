@@ -10,7 +10,7 @@ describe("AI behavior event timeline censoring", () => {
         completionScope: "hero-session",
         termination: "finished",
         fieldFinished: true,
-        activePlayersAtTermination: 1,
+        tournamentPlayersRemainingAtTermination: 1,
         heroFinishPlace: 1,
         handsToFirstElimination: 4,
         fieldHandsToHeadsUp: 18,
@@ -23,7 +23,7 @@ describe("AI behavior event timeline censoring", () => {
         completionScope: "hero-session",
         termination: "hand-cap",
         fieldFinished: false,
-        activePlayersAtTermination: 3,
+        tournamentPlayersRemainingAtTermination: 3,
         handsToFirstElimination: 3,
       },
     ]);
@@ -44,7 +44,7 @@ describe("AI behavior event timeline censoring", () => {
         completionScope: "hero-session",
         termination: "action-cap",
         fieldFinished: false,
-        activePlayersAtTermination: 4,
+        tournamentPlayersRemainingAtTermination: 4,
       },
     ]);
     expect(summary.completedEvents).toBe(0);
@@ -63,7 +63,7 @@ describe("AI behavior event timeline censoring", () => {
         completionScope: "hero-session",
         termination: "finished",
         fieldFinished: false,
-        activePlayersAtTermination: 2,
+        tournamentPlayersRemainingAtTermination: 2,
         heroFinishPlace: 3,
         fieldHandsToHeadsUp: 15,
         handsToFinish: 17,

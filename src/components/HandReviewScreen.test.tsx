@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { reviewPlayerCountSummary } from "./HandReviewScreen";
 
 const sourceRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -19,6 +20,20 @@ const stateMachine = readFileSync(
 );
 
 describe("hand review screen", () => {
+  it("labels current-hand counts separately from tournament survivors", () => {
+    const summary = reviewPlayerCountSummary({
+      activePlayersInHand: 2,
+      activeOpponents: 1,
+      playersDealtIn: 2,
+      tournamentPlayersRemaining: 6,
+    });
+
+    expect(summary).toContain("2 players in hand");
+    expect(summary).toContain("1 active opponent");
+    expect(summary).toContain("6 players remaining in tournament");
+    expect(summary).not.toContain("6 players in hand");
+  });
+
   it("is reachable from the ceremony, which previously never rendered the button", () => {
     // `onReview` existed on the ceremony but App never passed it, so the
     // affordance never appeared.
@@ -62,8 +77,12 @@ describe("hand review screen", () => {
       "potAfterCalling",
       "potOdds",
       "requiredEquity",
-      "estimatedEquity",
+      "requiredEquityReference",
+      "showdownEquity",
       "foldEquity",
+      "opponentsAbleToRespond",
+      "confidence",
+      "source",
       "spr",
       "tournamentPressure",
       "evRegret",

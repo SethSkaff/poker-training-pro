@@ -15,7 +15,7 @@ describe("every scenario states the position it is asking about", () => {
       expect(context.bigBlind).toBeGreaterThan(0);
       expect(context.stackChips).toBeGreaterThan(0);
       expect(context.stackBigBlinds).not.toBeNull();
-      expect(context.players).toBeGreaterThanOrEqual(2);
+      expect(context.activePlayersInHand).toBeGreaterThanOrEqual(2);
       expect(context.pot).toBeGreaterThanOrEqual(0);
       expect(context.effectiveStackChips).toBeGreaterThan(0);
       // A decision cannot cost more than the smaller stack can lose.

@@ -433,8 +433,10 @@ function stackStructureSignature(scenario: RatedTrainingScenario): string {
   const effectiveBigBlinds = hero ? hero.stack / scenario.blinds[1] : 0;
   const band =
     effectiveBigBlinds <= 12 ? "short" : effectiveBigBlinds <= 30 ? "medium" : "deep";
-  const livePlayers = scenario.players.filter((player) => player.status !== "folded").length;
-  return `${band}:${livePlayers}`;
+  const activePlayersInHand = scenario.players.filter(
+    (player) => player.status === "active" || player.status === "all-in",
+  ).length;
+  return `${band}:${activePlayersInHand}`;
 }
 
 function potOddsSignature(scenario: RatedTrainingScenario): string {

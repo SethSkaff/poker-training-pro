@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { evaluateFive } from "../engine/evaluator";
 import { cardLabel } from "../lib/format";
@@ -8,6 +11,10 @@ import {
   winningCardLabelsForAwards,
   winningHandsForShowdown,
 } from "./PokerTable";
+
+const directory = path.dirname(fileURLToPath(import.meta.url));
+const source = readFileSync(path.join(directory, "PokerTable.tsx"), "utf8");
+const styles = readFileSync(path.join(directory, "..", "styles.css"), "utf8");
 
 const suits: Record<string, Suit> = {
   c: "clubs",
@@ -145,5 +152,34 @@ describe("all-in reveal presentation", () => {
 
   it("does not reveal cards from an ordinary board event without a legal reveal", () => {
     expect(publicRevealsForPresentation(boardCard, undefined)).toEqual([]);
+  });
+});
+describe("2D showdown presentation", () => {
+  it("keeps the public showdown attached while the payout milestones advance", () => {
+    expect(source).toContain("rememberedShowdownRef");
+    expect(source).toContain("showdownEventForDisplay");
+    expect(source).toContain('resultPhaseKind !== "cards-collected"');
+    expect(source).toContain("showdownWinnerIds");
+  });
+
+  it("puts revealed hands in the 2D seat lane and marks the winner", () => {
+    expect(source).toContain("showdownRevealed");
+    expect(source).toContain('"is-showdown-revealed"');
+    expect(source).toContain('className="seat-winner-badge"');
+    expect(source).toContain('"board-card-winning"');
+    expect(styles).toContain(
+      ".table-screen--2d .player-seat.is-showdown-revealed .opponent-cards",
+    );
+    expect(styles).toContain(
+      ".table-screen--2d .community-cards > .board-card-winning",
+    );
+    expect(styles).toContain("showdown-board-lift");
+  });
+
+  it("keeps the new showdown motion settings accessible", () => {
+    expect(styles).toContain(':root[data-motion-table="off"] .board-card-winning');
+    expect(styles).toContain(':root[data-motion-table="reduced"] .board-card-winning');
+    expect(styles).toContain("showdown-seat-card-reveal");
+    expect(styles).toContain("showdown-hero-card-reveal");
   });
 });

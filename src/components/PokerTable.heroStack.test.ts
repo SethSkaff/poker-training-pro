@@ -15,7 +15,7 @@ describe("persistent hero stack HUD", () => {
         buttonSeat: 0,
         smallBlindSeat: 1,
         bigBlindSeat: 2,
-        playerCount: 6,
+        tableSize: 6,
       }),
     );
 
@@ -27,14 +27,14 @@ describe("persistent hero stack HUD", () => {
       buttonSeat: 1,
       smallBlindSeat: 2,
       bigBlindSeat: 3,
-      playerCount: 6,
+      tableSize: 6,
     })).toBe("BB");
     expect(tablePositionLabelForSeat({
       seat: 4,
       buttonSeat: 1,
       smallBlindSeat: 2,
       bigBlindSeat: 3,
-      playerCount: 6,
+      tableSize: 6,
     })).toBe("UTG");
   });
 

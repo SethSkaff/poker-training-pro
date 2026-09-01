@@ -22,8 +22,12 @@ export interface TrainingContext {
   readonly smallBlind: number;
   readonly bigBlind: number;
   readonly ante: number;
-  /** Players still in the hand, hero included. */
-  readonly players: number;
+  /** Players who were dealt into this training hand. */
+  readonly playersDealtIn: number;
+  /** Players who have not folded at the current decision, hero included. */
+  readonly activePlayersInHand: number;
+  /** Active current-hand players other than the hero. */
+  readonly activeOpponents: number;
   readonly pot: number;
   readonly amountToCall: number;
   /**
@@ -51,9 +55,8 @@ export function describeTrainingContext(
   const stackChips = Math.max(0, hero?.stack ?? 0);
   const usableBlind = Number.isFinite(bigBlind) && bigBlind > 0 ? bigBlind : 0;
 
-  const contesting = scenario.players.filter((player) =>
-    CONTESTING.has(player.status),
-  );
+  const dealtIn = scenario.players.filter((player) => player.status !== "out");
+  const contesting = dealtIn.filter((player) => CONTESTING.has(player.status));
   const opponents = contesting.filter(
     (player) => player.seat !== scenario.heroSeat,
   );
@@ -91,7 +94,9 @@ export function describeTrainingContext(
     // Training scenarios may still deserialize a legacy ante field for
     // compatibility, but blind-only sessions never treat it as dead money.
     ante: 0,
-    players: contesting.length,
+    playersDealtIn: dealtIn.length,
+    activePlayersInHand: contesting.length,
+    activeOpponents: opponents.length,
     pot: scenario.pot,
     amountToCall,
     effectiveStackChips,

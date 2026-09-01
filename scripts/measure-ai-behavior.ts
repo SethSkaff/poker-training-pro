@@ -100,8 +100,8 @@ export interface AiBehaviorEventTimeline {
   termination: AiBehaviorEventTermination;
   /** True only when the core tournament director also has a winner. */
   fieldFinished: boolean;
-  /** Active field size at the moment the hero session stopped or was capped. */
-  activePlayersAtTermination: number;
+  /** Tournament survivors when the hero session stopped or was capped. */
+  tournamentPlayersRemainingAtTermination: number;
   heroFinishPlace?: number;
   handsToFirstElimination?: number;
   /** Field milestone, regardless of whether the measured hero is still live. */
@@ -223,7 +223,9 @@ function playEvent(
     careerResults: unlockingResults(eventId),
   });
 
-  const startingRemaining = session.tournament.players.length;
+  const startingTournamentPlayersRemaining = session.tournament.players.filter(
+    (player) => player.status === "active",
+  ).length;
   let handIndex = 0;
 
   while (session.status === "playing" && handIndex < MAX_HANDS_PER_EVENT) {
@@ -341,24 +343,27 @@ function playEvent(
     if (sawPreflopAllIn) accumulator.handsWithPreflopAllIn += 1;
     if (sawPostflopAllIn) accumulator.handsWithPostflopAllIn += 1;
 
-    const remaining = session.tournament.players.filter(
-      (player) => player.stack > 0,
+    const tournamentPlayersRemaining = session.tournament.players.filter(
+      (player) => player.status === "active",
     ).length;
     if (
       accumulator.handsToFirstElimination === undefined &&
-      remaining < startingRemaining
+      tournamentPlayersRemaining < startingTournamentPlayersRemaining
     ) {
       accumulator.handsToFirstElimination = handIndex;
     }
     const heroStillActive = session.tournament.players.some(
       (player) => player.id === session.heroId && player.status === "active",
     );
-    if (accumulator.fieldHandsToHeadsUp === undefined && remaining === 2) {
+    if (
+      accumulator.fieldHandsToHeadsUp === undefined &&
+      tournamentPlayersRemaining === 2
+    ) {
       accumulator.fieldHandsToHeadsUp = handIndex;
     }
     if (
       accumulator.handsToHeadsUp === undefined &&
-      remaining === 2 &&
+      tournamentPlayersRemaining === 2 &&
       heroStillActive
     ) {
       accumulator.handsToHeadsUp = handIndex;
@@ -380,7 +385,7 @@ function playEvent(
   const hero = session.tournament.players.find(
     (player) => player.id === session.heroId,
   );
-  const activePlayersAtTermination = session.tournament.players.filter(
+  const tournamentPlayersRemainingAtTermination = session.tournament.players.filter(
     (player) => player.status === "active",
   ).length;
   accumulator.timeline = {
@@ -389,7 +394,7 @@ function playEvent(
     completionScope: "hero-session",
     termination,
     fieldFinished: session.tournament.status === "complete",
-    activePlayersAtTermination,
+    tournamentPlayersRemainingAtTermination,
     ...(hero?.finishPlace === undefined
       ? {}
       : { heroFinishPlace: hero.finishPlace }),

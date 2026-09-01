@@ -41,4 +41,14 @@ describe("scene-ready table composition", () => {
     expect(styles).toMatch(/@media \(max-height: 800px\)[\s\S]*?\.opponent-cards \{\s*top: 4px;/);
     expect(styles).toMatch(/@media \(max-height: 800px\)[\s\S]*?\.player-seat--top \{[\s\S]*?top: 15%/);
   });
+
+  it("keeps a readable community-card mirror in the ready 3D corner", () => {
+    expect(table).toContain("data-card-count={displayedBoard.length}");
+    const mirror = styles.match(/\.poker-scene\[data-spatial-scene="ready"\] \.community-cards \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(mirror).toContain("right: clamp(12px, 2vw, 28px)");
+    expect(mirror).toContain("left: auto");
+    expect(mirror).toContain("pointer-events: none");
+    expect(styles).toContain('.poker-scene[data-spatial-scene="ready"] .community-cards .community-placeholder');
+    expect(styles).toContain("display: none");
+  });
 });
