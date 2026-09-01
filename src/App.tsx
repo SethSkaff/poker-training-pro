@@ -1769,6 +1769,22 @@ export default function App() {
     lastPresentedHand.current = handPresentationKey;
     arrivingFromFlythrough.current = false;
     const presentationEvent = pendingPresentation?.events[pendingPresentation.index];
+    /*
+      Between hands the runner stays at the completed-hand boundary until the
+      old result/collection beats have finished. The next hand is already
+      authoritative in `pendingPresentation.next`, though, and its opening
+      deal is the first moment the table needs to render that hand's private
+      cards. Use the existing viewer-safe snapshot projection at that point so
+      the card travelling to the hero is drawn from the new hand, without
+      exposing any opponent hole cards through the presentation event.
+    */
+    const snapshotForPresentation =
+      pendingPresentation &&
+      presentationEvent?.kind === "hole-cards-dealt" &&
+      presentationEvent.handId !== snapshot.id &&
+      pendingPresentation.next.session.activeHand?.handId === presentationEvent.handId
+        ? createPokerTableSnapshot(pendingPresentation.next.session)
+        : snapshot;
     return (
       <Suspense
         fallback={
@@ -1785,7 +1801,7 @@ export default function App() {
       >
         <PokerTable
         mode={runner.session.mode}
-        scenario={snapshot}
+        scenario={snapshotForPresentation}
         settings={effectiveSettings}
         progress={progress}
         onProgressChange={updateProgress}
