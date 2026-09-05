@@ -240,6 +240,40 @@ interface TableViewSelectProps {
   initialSpatialScene: boolean;
   onBack: () => void;
   onSelect: (spatialScene: boolean) => void;
+  initialProductMode?: ProductMode;
+  onProductModeChange?: (mode: ProductMode) => void;
+}
+
+export type ProductMode = "poker" | "blackjack";
+
+/** The product switch stays in the same control band as the table-view choice. */
+export function ProductModeSelector({
+  value,
+  onChange,
+}: {
+  value: ProductMode;
+  onChange: (mode: ProductMode) => void;
+}) {
+  return (
+    <fieldset className="product-mode-selector" aria-label="Training system">
+      <legend className="visually-hidden">Training system</legend>
+      {(["poker", "blackjack"] as const).map((mode) => {
+        const label = mode === "poker" ? "Poker" : "Blackjack";
+        return (
+          <label key={mode} className={value === mode ? "is-active" : ""}>
+            <input
+              type="radio"
+              name="training-system"
+              value={mode}
+              checked={value === mode}
+              onChange={() => onChange(mode)}
+            />
+            <span>{label}</span>
+          </label>
+        );
+      })}
+    </fieldset>
+  );
 }
 
 function TableViewPreview({ spatialScene }: { spatialScene: boolean }) {
@@ -281,6 +315,8 @@ export function TableViewSelect({
   initialSpatialScene,
   onBack,
   onSelect,
+  initialProductMode = "poker",
+  onProductModeChange,
 }: TableViewSelectProps) {
   return (
     <main
@@ -301,6 +337,10 @@ export function TableViewSelect({
             </h1>
           </div>
         </header>
+        <ProductModeSelector
+          value={initialProductMode}
+          onChange={(mode) => onProductModeChange?.(mode)}
+        />
         <div className="table-view-choices">
           <button
             type="button"

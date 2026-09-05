@@ -29,6 +29,8 @@ import { PlayChipAcknowledgment } from "./components/PlayChipAcknowledgment";
 import { SaveDataControls } from "./components/SaveDataControls";
 import { lazyWithPreload, SceneLoadingFallback } from "./components/SceneLoader";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { BlackjackTrainer } from "./components/BlackjackTrainer";
+import type { ProductMode } from "./components/Dashboard";
 import { trainingScenarios } from "./data/trainingScenarios";
 import { gameAudio } from "./lib/audio";
 import { tournamentResultAudioCue } from "./lib/tournamentResultAudio";
@@ -167,7 +169,8 @@ type DesktopScreen =
   | "credits"
   | "hand-review"
   | "reference"
-  | "chip-ack";
+  | "chip-ack"
+  | "blackjack";
 
 type SafeModeState = Awaited<
   ReturnType<NonNullable<Window["desktop"]>["getSafeModeState"]>
@@ -373,6 +376,7 @@ export default function App() {
     StartupLoadResult | { kind: "loading" }
   >(() => (persistence ? { kind: "loading" } : { kind: "first-run" }));
   const [screen, setScreen] = useState<DesktopScreen>("home");
+  const [productMode, setProductMode] = useState<ProductMode>("poker");
   const [creditsReturn, setCreditsReturn] = useState<DesktopScreen>("home");
   const [tourMode, setTourMode] = useState<TournamentPolicyMode>("normal");
   const [timedMinutes, setTimedMinutes] = useState(30);
@@ -2040,6 +2044,21 @@ export default function App() {
     );
   }
 
+  if (screen === "blackjack") {
+    return (
+      <BlackjackTrainer
+        onBack={() => {
+          setProductMode("poker");
+          navigate("table-view-select");
+        }}
+        onProductModeChange={(mode) => {
+          setProductMode(mode);
+          if (mode === "poker") navigate("table-view-select");
+        }}
+      />
+    );
+  }
+
   if (screen === "credits") {
     return <CreditsScreen onBack={() => navigate(creditsReturn)} />;
   }
@@ -2048,7 +2067,12 @@ export default function App() {
     return (
       <TableViewSelect
         initialSpatialScene={settings.spatialScene ?? false}
+        initialProductMode={productMode}
         onBack={() => navigate("home")}
+        onProductModeChange={(mode) => {
+          setProductMode(mode);
+          if (mode === "blackjack") navigate("blackjack");
+        }}
         onSelect={(spatialScene) => {
           void (async () => {
             const fullscreenApplied = settings.fullscreen

@@ -26,6 +26,69 @@
   --radius: 18px;
 }
 
+/* Blackjack training system ------------------------------------------------ */
+
+.product-mode-selector {
+  display: inline-flex;
+  min-width: 190px;
+  margin: 0 auto 28px;
+  border: 1px solid rgba(234, 210, 159, 0.3);
+  border-radius: 999px;
+  padding: 3px;
+  background: rgba(5, 12, 10, 0.74);
+}
+
+.product-mode-selector legend {
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.product-mode-selector label {
+  position: relative;
+  flex: 1;
+  cursor: pointer;
+}
+
+.product-mode-selector input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.product-mode-selector span {
+  display: block;
+  min-height: 34px;
+  padding: 9px 17px 8px;
+  border-radius: 999px;
+  color: #9eaaa1;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.product-mode-selector label:hover span,
+.product-mode-selector label:focus-within span {
+  color: #fff4d9;
+}
+
+.product-mode-selector label.is-active span {
+  color: #092119;
+  background: linear-gradient(135deg, #f3d184, #d6a64e);
+  box-shadow: 0 4px 15px rgba(214, 166, 78, 0.18);
+}
+
+.table-view-stage > .product-mode-selector {
+  display: flex;
+  width: min(310px, 100%);
+  margin: 0 auto 22px;
+}
+
+
 * {
   box-sizing: border-box;
 }
