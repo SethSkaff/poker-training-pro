@@ -3,6 +3,7 @@ import {
   applyBettingAction,
   createBettingRound,
   getLegalActions,
+  isStackOffCommand,
   nextToAct,
   type BettingPlayerState,
   type BettingRoundState,
@@ -33,6 +34,25 @@ function act(
 }
 
 describe("betting round", () => {
+  it("recognizes stack-offs regardless of command spelling", () => {
+    const legal = {
+      playerId: "hero",
+      toCall: 150,
+      check: false,
+      fold: true,
+      call: true,
+      callAmount: 150,
+      raise: { minTo: 300, maxTo: 1_000 },
+      allIn: true,
+      allInTo: 1_000,
+      raisingReopened: true,
+    };
+    expect(isStackOffCommand({ type: "all-in" }, legal)).toBe(true);
+    expect(isStackOffCommand({ type: "raise", to: 1_000 }, legal)).toBe(true);
+    expect(isStackOffCommand({ type: "raise", to: 500 }, legal)).toBe(false);
+    expect(isStackOffCommand({ type: "call" }, legal, 850)).toBe(true);
+  });
+
   it("allows a legal open shove when action first reaches the player", () => {
     const state = createBettingRound(
       [player("hero", 950), player("bb", 950, 50)],

@@ -129,6 +129,28 @@ describe("Normal mode policy", () => {
     expect(decideNormalAction(input)).toEqual(decideNormalAction(input));
   });
 
+  it("does not let a display-name change alter the seeded policy result", () => {
+    const originalInformation = informationSet();
+    const renamedInformation = structuredClone(originalInformation);
+    renamedInformation.players = renamedInformation.players.map((player) => ({
+      ...player,
+      name: player.id === renamedInformation.viewerId ? "Wesley" : "Arbitrary",
+    }));
+    const common = {
+      legalActions,
+      evaluations: drawEvaluations,
+      profile: "pressure" as const,
+      bigBlind: 200,
+      seed: "display-name-invariance",
+    };
+
+    expect(
+      decideNormalAction({ ...common, informationSet: renamedInformation }),
+    ).toEqual(
+      decideNormalAction({ ...common, informationSet: originalInformation }),
+    );
+  });
+
   it("rejects fractional bet and raise targets before the engine sees them", () => {
     expect(() =>
       decideNormalAction({

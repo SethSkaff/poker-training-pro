@@ -98,7 +98,7 @@ describe("public tournament action presentation", () => {
     cards already on the felt. Nothing failed while it was missing, which is why
     it needs a test rather than a fix.
   */
-  it("tells the scene a hand was dealt, to the players who were dealt in", () => {
+  it("tells the scene a hand was dealt without adding a seat text badge", () => {
     const dealt = {
       id: "deal",
       kind: "hole-cards-dealt" as const,
@@ -107,7 +107,6 @@ describe("public tournament action presentation", () => {
     };
     expect(seatPresentationUpdate(dealt, "hero")).toEqual({
       sceneAction: "deal",
-      label: "Dealt in",
     });
     expect(seatPresentationUpdate(dealt, "railbird")).toEqual({});
   });

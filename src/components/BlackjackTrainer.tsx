@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import "./BlackjackTrainer.css";
 import {
+  answerTrainerSession,
+  loadTrainerProgress,
+  nextTrainerSession,
+  saveTrainerProgress,
+  trainerLevelLabel,
+} from "../blackjack/trainer";
+import {
   ArrowLeft,
   BookOpen,
   Check,
@@ -191,7 +198,7 @@ function QuickCountPanel() {
   const [speed, setSpeed] = useState<number>(2.5);
   const [sequence, setSequence] = useState<BlackjackCard[]>([]);
   const [visibleCount, setVisibleCount] = useState(0);
-  const [phase, setPhase] = useState<"idle" | "dealing" | "answer">("idle");
+  const [phase, setPhase] = useState<"idle" | "dealing" | "holding" | "answer">("idle");
   const [answer, setAnswer] = useState("");
   const [attempt, setAttempt] = useState<QuickAttempt | null>(null);
   const [attempts, setAttempts] = useState<QuickAttempt[]>([]);
@@ -200,7 +207,7 @@ function QuickCountPanel() {
   useEffect(() => {
     if (phase !== "dealing") return;
     if (visibleCount >= sequence.length) {
-      setPhase("answer");
+      setPhase("holding");
       return;
     }
     const timer = window.setTimeout(
@@ -209,6 +216,12 @@ function QuickCountPanel() {
     );
     return () => window.clearTimeout(timer);
   }, [phase, sequence.length, speed, visibleCount]);
+
+  useEffect(() => {
+    if (phase !== "holding") return;
+    const timer = window.setTimeout(() => setPhase("answer"), 1000);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
 
   const startRound = () => {
     const nextSequence = shuffleShoe(createShoe(), Date.now() + length * 17).slice(0, length);
@@ -223,7 +236,7 @@ function QuickCountPanel() {
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const numericAnswer = Number(answer);
-    if (!Number.isInteger(numericAnswer) || phase !== "answer") return;
+    if (!answer.trim() || !Number.isInteger(numericAnswer) || phase !== "answer" || attempt) return;
     const correctCount = getRunningCount(sequence);
     const nextAttempt: QuickAttempt = {
       cards: sequence,
@@ -294,8 +307,8 @@ function QuickCountPanel() {
           <span>Hi-Lo tags</span>
           <strong>2–6 +1 · 7–9 0 · 10–A −1</strong>
           <button className="primary-button" type="button" onClick={startRound}>
-            {phase === "dealing" ? <TimerReset size={17} /> : <Shuffle size={17} />}
-            {phase === "dealing" ? "Restart sequence" : "Deal sequence"}
+            {phase === "dealing" || phase === "holding" ? <TimerReset size={17} /> : <Shuffle size={17} />}
+            {phase === "dealing" || phase === "holding" ? "Restart sequence" : "Deal sequence"}
           </button>
         </div>
       </div>
@@ -313,30 +326,29 @@ function QuickCountPanel() {
               <strong>{visibleCount} / {sequence.length}</strong>
             </div>
             <div className="quick-count-cards">
-              {sequence.slice(0, visibleCount).map((card, index) => (
+              {phase === "answer" && !attempt ? (
+                <form className="quick-count-answer" onSubmit={submit}>
+                  <label htmlFor="quick-count-answer">Your final running count</label>
+                  <div>
+                    <input
+                      id="quick-count-answer"
+                      type="number"
+                      step="1"
+                      required
+                      value={answer}
+                      onChange={(event) => setAnswer(event.target.value)}
+                      autoFocus
+                    />
+                    <button className="primary-button" type="submit">Grade count</button>
+                  </div>
+                </form>
+              ) : sequence.slice(0, visibleCount).map((card, index) => (
                 <BlackjackCardView key={`${card.id}-${index}`} card={card} compact />
               ))}
             </div>
           </>
         )}
       </div>
-
-      {phase === "answer" && !attempt ? (
-        <form className="quick-count-answer" onSubmit={submit}>
-          <label htmlFor="quick-count-answer">Your final running count</label>
-          <div>
-            <input
-              id="quick-count-answer"
-              type="number"
-              step="1"
-              value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              autoFocus
-            />
-            <button className="primary-button" type="submit">Grade count</button>
-          </div>
-        </form>
-      ) : null}
 
       {attempt ? (
         <div className={`blackjack-result blackjack-result--${attempt.error === 0 ? "correct" : "incorrect"}`}>
@@ -1020,86 +1032,38 @@ function BlackjackGameReview({ table, onNewShoe }: { table: TablesState; onNewSh
   );
 }
 
-type TrainerScenario =
-  | {
-      kind: "action";
-      hand: BlackjackHand;
-      dealerUpcard: BlackjackCard;
-      trueCount: number;
-      availableActions: BlackjackAction[];
-      prompt: string;
-    }
-  | {
-      kind: "insurance";
-      hand: BlackjackHand;
-      dealerUpcard: BlackjackCard;
-      trueCount: number;
-      prompt: string;
-    };
-
 const trainerCard = (rank: BlackjackCard["rank"], suit: BlackjackCard["suit"] = "♠") => cardFromRank(rank, suit);
 
-function createTrainerScenario(seed: number): TrainerScenario {
-  const random = createSeededRng(seed * 173 + 31);
-  const choices: (() => TrainerScenario)[] = [
-    () => ({ kind: "action", hand: { cards: [trainerCard("10"), trainerCard("2", "♥")] }, dealerUpcard: trainerCard("2", "♦"), trueCount: random() > 0.5 ? 3 : 2, availableActions: ["hit", "stand", "double", "surrender"], prompt: "12 vs 2 · test the +3 index" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("10"), trainerCard("3", "♥")] }, dealerUpcard: trainerCard("3", "♦"), trueCount: random() > 0.5 ? -2 : -3, availableActions: ["hit", "stand", "double", "surrender"], prompt: "13 vs 3 · test the −2 index" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("6"), trainerCard("5", "♥")] }, dealerUpcard: trainerCard("A", "♦"), trueCount: random() > 0.5 ? 1 : 0, availableActions: ["hit", "stand", "double", "surrender"], prompt: "11 vs A · test the +1 index" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("6"), trainerCard("4", "♥")] }, dealerUpcard: trainerCard("10", "♦"), trueCount: random() > 0.5 ? 4 : 3, availableActions: ["hit", "stand", "double", "surrender"], prompt: "10 vs 10 · test the +4 index" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("10"), trainerCard("10", "♥")] }, dealerUpcard: trainerCard("5", "♦"), trueCount: random() > 0.5 ? 5 : 4, availableActions: ["hit", "stand", "double", "split", "surrender"], prompt: "10,10 vs 5 · test the +5 split index" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("10"), trainerCard("5", "♥")] }, dealerUpcard: trainerCard("10", "♦"), trueCount: random() > 0.5 ? 0 : -1, availableActions: ["hit", "stand", "double", "surrender"], prompt: "15 vs 10 · late surrender is a count deviation" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("10"), trainerCard("5", "♥")] }, dealerUpcard: trainerCard("10", "♦"), trueCount: 4, availableActions: ["hit", "stand", "double"], prompt: "15 vs 10 · surrender unavailable" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("10"), trainerCard("5", "♥")] }, dealerUpcard: trainerCard("5", "♦"), trueCount: random() > 0.5 ? -2 : -3, availableActions: ["hit", "stand", "double", "surrender"], prompt: "15 vs 5 · test the −2 stand index" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("10"), trainerCard("2", "♥")] }, dealerUpcard: trainerCard("5", "♦"), trueCount: random() > 0.5 ? -2 : -3, availableActions: ["hit", "stand", "double", "surrender"], prompt: "12 vs 5 · test the −2 index" }),
-    () => ({ kind: "action", hand: { cards: [trainerCard("A"), trainerCard("7", "♥")] }, dealerUpcard: trainerCard("2", "♦"), trueCount: Math.floor(random() * 7) - 2, availableActions: ["hit", "stand", "double", "surrender"], prompt: "Soft 18 vs 2 · basic strategy foundation" }),
-    () => ({ kind: "insurance", hand: { cards: [trainerCard("9"), trainerCard("7", "♥")] }, dealerUpcard: trainerCard("A", "♦"), trueCount: random() > 0.5 ? 3 : 2, prompt: "Insurance vs A · test the +3 index" }),
-  ];
-  return choices[Math.floor(random() * choices.length)]();
-}
-
 function TrainerPanel() {
-  const [scenarioNumber, setScenarioNumber] = useState(1);
-  const [result, setResult] = useState<{ chosen: BlackjackAction | InsuranceAction; decision: StrategyDecision | InsuranceAction } | null>(null);
-  const [correct, setCorrect] = useState(0);
-  const scenario = useMemo(() => createTrainerScenario(scenarioNumber), [scenarioNumber]);
+  const [session, setSession] = useState(() => nextTrainerSession(loadTrainerProgress()));
+  const [saved, setSaved] = useState(true);
+  const { scenario, progress, result } = session;
+  useEffect(() => {
+    setSaved(saveTrainerProgress(progress));
+  }, [progress]);
 
-  const next = () => {
-    setScenarioNumber((number) => number + 1);
-    setResult(null);
-  };
-
-  const answerAction = (action: BlackjackAction) => {
-    if (scenario.kind !== "action") return;
-    const decision = getOptimalAction(scenario.hand, scenario.dealerUpcard, scenario.trueCount, BLACKJACK_RULES, scenario.availableActions);
-    if (action === decision.action) setCorrect((value) => value + 1);
-    setResult({ chosen: action, decision });
-  };
-
-  const answerInsurance = (action: InsuranceAction) => {
-    if (scenario.kind !== "insurance") return;
-    const decision = getInsuranceAction(scenario.trueCount);
-    if (action === decision) setCorrect((value) => value + 1);
-    setResult({ chosen: action, decision });
-  };
-
-  const resultDecision = result?.decision;
-  const resultCorrect = result && resultDecision
-    ? scenario.kind === "action" ? result.chosen === (resultDecision as StrategyDecision).action : result.chosen === resultDecision
-    : false;
-
+  const next = () => setSession((current) => current.result ? nextTrainerSession(current.progress) : current);
+  const answerAction = (action: BlackjackAction) => setSession((current) => answerTrainerSession(current, action));
+  const answerInsurance = (action: InsuranceAction) => setSession((current) => answerTrainerSession(current, action));
+  const resultDecision = !result ? null : scenario.kind === "action"
+    ? getOptimalAction(scenario.hand, scenario.dealerUpcard, scenario.trueCount, BLACKJACK_RULES, scenario.availableActions)
+    : getInsuranceAction(scenario.trueCount);
+  const resultCorrect = result?.correct ?? false;
   return (
     <section className="blackjack-panel blackjack-trainer-panel" aria-labelledby="trainer-title">
       <div className="blackjack-panel__heading">
         <div>
-          <p className="eyebrow">Puzzle decisions</p>
+          <p className="eyebrow">Adaptive strategy practice</p>
           <h2 id="trainer-title">Trainer</h2>
         </div>
-        <div className="blackjack-trainer-score"><span>Correct</span><strong>{correct}</strong></div>
+        <div className="blackjack-trainer-score"><span>ELO</span><strong>{progress.elo}</strong><small>{trainerLevelLabel(progress.elo)}<br />{progress.correct} / {progress.answered} correct</small></div>
       </div>
+      <p>Fresh hands matched to your rating. Practice basic strategy and count decisions, with more close calls as you improve.</p>
+      {!saved ? <p role="status">Progress is kept for this session. Local saving is unavailable.</p> : null}
 
       <div className="trainer-scenario-card">
         <div className="trainer-scenario-card__meta">
-          <span>Scenario {scenarioNumber}</span>
+          <span>Scenario {progress.answered + (result ? 0 : 1)}</span>
           <strong>{BLACKJACK_RULES.decks} decks · {BLACKJACK_RULES.dealerHitsSoft17 ? "H17" : "S17"} · Hi-Lo</strong>
           <div className="trainer-count"><span>True count</span><b><small>TC</small> {formatCount(scenario.trueCount)}</b></div>
         </div>
@@ -1127,11 +1091,13 @@ function TrainerPanel() {
       ) : (
         <div className={`trainer-result ${resultCorrect ? "is-correct" : "is-incorrect"}`}>
           <div className="trainer-result__headline"><span>{resultCorrect ? "Correct" : "Incorrect"}</span><strong>{scenario.kind === "action" ? actionLabel((resultDecision as StrategyDecision).action) : actionLabel(resultDecision as InsuranceAction)}</strong></div>
+          <p>ELO {formatCount(result.eloDelta)} · {progress.elo}</p>
           {scenario.kind === "action" && resultDecision ? (
             <div className="trainer-result__explanation">
               <p><strong>Basic strategy:</strong> {actionLabel((resultDecision as StrategyDecision).basicAction)}</p>
-              <p><strong>Count play:</strong> {(resultDecision as StrategyDecision).deviationApplied ? `${actionLabel((resultDecision as StrategyDecision).action)} at TC ${formatCount((resultDecision as StrategyDecision).index ?? 0)} or greater.` : "No I18/Fab 4 deviation applies."}</p>
+              <p><strong>Count play:</strong> {(resultDecision as StrategyDecision).deviationApplied ? "The count changes the basic-strategy action." : "Keep the basic-strategy action at this count."}</p>
               <p>{(resultDecision as StrategyDecision).explanation}</p>
+              {scenario.lesson === "foundation" ? <p>No I18/Fab 4 playing index changes this action across the trainer’s count range. The count alone is not a reason to switch.</p> : !(resultDecision as StrategyDecision).deviationApplied ? <p>This hand has a count-dependent decision, but this count stays on the basic-strategy side of the threshold.</p> : null}
             </div>
           ) : <p className="trainer-result__explanation"><strong>Hi-Lo insurance index:</strong> take insurance at TC +3 or greater. At TC {formatCount(scenario.trueCount)}, the correct answer is {actionLabel(resultDecision as InsuranceAction)}.</p>}
           <button className="primary-button" type="button" onClick={next}><ChevronRight size={17} /> Next scenario</button>

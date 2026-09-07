@@ -624,6 +624,7 @@ export async function deriveHandReview(
       informationSet,
       legalActions: legal,
       bigBlind,
+      smallestChip: runner.session.tournament.structure.smallestChip ?? 1,
       seed: `review:${replay.eventId}:${hand.handId}:${decisions.length}`,
       simulations,
       temperature: 0.48,

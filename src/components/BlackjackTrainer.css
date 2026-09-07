@@ -282,8 +282,8 @@
 .quick-count-cards .blackjack-card strong, .quick-count-cards .blackjack-card > span { font-size: 18px; }
 .quick-count-cards .blackjack-card:last-child { box-shadow: 0 0 0 2px #d7b777, 0 5px 10px #0005; }
 .quick-count-panel > .blackjack-stat-grid { grid-column: 2; }
-.quick-count-panel > .quick-count-answer, .quick-count-panel > .blackjack-result, .quick-count-panel > .blackjack-review-details { grid-column: 1 / -1; }
-.quick-count-answer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding: 14px 18px; border: 1px solid #6d603f; background: #272719; border-radius: 5px; }
+.quick-count-panel > .blackjack-result, .quick-count-panel > .blackjack-review-details { grid-column: 1 / -1; }
+.quick-count-answer { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; max-width: 100%; padding: 14px 18px; border: 1px solid #6d603f; background: #272719; border-radius: 5px; }
 .quick-count-answer label { color: var(--bj-ivory); font-size: 13px; }
 .quick-count-answer > div { display: flex; gap: 10px; }
 .quick-count-answer input, .blackjack-checkpoint input, .blackjack-tc-entry input { width: 80px; min-height: 38px; border: 1px solid #67725a; border-radius: 4px; padding: 6px 10px; background: #0b1912; color: #f0dfb8; font: 600 23px "Barlow Condensed", sans-serif; }

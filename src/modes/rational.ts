@@ -47,6 +47,8 @@ export interface RationalPolicyInput {
   informationSet: PlayerInformationSet;
   legalActions: LegalActionSet;
   bigBlind: number;
+  /** Smallest physical chip denomination for ordinary wagers. */
+  smallestChip?: number;
   seed: DeckSeed;
   simulations?: number;
   /** Developer/runtime scheduling control; does not affect sampled outcomes. */
@@ -162,6 +164,25 @@ export interface RationalActionOption {
   role: RationalActionRole;
   rationale: string;
   response?: RationalActionResponseAudit;
+  /**
+   * Sizing telemetry for ordinary generated wagers.  Rule-derived targets
+   * (calls, forced bets, min raises, and exact stack-offs) intentionally omit
+   * this field because they have no abstract fraction to compare against.
+   */
+  sizing?: RationalWagerSizingAudit;
+}
+
+export interface RationalWagerSizingAudit {
+  /** Abstract target before chip-rack quantization or legal-bound clamping. */
+  desiredTarget: number;
+  /** Nearest target on the configured physical chip rack. */
+  rackTarget: number;
+  /** Target actually emitted to the betting engine. */
+  executedTarget: number;
+  /** Rack-only adjustment, in chips. */
+  rackAdjustment: number;
+  /** Additional adjustment caused by a legal min/max edge. */
+  legalBoundAdjustment: number;
 }
 
 export interface RationalDecisionAudit {
@@ -214,6 +235,7 @@ export interface RationalDecisionAudit {
     > & {
       response?: RationalActionResponseAudit;
       uncertaintyBigBlinds: number;
+      sizing?: RationalWagerSizingAudit;
     }
   >;
   confidence: "low" | "medium" | "high";
@@ -253,6 +275,7 @@ interface CandidateAction {
   id: string;
   command: BettingActionCommand;
   additionalRisk: number;
+  sizing?: RationalWagerSizingAudit;
 }
 
 interface PublicPressureContext {
@@ -282,7 +305,7 @@ interface PublicOpponent {
   streetCommitted: number;
 }
 
-const POLICY_VERSION = "rational-v4";
+const POLICY_VERSION = "rational-v5";
 // v3 changed the way multiple hidden ranges are joined; v4 conditions each
 // wager on the public-range hands which continue. Retaining the v2
 // random-stream namespace keeps every unaffected heads-up sample and action
@@ -437,17 +460,141 @@ export function aggregateIndependentAllFoldProbability(
   }, 1);
 }
 
-function roundChips(value: number, unit: number): number {
-  // Snap to the requested increment, then force a whole-chip amount. When the
-  // sizing unit is fractional (e.g. bigBlind/4 with a 50-chip big blind) the
-  // snapped value can be a half-chip like 187.5; the engine only accepts safe
-  // integer targets, so an unrounded value would produce an illegal bet/raise
-  // that trips `requireTarget`. Rounding here is a no-op whenever `unit` is a
-  // whole number (the snapped value is already integral), so decision cells
-  // that already used integer sizing — including the frozen bot-league
-  // baseline at bigBlind=100 — are bit-for-bit unchanged.
-  const snapped = Math.max(unit, Math.round(value / unit) * unit);
-  return Math.round(snapped);
+/**
+ * Quantize an ordinary wager to the physical chip rack.  This is deliberately
+ * separate from legal-bound clamping: a minimum raise, a forced bet, and an
+ * exact all-in target are state-derived quantities and must remain exact even
+ * when they are not divisible by the current rack denomination.
+ */
+export function quantizeWager(value: number, smallestChip: number): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Wager must be a non-negative finite amount");
+  }
+  if (!Number.isSafeInteger(smallestChip) || smallestChip <= 0) {
+    throw new Error("Smallest chip must be a positive safe integer");
+  }
+  return Math.max(smallestChip, Math.round(value / smallestChip) * smallestChip);
+}
+
+/**
+ * Prices tournament stack exposure in the same chip units as branch EV.
+ *
+ * This is intentionally a pure, exported calculation so review, telemetry,
+ * and regression fixtures can show the reason an over-pot candidate lost
+ * utility.  It is a smooth exposure model, not a hard SPR/all-in rule:
+ * wagers up to one quarter of the effective stack are uncharged, and strong
+ * called-showdown equity removes the survival shortfall.
+ */
+export function calculateStackExposurePenalty(input: {
+  additionalRisk: number;
+  pot: number;
+  effectiveStack: number;
+  calledEquity: number;
+  riskPremium: number;
+}): number {
+  if (
+    !Number.isFinite(input.additionalRisk) ||
+    input.additionalRisk < 0 ||
+    !Number.isFinite(input.pot) ||
+    input.pot < 0 ||
+    !Number.isFinite(input.effectiveStack) ||
+    input.effectiveStack <= 0 ||
+    !Number.isFinite(input.calledEquity) ||
+    input.calledEquity < 0 ||
+    input.calledEquity > 1 ||
+    !Number.isFinite(input.riskPremium) ||
+    input.riskPremium < 0
+  ) {
+    throw new Error("Invalid stack-exposure penalty input");
+  }
+  const committedShare = clamp(
+    input.additionalRisk / input.effectiveStack,
+    0,
+    1,
+  );
+  const exposure = Math.max(0, committedShare - 0.25) / 0.75;
+  const survivalWeight = clamp(0.55 + input.riskPremium * 3, 0.55, 1.6);
+  const calledStrength = clamp(input.calledEquity, 0, 1);
+  const survivalShortfall = clamp(0.62 - calledStrength, 0, 0.62);
+  const stackPreservationPenalty =
+    exposure * exposure * input.effectiveStack * survivalWeight * survivalShortfall;
+  const excessOverPot = Math.max(0, input.additionalRisk - input.pot);
+  const excessOverPotPenalty =
+    (excessOverPot * excessOverPot / input.effectiveStack) *
+    clamp(1 - calledStrength, 0, 1);
+  return stackPreservationPenalty + excessOverPotPenalty;
+}
+
+/**
+ * Prices the option cost of re-opening action after a visible street bet or
+ * raise.  This is kept pure and exported alongside the stack-exposure model
+ * so regression fixtures can account for every tournament utility adjustment
+ * without duplicating policy internals.
+ */
+export function calculateReopenPenalty(input: {
+  wager: number;
+  streetAggression: number;
+  reRaisedProbability: number;
+  showdownEquity: number;
+  requiredEquity: number;
+}): number {
+  if (
+    !Number.isFinite(input.wager) ||
+    input.wager < 0 ||
+    !Number.isFinite(input.streetAggression) ||
+    input.streetAggression < 0 ||
+    !Number.isFinite(input.reRaisedProbability) ||
+    input.reRaisedProbability < 0 ||
+    input.reRaisedProbability > 1 ||
+    !Number.isFinite(input.showdownEquity) ||
+    input.showdownEquity < 0 ||
+    input.showdownEquity > 1 ||
+    !Number.isFinite(input.requiredEquity) ||
+    input.requiredEquity < 0 ||
+    input.requiredEquity > 1
+  ) {
+    throw new Error("Invalid re-open penalty input");
+  }
+  if (input.streetAggression <= 0 || input.wager === 0) return 0;
+  const strongValue = clamp(
+    (input.showdownEquity - input.requiredEquity - 0.12) / 0.24,
+    0,
+    1,
+  );
+  const reopenRate = clamp(
+    0.07 + Math.max(0, input.streetAggression - 1) * 0.04 +
+      input.reRaisedProbability * 0.15,
+    0.07,
+    0.3,
+  );
+  return input.wager * reopenRate * (1 - strongValue * 0.55);
+}
+
+function quantizedWithinBounds(
+  value: number,
+  smallestChip: number,
+  minimum: number,
+  maximum: number,
+): {
+  target: number;
+  rackTarget: number;
+  sizing: Omit<RationalWagerSizingAudit, "executedTarget">;
+} {
+  const rackTarget = quantizeWager(value, smallestChip);
+  // If rounding crosses a legal edge, retain the exact edge.  This preserves
+  // legal min-raise/short-stack semantics rather than making the rack rule
+  // capable of emitting an illegal target.
+  const target = clamp(rackTarget, minimum, maximum);
+  return {
+    target,
+    rackTarget,
+    sizing: {
+      desiredTarget: value,
+      rackTarget,
+      rackAdjustment: rackTarget - value,
+      legalBoundAdjustment: target - rackTarget,
+    },
+  };
 }
 
 function aggressionFor(actions: readonly HandActionRecord[], playerId: string): number {
@@ -1525,15 +1672,24 @@ function addCandidate(
   map: Map<string, CandidateAction>,
   command: BettingActionCommand,
   additionalRisk: number,
+  sizing?: Omit<RationalWagerSizingAudit, "executedTarget">,
 ): void {
   const id = command.to === undefined ? command.type : `${command.type}:${command.to}`;
-  map.set(id, { id, command, additionalRisk });
+  map.set(id, {
+    id,
+    command,
+    additionalRisk,
+    ...(sizing && command.to !== undefined
+      ? { sizing: { ...sizing, executedTarget: command.to } }
+      : {}),
+  });
 }
 
 function buildCandidates(
   informationSet: PlayerInformationSet,
   legal: LegalActionSet,
   bigBlind: number,
+  smallestChip: number,
   additionalActions: readonly BettingActionCommand[] = [],
 ): CandidateAction[] {
   const hero = informationSet.players.find(
@@ -1550,17 +1706,25 @@ function buildCandidates(
 
   if (legal.bet) {
     const desired = [0.33, 0.66, 1].map((fraction) =>
-      clamp(
-        roundChips(informationSet.pot * fraction, Math.max(1, bigBlind / 4)),
+      quantizedWithinBounds(
+        informationSet.pot * fraction,
+        smallestChip,
         legal.bet?.min ?? 0,
         legal.bet?.max ?? 0,
       ),
     );
-    for (const to of new Set([legal.bet.min, ...desired, legal.bet.max])) {
+    const maxIsStackOff = legal.bet.max === legal.allInTo;
+    const desiredByTarget = new Map(
+      desired.map((entry) => [entry.target, entry]),
+    );
+    for (const to of new Set([legal.bet.min, ...desired.map((entry) => entry.target), legal.bet.max])) {
+      if (maxIsStackOff && to === legal.allInTo) continue;
+      const sizing = desiredByTarget.get(to)?.sizing;
       addCandidate(
         candidates,
         { type: "bet", to },
         Math.max(0, to - hero.streetCommitted),
+        sizing,
       );
     }
   }
@@ -1578,11 +1742,9 @@ function buildCandidates(
           ? [0.75, 1.1, 1.5]
           : [0.5, 0.8, 1.1];
     const desired = fractions.map((fraction) =>
-      clamp(
-        roundChips(
-          informationSet.currentBet + potAfterCall * fraction,
-          Math.max(1, bigBlind / 4),
-        ),
+      quantizedWithinBounds(
+        informationSet.currentBet + potAfterCall * fraction,
+        smallestChip,
         legal.raise?.minTo ?? 0,
         legal.raise?.maxTo ?? 0,
       ),
@@ -1593,16 +1755,37 @@ function buildCandidates(
     // `lastFullRaise` only ever grew by the previous increment, so a chain of
     // min re-raises needs hundreds of iterations to exhaust a deep stack.
     // It is reinstated only when the stack leaves no larger legal sizing.
-    const smallestDesired = Math.min(...desired);
-    const sizes = new Set(desired);
-    if (legal.raise.maxTo <= smallestDesired) sizes.add(legal.raise.minTo);
-    sizes.add(legal.raise.maxTo);
+    const desiredByTarget = new Map(
+      desired.map((entry) => [entry.target, entry]),
+    );
+    const sizes = new Set(desired.map((entry) => entry.target));
+    // A stack-off has its own command semantics.  Keeping it out of the
+    // ordinary raise set makes the action type truthful in policy telemetry,
+    // replay, and regression tests while preserving the legal candidate.
+    const maxIsStackOff = legal.raise.maxTo === legal.allInTo;
+    // If every pot-fraction target is above the stack cap, clamping them to
+    // `maxTo` must not smuggle the minimum legal raise back into the set.  That
+    // loophole recreated the old arithmetic raise war: once the pot was larger
+    // than a player's stack, each actor selected `minTo` and the next actor
+    // could increase it by the same tiny increment indefinitely.  A minimum
+    // raise is retained only when it is literally the sole legal non-stack-off
+    // target.
+    if (
+      legal.raise.maxTo === legal.raise.minTo &&
+      !maxIsStackOff
+    ) {
+      sizes.add(legal.raise.minTo);
+    }
+    if (!maxIsStackOff) sizes.add(legal.raise.maxTo);
 
     for (const to of sizes) {
+      if (maxIsStackOff && to === legal.allInTo) continue;
+      const sizing = desiredByTarget.get(to)?.sizing;
       addCandidate(
         candidates,
         { type: "raise", to },
         Math.max(0, to - hero.streetCommitted),
+        sizing,
       );
     }
   }
@@ -1702,7 +1885,6 @@ function responseForCandidate(
     (opponent) => opponent.status === "all-in",
   );
   const responseOpponents = [...forcedResponders, ...ableToRespond];
-  const wager = Math.max(0, candidate.additionalRisk);
   const foldThresholdFor = (opponent: (typeof opponentPlayers)[number]): number => {
     if (opponent.status === "all-in") return 0;
     const effectiveCall = Math.min(
@@ -1714,8 +1896,12 @@ function responseForCandidate(
     // root across the table: independent defender probabilities are combined
     // by the sampled joint response event below, so five 80% folders produce
     // approximately 0.8^5 all-fold probability rather than 80% or 92.5%.
-    const pressureFoldTarget = wager /
-      Math.max(1, informationSet.pot + wager);
+    // Fold pressure is determined by the amount this defender can actually
+    // call.  Using the bettor's uncapped wager here makes a short stack fold
+    // as if it faced the full deep-stack shove, and lets asymmetric stacks
+    // manufacture too much fold equity.
+    const pressureFoldTarget = effectiveCall /
+      Math.max(1, informationSet.pot + effectiveCall);
     const aggression =
       ranges.find((range) => range.opponentId === opponent.id)?.aggression ?? 0;
     const publicActions =
@@ -1795,13 +1981,15 @@ function responseForCandidate(
   }
   const simulations = samples.length;
   const continuations = calls + reRaises;
-  // Live play uses 60 samples, so a narrow branch can contain only a handful
-  // of observations. Treat the unconditional public-range estimate as a
-  // finite prior instead of letting one lucky/unlucky caller dictate EV.
-  const priorSamples = 12;
-  const regularizedEquity = (points: number, observations: number): number =>
-    (points + fallbackEquity * priorSamples) /
-    (observations + priorSamples);
+  // A response branch is conditional on the sampled hands that actually
+  // continue against this wager.  The unconditional pre-action equity is not
+  // a valid prior for that narrower range: using it here made the Wesley
+  // shove's 2/7 observed caller equity look like 0.505 instead of 0.286.
+  // Keep the fallback only for an empty branch, where no conditional estimate
+  // exists; the reported uncertainty remains the honest signal for a thin
+  // branch.
+  const conditionalEquity = (points: number, observations: number): number =>
+    observations > 0 ? points / observations : fallbackEquity;
   const allFoldProbability = simulations ? folds / simulations : 0;
   const callProbability = simulations ? calls / simulations : 0;
   const reRaiseProbability = simulations ? reRaises / simulations : 0;
@@ -1817,12 +2005,12 @@ function responseForCandidate(
     callProbability,
     reRaiseProbability,
     continuingRangePercent,
-    conditionalEquity: regularizedEquity(
+    conditionalEquity: conditionalEquity(
       callPoints + reRaisePoints,
       continuations,
     ),
-    callEquity: regularizedEquity(callPoints, calls),
-    reRaiseEquity: regularizedEquity(reRaisePoints, reRaises),
+    callEquity: conditionalEquity(callPoints, calls),
+    reRaiseEquity: conditionalEquity(reRaisePoints, reRaises),
     expectedContinuingOpponents: simulations
       ? continuingOpponents / simulations
       : 0,
@@ -1918,6 +2106,7 @@ function scoreCandidates(
   requiredEquityApplicable: boolean,
 ): Array<Omit<RationalActionOption, "probability">> {
   const requiredEquity = clamp(potOdds + riskPremium, 0, 0.98);
+  const streetAggression = streetAggressionCount(informationSet);
   const activeOpponents = informationSet.players.filter(
     (player) =>
       player.id !== informationSet.viewerId &&
@@ -2012,6 +2201,21 @@ function scoreCandidates(
         calledEquity,
         expectedOpponentContribution: response?.expectedOpponentContribution,
       });
+      // Re-opening action after a public bet/raise has an option cost that a
+      // one-shot fold/call/raise equation does not express: the bettor gives
+      // up the cheaper call branch and invites the already-strengthened range
+      // to continue over the top.  Restore the bounded continuation charge
+      // that existed before the `e578b41` cross-cutting refactor.  It is zero
+      // in an unopened pot, grows smoothly with visible aggression, and is
+      // discounted for a robust value hand; it is not a global “never raise”
+      // or SPR threshold.
+      chipUtility -= calculateReopenPenalty({
+        wager,
+        streetAggression,
+        reRaisedProbability: reRaisedShare,
+        showdownEquity,
+        requiredEquity,
+      });
     }
 
     // Tournament risk is deliberately applied after base chip EV is complete.
@@ -2019,6 +2223,24 @@ function scoreCandidates(
     // the number of opponents in any equity/response calculation.
     if (type !== "fold") {
       chipUtility -= riskPremium * candidate.additionalRisk;
+    }
+    // A tournament decision has a nonlinear cost when it risks substantially
+    // more than the pot currently available.  This is not an SPR cutoff or an
+    // all-in ban: a pot-sized wager has zero charge, a short-stack shove has a
+    // small charge, and a robust value hand has no charge because its modeled
+    // equity when called is high.  The first term is the restored
+    // stack-preservation brake from the pre-`e578b41` policy; the second term
+    // specifically prices the excess-over-pot tail that made Wesley's shove
+    // attractive.  Both remain in chip-EV units and are part of candidate
+    // scoring, rather than a hidden post-selection veto.
+    if (type !== "fold" && type !== "check" && type !== "call") {
+      chipUtility -= calculateStackExposurePenalty({
+        additionalRisk: candidate.additionalRisk,
+        pot: informationSet.pot,
+        effectiveStack: Math.max(1, effectiveStack),
+        calledEquity,
+        riskPremium,
+      });
     }
     const utilityBigBlinds = chipUtility / bigBlind;
     const role = actionRole(
@@ -2059,6 +2281,7 @@ function scoreCandidates(
         requiredEquityApplicable,
       ),
       ...(response ? { response } : {}),
+      ...(candidate.sizing ? { sizing: candidate.sizing } : {}),
     };
   });
 }
@@ -2125,6 +2348,12 @@ function prepareRationalDecision(
 ): PreparedRationalDecision {
   if (!Number.isSafeInteger(input.bigBlind) || input.bigBlind <= 0) {
     throw new Error("Big blind must be a positive safe integer");
+  }
+  if (
+    input.smallestChip !== undefined &&
+    (!Number.isSafeInteger(input.smallestChip) || input.smallestChip <= 0)
+  ) {
+    throw new Error("Smallest chip must be a positive safe integer");
   }
   const { informationSet, legalActions } = input;
   const { heroCards, opponents } = assertInformationSet(
@@ -2242,6 +2471,7 @@ function assembleRationalDecision(
     informationSet,
     legalActions,
     input.bigBlind,
+    input.smallestChip ?? 1,
     input.additionalActions,
   );
   const countSemantics = derivePlayerCountSemantics(
@@ -2347,7 +2577,7 @@ function assembleRationalDecision(
       },
       opponentRanges: equity.opponentRanges,
       actionEvaluations: distribution.map(
-        ({ id, utilityBigBlinds, uncertaintyBigBlinds, foldEquity, role, rationale, response }) => ({
+        ({ id, utilityBigBlinds, uncertaintyBigBlinds, foldEquity, role, rationale, response, sizing }) => ({
           id,
           utilityBigBlinds,
           uncertaintyBigBlinds,
@@ -2355,6 +2585,7 @@ function assembleRationalDecision(
           role,
           rationale,
           ...(response ? { response } : {}),
+          ...(sizing ? { sizing } : {}),
         }),
       ),
       confidence: confidenceLabel(equity.standardError, equity.simulations),

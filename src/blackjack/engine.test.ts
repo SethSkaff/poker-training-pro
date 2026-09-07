@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BLACKJACK_RULES,
   cardFromRank,
+  getAvailableActions,
   getHiLoTag,
   getInsuranceAction,
   getOptimalAction,
@@ -51,6 +52,15 @@ describe("Blackjack Hi-Lo and strategy engine", () => {
   it("uses the +3 insurance index", () => {
     expect(getInsuranceAction(2)).toBe("decline");
     expect(getInsuranceAction(3)).toBe("insurance");
+  });
+
+  it.each([3, 4, 5, 6])("stands on three-card soft 18 vs %s when doubling is unavailable", (dealer) => {
+    const player = hand("A", "3", "4");
+    const upcard = card(String(dealer) as Parameters<typeof cardFromRank>[0]);
+    const available = getAvailableActions(player, upcard);
+    expect(available).toEqual(["hit", "stand"]);
+    expect(getOptimalAction(player, upcard, -3, BLACKJACK_RULES, available).action).toBe("stand");
+    expect(action(hand("A", "7"), upcard.rank, 0).action).toBe("double");
   });
 
   it("keeps pair surrender precedence and exposes deviation metadata", () => {

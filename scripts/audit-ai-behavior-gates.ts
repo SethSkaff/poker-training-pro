@@ -8,7 +8,8 @@
  * individual decisions each looked defensible.
  *
  * This gate therefore measures whole tournaments and asserts documented
- * tolerance bands rather than single anecdotes. Every bound below carries the
+ * tolerance bands rather than single anecdotes. Behavior bounds use a frozen
+ * blind clock; pacing bounds use a separate nominal live-clock run. Every bound below carries the
  * reason it exists and the value measured when it was set, so a future change
  * that trips it can be judged rather than merely silenced.
  *
@@ -23,6 +24,8 @@ const SEEDS = 8;
 
 interface Bound {
   label: string;
+  /** Which clock produces a valid sample for this bound. */
+  clock?: "frozen" | "live";
   value: (metrics: AiBehaviorMetrics) => number;
   min?: number;
   max?: number;
@@ -32,7 +35,8 @@ interface Bound {
 
 /**
  * Measured on 2026-07-25 after the E11-002 policy corrections, 8 seeds per
- * mode, using the nominal live blind clock. The pacing fields below are
+ * mode. The historical pacing fields below used the nominal live blind clock;
+ * current behavior fields are isolated with a frozen blind clock. The pacing fields below are
  * hero-session milestones: the
  * production session ends when the measured hero busts or wins, not when the
  * remaining field plays down to one winner. Full-field completion is reported
@@ -53,6 +57,7 @@ interface Bound {
 const BOUNDS: Bound[] = [
   {
     label: "completed hero sessions",
+    clock: "live",
     value: (metrics) => metrics.completedEvents / metrics.seeds,
     min: 1,
     max: 1,
@@ -61,6 +66,7 @@ const BOUNDS: Bound[] = [
   },
   {
     label: "hero finish milestone coverage",
+    clock: "live",
     value: (metrics) => metrics.handsToFinish.samples / metrics.seeds,
     min: 1,
     max: 1,
@@ -116,6 +122,13 @@ const BOUNDS: Bound[] = [
     rationale: "All-ins should exist, but not dominate the postflop game.",
   },
   {
+    label: "flop stack-off rate at SPR > 20 facing <= 0.5 pot",
+    value: (metrics) => metrics.highSprFlopFacingSmall.rate,
+    max: 0.1,
+    rationale:
+      "The Wesley incident was a 66 SPR stack-off over a 0.4-pot lead. This conditional tail must remain rare even when aggregate all-in rates look normal.",
+  },
+  {
     label: "median raise size over pot",
     value: (metrics) => metrics.raiseOverPot.median,
     min: 0.2,
@@ -155,6 +168,7 @@ const BOUNDS: Bound[] = [
   },
   {
     label: "median hands to heads-up (surviving heroes)",
+    clock: "live",
     value: (metrics) => metrics.handsToHeadsUp.median,
     min: 8,
     rationale:
@@ -162,6 +176,7 @@ const BOUNDS: Bound[] = [
   },
   {
     label: "median hands to hero finish",
+    clock: "live",
     value: (metrics) => metrics.handsToFinish.median,
     min: 15,
     max: 140,
@@ -170,15 +185,17 @@ const BOUNDS: Bound[] = [
   },
   {
     label: "median hands to first elimination",
+    clock: "live",
     value: (metrics) => metrics.handsToFirstElimination.median,
     min: 2,
     rationale: "A field losing a player in hand 1-2 every time is mutual over-aggression, not variance.",
   },
 ];
 
-function check(metrics: AiBehaviorMetrics): string[] {
+function check(metrics: AiBehaviorMetrics, clock: "frozen" | "live"): string[] {
   const failures: string[] = [];
   for (const bound of BOUNDS) {
+    if ((bound.clock ?? "frozen") !== clock) continue;
     const value = bound.value(metrics);
     const belowMin = bound.min !== undefined && value < bound.min;
     const aboveMax = bound.max !== undefined && value > bound.max;
@@ -200,13 +217,22 @@ const failures: string[] = [];
 const measured: AiBehaviorMetrics[] = [];
 
 for (const mode of ["normal", "rational"] as const) {
-  console.log(`\n${mode} (${SEEDS} seeds, nominal live blind clock)`);
-  // Pacing cannot be measured with a frozen blind clock: a session is
-  // intentionally hero-scoped and may otherwise remain right-censored at the
-  // hand cap. Action-mix diagnostics remain available via --freeze-blinds.
-  const metrics = measureAiBehavior({ mode, seeds: SEEDS, freezeBlinds: false });
-  measured.push(metrics);
-  failures.push(...check(metrics));
+  console.log(`\n${mode} (${SEEDS} seeds, frozen blind clock — behavior bounds)`);
+  // The high-SPR and action-mix bounds must be insulated from blind-level
+  // escalation. Otherwise a late short-stack all-in can hide or overwhelm the
+  // deep-stack flop tail this gate is intended to detect.
+  const behavior = measureAiBehavior({ mode, seeds: SEEDS, freezeBlinds: true });
+  measured.push(behavior);
+  failures.push(...check(behavior, "frozen"));
+}
+
+for (const mode of ["normal", "rational"] as const) {
+  console.log(`\n${mode} (${SEEDS} seeds, nominal live blind clock — pacing bounds)`);
+  // Pacing is a separate experiment. A hero-scoped session may be right
+  // censored under a frozen clock, so completion and milestone bounds are
+  // checked only on the live-clock run.
+  const pacing = measureAiBehavior({ mode, seeds: SEEDS, freezeBlinds: false });
+  failures.push(...check(pacing, "live"));
 }
 
 // E12-001: Rational must be measurably distinct from Normal, not a relabelled

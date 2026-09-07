@@ -22,13 +22,16 @@ import {
 } from "../src/modes/tournamentSession";
 import {
   getLegalActions,
+  isStackOffCommand,
   nextToAct,
   type BettingActionCommand,
   type LegalActionSet,
 } from "../src/engine/betting";
 import type { Street } from "../src/types/poker";
 
-export const NORMAL_ALL_IN_AUDIT_VERSION = "normal-all-in-audit-v1";
+// v2 records semantic stack-offs (including raise-to-max targets) rather than
+// only the engine's explicit `all-in` command spelling.
+export const NORMAL_ALL_IN_AUDIT_VERSION = "normal-all-in-audit-v2";
 export const NORMAL_POLICY_VERSION = "normal-policy-v1";
 export const POLICY_OPTIONS = { simulations: 60, temperature: 0.48 } as const;
 export const MS_PER_LIVE_CLOCK_HAND = 75_000;
@@ -124,6 +127,12 @@ export interface AllInEvent {
   selectedBestAction: boolean;
   usedPersonalityDeviation: boolean;
   rationalBaselineAction: string;
+  selectedActionId: string;
+  selectedActionUtilityBigBlinds: number;
+  selectedActionFoldProbability: number;
+  selectedActionCallProbability: number;
+  selectedActionCallEquity?: number;
+  selectedActionUncertaintyBigBlinds: number;
   legal: {
     allInAvailable: boolean;
     targetMatches: boolean;
@@ -244,11 +253,13 @@ export function commandIsLegal(
     case "bet":
       return Boolean(
         legal.bet && command.to !== undefined &&
+          Number.isSafeInteger(command.to) &&
           command.to >= legal.bet.min && command.to <= legal.bet.max,
       );
     case "raise":
       return Boolean(
         legal.raise && command.to !== undefined &&
+          Number.isSafeInteger(command.to) &&
           command.to >= legal.raise.minTo && command.to <= legal.raise.maxTo,
       );
     case "all-in":
@@ -339,8 +350,12 @@ function recordAllIn(
   ];
   const bigBlind = level?.bigBlind ?? 1;
   const metrics = decision.rationalBaseline.audit.metrics;
-  const targetMatches = decision.command.to === undefined ||
-    decision.command.to === legal.allInTo;
+  const selected = decision.rationalBaseline.chosen;
+  const targetMatches = isStackOffCommand(
+    decision.command,
+    legal,
+    playerBefore.streetCommitted,
+  );
 
   scope.allIns.push({
     clock: scope.clock,
@@ -388,6 +403,14 @@ function recordAllIn(
     selectedBestAction: decision.normal.selectedBestAction,
     usedPersonalityDeviation: decision.normal.usedPersonalityDeviation,
     rationalBaselineAction: decision.rationalBaseline.chosen.command.type,
+    selectedActionId: selected.id,
+    selectedActionUtilityBigBlinds: round(selected.utilityBigBlinds),
+    selectedActionFoldProbability: round(selected.foldEquity),
+    selectedActionCallProbability: round(selected.response?.callProbability ?? 0),
+    ...(selected.response?.callEquity === undefined
+      ? {}
+      : { selectedActionCallEquity: round(selected.response.callEquity) }),
+    selectedActionUncertaintyBigBlinds: round(selected.uncertaintyBigBlinds),
     legal: {
       allInAvailable: legal.allIn,
       targetMatches,
@@ -473,7 +496,14 @@ function playTournament(
       session = applyTournamentSessionAction(session, actorId, decision.command);
       actions += 1;
 
-      if (decision.command.type === "all-in") {
+      const playerBefore = hand.betting.players.find((entry) => entry.id === actorId);
+      if (!playerBefore) throw new Error(`Missing betting player ${actorId}`);
+      const stackOff = isStackOffCommand(
+        decision.command,
+        legal,
+        playerBefore.streetCommitted,
+      );
+      if (stackOff) {
         allInActions += 1;
         if (hand.street === "preflop") sawPreflopAllIn = true;
         else sawPostflopAllIn = true;

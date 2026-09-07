@@ -1002,7 +1002,7 @@ export function settleTournamentSessionHand(
     seats,
     buttonSeat: hand.buttonSeat,
     tableSize: SESSION_TABLE_SIZE,
-    smallestChip: 1,
+    smallestChip: source.tournament.structure.smallestChip ?? 1,
   });
   const winnings = awardMap(resolved.awards, built.refunds);
   let tournament = cloneTournament(source.tournament);
@@ -1235,6 +1235,7 @@ function sessionPolicyContext(
     informationSet,
     legalActions,
     bigBlind: level.bigBlind,
+    smallestChip: session.tournament.structure.smallestChip ?? 1,
     seed: deriveSeed(session.seed, hand.handId, playerId, "rational-policy"),
     simulations: options.simulations,
     temperature: options.temperature,

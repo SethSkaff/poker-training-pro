@@ -27,7 +27,11 @@ import {
   progressTournamentSessionHand,
   type TournamentSession,
 } from "../src/modes/tournamentSession";
-import { nextToAct } from "../src/engine/betting";
+import {
+  getLegalActions,
+  isStackOffCommand,
+  nextToAct,
+} from "../src/engine/betting";
 
 /** App.tsx's live settings, so measurement matches play. */
 const POLICY = { simulations: 60, temperature: 0.48 } as const;
@@ -72,6 +76,28 @@ export interface AiBehaviorMetrics {
   facingBet: { fold: number; call: number; raise: number; samples: number };
   preflopAllInHandRate: number;
   postflopAllInHandRate: number;
+  stackOffActions: number;
+  /** Conditional tail metric requested by the forensic audit. */
+  highSprFlopFacingSmall: {
+    decisions: number;
+    stackOffs: number;
+    rate: number;
+  };
+  /** Ordinary (non-stack-off) bet/raise amount realism on the configured rack. */
+  ordinaryWagerAmounts: {
+    count: number;
+    denominationViolations: number;
+    denominationViolationRate: number;
+    finalDigitCounts: Record<string, number>;
+    /** Generated candidates that retain the abstract target telemetry. */
+    quantizationSamples: number;
+    meanAbsRackAdjustment: number;
+    maximumAbsRackAdjustment: number;
+    meanAbsTargetAdjustment: number;
+    maximumAbsTargetAdjustment: number;
+    minimum?: number;
+    maximum?: number;
+  };
   /** Raise size as a fraction of the pot it was facing. */
   raiseOverPot: { mean: number; median: number };
   raiseOverEffectiveStack: { mean: number; median: number };
@@ -141,6 +167,13 @@ interface EventAccumulator {
   facingBet: { fold: number; call: number; raise: number };
   handsWithPreflopAllIn: number;
   handsWithPostflopAllIn: number;
+  stackOffActions: number;
+  highSprFlopFacingSmallDecisions: number;
+  highSprFlopFacingSmallStackOffs: number;
+  ordinaryWagerAmounts: number[];
+  ordinaryWagerDenominationViolations: number;
+  ordinaryWagerRackAdjustments: number[];
+  ordinaryWagerTargetAdjustments: number[];
   hands: number;
   raiseOverPot: number[];
   raiseOverStack: number[];
@@ -166,6 +199,13 @@ function emptyAccumulator(seed: string): EventAccumulator {
     facingBet: { fold: 0, call: 0, raise: 0 },
     handsWithPreflopAllIn: 0,
     handsWithPostflopAllIn: 0,
+    stackOffActions: 0,
+    highSprFlopFacingSmallDecisions: 0,
+    highSprFlopFacingSmallStackOffs: 0,
+    ordinaryWagerAmounts: [],
+    ordinaryWagerDenominationViolations: 0,
+    ordinaryWagerRackAdjustments: [],
+    ordinaryWagerTargetAdjustments: [],
     hands: 0,
     raiseOverPot: [],
     raiseOverStack: [],
@@ -263,10 +303,12 @@ function playEvent(
       }
 
       const player = hand.betting.players.find((entry) => entry.id === actor);
-      const toCall = Math.max(0, hand.betting.currentBet - (player?.bet ?? 0));
+      if (!player) throw new Error(`Missing betting player ${actor}`);
+      const legal = getLegalActions(hand.betting, actor);
+      const toCall = legal.toCall;
       const preflop = hand.street === "preflop";
       const pot = hand.information.pot;
-      const effectiveStack = Math.max(1, player?.stack ?? 1);
+      const effectiveStack = Math.max(1, player.stack);
 
       // Preflop raise depth: the blinds are not raises, so the first
       // voluntary raise is the open, the second is a 3-bet, the third a
@@ -289,8 +331,21 @@ function playEvent(
 
       const decision = chooseTournamentSessionPolicyAction(session, actor, POLICY);
       const command = decision.command;
+      const stackOff = isStackOffCommand(command, legal, player.streetCommitted);
       const aggressive = command.type === "bet" || command.type === "raise" ||
         command.type === "all-in";
+      const rational =
+        decision.mode === "normal" ? decision.rationalBaseline : decision.rational;
+
+      if (
+        hand.street === "flop" &&
+        rational.audit.metrics.stackToPotRatio > 20 &&
+        toCall > 0 &&
+        toCall <= pot * 0.5
+      ) {
+        accumulator.highSprFlopFacingSmallDecisions += 1;
+        if (stackOff) accumulator.highSprFlopFacingSmallStackOffs += 1;
+      }
 
       if (preflop) {
         if (command.type !== "fold" && command.type !== "check") {
@@ -311,15 +366,46 @@ function playEvent(
         else if (aggressive) accumulator.facingBet.raise += 1;
       }
 
-      if (command.type === "all-in") {
+      if (stackOff) {
+        accumulator.stackOffActions += 1;
         if (preflop) sawPreflopAllIn = true;
         else sawPostflopAllIn = true;
       }
 
+      // Denomination realism is deliberately measured independently of
+      // strategic stack-off plausibility. Exact all-ins are the actor's
+      // remaining legal stack and are therefore excluded from this ordinary
+      // wager sample; ordinary bet/raise targets must be constructible from
+      // the tournament's configured rack.
+      if (
+        !stackOff &&
+        (command.type === "bet" || command.type === "raise") &&
+        command.to !== undefined
+      ) {
+        const smallestChip = session.tournament.structure.smallestChip ?? 1;
+        accumulator.ordinaryWagerAmounts.push(command.to);
+        if (command.to % smallestChip !== 0) {
+          accumulator.ordinaryWagerDenominationViolations += 1;
+        }
+        const sizing = rational.distribution.find(
+          (option) =>
+            option.command.type === command.type &&
+            option.command.to === command.to,
+        )?.sizing;
+        if (sizing) {
+          accumulator.ordinaryWagerRackAdjustments.push(
+            Math.abs(sizing.rackAdjustment),
+          );
+          accumulator.ordinaryWagerTargetAdjustments.push(
+            Math.abs(sizing.executedTarget - sizing.desiredTarget),
+          );
+        }
+      }
+
       if (aggressive) {
         chain += 1;
-        const raiseTo = command.to ?? effectiveStack + (player?.bet ?? 0);
-        const increment = Math.max(0, raiseTo - (player?.bet ?? 0));
+        const raiseTo = command.to ?? legal.allInTo;
+        const increment = Math.max(0, raiseTo - player.streetCommitted);
         accumulator.raiseOverPot.push(increment / Math.max(1, pot));
         accumulator.raiseOverStack.push(increment / effectiveStack);
       } else if (command.type === "fold" || command.type === "call" ||
@@ -554,6 +640,61 @@ export function measureAiBehavior(options: {
       events.reduce((sum, event) => sum + event.handsWithPostflopAllIn, 0),
       totalHands,
     ),
+    stackOffActions: events.reduce((sum, event) => sum + event.stackOffActions, 0),
+    highSprFlopFacingSmall: (() => {
+      const decisions = events.reduce(
+        (sum, event) => sum + event.highSprFlopFacingSmallDecisions,
+        0,
+      );
+      const stackOffs = events.reduce(
+        (sum, event) => sum + event.highSprFlopFacingSmallStackOffs,
+        0,
+      );
+      return { decisions, stackOffs, rate: ratio(stackOffs, decisions) };
+    })(),
+    ordinaryWagerAmounts: (() => {
+      const amounts = events.flatMap((event) => event.ordinaryWagerAmounts);
+      const denominationViolations = events.reduce(
+        (sum, event) => sum + event.ordinaryWagerDenominationViolations,
+        0,
+      );
+      const finalDigitCounts = Object.fromEntries(
+        Array.from({ length: 10 }, (_, digit) => [
+          String(digit),
+          amounts.filter((amount) => amount % 10 === digit).length,
+        ]),
+      );
+      return {
+        count: amounts.length,
+        denominationViolations,
+        denominationViolationRate: ratio(denominationViolations, amounts.length),
+        finalDigitCounts,
+        quantizationSamples: events.reduce(
+          (sum, event) => sum + event.ordinaryWagerRackAdjustments.length,
+          0,
+        ),
+        meanAbsRackAdjustment: mean(
+          events.flatMap((event) => event.ordinaryWagerRackAdjustments),
+        ),
+        maximumAbsRackAdjustment: Math.max(
+          0,
+          ...events.flatMap((event) => event.ordinaryWagerRackAdjustments),
+        ),
+        meanAbsTargetAdjustment: mean(
+          events.flatMap((event) => event.ordinaryWagerTargetAdjustments),
+        ),
+        maximumAbsTargetAdjustment: Math.max(
+          0,
+          ...events.flatMap((event) => event.ordinaryWagerTargetAdjustments),
+        ),
+        ...(amounts.length
+          ? {
+              minimum: Math.min(...amounts),
+              maximum: Math.max(...amounts),
+            }
+          : {}),
+      };
+    })(),
     raiseOverPot: { mean: mean(raiseOverPot), median: median(raiseOverPot) },
     raiseOverEffectiveStack: {
       mean: mean(raiseOverStack),

@@ -61,7 +61,7 @@ function replay(overrides: Record<string, unknown> = {}) {
     version: 1,
     engineVersion: "tournament-session-v1",
     contentVersion: "career-events-v1",
-    policyVersion: "normal-rational-v4",
+    policyVersion: "normal-rational-v5",
     policySimulations: 60,
     kind: "career",
     eventId: "local-qualifier",

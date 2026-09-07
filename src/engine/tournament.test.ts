@@ -39,6 +39,7 @@ function entrants(count: number) {
 describe("tournament director", () => {
   it("contains the WSOP-like Main Event opening structure", () => {
     expect(AUTHENTIC_MAIN_EVENT_STRUCTURE.startingStack).toBe(60_000);
+    expect(AUTHENTIC_MAIN_EVENT_STRUCTURE.smallestChip).toBe(25);
     expect(AUTHENTIC_MAIN_EVENT_STRUCTURE.levels[0]).toMatchObject({
       smallBlind: 100,
       bigBlind: 200,
@@ -46,6 +47,20 @@ describe("tournament director", () => {
       durationMs: 120 * 60_000,
     });
     expect(AUTHENTIC_MAIN_EVENT_STRUCTURE.levels).toHaveLength(47);
+  });
+
+  it("rejects an invalid physical chip denomination", () => {
+    expect(() =>
+      createTournament(
+        "invalid-denomination",
+        {
+          ...AUTHENTIC_MAIN_EVENT_STRUCTURE,
+          smallestChip: 0,
+        },
+        entrants(2),
+        "denomination-seed",
+      ),
+    ).toThrow(/smallest chip/i);
   });
 
   it("advances multiple blind levels without losing residual time", () => {

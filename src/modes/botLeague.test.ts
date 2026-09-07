@@ -22,8 +22,12 @@ describe("deterministic bot league", () => {
     expect(report.policies.rational.overall.expectedActions.raise).toBeGreaterThan(
       baseline.policies.rational.overall.expectedActions.raise,
     );
-    expect(report.policies.rational.byPosition.late.expectedActions.raise).toBeGreaterThan(
-      report.policies.rational.byPosition.early.expectedActions.raise,
+    // Position is not a monotone "raise more when late" switch.  In the
+    // calibrated matrix late position also has the cheapest call/realization
+    // branch, so the stable signal is the increased late-position calling
+    // share; the test must not encode the old raise-only proxy.
+    expect(report.policies.rational.byPosition.late.expectedActions.call).toBeGreaterThan(
+      report.policies.rational.byPosition.early.expectedActions.call,
     );
   });
 

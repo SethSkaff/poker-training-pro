@@ -56,6 +56,42 @@ export interface LegalActionSet {
   raisingReopened: boolean;
 }
 
+/**
+ * Returns true when a policy command commits the actor's remaining stack.
+ *
+ * Poker commands use two different representations for this boundary: an
+ * explicit `all-in`, or a legal bet/raise whose total street target happens to
+ * equal `allInTo`.  Keeping the predicate beside the legal-action contract
+ * prevents audits, telemetry, and tests from silently counting the latter as
+ * an ordinary raise.
+ */
+export function isStackOffCommand(
+  command: BettingActionCommand,
+  legal: LegalActionSet,
+  streetCommitted = 0,
+): boolean {
+  if (!Number.isSafeInteger(streetCommitted) || streetCommitted < 0) {
+    throw new Error("Street commitment must be a non-negative safe integer");
+  }
+  switch (command.type) {
+    case "all-in":
+      return legal.allIn &&
+        (command.to === undefined || command.to === legal.allInTo);
+    case "bet":
+    case "raise":
+      return command.to === legal.allInTo;
+    case "call":
+      {
+        const remainingStack = legal.allInTo - streetCommitted;
+        return legal.call &&
+          remainingStack > 0 &&
+          legal.callAmount >= remainingStack;
+      }
+    default:
+      return false;
+  }
+}
+
 export interface BettingActionCommand {
   type: BettingActionType;
   /** Total amount committed on this street after a bet or raise. */

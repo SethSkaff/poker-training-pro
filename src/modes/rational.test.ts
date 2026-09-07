@@ -3,6 +3,8 @@ import type { Card, Rank, Suit } from "../types/poker";
 import type { LegalActionSet } from "../engine/betting";
 import type { PlayerInformationSet } from "../engine/tournament";
 import {
+  calculateReopenPenalty,
+  calculateStackExposurePenalty,
   decideRationalAction,
   estimatePublicAllInEquitySliced,
   isPublicAllInEquityCancelled,
@@ -445,7 +447,7 @@ describe("rational policy contract", () => {
     );
     expect(serialized).not.toContain("holeCards");
     expect(serialized).not.toContain("gameRng");
-    expect(decision.audit.policyVersion).toBe("rational-v4");
+    expect(decision.audit.policyVersion).toBe("rational-v5");
   });
 
   it("uses two current-hand players for heads-up EV when six tournament players survive", () => {
@@ -640,16 +642,40 @@ describe("rational policy contract", () => {
     );
     expect(shove?.rationale).toContain("all-fold");
     expect(response?.allFoldProbability ?? 0).toBeLessThan(0.925);
+    const branchUtility = evaluateRaiseBranchEv({
+      pot: 2_100,
+      additionalRisk: 14_650,
+      allFoldProbability: response?.allFoldProbability ?? 0,
+      callProbability: response?.callProbability ?? 0,
+      reRaiseProbability: response?.reRaiseProbability ?? 0,
+      calledEquity: response?.callEquity ?? 0,
+      expectedOpponentContribution: response?.expectedOpponentContribution,
+    });
+    // The branch EV remains the auditable poker calculation.  The policy
+    // utility additionally prices nonlinear tournament stack exposure for an
+    // over-pot shove; assert both terms explicitly so a future change cannot
+    // silently hide the source of the displayed utility.
+    const stackExposurePenalty = calculateStackExposurePenalty({
+      additionalRisk: 14_650,
+      pot: 2_100,
+      effectiveStack: decision.audit.metrics.effectiveStack,
+      calledEquity: response?.callEquity ?? 0,
+      riskPremium: decision.audit.adjustments.tournamentRiskPremium,
+    });
+    const reopenPenalty = calculateReopenPenalty({
+      wager: 14_650,
+      streetAggression: 1,
+      reRaisedProbability: response?.reRaiseProbability ?? 0,
+      showdownEquity: decision.audit.metrics.showdownEquity,
+      requiredEquity: decision.audit.metrics.potOdds +
+        decision.audit.adjustments.tournamentRiskPremium,
+    });
     expect(shove?.utilityBigBlinds).toBeCloseTo(
-      evaluateRaiseBranchEv({
-        pot: 2_100,
-        additionalRisk: 14_650,
-        allFoldProbability: response?.allFoldProbability ?? 0,
-        callProbability: response?.callProbability ?? 0,
-        reRaiseProbability: response?.reRaiseProbability ?? 0,
-        calledEquity: response?.callEquity ?? 0,
-        expectedOpponentContribution: response?.expectedOpponentContribution,
-      }) / 100,
+      (branchUtility -
+        stackExposurePenalty -
+        reopenPenalty -
+        decision.audit.adjustments.tournamentRiskPremium * 14_650) /
+        100,
       8,
     );
   });

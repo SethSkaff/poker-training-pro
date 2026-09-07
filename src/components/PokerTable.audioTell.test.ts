@@ -192,7 +192,7 @@ describe("audio has no hidden-information tell", () => {
 });
 
 describe("end-of-event payoff", () => {
-  const css = readFileSync(path.join(sourceRoot, "styles.css"), "utf8");
+  const css = readFileSync(path.join(sourceRoot, "styles.css"), "utf8").replace(/\r\n/g, "\n");
   const dashboard = readFileSync(
     path.join(sourceRoot, "components", "Dashboard.tsx"),
     "utf8",

@@ -314,7 +314,7 @@ export function getBasicStrategyAction(
   if (value.total === 18) {
     return chooseAction(
       dealer >= 3 && dealer <= 6 ? "double" : dealer === 2 || dealer === 7 || dealer === 8 ? "stand" : "hit",
-      "hit",
+      dealer >= 3 && dealer <= 6 ? "stand" : "hit",
       availableActions,
     );
   }

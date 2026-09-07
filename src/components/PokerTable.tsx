@@ -551,18 +551,18 @@ export function seatPresentationUpdate(
     return { action: "bet", label: `${label} ${formatChips(post.amount)}` };
   }
   /*
-    The deal itself, which was the one milestone the scene never heard about.
+    The deal itself, which is the one milestone the scene needs to hear about.
 
     `hole-cards-dealt` has always been published -- it drives the deal sound --
-    but it was not mapped here, so no seat ever carried `action: "deal"`. The
-    renderer's whole dealing animation (cards travelling from the dealer's shoe
-    to each seat, and the dealer pitching them) was reachable code that nothing
-    ever reached: every hand simply began with two cards already lying on the
-    felt. The cost of the miss was invisible because nothing failed; the
-    animation just never ran.
+    but it was not mapped here, so no seat ever carried `sceneAction: "deal"`.
+    The renderer's whole dealing animation (cards travelling from the dealer's
+    shoe to each seat, and the dealer pitching them) was reachable code that
+    nothing ever reached: every hand simply began with two cards already lying
+    on the felt. The scene action is retained, but the deal does not need a
+    transient text badge on every seat.
   */
   if (event.kind === "hole-cards-dealt" && event.playerIds.includes(playerId)) {
-    return { sceneAction: "deal", label: "Dealt in" };
+    return { sceneAction: "deal" };
   }
   if (event.kind === "pot-awarded" && event.playerId === playerId) {
     // `win` is what turns the dealer round to push the pot to this seat.

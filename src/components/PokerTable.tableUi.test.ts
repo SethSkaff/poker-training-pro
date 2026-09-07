@@ -11,7 +11,7 @@ const table = readFileSync(
   path.join(sourceRoot, "components", "PokerTable.tsx"),
   "utf8",
 );
-const styles = readFileSync(path.join(sourceRoot, "styles.css"), "utf8");
+const styles = readFileSync(path.join(sourceRoot, "styles.css"), "utf8").replace(/\r\n/g, "\n");
 
 describe("table UI restraint and card peek", () => {
   it("applies stack and bet world projections independently of the rail plaque", () => {

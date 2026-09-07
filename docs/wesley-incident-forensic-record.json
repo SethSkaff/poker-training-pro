@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "recordType": "poker-ai-forensic-decision",
+  "capturedAt": "2026-09-04",
+  "status": "reproduced-from-persisted-replay",
+  "source": {
+    "artifact": "%APPDATA%/poker-training-pro/saves/autosave.json",
+    "replayFormat": "poker-training-pro-autosave",
+    "eventId": "regional-open",
+    "seed": "career:regional-open:1788553179140",
+    "handId": "regional-open:career:regional-open:1788553179140:hand-1",
+    "handNumber": 1,
+    "mode": "normal",
+    "policyVersionAtReplay": "normal-rational-v4",
+    "currentPolicyVersion": "normal-rational-v5",
+    "policySimulations": 60
+  },
+  "identity": {
+    "displayNameInIncident": "Wesley",
+    "entrantId": "nash-stone",
+    "profile": "tempo",
+    "identityModelIndex": 42,
+    "identityMapping": "nash-stone is the entrant rendered as Wesley by the 2D identity map; strategy uses entrant id/profile, not display name",
+    "modelHoleCards": ["7s", "7h"]
+  },
+  "beforeDecision": {
+    "blinds": { "small": 50, "big": 75, "ante": 0 },
+    "startingStacks": 25000,
+    "playersDealtIn": 6,
+    "street": "flop",
+    "buttonSeat": 2,
+    "positions": {
+      "button": 2,
+      "smallBlind": { "playerId": "emmett-calder", "seat": 3 },
+      "bigBlind": { "playerId": "nash-stone", "seat": 4 },
+      "hero": { "playerId": "hero", "seat": 6 }
+    },
+    "board": ["5c", "8h", "4h"],
+    "hero": {
+      "id": "hero",
+      "holeCards": ["Kd", "4c"],
+      "stack": 24775,
+      "streetCommitted": 150,
+      "totalCommitted": 225,
+      "action": "bet",
+      "betTo": 150
+    },
+    "actingPlayer": {
+      "id": "nash-stone",
+      "stack": 24925,
+      "streetCommitted": 0,
+      "totalCommitted": 75,
+      "status": "active"
+    },
+    "allPlayersBeforeDecision": [
+      { "id": "talia-ibarra", "seat": 1, "status": "folded", "stack": 25000, "streetCommitted": 0, "totalCommitted": 0 },
+      { "id": "blake-ross", "seat": 2, "status": "folded", "stack": 25000, "streetCommitted": 0, "totalCommitted": 0 },
+      { "id": "emmett-calder", "seat": 3, "status": "folded", "stack": 24925, "streetCommitted": 0, "totalCommitted": 75 },
+      { "id": "nash-stone", "seat": 4, "status": "active", "stack": 24925, "streetCommitted": 0, "totalCommitted": 75 },
+      { "id": "vaughn-kovač", "seat": 5, "status": "folded", "stack": 25000, "streetCommitted": 0, "totalCommitted": 0 },
+      { "id": "hero", "seat": 6, "status": "active", "stack": 24775, "streetCommitted": 150, "totalCommitted": 225 }
+    ],
+    "otherVisibleState": {
+      "emmett-calder": {
+        "status": "folded",
+        "stack": 24925,
+        "streetCommitted": 0,
+        "totalCommitted": 75
+      }
+    },
+    "pot": 375,
+    "currentBet": 150,
+    "streetAggression": 1,
+    "legalActions": {
+      "toCall": 150,
+      "callAmount": 150,
+      "minRaiseTo": 300,
+      "maxRaiseTo": 24925,
+      "allInTo": 24925,
+      "raisingReopened": true
+    },
+    "geometry": {
+      "effectiveStack": 24775,
+      "effectiveStackBB": 330.3333333333,
+      "spr": 66.0666666667
+    },
+    "rng": {
+      "policySeedDerivation": "deriveSeed(replay.seed, handId, actingPlayerId, rational-policy)",
+      "simulations": 60,
+      "temperature": 0.48,
+      "rawGeneratorState": "not persisted by the autosave"
+    },
+    "priorActions": [
+      "50 small blind",
+      "75 big blind",
+      "hero calls 75",
+      "Emmett calls 75",
+      "Nash checks",
+      "flop 5c 8h 4h",
+      "Emmett checks",
+      "Nash checks",
+      "Hero bets to 150",
+      "Emmett folds"
+    ]
+  },
+  "preFixDecision": {
+    "normalCommand": { "type": "raise", "to": 24925 },
+    "semanticAction": "stack-off/all-in",
+    "distribution": {
+      "simulations": 60,
+      "allFoldProbability": 0.8833333333,
+      "callProbability": 0.1166666667,
+      "reRaiseProbability": 0,
+      "callEquityAfterRegularization": 0.5052631579,
+      "rawConditionalCallerEquity": 0.2857142857,
+      "unconditionalShowdownEquity": 0.6333333333,
+      "allInEquivalentProbability": 0.984005,
+      "selectedUtilityBB": 5.00164,
+      "reportedUncertaintyBB": 40.729
+    },
+    "firstIncorrectTransformation": {
+      "file": "src/modes/rational.ts",
+      "logic": "responseForCandidate regularized a narrow caller branch with 12 pseudo-samples of unconditional full-range equity",
+      "formula": "(2 + 12 * 0.6333333333) / (7 + 12) = 0.5052631579",
+      "correctConditionalValue": "2 / 7 = 0.2857142857",
+      "effect": "The all-in branch changed from approximately -907.5 chips (-12.1 BB) to +375.12 chips (+5.00 BB) before the later tournament/exposure protections."
+    },
+    "candidateConstructionIssue": {
+      "file": "src/modes/rational.ts",
+      "logic": "routine raise candidates always included legal.raise.maxTo; when maxTo equalled allInTo, the explicit all-in command was deduplicated",
+      "effect": "A stack-off was represented as raise:maxTo, so type-only all-in audits and telemetry missed it."
+    }
+  },
+  "engineVerification": {
+    "commandMeaning": "bet/raise.to is the total street target, not an incremental raise amount",
+    "executedEvent": { "type": "raise", "to": 24925 },
+    "after": {
+      "stack": 0,
+      "streetCommitted": 24925,
+      "totalCommitted": 25000,
+      "status": "all-in"
+    },
+    "finding": "The engine performed the requested total-target wager correctly; no chip, BB, raiseTo/raiseBy, or display arithmetic discrepancy was found."
+  },
+  "postFixAssertions": {
+    "responseEquity": "conditional caller equity is 2/7 when the branch has seven callers",
+    "stackExposureAndReopenPricing": "over-pot stack exposure and visible re-open option costs are scored as explicit utility terms",
+    "candidateSemantics": "maxTo==allInTo is emitted as an explicit all-in candidate, not an ordinary raise",
+    "selectedAction": "not a semantic stack-off for this fixed seed",
+    "ordinaryWagerDenomination": 25
+  },
+  "classification": [
+    "strategy-evaluation failure",
+    "candidate-sizing/action-semantics failure",
+    "cross-cutting regression after prior safeguards were removed"
+  ],
+  "uncertainty": [
+    "The persisted replay does not include a pre-fix source checkout; pre-fix values are reconstructed from the saved state and the historical policy logic visible in git history.",
+    "The UI name Wesley is not the engine identity; the identity mapping is recorded above and is covered by a name-invariance regression test."
+  ]
+}

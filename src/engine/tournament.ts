@@ -25,6 +25,8 @@ export interface TournamentStructure {
   maxSeats: number;
   levels: BlindLevel[];
   rated: boolean;
+  /** Smallest physical chip used for ordinary wagers in this structure. */
+  smallestChip?: number;
 }
 
 export type CareerTier =
@@ -229,6 +231,7 @@ export const AUTHENTIC_MAIN_EVENT_STRUCTURE: TournamentStructure = {
   maxSeats: 9,
   levels: makeMainEventLevels(120 * 60_000),
   rated: true,
+  smallestChip: 25,
 };
 
 export const CAREER_MAIN_EVENT_STRUCTURE: TournamentStructure = {
@@ -238,6 +241,7 @@ export const CAREER_MAIN_EVENT_STRUCTURE: TournamentStructure = {
   maxSeats: 9,
   levels: makeMainEventLevels(8 * 60_000),
   rated: true,
+  smallestChip: 25,
 };
 
 export const QUICK_MAIN_EVENT_STRUCTURE: TournamentStructure = {
@@ -247,6 +251,7 @@ export const QUICK_MAIN_EVENT_STRUCTURE: TournamentStructure = {
   maxSeats: 9,
   levels: makeMainEventLevels(3 * 60_000),
   rated: false,
+  smallestChip: 25,
 };
 
 function scaledStructure(
@@ -262,6 +267,7 @@ function scaledStructure(
     startingStack,
     maxSeats: 9,
     rated: true,
+    smallestChip: 25,
     levels: MAIN_EVENT_BLINDS.slice(0, 24).map(
       ([smallBlind, bigBlind], index) => ({
         level: index + 1,
@@ -459,6 +465,12 @@ export function createTournament(
   }
   if (structure.levels.length === 0) {
     throw new Error("Tournament structure requires at least one blind level");
+  }
+  if (
+    structure.smallestChip !== undefined &&
+    (!Number.isSafeInteger(structure.smallestChip) || structure.smallestChip <= 0)
+  ) {
+    throw new Error("Tournament smallest chip must be a positive safe integer");
   }
 
   const tableCount = Math.ceil(entrants.length / structure.maxSeats);
