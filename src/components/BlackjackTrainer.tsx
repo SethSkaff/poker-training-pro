@@ -313,7 +313,7 @@ function QuickCountPanel() {
         </div>
       </div>
 
-      <div className="quick-count-stage" aria-live="polite">
+      <div className="quick-count-stage" data-count-length={length} aria-live="polite">
         {phase === "idle" ? (
           <div className="quick-count-empty">
             <div className="quick-count-deck" aria-hidden="true"><BlackjackCardView hidden /><BlackjackCardView hidden /><BlackjackCardView hidden /></div>

@@ -36,3 +36,20 @@ All four modes were visually inspected at 1600 × 900. Quick Count, Tables, and 
 - Regression checks: 32 tests across the blackjack engine, BlackjackTrainer, TableViewSelect, App table-scene stability, and lifecycle progression passed. Production TypeScript/Vite build passed; Vite retains its existing large 3D-chunk advisory.
 
 Local screenshots and measurement JSON are in `work/blackjack-redesign/` (generated evidence, excluded from Git). Poker gameplay and existing uncommitted Poker work were left untouched. The commit includes the pre-existing Blackjack engine and product routing because those files were not yet committed in the starting checkout.
+
+## Viewport canvas update — September 7, 2026
+
+The activity surface now uses 94% of desktop width and the remaining height below the existing masthead/navigation, with a 16–36px bottom margin. The masthead retains its previous maximum width. All four modes share the same flex-based height contract; narrow windows keep their stacked, vertically scrollable layout.
+
+- Trainer removes both width caps, enlarges the hand matchup using viewport/container dimensions, and separates the scenario, count, legal actions, and bottom answer/feedback areas. Feedback has four explicit columns including ELO. Short screens use tighter spacing so explanations and the hand remain separate.
+- Tables expands the felt and action dock. Cards retain their aspect ratio and adapt to the felt height. Settled hands use two lanes to accommodate dealer totals, payouts, and checkpoints without covering the next-round controls. Existing shoe/count information and controls remain intact; no betting functionality or game logic was added.
+- Quick Count expands the control rail, deck, answer prompt, and dealt-card area. Sequence length supplies a presentation-only data attribute so 50-card exercises use four rows, while shorter sequences have larger cards. Fixed deck positioning also resolves a pre-existing specificity conflict with the shared card rule.
+- Guide stretches all three strategy tables vertically and horizontally. Cell sizes remain stable across count changes. The slider expands across the control strip; Hi-Lo and insurance references remain below their respective tables.
+
+Chromium (headless Edge) screenshots and geometry checks covered all four modes at 1280×720, 1366×768, 1600×900, 1920×1080, 1440×1200, and 2560×1440. Every desktop activity had zero document overflow and zero activity overflow in its initial state. A 390×844 check retained stacked layouts without horizontal overflow. Long post-drill reviews use activity scrolling on desktop.
+
+Interaction checks at 1280×720 covered a 50-card Flash drill, answer submission and review, five Trainer feedback/next-scenario cycles, twelve table rounds with count checkpoints, and Guide values −10, −1, 0, +3, +10. Screenshots were visually reviewed for the counting deck, full drill, Trainer feedback, table settlement/checkpoint, and strategy tables. Evidence lives in ignored `work/blackjack-canvas/`.
+
+Validation: all 35 Blackjack engine, adaptive trainer, and component tests passed. Production build passed. Windows packaging and its packaged scene/license audits are run as the release closeout.
+
+The final packaged executable was also opened through the normal Home → Play → Blackjack route using an isolated profile. All four modes passed viewport/overflow checks at 1280×720, 1920×1080, and 1440×1200 (`work/blackjack-canvas/packaged.json`).
