@@ -42,6 +42,7 @@ export interface ReviewerValidationResultV2 {
   highPriorityFalsePositives: number;
   factualErrorCount: number;
   consistencyPairs: { compared: number; disagreements: number };
+  repeatability: { compared: number; disagreements: number };
   confidenceBuckets: Record<string, number>;
   raterAgreement: { pairs: number; disagreements: number; status: "available" | "pending" };
   incrementalYield: { confirmedFindings: number; additionalMinutes: number | null; tokens: number | null; cost: number | null };
@@ -57,6 +58,11 @@ function emptyConfusion(): Record<string, Record<string, number>> {
 function outputFor(run: PilotRunResult, baseCaseId: string): ReviewerOutputV2 | null {
   const variant = run.variants.find((entry) => entry.baseCaseId === baseCaseId && entry.transform === "identity");
   return variant ? run.outputs.find((entry) => entry.variantId === variant.variantId)?.output ?? null : null;
+}
+
+function outputsEquivalent(left: ReviewerOutputV2 | null, right: ReviewerOutputV2 | null): boolean {
+  if (!left || !right) return left === right;
+  return JSON.stringify({ assessments: left.assessments, findings: left.findings, missingInformation: left.missingInformation, inputContradictions: left.inputContradictions }) === JSON.stringify({ assessments: right.assessments, findings: right.findings, missingInformation: right.missingInformation, inputContradictions: right.inputContradictions });
 }
 
 function metric(numerator: number, denominator: number): number | null {
@@ -95,7 +101,19 @@ export function validateReviewerPilot(input: {
   }));
   const identityVariants = input.run.variants.filter((variant) => variant.transform === "identity");
   const transformed = input.run.variants.length - identityVariants.length;
-  const repeatVariants = input.run.variants.filter((variant) => variant.transform === "identity");
+  const repeatVariants = input.run.variants.filter((variant) => variant.transform === "exact_duplicate");
+  let transformDisagreements = 0;
+  let repeatDisagreements = 0;
+  for (const variant of input.run.variants) {
+    if (variant.transform === "identity") continue;
+    const identity = input.run.variants.find((candidate) => candidate.baseCaseId === variant.baseCaseId && candidate.transform === "identity");
+    const transformedOutput = input.run.outputs.find((entry) => entry.variantId === variant.variantId)?.output ?? null;
+    const identityOutput = identity ? input.run.outputs.find((entry) => entry.variantId === identity.variantId)?.output ?? null : null;
+    if ((variant.expectedDifference === "same" || variant.transform === "exact_duplicate") && !outputsEquivalent(transformedOutput, identityOutput)) {
+      if (variant.transform === "exact_duplicate") repeatDisagreements += 1;
+      else transformDisagreements += 1;
+    }
+  }
   const missingEvidence: string[] = [];
   if (!input.goldLabels?.length) missingEvidence.push("qualified_human_or_exact_gold_labels");
   if (!input.acceptancePolicy?.approvedByHuman) missingEvidence.push("human_approved_acceptance_policy");
@@ -121,7 +139,8 @@ export function validateReviewerPilot(input: {
     abstention: { count: abstentions, denominator: compared, rate: metric(abstentions, compared) },
     highPriorityFalsePositives,
     factualErrorCount: factualErrors,
-    consistencyPairs: { compared: transformed, disagreements: 0 },
+    consistencyPairs: { compared: transformed, disagreements: transformDisagreements },
+    repeatability: { compared: repeatVariants.length, disagreements: repeatDisagreements },
     confidenceBuckets: { low: input.run.outputs.filter((entry) => entry.output?.findings.some((finding) => finding.confidence === "low")).length, medium: input.run.outputs.filter((entry) => entry.output?.findings.some((finding) => finding.confidence === "medium")).length, high: input.run.outputs.filter((entry) => entry.output?.findings.some((finding) => finding.confidence === "high")).length },
     raterAgreement: { pairs: comparableRaterLabels.reduce((sum, label) => sum + Math.max(0, label.raterRefs.length - 1), 0), disagreements: 0, status: comparableRaterLabels.some((label) => label.raterRefs.length > 1) ? "available" : "pending" },
     incrementalYield: { confirmedFindings: 0, additionalMinutes: null, tokens: null, cost: null },

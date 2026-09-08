@@ -1,0 +1,11 @@
+{
+  "version": "evaluation-fast-v1",
+  "status": "pending",
+  "tier": "fast",
+  "offline": true,
+  "commonNodes": 120,
+  "equityReplicas": 4,
+  "sessionBlocks": 8,
+  "criticBaseCases": 8,
+  "externalEvidence": "pending"
+}

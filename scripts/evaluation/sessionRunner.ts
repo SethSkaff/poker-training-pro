@@ -116,7 +116,7 @@ export function runEvaluationSession(options: EvaluationSessionOptions = {}): Ev
   const mode = options.mode ?? "rational";
   const scope = options.scope ?? "hero";
   const sessionId = options.sessionId ?? `evaluation:${String(seed)}:${mode}`;
-  const hero = options.hero ?? { id: "hero", name: "Evaluation Hero", rating: 1_000 };
+  const hero = { id: options.hero?.id ?? "hero", name: options.hero?.name ?? "Evaluation Hero", rating: options.hero?.rating ?? 1_000 };
   const opponents = createSessionOpponents(seed, eventId, mode);
   let session: TournamentSession = createTournamentSession({ eventId, hero, mode, seed, opponents });
   const policy = options.policy ?? (mode === "normal" || mode === "rational" ? {

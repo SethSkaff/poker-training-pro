@@ -1,0 +1,11 @@
+{
+  "version": "evaluation-periodic-v1",
+  "status": "pending",
+  "tier": "periodic",
+  "offline": true,
+  "commonNodes": 300,
+  "equityReplicas": 8,
+  "sessionBlocks": 30,
+  "criticBaseCases": 200,
+  "externalEvidence": "pending"
+}

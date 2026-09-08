@@ -42,9 +42,14 @@
     "measure:normal-all-ins": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/report-normal-all-in-audit.ts --",
     "measure:exploitability": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/report-exploitability.ts --",
     "measure:critic": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/report-critic-harness.ts --",
+    "eval:behavior": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/evaluation/run.ts --",
+    "eval:fast": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/evaluation/run.ts tier fast --fixture-run --offline",
+    "eval:periodic": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/evaluation/run.ts tier periodic --offline",
+    "eval:release": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/evaluation/run.ts tier release --offline --require-complete",
+    "typecheck:evaluation": "node scripts/check-node-version.mjs && tsc --noEmit -p tsconfig.evaluation.json",
     "release:audit-ai-behavior": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/audit-ai-behavior-gates.ts",
     "release:audit-exploitability": "node scripts/check-node-version.mjs && vite-node -c scripts/vite-node.config.mjs scripts/audit-exploitability-gates.ts",
-    "release:update-shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/update-desktop-shortcut.ps1"
+    "release:update-shortcut": "node scripts/check-node-version.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/update-desktop-shortcut.ps1"
   },
   "engines": {
     "node": ">=22.12.0",

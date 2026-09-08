@@ -72,7 +72,7 @@ describe("A11 pilot manifest and qualification state machine", () => {
     const run = await runReviewerPilot(manifest, adapter, { baseCaseLimit: 8 });
     expect(createEightCaseFixture(cases)).toHaveLength(8);
     expect(run.executedBaseCases).toBe(8);
-    expect(run.variants).toHaveLength(56);
+    expect(run.variants).toHaveLength(64);
     expect(run.status).toBe("promotion_pending");
     expect(qualification.strategyAuthority).toBe(false);
     expect(run.outputs.every((entry) => entry.output?.assessments.strategicPlausibility === "insufficient")).toBe(true);

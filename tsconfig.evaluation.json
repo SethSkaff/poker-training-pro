@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "moduleResolution": "Bundler",
+    "noEmit": true
+  },
+  "include": [
+    "scripts/evaluation/**/*.ts",
+    "src/**/*.ts",
+    "scripts/measure-ai-behavior.ts",
+    "scripts/report-ai-behavior.ts"
+  ]
+}

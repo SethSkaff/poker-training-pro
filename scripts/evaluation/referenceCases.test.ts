@@ -77,11 +77,14 @@ describe("reference case bank", () => {
 
   it("rejects overlapping complete worlds before any values are produced", () => {
     const referenceCase = loadReferenceCase("weighted-hidden-world");
+    const firstWorld = referenceCase.node.worlds?.[0];
+    if (!firstWorld) throw new Error("Expected a fixture world");
     const badNode = {
       ...referenceCase.node,
       worlds: [{
-        ...referenceCase.node.worlds?.[0],
+        ...firstWorld,
         worldId: "bad-overlap",
+        weight: firstWorld.weight,
         opponentCards: { villain: referenceCase.node.heroCards },
       }],
     };

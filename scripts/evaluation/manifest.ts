@@ -204,7 +204,7 @@ export function createRunManifest(options: CreateRunManifestOptions = {}): RunMa
       platform: os.platform(),
       arch: os.arch(),
     },
-    policies: options.policies ?? [defaultPolicy(root, sourceTree)],
+    policies: [...(options.policies ?? [defaultPolicy(root, sourceTree)])],
     experiment: {
       commonState: options.experiment?.commonState ?? false,
       naturalPlay: options.experiment?.naturalPlay ?? false,

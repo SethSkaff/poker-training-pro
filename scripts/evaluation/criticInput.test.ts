@@ -5,9 +5,11 @@ import {
   resolveReviewerEvidencePath,
   serializeReviewerInput,
   validateReviewerOutput,
+  type ReviewerDecisionSource,
+  type ReviewerInputV2,
 } from "./criticInput";
 
-function source() {
+function source(): ReviewerDecisionSource {
   return {
     opaqueCaseId: "case-opaque-1",
     actorId: "hero-internal",
@@ -48,7 +50,8 @@ describe("A10 blinded reviewer input", () => {
 
   it("rejects a future-board or hidden-card field even when nested under a harmless label", () => {
     const input = createReviewerInput(source());
-    expect(() => assertReviewerInputSafe({ ...input, publicTimeline: { ...input.publicTimeline, ...( { diagnostic: { futureBoard: [{ rank: "A", suit: "hearts" }] } } as never) } as never })).toThrow(/forbidden field/);
+    const unsafeTimeline = { ...input.publicTimeline, diagnostic: { futureBoard: [{ rank: "A", suit: "hearts" }] } } as unknown as ReviewerInputV2["publicTimeline"];
+    expect(() => assertReviewerInputSafe({ ...input, publicTimeline: unsafeTimeline })).toThrow(/forbidden field/);
   });
 
   it("resolves evidence paths against the allowlisted input", () => {

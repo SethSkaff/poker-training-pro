@@ -1,5 +1,29 @@
 import type { WagerReferenceMenu } from "./wagerCandidates";
 
+export interface WagerMenuComparison {
+  originalTargets: number[];
+  candidateTargets: number[];
+  addedTargets: number[];
+  removedTargets: number[];
+  sharedTargets: number[];
+  offlineOnly: true;
+}
+
+export function compareWagerMenus(original: WagerReferenceMenu, candidate: WagerReferenceMenu): WagerMenuComparison {
+  const originalTargets = [...new Set(original.expandedTargets)].sort((left, right) => left - right);
+  const candidateTargets = [...new Set(candidate.expandedTargets)].sort((left, right) => left - right);
+  const originalSet = new Set(originalTargets);
+  const candidateSet = new Set(candidateTargets);
+  return {
+    originalTargets,
+    candidateTargets,
+    addedTargets: candidateTargets.filter((target) => !originalSet.has(target)),
+    removedTargets: originalTargets.filter((target) => !candidateSet.has(target)),
+    sharedTargets: originalTargets.filter((target) => candidateSet.has(target)),
+    offlineOnly: true,
+  };
+}
+
 export interface WagerReferenceCoverage {
   candidateId: string;
   status: "supported" | "unsupported" | "pending";

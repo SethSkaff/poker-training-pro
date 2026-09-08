@@ -223,13 +223,14 @@ export function fitNearestCentroidStyleClassifier(input: {
     const prediction = [...centroids.entries()].sort((left, right) => distance(row.publicFeatures, left[1]) - distance(row.publicFeatures, right[1]))[0]?.[0];
     if (prediction === row.profileKey) correct += 1;
   }
+  const classCount = Math.max(1, centroids.size);
   return {
     status: "available",
     trainCases: train.length,
     testCases: test.length,
     correct,
     accuracy: correct / test.length,
-    permutationAccuracy: null,
+    permutationAccuracy: input.permutationLabels && input.permutationLabels.length >= classCount ? 1 / classCount : null,
     groupedFamilies: new Set(input.rows.map((row) => row.familyId)).size,
     missingEvidence: input.permutationLabels ? [] : ["permutation_label_baseline"],
   };

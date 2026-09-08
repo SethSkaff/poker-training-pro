@@ -29,7 +29,7 @@ export interface PilotVariant {
   variantId: string;
   baseCaseId: string;
   familyId: string;
-  transform: "identity" | "name_permutation" | "global_suit_permutation" | "scale_10x" | "whitespace_order" | "equivalent_command" | "substantive_contrast";
+  transform: "identity" | "exact_duplicate" | "name_permutation" | "global_suit_permutation" | "scale_10x" | "whitespace_order" | "equivalent_command" | "substantive_contrast";
   input: ReviewerInputV2;
   expectedDifference: "same" | "different" | "not_applicable" | "pending";
 }
@@ -129,15 +129,32 @@ function scaleTen(input: ReviewerInputV2): ReviewerInputV2 {
   return output;
 }
 
+function namePermutation(input: ReviewerInputV2): ReviewerInputV2 {
+  const output = cloneInput(input);
+  const aliases = new Set(output.publicTimeline.actions.map((action) => action.actorAlias));
+  const replacement = new Map<string, string>();
+  const publicAliases = [...aliases].filter((alias) => alias !== "P1").sort();
+  if (publicAliases.length > 1) {
+    for (let index = 0; index < publicAliases.length; index += 1) replacement.set(publicAliases[index], publicAliases[(index + 1) % publicAliases.length]);
+    output.publicTimeline.actions = output.publicTimeline.actions.map((action) => ({ ...action, actorAlias: replacement.get(action.actorAlias) ?? action.actorAlias }));
+  }
+  return output;
+}
+
 export function transformPilotCase(base: PilotCase, transform: PilotVariant["transform"]): PilotVariant {
   const input = cloneInput(base.input);
   let transformed = input;
   let expectedDifference: PilotVariant["expectedDifference"] = "same";
   switch (transform) {
+    case "exact_duplicate":
+      expectedDifference = "same";
+      break;
+    case "name_permutation": transformed = namePermutation(input); break;
     case "global_suit_permutation": transformed = suitPermutation(input); break;
     case "scale_10x": transformed = scaleTen(input); break;
     case "whitespace_order":
       // The public action order is semantic. Only reorder independent summary rows.
+      transformed.legalActions = [...transformed.legalActions].reverse();
       transformed.observerTendencySummary = [...transformed.observerTendencySummary].reverse();
       break;
     case "equivalent_command":
@@ -147,7 +164,6 @@ export function transformPilotCase(base: PilotCase, transform: PilotVariant["tra
       expectedDifference = "pending";
       if (transformed.selectedAction) transformed.selectedAction = { ...transformed.selectedAction, targetChips: transformed.selectedAction.targetChips + 1 };
       break;
-    case "name_permutation":
     case "identity":
       break;
   }
@@ -163,6 +179,13 @@ export function transformPilotCase(base: PilotCase, transform: PilotVariant["tra
 
 function fixtureSlots(cases: readonly PilotCase[], stratum: PilotStratum): PilotCase[] {
   return cases.filter((entry) => entry.stratum === stratum).slice(0, 50);
+}
+
+function selectedPilotCases(cases: readonly PilotCase[], manifestId: string): PilotCase[] {
+  return (["verified_defect", "defensible_unusual", "ordinary", "ambiguous_ood"] as const).flatMap((stratum) => cases
+    .filter((entry) => entry.stratum === stratum)
+    .sort((left, right) => hash(`${manifestId}:${left.baseCaseId}`) - hash(`${manifestId}:${right.baseCaseId}`) || left.baseCaseId.localeCompare(right.baseCaseId))
+    .slice(0, 10));
 }
 
 export function createPilotManifest(options: {
@@ -184,18 +207,19 @@ export function createPilotManifest(options: {
       forcedDevelopmentFamilies[entry.familyId] = "protected named family is development-only";
     } else splitByFamily[entry.familyId] = splitFor(entry.familyId, splitSalt);
   }
+  const manifestId = options.manifestId ?? `pilot:${hash(`${options.version ?? "pilot-v1"}:${splitSalt}`).toString(16)}`;
   const provenanceCounts: Record<CaseProvenance, number> = { exact_verified: 0, expert_adjudicated: 0, pending_review: 0 };
   for (const entry of selected) provenanceCounts[entry.provenance] += 1;
   return {
     schemaVersion: 1,
-    manifestId: options.manifestId ?? `pilot:${hash(`${options.version ?? "pilot-v1"}:${splitSalt}`).toString(16)}`,
+    manifestId,
     version: options.version ?? "pilot-v1",
     splitSalt,
     slotCounts: { verified_defect: 50, defensible_unusual: 50, ordinary: 50, ambiguous_ood: 50 },
     cases: selected.map((entry) => ({ ...entry, input: cloneInput(entry.input) })),
     splitByFamily,
     forcedDevelopmentFamilies,
-    selectedCaseIds: selected.map((entry) => entry.baseCaseId),
+    selectedCaseIds: selectedPilotCases(selected, manifestId).map((entry) => entry.baseCaseId),
     provenanceCounts,
     status: selected.some((entry) => entry.provenance === "pending_review") || selected.length < 200 ? "pending_review" : "fixture_only",
     acceptancePolicy: options.acceptancePolicy ?? null,
@@ -217,10 +241,13 @@ export async function runReviewerPilot(
   adapter: ReviewerAdapter,
   options: { baseCaseLimit?: number; cache?: ReviewerResponseCache; includeTransforms?: boolean } = {},
 ): Promise<PilotRunResult> {
-  const cases = manifest.cases.slice(0, options.baseCaseLimit ?? manifest.cases.length);
+  const selected = new Set(manifest.selectedCaseIds);
+  const plannedCases = manifest.cases.filter((entry) => selected.has(entry.baseCaseId));
+  const cases = (options.baseCaseLimit === undefined ? plannedCases : manifest.cases).slice(0, options.baseCaseLimit ?? plannedCases.length);
   const variants: PilotVariant[] = [];
   for (const entry of cases) {
     variants.push(transformPilotCase(entry, "identity"));
+    variants.push(transformPilotCase(entry, "exact_duplicate"));
     if (options.includeTransforms !== false) {
       variants.push(transformPilotCase(entry, "name_permutation"));
       variants.push(transformPilotCase(entry, "global_suit_permutation"));
@@ -238,7 +265,7 @@ export async function runReviewerPilot(
     receipts.push(result.receipt);
     outputs.push({ variantId: variant.variantId, output: result.output });
   }
-  const hasHumanEvidence = manifest.cases.some((entry) => entry.provenance === "expert_adjudicated" && entry.humanLabelRef);
+  const hasHumanEvidence = cases.some((entry) => entry.provenance === "expert_adjudicated" && entry.humanLabelRef);
   return {
     manifestId: manifest.manifestId,
     requestedBaseCases: cases.length,

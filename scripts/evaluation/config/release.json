@@ -1,0 +1,9 @@
+{
+  "version": "evaluation-release-v1",
+  "status": "pending",
+  "tier": "release",
+  "offline": true,
+  "holdout": "fresh-precommitted-manifest-required",
+  "externalEvidence": "pending",
+  "promotion": "human-record-required"
+}

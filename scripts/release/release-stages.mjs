@@ -64,6 +64,20 @@ export const stages = (node) => [
     ],
   },
   {
+    name: "Poker behavioral evaluation evidence verifier",
+    command: node,
+    args: [
+      join("node_modules", "vite-node", "vite-node.mjs"),
+      "-c",
+      join("scripts", "vite-node.config.mjs"),
+      join("scripts", "evaluation", "run.ts"),
+      "--",
+      "verify",
+      "--offline",
+      "--require-complete",
+    ],
+  },
+  {
     name: "Unit/property/soak test inventory",
     command: node,
     args: [join("scripts", "release", "verify-test-inventory.mjs")],
