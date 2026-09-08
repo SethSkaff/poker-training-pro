@@ -197,6 +197,14 @@ export interface SessionPolicyOptions {
 }
 
 /**
+ * Evaluation-only lifecycle scope. Production callers omit this option and
+ * retain the hero-scoped completion behavior exactly.
+ */
+export interface TournamentSessionProgressionOptions {
+  completionScope?: "hero" | "full-field";
+}
+
+/**
  * Names are composed from independent given/family parts rather than a fixed
  * list, so a career does not cycle back to the same five faces. The given-name
  * pool is the same authored 100-player library used by the 2D table: 75 male
@@ -972,6 +980,7 @@ function createSessionResult(
  */
 export function settleTournamentSessionHand(
   source: TournamentSession,
+  options: TournamentSessionProgressionOptions = {},
 ): TournamentSession {
   const hand = source.activeHand;
   if (!hand) throw new Error("No active session hand");
@@ -1046,7 +1055,7 @@ export function settleTournamentSessionHand(
     (player) => player.id === source.heroId,
   );
   if (!heroState) throw new Error("Hero tournament state is missing");
-  if (heroState.finishPlace !== undefined) {
+  if ((options.completionScope ?? "hero") === "hero" && heroState.finishPlace !== undefined) {
     const result = createSessionResult(next, heroState.finishPlace);
     next = {
       ...next,
@@ -1068,6 +1077,20 @@ export function settleTournamentSessionHand(
       ],
     };
   }
+  if ((options.completionScope ?? "hero") === "full-field") {
+    const activeTournamentPlayers = next.tournament.players.filter(
+      (player) => player.status === "active",
+    );
+    // Evaluation scope follows the same settlement/elimination core but does
+    // not fabricate a hero career placement after the hero exits. The runner
+    // records that milestone separately and only closes once the field is
+    // genuinely reduced to one player.
+    if (activeTournamentPlayers.length <= 1) {
+      next = { ...next, status: "complete", result: undefined };
+    } else {
+      next = { ...next, status: "playing", result: undefined };
+    }
+  }
   return next;
 }
 
@@ -1077,6 +1100,7 @@ export function settleTournamentSessionHand(
  */
 export function progressTournamentSessionHand(
   source: TournamentSession,
+  options: TournamentSessionProgressionOptions = {},
 ): TournamentSession {
   const hand = source.activeHand;
   if (!hand) throw new Error("No active session hand");
@@ -1084,7 +1108,7 @@ export function progressTournamentSessionHand(
     throw new Error("Betting must complete before progressing the hand");
   }
   if (hand.betting.handComplete || hand.street === "river") {
-    return settleTournamentSessionHand(source);
+    return settleTournamentSessionHand(source, options);
   }
 
   const dealt = dealNextStreet(hand);

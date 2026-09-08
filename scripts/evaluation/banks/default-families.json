@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "bankId": "generated-by-createScenarioBank",
+  "splitSalt": "poker-evaluation-split-v1",
+  "families": [
+    "wesley-reconstructed",
+    "deep-pressure",
+    "asymmetric-side-pot",
+    "reopening",
+    "ordinary",
+    "extreme-5x",
+    "extreme-10x"
+  ],
+  "status": "fixture-manifest-only; generated scenarios retain mechanical evidence and pending strategic labels"
+}
