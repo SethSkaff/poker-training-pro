@@ -193,7 +193,7 @@ function playersAbleToAct(state: BettingRoundState): BettingPlayerState[] {
   );
 }
 
-function raisingReopenedFor(
+export function raisingReopenedFor(
   state: BettingRoundState,
   playerId: string,
 ): boolean {
