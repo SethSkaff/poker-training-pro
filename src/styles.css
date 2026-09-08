@@ -5271,18 +5271,26 @@ body:has(.table-screen--3d),
   gap: 15px;
 }
 
-.bet-slider-row output {
+.bet-slider-row .bet-amount-field {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
 }
 
-.bet-slider-row output strong {
+.bet-slider-row .bet-amount-input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid rgba(237, 189, 98, 0.5);
+  border-radius: 6px;
+  background: rgba(237, 189, 98, 0.06);
   color: var(--gold-soft);
   font-size: 16px;
+  font-weight: 700;
+  text-align: right;
 }
 
-.bet-slider-row output span {
+.bet-slider-row .bet-amount-field span {
   color: var(--muted);
   font-size: 8px;
 }

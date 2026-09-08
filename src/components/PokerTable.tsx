@@ -1814,6 +1814,7 @@ export function PokerTable({
   const [actionError, setActionError] = useState<string>();
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(scenario.minimumRaise);
+  const [raiseAmountDraft, setRaiseAmountDraft] = useState<string | null>(null);
   const [mathAnswer, setMathAnswer] = useState("");
   const [mathError, setMathError] = useState<string>();
   const [mathResult, setMathResult] = useState<MathEvaluation | null>(null);
@@ -2502,6 +2503,7 @@ export function PokerTable({
     setActionError(undefined);
     setRaiseOpen(false);
     setRaiseAmount(scenario.minimumRaise);
+    setRaiseAmountDraft(null);
     setMathAnswer("");
     setMathError(undefined);
     setMathResult(null);
@@ -2567,6 +2569,7 @@ export function PokerTable({
       setActionError(undefined);
       setRaiseOpen(false);
       setRaiseAmount(scenario.minimumRaise);
+      setRaiseAmountDraft(null);
       actionGateRef.current.release();
     }
     if (update.resetHandVisualState) {
@@ -4904,14 +4907,41 @@ export function PokerTable({
                   }
                   aria-label={formatMessage("table.raise.amountAriaLabel")}
                 />
-                <output>
-                  <strong>{formatChips(raiseAmount)}</strong>
+                <div className="bet-amount-field">
+                  <input
+                    className="bet-amount-input"
+                    type="text"
+                    inputMode="numeric"
+                    aria-label={formatMessage("table.raise.amountAriaLabel")}
+                    value={raiseAmountDraft ?? formatChips(raiseAmount)}
+                    onFocus={(event) => {
+                      setRaiseAmountDraft(String(raiseAmount));
+                      event.currentTarget.select();
+                    }}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (!/^\d*$/.test(value)) return;
+                      setRaiseAmountDraft(value);
+                      if (value !== "" && Number.isFinite(Number(value))) {
+                        setRaiseAmount(
+                          Math.max(minimumRaise, Math.min(allInAmount, Number(value))),
+                        );
+                      }
+                    }}
+                    onBlur={() => setRaiseAmountDraft(null)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
                   <span>
                     {formatMessage("table.raise.bbSuffix", {
                       bb: Math.round(raiseAmount / scenario.blinds[1]),
                     })}
                   </span>
-                </output>
+                </div>
                 <button
                   className="primary-button"
                   type="button"
