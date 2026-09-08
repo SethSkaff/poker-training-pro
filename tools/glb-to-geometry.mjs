@@ -197,6 +197,10 @@ function encode(array) {
   return Buffer.from(array.buffer, array.byteOffset, array.byteLength).toString("base64");
 }
 
+function delta(values, stride = 1) {
+  return values.map((value, i) => value - (i >= stride ? values[i-stride] : 0));
+}
+
 function main() {
   const [source, target, exportName] = process.argv.slice(2);
   if (!source || !target || !exportName) {
@@ -214,10 +218,12 @@ function main() {
     // 16-bit indices wherever the mesh fits, which every mesh here does.
     const index = mesh.position.length / 3 <= 65_535 ? Uint16Array.from(mesh.index) : mesh.index;
     const fields = [
-      `    position: "${encode(mesh.position)}",`,
-      mesh.normal ? `    normal: "${encode(mesh.normal)}",` : null,
-      mesh.uv ? `    uv: "${encode(mesh.uv)}",` : null,
-      `    index: "${encode(index)}",`,
+      `    position: ${JSON.stringify(delta(Array.from(mesh.position, v => Math.round(v * 100000)), 3))},`,
+      `    positionScale: 100000,`,
+      `    deltaEncoded: true,`,
+      mesh.uv ? `    uv: ${JSON.stringify(Array.from(mesh.uv, v => Math.round(v * 10000)))},` : null,
+      mesh.uv ? `    uvScale: 10000,` : null,
+      `    index: ${JSON.stringify(delta(Array.from(index)))},`,
       `    indexBits: ${index.BYTES_PER_ELEMENT * 8},`,
     ].filter(Boolean).join("\n");
     return `  ${JSON.stringify(name)}: {\n${fields}\n  },`;
@@ -227,17 +233,20 @@ function main() {
   const contents = `/**
  * GENERATED FILE -- DO NOT EDIT.
  *
- * Vertex data compiled from ${from}, which \`tools/blender/build_table.py\`
- * exports from Blender. Regenerate with \`npm run build:table-geometry\`.
+ * Vertex data compiled from ${from}, exported by the checked-in Blender authoring scripts.
+ * Regenerate with tools/glb-to-geometry.mjs <source.glb> <target.ts> <exportName>.
  *
  * ${entries.length} meshes, ${triangles} triangles. Arrays are base64 of the
  * little-endian typed-array bytes; see \`decodePackedGeometry\`.
  */
 export interface PackedGeometry {
-  readonly position: string;
+  readonly position: string | readonly number[];
+  readonly positionScale?: number;
+  readonly deltaEncoded?: boolean;
   readonly normal?: string;
-  readonly uv?: string;
-  readonly index: string;
+  readonly uv?: string | readonly number[];
+  readonly uvScale?: number;
+  readonly index: string | readonly number[];
   readonly indexBits: number;
 }
 

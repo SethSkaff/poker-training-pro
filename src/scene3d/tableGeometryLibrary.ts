@@ -30,21 +30,35 @@ function decodeBase64(value: string): Uint8Array {
  */
 export function decodePackedGeometry(packed: PackedGeometry): BufferGeometry {
   const geometry = new BufferGeometry();
-  const positions = new Float32Array(decodeBase64(packed.position).buffer);
+  const positions = typeof packed.position === "string"
+    ? new Float32Array(decodeBase64(packed.position).buffer)
+    : Float32Array.from(packed.position, value => value / (packed.positionScale ?? 1));
+  if (packed.deltaEncoded) {
+    for (let i = 3; i < positions.length; i++) positions[i] += positions[i-3];
+  }
   geometry.setAttribute("position", new BufferAttribute(positions, 3));
   if (packed.normal) {
     geometry.setAttribute("normal", new BufferAttribute(new Float32Array(decodeBase64(packed.normal).buffer), 3));
   }
   if (packed.uv) {
-    geometry.setAttribute("uv", new BufferAttribute(new Float32Array(decodeBase64(packed.uv).buffer), 2));
+    geometry.setAttribute("uv", new BufferAttribute(typeof packed.uv === "string" ? new Float32Array(decodeBase64(packed.uv).buffer) : Float32Array.from(packed.uv, value => value / (packed.uvScale ?? 1)), 2));
   }
-  const indexBytes = decodeBase64(packed.index);
+  const indexBytes = typeof packed.index === "string" ? decodeBase64(packed.index) : null;
   geometry.setIndex(
     new BufferAttribute(
-      packed.indexBits === 16 ? new Uint16Array(indexBytes.buffer) : new Uint32Array(indexBytes.buffer),
+      indexBytes ? (packed.indexBits === 16 ? new Uint16Array(indexBytes.buffer) : new Uint32Array(indexBytes.buffer))
+        : (packed.indexBits === 16 ? Uint16Array.from(packed.index as readonly number[]) : Uint32Array.from(packed.index as readonly number[])),
       1,
     ),
   );
+  if (packed.deltaEncoded) {
+    const indices = geometry.getIndex()!;
+    let value = 0;
+    for (let i = 0; i < indices.count; i++) {
+      value += (packed.index as readonly number[])[i];
+      indices.setX(i, value);
+    }
+  }
   if (!packed.normal) geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
@@ -60,7 +74,7 @@ export function tableMeshGeometry(name: TableMeshName): BufferGeometry {
 export function tableMeshTriangles(name: TableMeshName): number {
   const packed = tableGeometry[name];
   if (!packed) throw new Error(`unknown authored mesh: ${name}`);
-  return (decodeBase64(packed.index).byteLength / (packed.indexBits / 8)) / 3;
+  return typeof packed.index === "string" ? (decodeBase64(packed.index).byteLength / (packed.indexBits / 8)) / 3 : packed.index.length / 3;
 }
 
 export const TABLE_MESH_NAMES = Object.keys(tableGeometry) as TableMeshName[];

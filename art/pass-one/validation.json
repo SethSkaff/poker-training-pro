@@ -1,0 +1,31 @@
+{
+  "pass": "foreground-one",
+  "tool": "Blender MCP / Blender 4.5.13",
+  "tests": {
+    "files": 35,
+    "passed": 259
+  },
+  "productionBuild": "passed",
+  "windowsPackage": "passed",
+  "licenseSidecars": "passed",
+  "staticBudgets": true,
+  "sceneJavaScriptGzipBytes": 290774,
+  "packagedCases": [
+    {
+      "kind": "webgl2",
+      "motionMode": "full",
+      "drawCalls": 169,
+      "triangles": 139813,
+      "frameP95Ms": 1.5999999977648258,
+      "textureEstimateMiB": 1.717926025390625
+    },
+    {
+      "kind": "forced-webgl-failure",
+      "motionMode": "full",
+      "drawCalls": 0,
+      "triangles": 0,
+      "frameP95Ms": null,
+      "textureEstimateMiB": 0
+    }
+  ]
+}

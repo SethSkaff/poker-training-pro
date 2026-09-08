@@ -244,9 +244,12 @@ export interface OpponentCharacter {
   hairColor: string;
   face: (typeof FACE_PRESETS)[number];
   skinTone: string;
-  outfit: (typeof OUTFITS)[number];
+  outfit: { readonly name: (typeof OUTFITS)[number]["name"]; readonly base: string; readonly trim: string };
   /** Small per-identity height scale so a table is not one uniform height. */
   heightScale: number;
+  eyeColor?: string;
+  facialHair?: "none" | "stubble" | "goatee";
+  mole?: number | null;
 }
 
 /**
@@ -254,23 +257,37 @@ export interface OpponentCharacter {
  * `describeOpponentAppearance`: the player id is the only input, so appearance
  * can never encode how someone plays.
  */
+/** Avalanche the visual seed so adjacent roster IDs do not share low-bit palettes. */
+function cosmeticHash(playerId: string, salt: string): number {
+  let value = dimensionHash(playerId, salt);
+  value = Math.imul(value ^ (value >>> 16), 0x85ebca6b);
+  value = Math.imul(value ^ (value >>> 13), 0xc2b2ae35);
+  return (value ^ (value >>> 16)) >>> 0;
+}
+function pick3d<T>(playerId: string, salt: string, values: readonly T[]): T {
+  return values[cosmeticHash(playerId, salt) % values.length];
+}
+
 export function describeOpponentCharacter(playerId: string): OpponentCharacter {
-  const gender = pick(playerId, "gender", PRESENTED_GENDERS);
+  const gender = cosmeticHash(playerId, "gender-3d") % 4 === 0 ? "female" : "male";
   const bodies = gender === "male" ? MALE_BODY_TYPES : FEMALE_BODY_TYPES;
   const hair = gender === "male" ? MALE_HAIR_STYLES : FEMALE_HAIR_STYLES;
-  const hairGradient = dimensionFraction(playerId, "hair-gradient");
+  const hairGradient = cosmeticHash(playerId, "hair-gradient") / 0x1_0000_0000;
   return {
     gender,
-    body: pick(playerId, "body-3d", bodies),
-    hairStyle: pick(playerId, "hair-3d", hair),
+    body: pick3d(playerId, "body-3d", bodies),
+    hairStyle: pick3d(playerId, "hair-3d", hair),
+    eyeColor: pick3d(playerId, "eye-color", ["#4b3627", "#596c72", "#68704c", "#7c674a"] as const),
+    facialHair: gender === "male" ? pick3d(playerId, "facial-hair", ["none", "none", "none", "stubble", "goatee"] as const) : "none",
+    mole: cosmeticHash(playerId, "mole-chance") % 20 === 0 ? cosmeticHash(playerId, "mole-position") % 3 : null,
     hairGradient,
     hairColor: hairColorAt(hairGradient),
-    face: pick(playerId, "face-3d", FACE_PRESETS),
-    skinTone: pick(playerId, "skin", SKIN_TONES),
-    outfit: pick(playerId, "outfit", OUTFITS),
+    face: pick3d(playerId, "face-3d", FACE_PRESETS),
+    skinTone: pick3d(playerId, "skin", SKIN_TONES),
+    outfit: pick3d(playerId, "outfit", OUTFITS),
     // +/-4%: enough that seated shoulder lines differ, never enough to break the
     // camera envelope the composition solver reserves for a head.
-    heightScale: 0.96 + (dimensionHash(playerId, "height") % 81) / 1000,
+    heightScale: 0.96 + (cosmeticHash(playerId, "height") % 81) / 1000,
   };
 }
 

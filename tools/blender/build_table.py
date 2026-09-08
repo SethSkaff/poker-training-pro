@@ -62,7 +62,7 @@ RAIL_WIDTH = TABLE_RAIL_WIDTH - LEDGE_WIDTH
 LEDGE_RISE = 0.011
 RAIL_CREST = 0.070
 
-OUTLINE_SEGMENTS = 72
+OUTLINE_SEGMENTS = 80
 
 # Printed felt graphics.
 #
@@ -92,12 +92,14 @@ CARD_CORNER = 0.008
 # Casino chip: 39 mm real, 48 mm here so the denomination band reads seated.
 CHIP_RADIUS = 0.024
 CHIP_HEIGHT = 0.0035
-CHIP_SEGMENTS = 20
+CHIP_SEGMENTS = 32
 CHIP_EDGE_SPOTS = 8
 
 
 def clear_scene():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    for obj in list(bpy.data.objects): bpy.data.objects.remove(obj,do_unlink=True)
+    for data in list(bpy.data.meshes):
+        if data.users == 0: bpy.data.meshes.remove(data)
 
 
 def new_mesh(name):
@@ -108,6 +110,7 @@ def new_mesh(name):
 
 
 def finish(obj, bm, smooth=False):
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
     bm.to_mesh(obj.data)
     bm.free()
     for polygon in obj.data.polygons:
@@ -123,7 +126,7 @@ def add_sphere(bm, centre, radius, scale=(1.0, 1.0, 1.0), segments=12, rings=8):
     # but they are radii -- a long-standing misnomer in the bmesh operator API.
     # Passing radius * 2 here silently produced everything at double size.
     result = bmesh.ops.create_uvsphere(
-        bm, u_segments=segments, v_segments=rings, diameter=radius
+        bm, u_segments=segments, v_segments=rings, radius=radius
     )
     verts = result["verts"]
     if scale != (1.0, 1.0, 1.0):
@@ -138,8 +141,8 @@ def add_cylinder(bm, centre, radius_top, radius_bottom, height, segments=12):
         cap_ends=True,
         cap_tris=False,
         segments=segments,
-        diameter1=radius_bottom,
-        diameter2=radius_top,
+        radius1=radius_bottom,
+        radius2=radius_top,
         depth=height,
     )
     verts = result["verts"]
@@ -397,8 +400,10 @@ def build_rail():
         profile.append((offset, height))
     profile.append((TABLE_RAIL_WIDTH, -0.020))
     profile.append((TABLE_RAIL_WIDTH - 0.004, -0.105))
+    profile.append((LEDGE_WIDTH, -0.105))
+    profile.append((LEDGE_WIDTH, LEDGE_RISE))
     sweep_profile(bm, TABLE_WIDTH, TABLE_DEPTH, profile)
-    return finish(obj, bm, smooth=True)
+    return planar_uv(finish(obj, bm, smooth=True), TABLE_WIDTH, TABLE_DEPTH)
 
 
 def build_trim():
@@ -480,44 +485,13 @@ def build_seat_inlay():
 
 
 def build_pedestal():
-    """
-    A tapered column and foot in the rail's own timber. Authored downward from
-    the felt plane so the runtime places the whole assembly by one anchor.
-    """
-    obj, bm = new_mesh("table/pedestal")
-    steps = [
-        (0.30, -0.105),
-        (0.20, -0.20),
-        (0.17, -0.52),
-        (0.24, -0.68),
-        (0.30, -0.71),
-        (0.50, -0.735),
-        (0.52, -0.76),
-    ]
-    rings = []
-    for radius, height in steps:
-        rings.append(
-            [
-                bm.verts.new(
-                    (
-                        math.cos(2.0 * math.pi * i / 24) * radius,
-                        math.sin(2.0 * math.pi * i / 24) * radius,
-                        height,
-                    )
-                )
-                for i in range(24)
-            ]
-        )
-    bm.verts.ensure_lookup_table()
-    for index in range(len(rings) - 1):
-        upper, lower = rings[index], rings[index + 1]
-        for step in range(24):
-            nxt = (step + 1) % 24
-            bm.faces.new((upper[step], upper[nxt], lower[nxt], lower[step]))
-    hub = bm.verts.new((0.0, 0.0, -TABLE_HEIGHT))
-    for step in range(24):
-        bm.faces.new((hub, rings[-1][(step + 1) % 24], rings[-1][step]))
-    return finish(obj, bm)
+    """Solid under-rail apron, two tapered supports and broad plinth feet."""
+    obj,bm=new_mesh("table/pedestal")
+    sweep_profile(bm,TABLE_WIDTH,TABLE_DEPTH,[(.125,-.098),(.125,-.16),(.110,-.178),(.075,-.178),(.075,-.105),(.125,-.098)])
+    for x in [-.57,.57]:
+        add_cylinder(bm,(x,0,-.42),.105,.145,.49,20)
+        add_sphere(bm,(x,0,-.7226),.22,scale=(1,.82,.17),segments=20,rings=8)
+    return finish(obj,bm,smooth=True)
 
 
 # --- Table objects -----------------------------------------------------------
@@ -548,6 +522,9 @@ def build_card(name="card"):
         bm.faces.new((top_hub, top[index], top[nxt]))
         bm.faces.new((bottom_hub, bottom[nxt], bottom[index]))
         bm.faces.new((top[nxt], bottom[nxt], bottom[index], top[index]))
+    bm.normal_update()
+    edges=[e for e in bm.edges if len(e.link_faces)==2 and e.calc_face_angle(0)>.12]
+    bmesh.ops.bevel(bm,geom=edges,offset=.0003,segments=1,affect='EDGES')
     finish(obj, bm)
 
     # u runs from +x to -x, not the other way about. The exporter maps Blender
@@ -693,7 +670,17 @@ def build_hand():
         (0.026, 0.0130, 0.46),
     ])
 
-    return finish(obj, bm, smooth=True)
+    finish(obj,bm,smooth=True)
+    bpy.context.view_layer.objects.active=obj
+    obj.select_set(True)
+    remesh=obj.modifiers.new("continuous hand surface","REMESH")
+    remesh.mode='VOXEL';remesh.voxel_size=.0022;remesh.use_smooth_shade=True
+    bpy.ops.object.modifier_apply(modifier=remesh.name)
+    smooth=obj.modifiers.new("soft knuckles","SMOOTH");smooth.factor=.7;smooth.iterations=3
+    bpy.ops.object.modifier_apply(modifier=smooth.name)
+    dec=obj.modifiers.new("runtime topology","DECIMATE");dec.ratio=.07
+    bpy.ops.object.modifier_apply(modifier=dec.name)
+    return obj
 
 
 def build_chip_body():
@@ -763,6 +750,7 @@ def build_chip_inlay():
     radius = CHIP_RADIUS * 0.62
     for sign in (1.0, -1.0):
         disc(bm, radius, sign * (half - 0.0003), segments=CHIP_SEGMENTS)
+        annulus(bm, CHIP_RADIUS*.79, CHIP_RADIUS*.82, sign*(half-.00025),segments=CHIP_SEGMENTS)
     return finish(obj, bm)
 
 

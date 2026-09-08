@@ -88,6 +88,7 @@ import {
 } from "./tableStations";
 import { dealerGestureFor, dealerWorkFor, type DealerWork } from "./dealerGesture";
 import { dealerCardFrame } from "./dealerChoreography";
+import { foregroundPart } from "./foregroundLibrary";
 import { tableMeshGeometry, type TableMeshName } from "./tableGeometryLibrary";
 import {
   drawCarpetTexture,
@@ -280,20 +281,20 @@ export function probeWebGl2(canvas: HTMLCanvasElement): WebGlProbeResult {
    pendant and left the green $25 chips sitting on a green of their own value --
    invisible until they moved. A card room's cloth is deep, and everything laid
    on it reads against it. */
-const FELT = 0x155232;
+const FELT = 0x104b38;
 const FELT_EDGE = 0x0e3a21;
 /* Padded leather, not bare timber. At 0x7b6b59 the near rail was the brightest
    large surface in the seated frame -- a pale tan band across the bottom third
    that pulled the eye off the felt and read as moulded plastic. A darker hide
    lets the brass trim be the highlight, which is the way round a real table
    works. */
-const RAIL = 0x603a2c;
+const RAIL = 0x242a2c;
 /* The hard ledge between felt and padded rail, in a darker timber than the rail
    so the three zones separate under the pendant key rather than merging. */
-const LEDGE = 0x3f281f;
+const LEDGE = 0x34312c;
 /** Subtle leather piping from the approved casino rail, not bright metal. */
-const RAIL_SEAM = 0x8a5940;
-const PEDESTAL = 0x33231a;
+const RAIL_SEAM = 0xb29a66;
+const PEDESTAL = 0x242a2f;
 const BRASS = 0xc9a227;
 const CARPET = 0x5c1a28;
 const CARPET_PATTERN = 0x7d2837;
@@ -1899,7 +1900,7 @@ function buildTable(scene: TableSceneResources): Group {
   const zone = (name: TableMeshName, color: number, name3d: string): Mesh => {
     const mesh = new Mesh(
       resources.track(tableMeshGeometry(name)),
-      resources.track(new MeshLambertMaterial({ color })),
+      resources.track(new MeshStandardMaterial({ color, roughness: .84, metalness: 0, side: DoubleSide })),
     );
     mesh.name = name3d;
     group.add(mesh);
@@ -1914,17 +1915,18 @@ function buildTable(scene: TableSceneResources): Group {
     to the real scale of the cloth.
   */
   const felt = zone("table/felt", 0xffffff, "table-felt");
-  const feltMaterial = felt.material as MeshLambertMaterial;
+  const feltMaterial = felt.material as MeshStandardMaterial;
   // Tiled every 26 cm rather than every 12: the weave has to be resolvable on
   // screen to be worth drawing, and at the old repeat it was subpixel.
   const feltTexture = scene.surfaceTexture("felt", TABLE_WIDTH / 0.26, TABLE_DEPTH / 0.26);
   if (feltTexture) feltMaterial.map = feltTexture;
   else feltMaterial.color.setHex(FELT);
+  if (feltTexture) { feltMaterial.bumpMap = feltTexture; feltMaterial.bumpScale = .0012; }
   // Keep the existing textured baize clean, as in the approved casino layout.
   // Wager and private-card zones remain model-only placement/collision data.
   zone("table/ledge", LEDGE, "table-ledge");
   const rail = zone("table/rail", RAIL, "table-rail");
-  const railMaterial = rail.material as MeshLambertMaterial;
+  const railMaterial = rail.material as MeshStandardMaterial;
   // The authored rail is viewed from both its inner and outer faces at seated
   // camera angles. Keep it a fully opaque depth-writing object so the felt,
   // ledge, or room can never ghost through the wood.
@@ -1934,7 +1936,10 @@ function buildTable(scene: TableSceneResources): Group {
   railMaterial.depthWrite = true;
   railMaterial.side = DoubleSide;
   rail.renderOrder = 3;
-  zone("table/trim", RAIL_SEAM, "table-trim");
+  const trim = zone("table/trim", RAIL_SEAM, "table-trim");
+  (trim.material as MeshStandardMaterial).metalness = .65;
+  (trim.material as MeshStandardMaterial).roughness = .36;
+  zone("table/print", 0x6b9276, "table-betting-line");
   zone("table/pedestal", PEDESTAL, "table-pedestal");
 
   return group;
@@ -1951,9 +1956,12 @@ function buildTableMarker(
     blind's disc was wider than the two hole cards it sat on top of.
   */
   const marker = new Mesh(
-    resources.ledger.track(new CylinderGeometry(0.028, 0.028, 0.009, 16)),
-    resources.markerMaterial(label, color),
+    resources.ledger.track(foregroundPart("marker/body")),
+    resources.ledger.track(new MeshStandardMaterial({color, roughness:.45, metalness:0})),
   );
+  marker.add(new Mesh(resources.ledger.track(foregroundPart("marker/face")),resources.markerMaterial(label,color)));
+  marker.add(new Mesh(resources.ledger.track(foregroundPart("marker/band")),
+    resources.ledger.track(new MeshStandardMaterial({color:0xb29a66,roughness:.34,metalness:.65}))));
   return marker;
 }
 
@@ -2112,7 +2120,7 @@ function buildHeroActionHand(
   );
   forearm.name = `hero-${side}-action-forearm`;
   const palm = new Mesh(
-    resources.ledger.track(new SphereGeometry(1, 10, 7)),
+    resources.ledger.track(tableMeshGeometry("hand/peek")),
     skin,
   );
   palm.name = `hero-${side}-action-palm`;
@@ -2140,7 +2148,7 @@ function setHeroActionHand(
   );
   view.forearm.scale.set(0.025, length, 0.025);
   view.palm.position.copy(end);
-  view.palm.scale.set(0.043, 0.018, 0.054);
+  view.palm.scale.set(view.side === "left" ? -0.9 : 0.9, 0.9, 0.9);
   view.palm.rotation.set(0, view.side === "left" ? -0.08 : 0.08, 0);
   view.root.userData.hand = view.side;
   view.root.userData.target = [...target];
@@ -2157,7 +2165,7 @@ function setHeroActionHand(
 function buildHeroPeekHands(resources: TableSceneResources): Group {
   const hands = new Group();
   hands.name = "hero-peek-rig";
-  const skin = resources.ledger.track(new MeshLambertMaterial({ color: 0xd2a07b }));
+  const skin = resources.ledger.track(new MeshStandardMaterial({ color: 0xd2a07b, roughness: .83, metalness: 0 }));
   const jointGeometry = resources.ledger.track(new SphereGeometry(1, 12, 8));
   const up = new Vector3(0, 1, 0);
   const segment = (
@@ -2171,7 +2179,7 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
     const end = new Vector3(...to);
     const direction = end.clone().sub(start);
     const mesh = new Mesh(
-      resources.ledger.track(new CylinderGeometry(radius, radius * 1.08, direction.length(), 8)),
+      resources.ledger.track(foregroundPart("limb/sleeve").translate(0,-.5,0).scale(radius,direction.length(),radius)),
       skin,
     );
     mesh.name = name;
@@ -2187,7 +2195,7 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
   ): Group => {
     const arm = new Group();
     arm.name = `hero-${side}-arm-chain`;
-    segment(arm, `hero-${side}-upper-arm`, shoulder, elbow, 0.019);
+    segment(arm, `hero-${side}-upper-arm`, [shoulder[0], -0.42, -1.20], elbow, 0.025);
     segment(arm, `hero-${side}-forearm`, elbow, wrist, 0.017);
     const elbowJoint = new Mesh(jointGeometry, skin);
     elbowJoint.name = `hero-${side}-elbow-joint`;
@@ -2208,28 +2216,14 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
   leftHand.name = "hero-left-wrist-hand";
   leftHand.position.set(...HERO_PEEK_HAND_RIG.left.wrist);
   leftHand.rotation.set(0.02, -0.08, -0.10);
-  const leftPalm = new Mesh(jointGeometry, skin);
+  const leftPalm = new Mesh(resources.ledger.track(tableMeshGeometry("hand/peek")), skin);
   leftPalm.name = "hero-left-palm-facing-right";
-  // Thin on X makes this palm stand vertically, facing toward local -X: the
-  // cards are to its right on screen while the palm stays outside their edge.
-  leftPalm.scale.set(0.011, 0.026, 0.032);
+  leftPalm.scale.setScalar(.60);
+  leftPalm.rotation.z = Math.PI / 2;
+  leftPalm.position.z = 0;
   leftHand.add(leftPalm);
-  const sideFingerGeometry = resources.ledger.track(new CylinderGeometry(0.006, 0.007, 0.046, 8));
-  for (let finger = 0; finger < 3; finger += 1) {
-    const sideFinger = new Mesh(sideFingerGeometry, skin);
-    sideFinger.name = `hero-left-side-finger-${finger}`;
-    sideFinger.position.set(-0.002, (finger - 1) * 0.012, 0.010);
-    sideFinger.rotation.set(Math.PI / 2, 0, -0.05);
-    leftHand.add(sideFinger);
-  }
   leftArm.add(leftHand);
-  segment(
-    leftArm,
-    "hero-left-edge-thumb",
-    HERO_PEEK_HAND_RIG.left.wrist,
-    [0.125, 0.020, 0.028],
-    0.007,
-  );
+
 
   const rightArm = addArmChain(
     "right",
@@ -2243,30 +2237,12 @@ function buildHeroPeekHands(resources: TableSceneResources): Group {
   // Pitch the brace upward; its broad palm remains beyond the card edge and is
   // depth-occluded by the raised faces from the hero's eye line.
   rightHand.rotation.set(0.34, 0.08, 0.02);
-  const rightPalm = new Mesh(jointGeometry, skin);
+  const rightPalm = new Mesh(resources.ledger.track(tableMeshGeometry("hand/peek")), skin);
   rightPalm.name = "hero-right-palm-behind-cards";
-  rightPalm.position.set(0.045, 0, 0.004);
-  rightPalm.scale.set(0.055, 0.020, 0.030);
+  rightPalm.position.set(0, 0, 0);
+  rightPalm.scale.set(.55,.55,.55);
   rightHand.add(rightPalm);
-  const rearFingerGeometry = resources.ledger.track(new CylinderGeometry(0.007, 0.008, 0.034, 8));
-  for (let finger = 0; finger < 3; finger += 1) {
-    const rearFinger = new Mesh(rearFingerGeometry, skin);
-    rearFinger.name = `hero-right-rear-finger-${finger}`;
-    rearFinger.position.set(0.022 + finger * 0.017, 0.006, -0.010);
-    rearFinger.rotation.set(Math.PI / 2, 0, 0);
-    rightHand.add(rearFinger);
-  }
   rightArm.add(rightHand);
-  // The thumb terminates in the centre gap, below the printed windows. It is
-  // the only right-hand part that reaches the hinge. Its upper knuckle meets
-  // the raised edge while the palm supports both cards from behind.
-  segment(
-    rightArm,
-    "hero-right-centre-thumb",
-    [-0.035, 0.080, 0.072],
-    [0.002, 0.042, 0.012],
-    0.008,
-  );
   hands.userData.elbowAnchors = {
     left: HERO_PEEK_HAND_RIG.left.elbow,
     right: HERO_PEEK_HAND_RIG.right.elbow,

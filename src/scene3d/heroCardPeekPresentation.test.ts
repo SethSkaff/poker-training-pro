@@ -12,7 +12,7 @@ describe("hero card peek presentation", () => {
     expect(scene).toContain("function buildHeroPeekHands");
     expect(scene).toContain('leftPalm.name = "hero-left-palm-facing-right";');
     expect(scene).toContain('rightPalm.name = "hero-right-palm-behind-cards";');
-    expect(scene).toContain('"hero-right-centre-thumb"');
+    expect(scene).toContain('tableMeshGeometry("hand/peek")');
     expect(scene).toContain('hands.userData.rig = "left-side-shield/right-rear-brace/centre-thumb";');
     expect(scene).not.toContain("buildHeroPeekHandsLegacy");
     expect(scene).not.toContain("cornerFoldGeometry");

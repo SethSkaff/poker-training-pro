@@ -370,11 +370,11 @@
     },
     {
       "path": "src/assets/table.glb",
-      "shippingRole": "authored-3d-table-card-and-chip-master-compiled-into-the-bundle",
+      "shippingRole": "Blender-MCP-authored foreground master compiled synchronously into the 3D scene",
       "format": "GLB",
-      "bytes": 199108,
-      "sha256": "e21dc967890dc103353b606fd48518f87907b8cc07b4187c94982df68f05ffe0",
-      "dimensions": "13 meshes, 6743 triangles",
+      "bytes": 247820,
+      "sha256": "3ed73a841118cc21e91c6467a1a5d48eb110c924e9d197fa58cb58524e8b1498",
+      "dimensions": "13 meshes, 8725 triangles",
       "embeddedMetadata": {
         "inspection": "glTF 2.0 binary; JSON + BIN chunks only; no materials, no textures, no images, no external URIs, no extensions."
       },
@@ -382,15 +382,45 @@
       "rightsStatus": "approved-commercial-redistribution",
       "derivationEvidence": {
         "status": "recipe-archived-and-reproducible",
-        "detail": "Generated, not derived from any other declared asset. Exported by `blender --background --factory-startup --python tools/blender/build_table.py -- --out src/assets/table.glb`. That script is checked in, takes no external input, and builds every mesh arithmetically from the dimensions in src/scene3d/tableStations.ts. `tools/glb-to-geometry.mjs` compiles this file into src/scene3d/generated/tableGeometry.ts, which is what the bundle actually ships."
+        "detail": "Original geometry authored through Blender MCP using tools/blender/build_table.py, Blender 4.5.13. Compiled by tools/glb-to-geometry.mjs using quantized delta vertex data. No external source content."
       },
       "sourceEvidence": {
         "releaseSufficient": true,
-        "detail": "Original work with no external source asset: the mesh is generated arithmetically by a checked-in script from checked-in constants. Blender 2.93.5 is the tool, not a content source, and contributes no geometry, material, or texture to the output."
+        "detail": "Project-owned original procedural modelling; Blender MCP is the authoring tool, not a third-party content source."
       },
       "masterEvidence": {
         "releaseSufficient": true,
-        "detail": "This file is the master. It is byte-reproducible from tools/blender/build_table.py, and src/scene3d/tableGeometryLibrary.test.ts asserts the compiled geometry still matches the composition constants."
+        "detail": "GLB geometry master; reproducible source in tools/blender/build_table.py. Editable material master in art/pass-one/table.blend. Runtime canvas materials are in sceneSurfaceTextures.ts, sceneCharacters.ts and tableScene.ts."
+      },
+      "licenseEvidence": {
+        "releaseSufficient": true,
+        "detail": "Project-owned original work; no third-party licence applies. Blender's GPL covers the application, not files it exports."
+      },
+      "publisherMustProvide": []
+    },
+    {
+      "path": "src/assets/foreground.glb",
+      "shippingRole": "Blender-MCP-authored foreground master compiled synchronously into the 3D scene",
+      "format": "GLB",
+      "bytes": 742012,
+      "sha256": "d215c36e889ab7bf87f9d4f933fcc83d370096038b7cd5bcf51b8eefd75c941a",
+      "dimensions": "50 modular meshes; see generated foregroundGeometry.ts for triangle inventory",
+      "embeddedMetadata": {
+        "inspection": "glTF 2.0 binary; JSON + BIN chunks only; no materials, no textures, no images, no external URIs, no extensions."
+      },
+      "provenanceStatus": "generated-provenance-verified",
+      "rightsStatus": "approved-commercial-redistribution",
+      "derivationEvidence": {
+        "status": "recipe-archived-and-reproducible",
+        "detail": "Original geometry authored through Blender MCP using tools/blender/build_foreground.py, Blender 4.5.13. Compiled by tools/glb-to-geometry.mjs using quantized delta vertex data. No external source content."
+      },
+      "sourceEvidence": {
+        "releaseSufficient": true,
+        "detail": "Project-owned original procedural modelling; Blender MCP is the authoring tool, not a third-party content source."
+      },
+      "masterEvidence": {
+        "releaseSufficient": true,
+        "detail": "GLB geometry master; reproducible source in tools/blender/build_foreground.py. Editable material master in art/pass-one/foreground.blend. Runtime canvas materials are in sceneSurfaceTextures.ts, sceneCharacters.ts and tableScene.ts."
       },
       "licenseEvidence": {
         "releaseSufficient": true,
