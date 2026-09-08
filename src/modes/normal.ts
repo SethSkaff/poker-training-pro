@@ -90,6 +90,25 @@ export interface NormalDecision {
   reason: string;
   publicSignals: PublicExploitSignals;
   adaptationPressure: number;
+  /** Exact Normal-policy action probabilities conditional on the supplied evaluations. */
+  selectionDistribution: NormalSelectionDistribution;
+}
+
+export interface NormalSelectionDistributionEntry {
+  key: string;
+  command: BettingActionCommand;
+  purpose: NormalActionPurpose;
+  probability: number;
+  eligibleDeviation: boolean;
+}
+
+export interface NormalSelectionDistribution {
+  deviationProbability: number;
+  bestActionKey: string;
+  eligibleDeviationKeys: string[];
+  bestForced: boolean;
+  branch: "best-only" | "forced-best" | "mixture";
+  entries: NormalSelectionDistributionEntry[];
 }
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
@@ -587,6 +606,56 @@ function weightedChoice<T>(
   return weighted[weighted.length - 1].candidate;
 }
 
+export function prepareNormalSelectionDistribution(input: {
+  ranked: readonly NormalActionEvaluation[];
+  best: NormalActionEvaluation;
+  eligibleDeviations: readonly NormalActionEvaluation[];
+  deviationProbability: number;
+  bestForced: boolean;
+  weights: ReadonlyMap<string, number>;
+}): NormalSelectionDistribution {
+  const eligibleKeys = input.eligibleDeviations.map((evaluation) => commandKey(evaluation.command));
+  const probabilities = new Map(input.ranked.map((evaluation) => [commandKey(evaluation.command), 0]));
+  const bestKey = commandKey(input.best.command);
+  const q = clamp01(input.deviationProbability);
+  const bestOnly = input.bestForced || input.eligibleDeviations.length === 0;
+  if (bestOnly) {
+    probabilities.set(bestKey, 1);
+  } else {
+    probabilities.set(bestKey, 1 - q);
+    const weighted = input.eligibleDeviations.map((evaluation) => ({
+      key: commandKey(evaluation.command),
+      weight: Math.max(0, input.weights.get(commandKey(evaluation.command)) ?? 0),
+    }));
+    const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+    if (total <= 0) {
+      probabilities.set(weighted[0].key, q);
+    } else {
+      for (const entry of weighted) probabilities.set(entry.key, q * entry.weight / total);
+    }
+  }
+  const entries = input.ranked.map((evaluation) => {
+    const key = commandKey(evaluation.command);
+    return {
+      key,
+      command: { ...evaluation.command },
+      purpose: evaluation.purpose ?? "neutral",
+      probability: probabilities.get(key) ?? 0,
+      eligibleDeviation: eligibleKeys.includes(key),
+    };
+  });
+  const total = entries.reduce((sum, entry) => sum + entry.probability, 0);
+  if (Math.abs(total - 1) > Number.EPSILON * 16) throw new Error("Normal selection distribution does not sum to one");
+  return {
+    deviationProbability: q,
+    bestActionKey: bestKey,
+    eligibleDeviationKeys: eligibleKeys,
+    bestForced: input.bestForced,
+    branch: input.bestForced ? "forced-best" : bestOnly ? "best-only" : "mixture",
+    entries,
+  };
+}
+
 function publicDecisionSeed(
   input: NormalDecisionInput,
   profile: NormalOpponentProfile,
@@ -748,19 +817,30 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
         ? aggressivePressureAlternatives
       : deviations;
 
+  const deviationWeights = new Map(
+    eligibleDeviations.map((candidate) => [
+      commandKey(candidate.command),
+      candidateWeight(candidate, profile, hand, signals, input.legalActions),
+    ]),
+  );
+  const bestForced =
+    preserveAggressiveBest ||
+    (eliminationPressure && isAggressive(best.command));
+  const selectionDistribution = prepareNormalSelectionDistribution({
+    ranked,
+    best,
+    eligibleDeviations,
+    deviationProbability,
+    bestForced,
+    weights: deviationWeights,
+  });
+
   const chosen =
     useBest || eligibleDeviations.length === 0
       ? best
       : weightedChoice(
           eligibleDeviations,
-          (candidate) =>
-            candidateWeight(
-              candidate,
-              profile,
-              hand,
-              signals,
-              input.legalActions,
-            ),
+          (candidate) => deviationWeights.get(commandKey(candidate.command)) ?? 0,
           random,
         );
   const evLoss = Math.max(0, bestEv - chosen.estimatedEv);
@@ -782,5 +862,6 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
       : `${profile.name} used a bounded ${purpose} deviation supported by its own hole-card texture and public action history${adaptationPressure > 0.08 ? "; public pressure signals increased its attack frequency" : ""}.`,
     publicSignals: signals,
     adaptationPressure,
+    selectionDistribution,
   };
 }

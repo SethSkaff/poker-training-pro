@@ -129,6 +129,47 @@ describe("Normal mode policy", () => {
     expect(decideNormalAction(input)).toEqual(decideNormalAction(input));
   });
 
+  it("A12 exposes an exact Normal distribution without changing the selected action", () => {
+    const input = {
+      informationSet: informationSet(),
+      legalActions,
+      evaluations: drawEvaluations,
+      profile: "pressure" as const,
+      bigBlind: 200,
+      seed: "selection-distribution-regression",
+    };
+    const decision = decideNormalAction(input);
+    const total = decision.selectionDistribution.entries.reduce((sum, entry) => sum + entry.probability, 0);
+    expect(total).toBeCloseTo(1, 12);
+    expect(decision.selectionDistribution.entries.map((entry) => entry.key)).toEqual([
+      "call:",
+      "raise:3600",
+      "fold:",
+      "all-in:",
+    ]);
+    expect(decision.selectionDistribution.bestActionKey).toBe("call:");
+    expect(decision.selectionDistribution.deviationProbability).toBeGreaterThan(0);
+    expect(decision.command).toEqual(decision.selectionDistribution.entries.find((entry) => entry.key === `${decision.command.type}:${decision.command.to ?? ""}`)?.command);
+  });
+
+  it("A12 records forced-best control flow as probability one", () => {
+    const decision = decideNormalAction({
+      informationSet: informationSet(),
+      legalActions,
+      evaluations: [
+        { command: { type: "raise", to: 3_600 }, estimatedEv: 160, purpose: "value" },
+        { command: { type: "call" }, estimatedEv: 148, purpose: "defense" },
+      ],
+      profile: "pressure",
+      bigBlind: 200,
+      seed: "selection-forced-best",
+    });
+    expect(decision.selectionDistribution.bestForced).toBe(true);
+    expect(decision.selectionDistribution.branch).toBe("forced-best");
+    expect(decision.selectionDistribution.entries[0].probability).toBe(1);
+    expect(decision.selectionDistribution.entries[1].probability).toBe(0);
+  });
+
   it("does not let a display-name change alter the seeded policy result", () => {
     const originalInformation = informationSet();
     const renamedInformation = structuredClone(originalInformation);
