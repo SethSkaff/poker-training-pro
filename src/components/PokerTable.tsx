@@ -141,7 +141,6 @@ import {
   estimatePublicAllInEquitySliced,
   type PublicAllInEquityEstimate,
 } from "../modes/rational";
-import { calculateAiDecisionTiming } from "../modes/decisionTiming";
 import {
   keyEventToken,
   resolveBindings,
@@ -160,7 +159,6 @@ import {
   FreezableDelay,
   realFreezableDelayHost,
 } from "../lib/freezableDelay";
-import { shouldCancelQueuedActionShortcut } from "../lib/queuedActionShortcut";
 import { snapRaiseSliderToAmount } from "../lib/raiseSlider";
 import {
   DelayFreezeGroup,
@@ -2085,7 +2083,6 @@ export function PokerTable({
   }, []);
   const presentationEventCompleteRef = useRef(tournament?.onPresentationEventComplete);
   presentationEventCompleteRef.current = tournament?.onPresentationEventComplete;
-  const pendingTournamentAction = useRef<FreezableDelay | null>(null);
   const pendingPresentationEvent = useRef<FreezableDelay | null>(null);
   const actionGateRef = useRef(createTableActionGate());
   const previousTrainingScenarioIdRef = useRef(scenario.id);
@@ -2487,8 +2484,6 @@ export function PokerTable({
   useEffect(() => {
     const group = freezeGroupRef.current;
     return () => {
-      pendingTournamentAction.current?.cancel();
-      pendingTournamentAction.current = null;
       pendingPresentationEvent.current?.cancel();
       pendingPresentationEvent.current = null;
       group.cancelAll();
@@ -2772,56 +2767,9 @@ export function PokerTable({
           // not the running per-hand total this used to send (E27-004).
           decisionElapsedMs: blindClock.current.drain(),
         };
-        /*
-          In the 3D table the player's input is the start of the visible beat.
-          Waiting here for the old AI-style thinking delay meant the DOM showed
-          the action while the seated player and their chips stayed still. The
-          2D table keeps its existing queue pacing; call/fold in 3D publish on
-          the same input turn and the normal presentation clock still owns the
-          movement duration after that.
-        */
-        if (!isTwoDMode && (nextAction === "call" || nextAction === "fold")) {
-          tournament.onAction(request);
-          return;
-        }
-        const publicPotOdds =
-          scenario.amountToCall /
-          Math.max(1, scenario.pot + scenario.amountToCall);
-        const presentationDelay = calculateAiDecisionTiming({
-          seed: scenario.id,
-          decisionId: [
-            tournament.handNumber,
-            scenario.street,
-            tournament.actionHistory.length,
-            nextAction,
-          ].join(":"),
-          street: scenario.street,
-          action: nextAction,
-          cutoffCloseness: 1 - Math.min(1, Math.abs(publicPotOdds - 0.33) / 0.33),
-          uncertainty: Math.min(
-            1,
-            scenario.board.length / 10 +
-              tournament.tournamentPlayersRemaining / tournament.fieldSize / 2,
-          ),
-          tempo:
-            mode === "rational"
-              ? 0.08
-              : ((tournament.handNumber * 37) % 5 - 2) / 2,
-          presentationRate: speed,
-          surface: "desktop",
-        }).delayMs;
-        // Freeze this exact presentation remainder if the app is paused mid-wait
-        // instead of letting it drain in real time or restarting it on resume.
-        const delay = new FreezableDelay(
-          realFreezableDelayHost,
-          presentationDelay,
-          () => {
-            pendingTournamentAction.current = null;
-            tournament.onAction(request);
-          },
-        );
-        pendingTournamentAction.current = delay;
-        freezeGroupRef.current.add(delay);
+        // Player input commits immediately in every table view. The public
+        // presentation queue still owns the ensuing animation and AI pacing.
+        tournament.onAction(request);
       }
     },
     [
@@ -2835,9 +2783,7 @@ export function PokerTable({
       progress,
       raiseAmount,
       scenario,
-      speed,
       tournament,
-      isTwoDMode,
       offerPrompt,
     ],
   );
@@ -2990,30 +2936,6 @@ export function PokerTable({
         target instanceof HTMLTextAreaElement ||
         target instanceof HTMLSelectElement ||
         (target instanceof HTMLElement && target.isContentEditable);
-
-      if (
-        shouldCancelQueuedActionShortcut({
-          key: event.key,
-          hasQueuedAction: Boolean(pendingTournamentAction.current?.isPending),
-          isEditableTarget,
-          paused,
-          trainingMode: mode === "training",
-        })
-      ) {
-        const queuedAction = pendingTournamentAction.current;
-        // The reference is cleared by the delay callback immediately before
-        // `onAction`, so this branch can only retract a move that has not yet
-        // crossed into authoritative tournament state.
-        if (!queuedAction) return;
-        event.preventDefault();
-        queuedAction.cancel();
-        freezeGroupRef.current.remove(queuedAction);
-        pendingTournamentAction.current = null;
-        setAction(null);
-        setActionError(undefined);
-        actionGateRef.current.release();
-        return;
-      }
 
       if (isEditableTarget) return;
       if (paused) return;
@@ -4307,7 +4229,6 @@ export function PokerTable({
                       tournament.onSkipPresentation();
                       return;
                     }
-                    pendingTournamentAction.current?.finish();
                     pendingPresentationEvent.current?.finish();
                   }}
                   aria-label={formatMessage("table.spectator.skipAriaLabel")}

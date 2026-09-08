@@ -61,7 +61,7 @@ describe("poker table live announcements", () => {
       "utf8",
     );
 
-    expect(source).toContain("pendingTournamentAction.current?.finish()");
+    expect(source).toContain("pendingPresentationEvent.current?.finish()");
     // The skip control's accessible name now resolves through the versioned
     // catalog; verify the wiring (key usage) and the resolved value
     // separately instead of scanning for the literal English copy.

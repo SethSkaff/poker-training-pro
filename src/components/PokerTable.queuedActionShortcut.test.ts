@@ -8,51 +8,29 @@ const source = readFileSync(
   "utf8",
 );
 
-describe("PokerTable queued-action cancellation wiring", () => {
-  it("clears a pending action without calling the tournament action callback", () => {
-    expect(source).toContain("shouldCancelQueuedActionShortcut({");
-    expect(source).toContain("queuedAction.cancel();");
-    expect(source).toContain("freezeGroupRef.current.remove(queuedAction);");
-    expect(source).toContain("pendingTournamentAction.current = null;");
-    expect(source).toContain("setAction(null);");
+describe("PokerTable immediate player actions", () => {
+  it("submits all player actions in either view without a thinking timer", () => {
+    const start = source.indexOf("const handleAction = useCallback(");
+    const end = source.indexOf("\n  useEffect(() => {", start);
+    const handler = source.slice(start, end);
+    expect(handler).toContain("tournament.onAction(request);");
+    expect(handler).toContain('nextAction === "raise" ? { raiseTo: requestedRaiseTo }');
+    expect(handler).not.toMatch(/calculateAiDecisionTiming|FreezableDelay|setTimeout|isTwoDMode/);
+    expect(source).not.toContain("pendingTournamentAction");
+  });
+
+  it("retains duplicate submission and turn guards", () => {
+    expect(source).toContain("if (!actionGateRef.current.tryBegin()) return;");
+    expect(source).toContain("tournament?.presentationEvent ||");
+    expect(source).toContain("tournament.heroDecision === false");
     expect(source).toContain("actionGateRef.current.release();");
-
-    const cancelBranch = source.slice(
-      source.indexOf("if (\n        shouldCancelQueuedActionShortcut({"),
-      source.indexOf("if (\n        shouldCancelQueuedActionShortcut({") + 1_500,
-    );
-    expect(cancelBranch).not.toContain("tournament.onAction");
   });
 
-  it("marks the queue submitted before invoking authoritative game state", () => {
-    const callback = source.slice(
-      source.indexOf("pendingTournamentAction.current = null;\n            tournament.onAction(request);"),
-      source.indexOf("pendingTournamentAction.current = null;\n            tournament.onAction(request);") + 180,
-    );
-    expect(callback).toContain("pendingTournamentAction.current = null;");
-    expect(callback).toContain("tournament.onAction(request);");
-    expect(callback.indexOf("pendingTournamentAction.current = null;")).toBeLessThan(
-      callback.indexOf("tournament.onAction(request);"),
-    );
-  });
-
-  it("guards text, numeric, select, and contenteditable targets", () => {
+  it("guards editable targets from gameplay hotkeys", () => {
     expect(source).toContain("target instanceof HTMLInputElement");
     expect(source).toContain("target instanceof HTMLTextAreaElement");
     expect(source).toContain("target instanceof HTMLSelectElement");
     expect(source).toContain("target.isContentEditable");
     expect(source).toContain("if (isEditableTarget) return;");
-  });
-
-  it("publishes 3D call and fold input without the AI-style pre-submit wait", () => {
-    const branchStart = source.indexOf(
-      'if (!isTwoDMode && (nextAction === "call" || nextAction === "fold"))',
-    );
-    const branchEnd = source.indexOf("const publicPotOdds", branchStart);
-    expect(branchStart).toBeGreaterThan(-1);
-    expect(branchEnd).toBeGreaterThan(branchStart);
-    const branch = source.slice(branchStart, branchEnd);
-    expect(branch).toContain("tournament.onAction(request);");
-    expect(branch).toContain("return;");
   });
 });
