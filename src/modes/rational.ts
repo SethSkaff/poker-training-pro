@@ -114,6 +114,22 @@ export interface RationalActionResponseAudit {
   foldProbability: number;
   callProbability: number;
   reRaiseProbability: number;
+  /** Branch counters used by offline evidence consumers. */
+  sampleCounts: {
+    allFold: number;
+    call: number;
+    reRaise: number;
+  };
+  /** Conditional branch sample counts, kept separate from unconditional rates. */
+  conditionalSamples: {
+    call: number;
+    reRaise: number;
+  };
+  /** True only when the empty branch used the supplied equity fallback. */
+  emptyBranchFallback: {
+    call: boolean;
+    reRaise: boolean;
+  };
   continuingRangePercent: number;
   conditionalEquity: number;
   callEquity: number;
@@ -2004,6 +2020,19 @@ function responseForCandidate(
     foldProbability: allFoldProbability,
     callProbability,
     reRaiseProbability,
+    sampleCounts: {
+      allFold: folds,
+      call: calls,
+      reRaise: reRaises,
+    },
+    conditionalSamples: {
+      call: calls,
+      reRaise: reRaises,
+    },
+    emptyBranchFallback: {
+      call: calls === 0,
+      reRaise: reRaises === 0,
+    },
     continuingRangePercent,
     conditionalEquity: conditionalEquity(
       callPoints + reRaisePoints,
