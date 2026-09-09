@@ -11200,6 +11200,8 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d {
+  min-height: 0;
+  --two-d-interface-scale: 1;
   --two-d-bg: #101214;
   --two-d-stage: #151719;
   --two-d-felt: #155232;
@@ -11209,6 +11211,10 @@ body:has(.table-screen--2d),
   --two-d-rail-seam: #8a5940;
 }
 
+:root[data-interface-scale="compact"] .table-screen--2d { --two-d-interface-scale: 0.9; }
+:root[data-interface-scale="large"] .table-screen--2d { --two-d-interface-scale: 1.2; }
+:root[data-interface-scale="extra-large"] .table-screen--2d { --two-d-interface-scale: 1.4; }
+
 .table-screen--2d::before,
 .table-screen--2d .table-stage::before,
 .table-screen--2d .poker-table::before,
@@ -11217,28 +11223,57 @@ body:has(.table-screen--2d),
   content: none;
 }
 
-.table-screen--2d .table-topbar {
-  border-bottom-color: #292d30;
-  background: #151719;
-  box-shadow: none;
+.table-screen--2d .table-tools {
+  position: absolute;
+  z-index: 50;
+  top: 16px;
+  right: 16px;
+  padding: 5px;
+  border: 1px solid #303638;
+  border-radius: 10px;
+  background: #191c1e;
   backdrop-filter: none;
+}
+
+.table-screen--2d .table-corner-status {
+  position: absolute;
+  z-index: 50;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  max-width: calc(50% - 110px);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.table-screen--2d .table-exit {
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+}
+
+.table-screen--2d .table-exit:hover {
+  color: #e7ece8;
+  background: #202427;
 }
 
 .table-screen--2d .table-layout {
   display: block;
-  height: calc(100dvh - 66px);
+  height: calc(100dvh / var(--two-d-interface-scale));
   min-height: 0;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
-  padding: 8px 10px 8px;
+  padding: 0;
 }
 
 .table-screen--2d .table-stage {
+  container-type: size;
   min-height: 0;
   height: 100%;
   overflow: visible;
-  border-color: #282c2f;
-  border-radius: 10px;
+  border: 0;
+  border-radius: 0;
   box-shadow: none;
   cursor: default;
   touch-action: manipulation;
@@ -11258,7 +11293,7 @@ body:has(.table-screen--2d),
   > .feedback-panel {
   position: absolute;
   z-index: 45;
-  top: 16px;
+  top: 76px;
   right: 16px;
   bottom: auto;
   left: auto;
@@ -11280,24 +11315,27 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .poker-scene {
-  --table-left: 5%;
-  --table-width: 90%;
-  --table-top: 13%;
-  /* Keep the wide footprint, but give the lower half of the table room to
-     breathe. The top edge remains fixed while the bottom edge moves down. */
-  --table-height: 68%;
+  --table-left: 7%;
+  --table-width: 86%;
+  --table-top: clamp(122px, 17cqh, 170px);
+  --table-height: calc(100% - var(--table-top) - 76px);
   --table-right: calc(var(--table-left) + var(--table-width));
   --table-bottom: calc(var(--table-top) + var(--table-height));
-  --avatar-size: clamp(48px, 5vw, 66px);
+  --avatar-size: clamp(46px, 8cqh, 66px);
+  --hero-card-height: clamp(59px, 11cqh, 94px);
+  --hero-card-width: calc(var(--hero-card-height) * 0.72);
+  --board-card-height: clamp(50px, 10cqh, 90px);
+  --board-card-width: calc(var(--board-card-height) * 0.71);
   --avatar-half: calc(var(--avatar-size) / 2);
   --rail-gap: clamp(5px, 0.55vw, 8px);
-  /* Place the side rows at matching table-relative depths rather than using
-     two fixed offsets that crowd them toward the top as the table grows. */
-  --side-upper-y: calc(var(--table-top) + 17%);
-  --side-lower-y: calc(var(--table-top) + 51%);
-  top: 8px;
+  /* Mirrored side stations spread across the fuller ellipse. Cards extend
+     inward to the rail; the portraits and labels have their own clear lane. */
+  --side-inset: 10%;
+  --side-upper-y: calc(var(--table-top) + var(--table-height) * 0.2);
+  --side-lower-y: calc(var(--table-top) + var(--table-height) * 0.8);
+  top: 0;
   right: 0;
-  bottom: 120px;
+  bottom: 92px;
   left: 0;
   overflow: visible;
   transform: none;
@@ -11310,7 +11348,7 @@ body:has(.table-screen--2d),
   width: var(--table-width);
   height: var(--table-height);
   border: clamp(10px, 1.2vw, 18px) solid var(--two-d-rail);
-  border-radius: 46%;
+  border-radius: 50%;
   outline: 3px solid var(--two-d-rail-edge);
   outline-offset: 3px;
   background-color: var(--two-d-felt);
@@ -11385,8 +11423,8 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .community-cards .playing-card {
-  width: clamp(47px, 4.7vw, 64px);
-  height: clamp(66px, 6.6vw, 90px);
+  width: var(--board-card-width);
+  height: var(--board-card-height);
 }
 
 .table-screen--2d .pot-groups {
@@ -11400,12 +11438,12 @@ body:has(.table-screen--2d),
 
 .table-screen--2d .seat-chip-stack,
 .table-screen--2d .chip-travel,
+.table-screen--2d .opponent-card-hand,
 .table-screen--2d .seat-action-hand {
   display: none;
 }
 
-/* Rail-normal seat contract: the avatar edge is exactly `--rail-gap` beyond
-   the table edge. The label and marker flow from that same seat anchor. */
+/* Each station shares one anchor for its portrait, label, and card lane. */
 .table-screen--2d .player-seat {
   width: max(var(--avatar-size), 72px);
   pointer-events: none;
@@ -11418,18 +11456,18 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .player-seat--top {
-  top: calc(var(--table-top) - var(--avatar-size) - var(--rail-gap));
+  top: calc(clamp(32px, 5cqh, 54px) + 48px);
   left: 50%;
 }
 
 .table-screen--2d .player-seat--upper-left,
 .table-screen--2d .player-seat--lower-left {
-  left: calc(var(--table-left) - var(--avatar-half) - var(--rail-gap));
+  left: var(--side-inset);
 }
 
 .table-screen--2d .player-seat--upper-right,
 .table-screen--2d .player-seat--lower-right {
-  left: calc(var(--table-right) + var(--avatar-half) + var(--rail-gap));
+  left: calc(100% - var(--side-inset));
 }
 
 .table-screen--2d .player-seat--upper-left,
@@ -11445,21 +11483,35 @@ body:has(.table-screen--2d),
 .table-screen--2d .player-seat--upper-left .opponent-cards,
 .table-screen--2d .player-seat--lower-left .opponent-cards {
   right: auto;
-  left: 50%;
+  left: calc(50% + var(--avatar-half) + 10px);
 }
 
 .table-screen--2d .player-seat--upper-right .opponent-cards,
 .table-screen--2d .player-seat--lower-right .opponent-cards {
-  right: 50%;
+  right: calc(50% + var(--avatar-half) + 10px);
   left: auto;
   flex-direction: row-reverse;
 }
 
 .table-screen--2d .player-seat--hero {
-  top: calc(var(--table-bottom) + var(--rail-gap));
+  top: calc(var(--table-bottom) + 12px);
   left: 50%;
+  width: auto;
+  flex-direction: row;
+  gap: 10px;
   visibility: visible;
   pointer-events: none;
+}
+
+.table-screen--2d .player-seat--hero .seat-label {
+  min-width: 112px;
+  margin: 0;
+}
+
+.table-screen--2d .player-seat--hero .seat-figure,
+.table-screen--2d .player-seat--hero .seat-figure .seat-avatar {
+  width: 48px;
+  height: 48px;
 }
 
 .table-screen--2d .player-seat--hero .seat-figure,
@@ -11643,13 +11695,13 @@ body:has(.table-screen--2d),
 .table-screen--2d .player-seat--upper-left .seat-label,
 .table-screen--2d .player-seat--lower-left .seat-label {
   position: relative;
-  left: clamp(18px, 2.1vw, 28px);
+  left: 0;
 }
 
 .table-screen--2d .player-seat--upper-right .seat-label,
 .table-screen--2d .player-seat--lower-right .seat-label {
   position: relative;
-  left: clamp(-28px, -2.1vw, -18px);
+  left: 0;
 }
 
 .table-screen--2d .seat-bet {
@@ -11721,12 +11773,15 @@ body:has(.table-screen--2d),
 .table-screen--2d .player-seat--top .seat-position-marker,
 .table-screen--2d .player-seat--top .dealer-button {
   top: calc(100% + 8px);
+  left: calc(50% - 72px);
 }
 
 .table-screen--2d .player-seat--hero .seat-position-marker,
 .table-screen--2d .player-seat--hero .dealer-button {
-  top: auto;
-  bottom: calc(100% + 8px);
+  top: 50%;
+  bottom: auto;
+  left: calc(100% + 12px);
+  transform: translateY(-50%);
 }
 
 .table-screen--2d .player-seat--upper-left .seat-position-marker,
@@ -11786,7 +11841,7 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .hero-hole-cards-visual {
-  top: calc(var(--table-bottom) - 91px);
+  top: calc(var(--table-bottom) - var(--hero-card-height) - 4px);
   bottom: auto;
   left: 50%;
   z-index: 27;
@@ -11794,8 +11849,8 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .hero-hole-cards-visual .playing-card {
-  width: clamp(50px, 5.2vw, 68px);
-  height: clamp(70px, 7.1vw, 94px);
+  width: var(--hero-card-width);
+  height: var(--hero-card-height);
 }
 
 .table-screen--2d .hero-hole-cards.is-showdown-revealed {
@@ -11887,8 +11942,8 @@ body:has(.table-screen--2d),
    centered once, but its width no longer grows when a placeholder is replaced,
    so the flop's resting positions remain fixed through the turn and river. */
 .table-screen--2d .community-placeholder {
-  width: clamp(47px, 4.7vw, 64px);
-  height: clamp(66px, 6.6vw, 90px);
+  width: var(--board-card-width);
+  height: var(--board-card-height);
 }
 
 .table-screen--2d .opponent-cards {
@@ -11896,10 +11951,31 @@ body:has(.table-screen--2d),
      arrives. Right-side seats reverse the row above so new cards add inward. */
   width: 62px;
   min-height: 40px;
+  top: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.table-screen--2d .opponent-cards::before,
+.table-screen--2d .opponent-cards::after {
+  display: none;
+  content: none;
+}
+
+.table-screen--2d .player-seat--top .opponent-cards {
+  top: -48px;
+  left: calc(50% - 31px);
+  transform: none;
+}
+
+.table-screen--2d .opponent-cards .playing-card {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.24);
 }
 
 .table-screen--2d .hero-hole-cards__cards {
-  width: calc(2 * clamp(50px, 5.2vw, 68px) + 8px);
+  width: calc(2 * var(--hero-card-width) + 8px);
+  height: var(--hero-card-height);
   justify-content: flex-start;
 }
 
@@ -11945,10 +12021,10 @@ body:has(.table-screen--2d),
 
 .table-screen--2d .player-seat--top.is-all-in-revealed .opponent-cards,
 .table-screen--2d .player-seat--top.is-showdown-revealed .opponent-cards {
-  top: calc(var(--avatar-size) + var(--rail-gap) + 12px);
+  top: 0;
   right: auto;
-  left: 50%;
-  transform: translateX(-50%);
+  left: calc(50% + var(--avatar-half) + 12px);
+  transform: none;
 }
 
 .table-screen--2d .player-seat--upper-left.is-all-in-revealed .opponent-cards,
@@ -11972,7 +12048,7 @@ body:has(.table-screen--2d),
    the table centre for every 2D station, while the scale remains restrained
    enough that the cards still belong to their seat. */
 .table-screen--2d .player-seat--top.is-showdown-revealed.is-winner .opponent-cards {
-  transform: translateX(-50%) translateY(12px) scale(1.08);
+  transform: translateY(12px) scale(1.08);
   transform-origin: center center;
   transition: transform 320ms cubic-bezier(.24, .82, .36, 1);
 }
@@ -11999,12 +12075,6 @@ body:has(.table-screen--2d),
   transform: translate(-12px, -10px) scale(1.08);
   transform-origin: center center;
   transition: transform 320ms cubic-bezier(.24, .82, .36, 1);
-}
-
-.table-screen--2d .player-seat.is-showdown-revealed .opponent-cards::before {
-  border-color: rgba(255, 224, 135, .68);
-  background: rgba(25, 31, 21, .9);
-  box-shadow: 0 0 20px rgba(255, 195, 59, .2);
 }
 
 .table-screen--2d .player-seat.is-winner .seat-label {
@@ -12038,7 +12108,7 @@ body:has(.table-screen--2d),
 .table-screen--2d .action-dock,
 .table-screen--2d .spectator-dock {
   right: 50%;
-  bottom: 8px;
+  bottom: 24px;
   left: auto;
   width: min(820px, calc(100% - 28px));
   transform: translateX(50%);
@@ -12046,10 +12116,10 @@ body:has(.table-screen--2d),
 
 .table-screen--2d .action-dock {
   z-index: 40;
-  border: 1px solid #303638;
-  border-radius: 9px;
-  padding: 6px;
-  background: #181b1d;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
   box-shadow: none;
 }
 
@@ -12071,7 +12141,7 @@ body:has(.table-screen--2d),
 
 .table-screen--2d .bet-composer {
   right: 50%;
-  bottom: 75px;
+  bottom: 92px;
   left: auto;
   width: min(820px, calc(100% - 28px));
   border-color: #303638;
@@ -12081,8 +12151,8 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .skip-hand {
-  top: 10px;
-  right: 12px;
+  top: 76px;
+  right: 16px;
   left: auto;
   min-height: 38px;
   border-color: #4a4a3b;
@@ -12093,36 +12163,45 @@ body:has(.table-screen--2d),
 }
 
 .table-screen--2d .tournament-hud {
-  top: 10px;
-  left: 12px;
+  position: static;
   border-color: #34393a;
   color: #d6ded9;
   background: #191c1e;
   box-shadow: none;
 }
 
+.table-screen--2d .training-context {
+  top: 100px;
+  bottom: auto;
+  left: 16px;
+  width: min(280px, 23%);
+  justify-content: flex-start;
+  padding: 8px 10px;
+  transform: none;
+}
+
+/* At large interface scales, use the clear lanes beside the board for pot
+   information instead of stacking it over the card ranks. */
+@container (max-height: 620px) {
+  .table-screen--2d .table-readout {
+    top: 50%;
+    left: calc(50% - 190px);
+    transform: translate(-50%, -50%);
+  }
+
+  .table-screen--2d .pot-groups {
+    top: 50%;
+    left: calc(50% + 190px);
+    transform: translate(-50%, -50%);
+  }
+}
+
 @media (max-width: 760px) {
-  .table-screen--2d .table-topbar {
-    grid-template-columns: 1fr auto;
-    min-height: 58px;
-    padding-inline: 10px;
-  }
-
-  .table-screen--2d .table-session {
-    min-width: 0;
-    grid-template-columns: 1fr;
-  }
-
-  .table-screen--2d .table-session .eyebrow,
-  .table-screen--2d .table-session > span,
-  .table-screen--2d .table-tools > .table-speed-control {
-    display: none;
-  }
-
-  .table-screen--2d .table-layout {
-    height: calc(100dvh - 58px);
-    padding: 5px 6px 5px;
-  }
+  .table-screen--2d .table-corner-status { top: 8px; left: 8px; max-width: 40%; }
+  .table-screen--2d .table-tools { top: 8px; right: 8px; gap: 4px; }
+  .table-screen--2d .decision-clock { min-width: 0; padding: 8px 5px; }
+  .table-screen--2d .table-speed-control { grid-template-columns: auto 26px 50px; padding: 0 4px; }
+  .table-screen--2d .table-speed-control input { width: 50px; }
 
   .table-screen--2d[data-game-mode="training"]
     > .table-layout
@@ -12130,26 +12209,20 @@ body:has(.table-screen--2d),
   .table-screen--2d[data-game-mode="training"]
     > .table-layout
     > .feedback-panel {
-    top: 8px;
+    top: 70px;
     right: 8px;
     width: min(300px, calc(100% - 16px));
     max-height: calc(100% - 140px);
   }
 
   .table-screen--2d .poker-scene {
-    --table-left: 12.5%;
-    --table-width: 75%;
-    --table-top: 13%;
-    --table-height: 42.5%;
-    --table-right: calc(var(--table-left) + var(--table-width));
-    --table-bottom: calc(var(--table-top) + var(--table-height));
+    --table-left: 9%;
+    --table-width: 82%;
+    --table-top: 142px;
     --avatar-size: 46px;
     --avatar-half: 23px;
     --rail-gap: 5px;
-    --side-upper-y: calc(var(--table-top) + 13%);
-    --side-lower-y: calc(var(--table-top) + 37%);
-    top: 5px;
-    bottom: 101px;
+    bottom: 82px;
   }
 
   .table-screen--2d .seat-label {
@@ -12171,15 +12244,16 @@ body:has(.table-screen--2d),
   .table-screen--2d .community-placeholder { width: 36px; height: 51px; }
   .table-screen--2d .table-readout { font-size: 10px; padding: 4px 8px; }
   .table-screen--2d .pot-groups { transform: translateX(-50%) scale(0.78); }
-  .table-screen--2d .hero-hole-cards-visual { top: calc(var(--table-bottom) - 66px); }
+  .table-screen--2d .hero-hole-cards-visual { top: calc(var(--table-bottom) - 66px); min-height: 59px; }
   .table-screen--2d .hero-hole-cards-visual .playing-card { width: 42px; height: 59px; }
-  .table-screen--2d .hero-hole-cards__cards { width: 92px; }
+  .table-screen--2d .hero-hole-cards__cards { width: 92px; height: 59px; }
   .table-screen--2d .hero-card-control { top: calc(var(--table-bottom) + var(--avatar-size) + 33px); min-width: 122px; min-height: 30px; font-size: 8px; }
   .table-screen--2d .action-dock { width: calc(100% - 12px); gap: 4px; padding: 4px; }
   .table-screen--2d .action-button { min-height: 52px; gap: 4px; }
   .table-screen--2d .action-button > span { display: none; }
   .table-screen--2d .action-button strong { font-size: 10px; }
-  .table-screen--2d .bet-composer { bottom: 63px; width: calc(100% - 12px); }
-  .table-screen--2d .skip-hand { top: 7px; right: 7px; min-height: 32px; padding-inline: 9px; }
-  .table-screen--2d .tournament-hud { top: 7px; left: 7px; max-width: 45%; max-height: 33px; overflow: hidden; padding: 5px 7px; font-size: 9px; }
+  .table-screen--2d .bet-composer { bottom: 92px; width: calc(100% - 12px); }
+  .table-screen--2d .skip-hand { top: 70px; right: 8px; min-height: 32px; padding-inline: 9px; }
+  .table-screen--2d .tournament-hud { gap: 4px 8px; padding: 5px 7px; font-size: 9px; }
+  .table-screen--2d .training-context { top: 100px; left: 8px; width: 24%; gap: 4px; font-size: 10px; }
 }

@@ -3362,11 +3362,13 @@ export function PokerTable({
     // stable identity that keeps both physical packs and every dealt back in
     // lockstep for the entire round.
     handId: sceneHandId,
-    players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status })),
+    players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status, chipInventory: player.chipInventory, betChipInventory: player.betChipInventory })),
     heroId: scenario.players.find((player) => player.seat === scenario.heroSeat)?.id ?? "",
     actingPlayerId: scenario.actingPlayerId,
     publicActions: sceneActions,
     pot: scenario.pot,
+    collectedChipInventory: scenario.collectedChipInventory,
+    chipMovements: scenario.chipMovements,
     pots: (scenario.potBreakdown?.length
       ? scenario.potBreakdown
       : [{ id: "main", kind: "main", amount: scenario.pot }]
@@ -3741,6 +3743,67 @@ export function PokerTable({
       potResult: potResultSnapshot,
     });
 
+  const leaveTableControl = (
+    <button className="table-exit" type="button" onClick={onExit}>
+      <ArrowLeft size={18} /> {formatMessage("table.exit")}
+    </button>
+  );
+  const playbackControls = (
+    <div className="table-tools">
+      <span
+        className="decision-clock"
+        role="timer"
+        aria-label={decisionClockAriaLabel(elapsedMs)}
+      >
+        <Clock3 size={15} />
+        {formatMessage("table.decisionClock.visibleLabel", {
+          seconds: formatFixedDecimal(elapsedMs / 1000, 1),
+        })}
+      </span>
+      {tournament && (
+        <label className="table-speed-control">
+          <FastForward size={15} />
+          <span>{formatFixedDecimal(speed, 1)}×</span>
+          <input
+            type="range"
+            min="0.5"
+            max="3"
+            step="0.5"
+            value={speed}
+            onChange={(event) => setSpeed(Number(event.target.value))}
+            aria-label={formatMessage("shared.opponentPresentationSpeed")}
+          />
+        </label>
+      )}
+      <button
+        type="button"
+        aria-label={formatMessage("table.pauseButton.ariaLabel")}
+        onClick={() => {
+          pauseReasonRef.current = "manual";
+          setResumeRecap(null);
+          setPausePage("menu");
+          setPaused(true);
+        }}
+      >
+        <Pause size={17} />
+      </button>
+      <button
+        type="button"
+        aria-label={
+          settings.muted
+            ? formatMessage("table.audio.unmute")
+            : formatMessage("table.audio.mute")
+        }
+        aria-pressed={settings.muted}
+        onClick={() =>
+          onSettingsChange({ ...settings, muted: !settings.muted })
+        }
+      >
+        <Volume2 size={17} />
+      </button>
+    </div>
+  );
+
   return (
     <div
       className={`table-screen ${isTwoDMode ? "table-screen--2d" : "table-screen--3d"}`}
@@ -3796,86 +3859,34 @@ export function PokerTable({
       >
         {liveEventAssertive}
       </p>
-      <header className="table-topbar">
-        <button className="table-exit" type="button" onClick={onExit}>
-          <ArrowLeft size={18} /> {formatMessage("table.exit")}
-        </button>
-        <div className="table-session">
-          <p className="eyebrow">{modeTitle}</p>
-          {mode !== "training" && <strong>{scenario.title}</strong>}
-          <span>
-            {/*
-              The scenario counter is gone from the player interface
-              (E27-013 / §18). "Scenario 6 of 12" framed Training as a
-              twelve-question content pack with an end, which is the opposite of
-              what the mode is for. Training now reports the street and the
-              field, exactly as every other mode does.
-            */}
-            {mode === "training"
-              ? formatMessage("table.status.streetPlayersInHand", {
-                  street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
-                  playersInHand: trainingContext.activePlayersInHand,
-                })
-              : formatMessage("table.status.streetPlayersInHand", {
-                  street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
-                  playersInHand: activePlayersInHand,
-                })}
-          </span>
-        </div>
-        <div className="table-tools">
-          <span
-            className="decision-clock"
-            role="timer"
-            aria-label={decisionClockAriaLabel(elapsedMs)}
-          >
-            <Clock3 size={15} />
-            {formatMessage("table.decisionClock.visibleLabel", {
-              seconds: formatFixedDecimal(elapsedMs / 1000, 1),
-            })}
-          </span>
-          {tournament && (
-            <label className="table-speed-control">
-              <FastForward size={15} />
-              <span>{formatFixedDecimal(speed, 1)}×</span>
-              <input
-                type="range"
-                min="0.5"
-                max="3"
-                step="0.5"
-                value={speed}
-                onChange={(event) => setSpeed(Number(event.target.value))}
-                aria-label={formatMessage("shared.opponentPresentationSpeed")}
-              />
-            </label>
-          )}
-          <button
-            type="button"
-            aria-label={formatMessage("table.pauseButton.ariaLabel")}
-            onClick={() => {
-              pauseReasonRef.current = "manual";
-              setResumeRecap(null);
-              setPausePage("menu");
-              setPaused(true);
-            }}
-          >
-            <Pause size={17} />
-          </button>
-          <button
-            type="button"
-            aria-label={
-              settings.muted
-                ? formatMessage("table.audio.unmute")
-                : formatMessage("table.audio.mute")
-            }
-            aria-pressed={settings.muted}
-            onClick={() =>
-              onSettingsChange({ ...settings, muted: !settings.muted })
-            }
-          >
-            <Volume2 size={17} />
-          </button>
-        </div>
-      </header>
+      {!isTwoDMode && (
+        <header className="table-topbar">
+          {leaveTableControl}
+          <div className="table-session">
+            <p className="eyebrow">{modeTitle}</p>
+            {mode !== "training" && <strong>{scenario.title}</strong>}
+            <span>
+              {/*
+                The scenario counter is gone from the player interface
+                (E27-013 / §18). "Scenario 6 of 12" framed Training as a
+                twelve-question content pack with an end, which is the opposite of
+                what the mode is for. Training now reports the street and the
+                field, exactly as every other mode does.
+              */}
+              {mode === "training"
+                ? formatMessage("table.status.streetPlayersInHand", {
+                    street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
+                    playersInHand: trainingContext.activePlayersInHand,
+                  })
+                : formatMessage("table.status.streetPlayersInHand", {
+                    street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
+                    playersInHand: activePlayersInHand,
+                  })}
+            </span>
+          </div>
+          {playbackControls}
+        </header>
+      )}
 
       <div className="table-layout">
         {/*
@@ -3910,47 +3921,51 @@ export function PokerTable({
             What remains up here is the tournament HUD below: global state only,
             in a corner, no paragraphs.
           */}
-          <aside
-            className="tournament-hud"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            aria-label={heroStackAriaLabel({
-              stack: heroStack,
-              streetCommitted: heroStreetCommitted,
-              totalCommitted: heroTotalCommitted,
-              position: heroPositionLabel || undefined,
-            })}
-          >
-            <span>
-              <b>{formatMessage("table.hud.blinds")}</b>
-              {formatChips(scenario.blinds[0])}/{formatChips(scenario.blinds[1])}
-            </span>
-            {tournament?.blindLevel ? (
+          {isTwoDMode && playbackControls}
+          <div className={isTwoDMode ? "table-corner-status" : undefined}>
+            <aside
+              className="tournament-hud"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              aria-label={heroStackAriaLabel({
+                stack: heroStack,
+                streetCommitted: heroStreetCommitted,
+                totalCommitted: heroTotalCommitted,
+                position: heroPositionLabel || undefined,
+              })}
+            >
               <span>
-                <b>{formatMessage("table.hud.level")}</b>
-                {tournament.blindLevel}
+                <b>{formatMessage("table.hud.blinds")}</b>
+                {formatChips(scenario.blinds[0])}/{formatChips(scenario.blinds[1])}
               </span>
-            ) : null}
-            {tournament?.nextLevelInMs !== undefined ? (
+              {tournament?.blindLevel ? (
+                <span>
+                  <b>{formatMessage("table.hud.level")}</b>
+                  {tournament.blindLevel}
+                </span>
+              ) : null}
+              {tournament?.nextLevelInMs !== undefined ? (
+                <span>
+                  <b>{formatMessage("table.hud.nextLevel")}</b>
+                  {/* `formatClock` takes milliseconds; dividing first turned four
+                      minutes into 240 ms and printed 0:00. */}
+                  {formatClock(Math.max(0, tournament.nextLevelInMs))}
+                </span>
+              ) : null}
               <span>
-                <b>{formatMessage("table.hud.nextLevel")}</b>
-                {/* `formatClock` takes milliseconds; dividing first turned four
-                    minutes into 240 ms and printed 0:00. */}
-                {formatClock(Math.max(0, tournament.nextLevelInMs))}
+                <b>{formatMessage("table.hud.handPlayers")}</b>
+                {activePlayersInHand}
               </span>
-            ) : null}
-            <span>
-              <b>{formatMessage("table.hud.handPlayers")}</b>
-              {activePlayersInHand}
-            </span>
-            {tournament ? (
-              <span>
-                <b>{formatMessage("table.hud.tournamentPlayers")}</b>
-                {tournament.tournamentPlayersRemaining}
-              </span>
-            ) : null}
-          </aside>
+              {tournament ? (
+                <span>
+                  <b>{formatMessage("table.hud.tournamentPlayers")}</b>
+                  {tournament.tournamentPlayersRemaining}
+                </span>
+              ) : null}
+            </aside>
+            {isTwoDMode && leaveTableControl}
+          </div>
           {/*
             The situation, stated (E27-013). The reported ace-five all-in could
             not be judged because none of this was on screen: eleven thousand

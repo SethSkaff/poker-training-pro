@@ -30,10 +30,10 @@ describe("isolated 2D table layout contract", () => {
   it("keeps the 2D surface quiet while making bets and cards unambiguous", () => {
     expect(tableSource).toContain("showCurrentBet={isTwoDMode}");
     expect(tableSource).toContain('className="seat-current-bet"');
-    expect(twoDStyles).toContain("--table-height: 68%;");
-    expect(twoDStyles).toContain("border-radius: 46%;");
-    expect(twoDStyles).toContain("--side-upper-y: calc(var(--table-top) + 17%);");
-    expect(twoDStyles).toContain("--side-lower-y: calc(var(--table-top) + 51%);");
+    expect(twoDStyles).toContain("--table-height: calc(100% - var(--table-top) - 76px);");
+    expect(twoDStyles).toContain("border-radius: 50%;");
+    expect(twoDStyles).toContain("--side-upper-y: calc(var(--table-top) + var(--table-height) * 0.2);");
+    expect(twoDStyles).toContain("--side-lower-y: calc(var(--table-top) + var(--table-height) * 0.8);");
     expect(twoDStyles).toContain(".table-screen--2d .seat-figure-accessory--visor");
     expect(twoDStyles).toContain(".table-screen--2d .hero-card-control");
     expect(twoDStyles).toContain(".table-screen--2d .fold-release-zone");
@@ -47,10 +47,10 @@ describe("isolated 2D table layout contract", () => {
     expect(twoDStyles).toContain("overflow: visible;");
     expect(twoDStyles).toContain("--rail-gap: clamp(5px, 0.55vw, 8px);");
     expect(twoDStyles).toContain(
-      "left: calc(var(--table-left) - var(--avatar-half) - var(--rail-gap));",
+      "left: var(--side-inset);",
     );
     expect(twoDStyles).toContain(
-      "left: calc(var(--table-right) + var(--avatar-half) + var(--rail-gap));",
+      "left: calc(100% - var(--side-inset));",
     );
     expect(twoDStyles).toContain(".player-seat--upper-left .opponent-cards");
     expect(twoDStyles).toContain("left: 50%;");
@@ -62,7 +62,7 @@ describe("isolated 2D table layout contract", () => {
     expect(twoDStyles).toContain(".table-screen--2d .player-seat--top .seat-position-marker");
     expect(twoDStyles).toContain("top: calc(100% + 8px);");
     expect(twoDStyles).toContain(".table-screen--2d .player-seat--hero .seat-position-marker");
-    expect(twoDStyles).toContain("bottom: calc(100% + 8px);");
+    expect(twoDStyles).toContain("left: calc(100% + 12px);");
     expect(twoDStyles).toContain("left: calc(100% + 8px);");
     expect(twoDStyles).toContain("right: calc(100% + 8px);");
   });
@@ -70,12 +70,12 @@ describe("isolated 2D table layout contract", () => {
   it("preserves a large flat table at desktop and a readable compact breakpoint", () => {
     expect(twoDStyles).toContain("display: block;");
     expect(twoDStyles).toContain("height: 100%;");
-    expect(twoDStyles).toContain("--table-left: 5%;");
-    expect(twoDStyles).toContain("--table-width: 90%;");
-    expect(twoDStyles).toContain("--table-top: 13%;");
-    expect(twoDStyles).toContain("--table-left: 12.5%;");
-    expect(twoDStyles).toContain("--table-width: 75%;");
-    expect(twoDStyles).toContain("--table-height: 42.5%;");
+    expect(twoDStyles).toContain("--table-left: 7%;");
+    expect(twoDStyles).toContain("--table-width: 86%;");
+    expect(twoDStyles).toContain("--table-top: clamp(122px, 17cqh, 170px);");
+    expect(twoDStyles).toContain("--table-left: 9%;");
+    expect(twoDStyles).toContain("--table-width: 82%;");
+    expect(twoDStyles).toContain("--table-top: 142px;");
     expect(twoDStyles).toContain("top: calc(var(--table-bottom) + var(--avatar-size) + var(--rail-gap) + 36px);");
     expect(twoDStyles).toContain("min-width: 146px;");
     expect(twoDStyles).toContain("min-width: 122px;");
