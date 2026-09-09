@@ -62,12 +62,15 @@ export const MALE_BODY_TYPES = [
 ] as const;
 export const FEMALE_BODY_TYPES = ["slight", "average", "curvy"] as const;
 
-/** Five hair styles per presented gender. */
+/** Curated silhouettes; selection is age-aware, with no feature placement jitter. */
 export const MALE_HAIR_STYLES = [
   "buzz",
   "short-side-part",
   "textured-crop",
   "slick-back",
+  "wavy",
+  "curly",
+  "receding",
   "bald",
 ] as const;
 export const FEMALE_HAIR_STYLES = [
@@ -76,6 +79,8 @@ export const FEMALE_HAIR_STYLES = [
   "long-straight",
   "curly-shoulder",
   "top-knot",
+  "textured-crop",
+  "wavy",
 ] as const;
 
 /**
@@ -248,9 +253,23 @@ export interface OpponentCharacter {
   /** Small per-identity height scale so a table is not one uniform height. */
   heightScale: number;
   eyeColor?: string;
-  facialHair?: "none" | "stubble" | "goatee";
+  facialHair?: "none" | "stubble" | "mustache" | "goatee" | "short-beard";
+  age?: "young" | "adult" | "mature" | "senior";
+  facialStructure?: FacialStructure;
   mole?: number | null;
 }
+
+/** Discrete fitted modules share stable eye, nose-root and mouth anchors. */
+export interface FacialStructure {
+  jaw: "balanced" | "square" | "tapered";
+  nose: "straight" | "broad" | "button" | "aquiline";
+  eyes: "almond" | "hooded" | "open";
+  brows: "straight" | "arched" | "heavy";
+  mouth: "neutral" | "full" | "thin";
+}
+export const DEFAULT_FACIAL_STRUCTURE: Readonly<FacialStructure> = Object.freeze({
+  jaw: "balanced", nose: "straight", eyes: "almond", brows: "straight", mouth: "neutral",
+});
 
 /**
  * Deterministic 3D character for an identity. Same contract as
@@ -272,18 +291,36 @@ export function describeOpponentCharacter(playerId: string): OpponentCharacter {
   const gender = cosmeticHash(playerId, "gender-3d") % 4 === 0 ? "female" : "male";
   const bodies = gender === "male" ? MALE_BODY_TYPES : FEMALE_BODY_TYPES;
   const hair = gender === "male" ? MALE_HAIR_STYLES : FEMALE_HAIR_STYLES;
-  const hairGradient = cosmeticHash(playerId, "hair-gradient") / 0x1_0000_0000;
+  const age = pick3d(playerId, "age-3d", ["young", "adult", "adult", "adult", "mature", "mature", "senior"] as const);
+  const skinTone = pick3d(playerId, "skin", SKIN_TONES);
+  const toneIndex = SKIN_TONES.indexOf(skinTone);
+  const shade = cosmeticHash(playerId, "hair-gradient") / 0x1_0000_0000;
+  const paletteRoll = cosmeticHash(playerId, "hair-palette") % 100;
+  // Espresso and brown dominate. Grays follow age; copper/blond are minority
+  // natural palettes with continuous variation inside each range.
+  const gray = (age === "senior" && paletteRoll < 78) || (age === "mature" && paletteRoll < 22);
+  const light = paletteRoll > (toneIndex >= 4 ? 98 : 83);
+  const hairGradient = gray ? .86 + shade * .14 : light ? .40 + shade * .17 : .015 + shade * (toneIndex >= 4 ? .21 : .34);
+  const compatibleHair = age === "young" ? hair.filter(style => style !== "receding") : hair;
   return {
     gender,
+    age,
     body: pick3d(playerId, "body-3d", bodies),
-    hairStyle: pick3d(playerId, "hair-3d", hair),
+    hairStyle: pick3d(playerId, "hair-3d", compatibleHair),
     eyeColor: pick3d(playerId, "eye-color", ["#4b3627", "#596c72", "#68704c", "#7c674a"] as const),
-    facialHair: gender === "male" ? pick3d(playerId, "facial-hair", ["none", "none", "none", "stubble", "goatee"] as const) : "none",
+    facialHair: gender === "male" ? pick3d(playerId, "facial-hair", ["none", "none", "none", "none", "stubble", "stubble", "mustache", "goatee", "short-beard"] as const) : "none",
+    facialStructure: {
+      jaw: pick3d(playerId, "jaw", ["balanced", "balanced", "square", "tapered"] as const),
+      nose: pick3d(playerId, "nose", ["straight", "broad", "button", "aquiline"] as const),
+      eyes: pick3d(playerId, "eyes", age === "senior" ? ["hooded", "hooded", "almond"] as const : ["almond", "hooded", "open"] as const),
+      brows: pick3d(playerId, "brows", gender === "female" ? ["straight", "arched", "arched", "heavy"] as const : ["straight", "arched", "heavy"] as const),
+      mouth: pick3d(playerId, "mouth", ["neutral", "full", "thin"] as const),
+    },
     mole: cosmeticHash(playerId, "mole-chance") % 20 === 0 ? cosmeticHash(playerId, "mole-position") % 3 : null,
     hairGradient,
     hairColor: hairColorAt(hairGradient),
     face: pick3d(playerId, "face-3d", FACE_PRESETS),
-    skinTone: pick3d(playerId, "skin", SKIN_TONES),
+    skinTone,
     outfit: pick3d(playerId, "outfit", OUTFITS),
     // +/-4%: enough that seated shoulder lines differ, never enough to break the
     // camera envelope the composition solver reserves for a head.

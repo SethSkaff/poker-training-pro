@@ -402,9 +402,9 @@
       "path": "src/assets/foreground.glb",
       "shippingRole": "Blender-MCP-authored foreground master compiled synchronously into the 3D scene",
       "format": "GLB",
-      "bytes": 742012,
-      "sha256": "d215c36e889ab7bf87f9d4f933fcc83d370096038b7cd5bcf51b8eefd75c941a",
-      "dimensions": "50 modular meshes; see generated foregroundGeometry.ts for triangle inventory",
+      "bytes": 1068852,
+      "sha256": "561b9d35aa132691c3ce7ac10466a0a399f976772d2f799d832dc762978e4fed",
+      "dimensions": "100 modular meshes; see generated foregroundGeometry.ts for triangle inventory",
       "embeddedMetadata": {
         "inspection": "glTF 2.0 binary; JSON + BIN chunks only; no materials, no textures, no images, no external URIs, no extensions."
       },
@@ -412,7 +412,7 @@
       "rightsStatus": "approved-commercial-redistribution",
       "derivationEvidence": {
         "status": "recipe-archived-and-reproducible",
-        "detail": "Original geometry authored through Blender MCP using tools/blender/build_foreground.py, Blender 4.5.13. Compiled by tools/glb-to-geometry.mjs using quantized delta vertex data. No external source content."
+        "detail": "Original geometry authored through Blender MCP using tools/blender/build_foreground.py and tools/blender/revise_characters.py, Blender 4.5.13. Compiled by tools/glb-to-geometry.mjs using quantized delta vertex data. No external source content."
       },
       "sourceEvidence": {
         "releaseSufficient": true,
@@ -420,7 +420,7 @@
       },
       "masterEvidence": {
         "releaseSufficient": true,
-        "detail": "GLB geometry master; reproducible source in tools/blender/build_foreground.py. Editable material master in art/pass-one/foreground.blend. Runtime canvas materials are in sceneSurfaceTextures.ts, sceneCharacters.ts and tableScene.ts."
+        "detail": "GLB geometry master; reproducible source in tools/blender/revise_characters.py and baseline build_foreground.py. Editable character material master in art/character-revision/characters.blend. Runtime character surface recipes in characterSurfaces.ts and sceneCharacters.ts."
       },
       "licenseEvidence": {
         "releaseSufficient": true,

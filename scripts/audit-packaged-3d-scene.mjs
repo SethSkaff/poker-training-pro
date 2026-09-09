@@ -1353,7 +1353,15 @@ async function captureCompositionMatrix(extraArguments, requestedMotionMode, req
       await session.cdp.send("Log.enable");
       await reachTableWithScene(session, requestedMotionMode);
       await resumeTableIfPaused(session);
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 350));
+      // Asset construction and the React ownership handoff finish separately.
+      // A fixed delay can capture frame one with ready diagnostics but a stale
+      // fallback DOM shell, especially when compiling new character materials.
+      const sceneReady = await session.poll(`(() => {
+        const diagnostics = window.__ptpSceneDiagnostics?.snapshot?.();
+        return diagnostics?.availability === 'ready' && diagnostics.frameCount >= 2
+          && document.querySelector('.poker-table')?.dataset.spatialScene === 'ready';
+      })()`, { intervalMs: 16, deadlineAt: Math.min(session.deadline, Date.now() + 15_000) });
+      if (!sceneReady) throw new Error(`Scene and DOM ownership did not settle for ${viewport.name}.`);
       const observation = await observe(session);
       const screenshot = await session.cdp.send("Page.captureScreenshot", { format: "png" });
       // Direction A requires an actual five-second silent native review at

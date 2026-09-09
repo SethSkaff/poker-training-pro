@@ -3,7 +3,6 @@ import {
   DoubleSide,
   BufferGeometry,
   Color,
-  CylinderGeometry,
   DataTexture,
   Group,
   Mesh,
@@ -13,11 +12,14 @@ import {
   SRGBColorSpace,
   Vector3,
   RepeatWrapping,
+  LinearFilter,
+  LinearMipmapLinearFilter,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { foregroundPart, type ForegroundPart } from "./foregroundLibrary";
 import { tableMeshGeometry } from "./tableGeometryLibrary";
-import { describeOpponentCharacter } from "../lib/opponentAppearance";
+import { DEFAULT_FACIAL_STRUCTURE, describeOpponentCharacter } from "../lib/opponentAppearance";
+import { fitFacialGeometry, fitHairGeometry, hairMaterial, tintBeardGeometry } from "./characterSurfaces";
 import type { OpponentCharacter } from "../lib/opponentAppearance";
 import {
   bodyProportions,
@@ -97,7 +99,8 @@ function fabricMaterial(
   const pixels = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const i = (y * size + x) * 4;
-    const value = 233 + ((x * 17 + y * 31) % 13) + ((x + y) % 2) * 5;
+    const plaid = outfit.name === "flannel" ? ((x % 32 < 5 || y % 32 < 5) ? 32 : (x % 32 < 13 || y % 32 < 13) ? 10 : 0) : 0;
+    const value = 233 + ((x * 17 + y * 31) % 13) + ((x + y) % 2) * 5 - plaid;
     pixels[i] = pixels[i + 1] = pixels[i + 2] = value;
     pixels[i + 3] = 255;
   }
@@ -105,8 +108,9 @@ function fabricMaterial(
   texture.colorSpace = SRGBColorSpace;
   texture.wrapS = texture.wrapT = RepeatWrapping;
   texture.repeat.set(7, 7);
+  texture.magFilter = LinearFilter; texture.minFilter = LinearMipmapLinearFilter; texture.generateMipmaps = true;
   texture.needsUpdate = true;
-  return ledger.track(new MeshStandardMaterial({ color: outfit.base, map: texture,
+  return ledger.track(new MeshStandardMaterial({ color: outfit.base, map: texture, bumpMap: texture, bumpScale: .00035,
     roughness: 0.86, metalness: 0, side: DoubleSide }));
 }
 
@@ -163,10 +167,11 @@ function limb(
   to: readonly [number, number, number],
   radiusTop: number,
   radiusBottom: number,
+  exposed = false,
 ): BufferGeometry {
   const axis = new Vector3(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
   const length = axis.length() || 0.0001;
-  const geometry = foregroundPart("limb/sleeve");
+  const geometry = foregroundPart(exposed ? "limb/forearm" : "sleeve/cloth");
   geometry.scale(radiusBottom, length, radiusBottom);
   geometry.translate(0, -length / 2, 0);
   geometry.applyQuaternion(
@@ -187,6 +192,7 @@ function buildArticulatedArm(
   outfitColour: string,
   skinColour: string,
   ledger: SceneResourceLedger,
+  shortSleeves = false,
 ): { shoulder: Group; elbow: Group } {
   const { shoulder: shoulderPoint, elbow: elbowPoint, hand: handPoint } = armJoints(body, side);
   const shoulder = new Group();
@@ -209,7 +215,7 @@ function buildArticulatedArm(
     handPoint[0] - elbowPoint[0], handPoint[1] - elbowPoint[1], handPoint[2] - elbowPoint[2],
   ];
   const forearm = new Mesh(
-    ledger.track(limb([0, 0, 0], forearmVector, body.neckRadius * 0.52, body.neckRadius * 0.78)),
+    ledger.track(limb([0, 0, 0], forearmVector, body.neckRadius * 0.52, body.neckRadius * 0.78, shortSleeves)),
     ledger.track(new MeshStandardMaterial({ color: outfitColour, roughness: 0.78, metalness: 0 })),
   );
   elbow.add(forearm);
@@ -240,41 +246,49 @@ export function buildCharacter(character: OpponentCharacter, ledger: SceneResour
   const sx = shape.shoulderHalfWidth / 0.205, sy = shape.torsoHeight / 0.52, sz = shape.chestDepth / 0.130;
   const garment = authoredMesh(`top/${character.outfit.name}`, character.outfit.base, ledger, "garment-base");
   garment.material = fabricMaterial(character.outfit, ledger);
-  const construction = authoredMesh(`detail/${character.outfit.name}`, character.outfit.trim, ledger, "garment-construction");
+  const construction = authoredMesh(`detail/${character.outfit.name}`, new Color(character.outfit.base).lerp(new Color(character.outfit.trim), .25).getHex(), ledger, "garment-construction");
   const hem = authoredMesh("top/hem", character.outfit.trim, ledger, "garment-trim");
   for (const item of [garment, construction, hem]) {
     item.scale.set(sx, sy, sz); item.position.y = TORSO_BASE_Y; body.add(item);
+  }
+  if (["blazer", "cardigan", "waistcoat"].includes(character.outfit.name)) {
+    const shirt = authoredMesh(`insert/${character.outfit.name}`, "#d8d5c9", ledger, "garment-undershirt");
+    shirt.material = fabricMaterial({...character.outfit, base: "#d8d5c9"}, ledger);
+    shirt.scale.set(sx, sy, sz); shirt.position.y = TORSO_BASE_Y; body.add(shirt);
   }
   const neck = authoredMesh("neck", character.skinTone, ledger);
   neck.position.y = TORSO_BASE_Y + shape.torsoHeight;
   body.add(neck);
   const head = authoredMesh(`face/${character.face}`, character.skinTone, ledger, "avatar-head");
+  fitFacialGeometry(head.geometry, character, true);
+  (head.material as MeshStandardMaterial).vertexColors = true;
   head.position.y = headY; body.add(head);
+  const facial = character.facialStructure ?? DEFAULT_FACIAL_STRUCTURE;
   for (const [part, color, name] of [
-    ["eyes/white", "#d4cbbd", "eye-sclera"],
-    ["eyes/iris", character.eyeColor ?? "#5b4935", "eye-iris"],
-    ["face/features", "#30251f", "face-features"],
-    ["face/lips", new Color(character.skinTone).lerp(new Color("#914f49"), 0.25).getHex(), "face-lids-lips"],
+    [`eyes/white-${facial.eyes}`, "#b8aca0", "eye-sclera"],
+    [`eyes/iris-${facial.eyes}`, character.eyeColor ?? "#5b4935", "eye-iris"],
+    [`eyes/lids-${facial.eyes}`, character.skinTone, "face-eyelids"],
+    [`mouth/lips-${facial.mouth}`, new Color(character.skinTone).lerp(new Color("#914f49"), 0.18).getHex(), "face-lids-lips"],
   ] as const) {
     const feature = authoredMesh(part, color, ledger, name);
     feature.position.y = headY; body.add(feature);
   }
+  const features = merged([foregroundPart(`eyes/pupil-${facial.eyes}`), foregroundPart(`brows/${facial.brows}`), foregroundPart(`mouth/seam-${facial.mouth}`)], ledger)!;
+  const featureMesh = new Mesh(features, ledger.track(new MeshStandardMaterial({color: 0x30251f, roughness: .9, side: DoubleSide})));
+  featureMesh.name = "face-features"; featureMesh.position.y = headY; body.add(featureMesh);
+  if (character.age === "mature" || character.age === "senior") {
+    const folds = authoredMesh("face/age-folds", new Color(character.skinTone).multiplyScalar(.88).getHex(), ledger, "face-age-folds");
+    folds.position.y = headY; body.add(folds);
+  }
   if (character.hairStyle !== "bald") {
     const hair = authoredMesh(`hair/${character.hairStyle}` as ForegroundPart, character.hairColor, ledger, "avatar-hair");
+    fitHairGeometry(hair.geometry,character);
+    hair.material = hairMaterial(character, ledger);
     hair.position.y = headY; body.add(hair);
   }
   if (character.facialHair && character.facialHair !== "none") {
-    const beard = foregroundPart(`face/${character.face}`);
-    // Select the lower frontal surface; fitted to the exact selected face.
-    const pos = beard.getAttribute("position");
-    const index = beard.getIndex()!; const kept: number[] = [];
-    for (let i = 0; i < index.count; i += 3) {
-      const ids = [index.getX(i), index.getX(i+1), index.getX(i+2)];
-      if (ids.every(v => pos.getY(v) < -0.047 && pos.getZ(v) > 0.028
-        && (character.facialHair !== "goatee" || Math.abs(pos.getX(v)) < 0.030))) kept.push(...ids);
-    }
-    beard.setIndex(kept); beard.scale(1.006, 1.006, 1.009);
-    const facialHair = new Mesh(ledger.track(beard), ledger.track(new MeshStandardMaterial({color: character.hairColor, roughness: 1, side: DoubleSide})));
+    const beard = fitFacialGeometry(foregroundPart(`beard/${character.face}/${character.facialHair}`), character);
+    const facialHair = new Mesh(ledger.track(tintBeardGeometry(beard,character)), hairMaterial(character, ledger, true));
     facialHair.name = "facial-hair"; facialHair.position.y = headY; body.add(facialHair);
   }
   if (character.mole != null) {
@@ -285,8 +299,16 @@ export function buildCharacter(character: OpponentCharacter, ledger: SceneResour
   }
   const legs = authoredMesh("body/legs", "#242830", ledger, "seated-legs");
   legs.scale.x = sx; root.add(legs);
-  const left = buildArticulatedArm(shape, -1, character.outfit.base, character.skinTone, ledger);
-  const right = buildArticulatedArm(shape, 1, character.outfit.base, character.skinTone, ledger);
+  const shirtSleeves = character.outfit.name === "waistcoat";
+  const sleeveColor = shirtSleeves ? "#d8d5c9" : character.outfit.base;
+  const shortSleeves = character.outfit.name === "polo" || character.outfit.name === "tee";
+  const left = buildArticulatedArm(shape, -1, sleeveColor, character.skinTone, ledger, shortSleeves);
+  const right = buildArticulatedArm(shape, 1, sleeveColor, character.skinTone, ledger, shortSleeves);
+  for (const arm of [left,right]) {
+    const sleeve = arm.shoulder.children[0] as Mesh;
+    sleeve.material = fabricMaterial({...character.outfit, base:sleeveColor}, ledger);
+    if (!shortSleeves) (arm.elbow.children[0] as Mesh).material = sleeve.material;
+  }
   if (character.outfit.name === "polo" || character.outfit.name === "tee") {
     for (const arm of [left,right]) {
       const forearm = arm.elbow.children[0] as Mesh;
@@ -300,6 +322,7 @@ export function buildCharacter(character: OpponentCharacter, ledger: SceneResour
 
 export function buildDealer(skinTone: string, ledger: SceneResourceLedger): CharacterView {
   const character = {...describeOpponentCharacter("house-dealer"), gender: "male" as const, body: "average", skinTone,
+    age: "adult" as const, facialStructure: {...DEFAULT_FACIAL_STRUCTURE, nose: "aquiline" as const},
     face: "angular" as const, hairStyle: "short-side-part", hairColor: "#31251f", facialHair: "none" as const,
     outfit: {name: "waistcoat",base: "#26303b",trim: "#c0b9a9"} as OpponentCharacter["outfit"],heightScale: 1,mole: null};
   const view = buildCharacter(character,ledger);
@@ -309,8 +332,10 @@ export function buildDealer(skinTone: string, ledger: SceneResourceLedger): Char
   view.arms.clear(); view.arms.position.set(...DEALER_SHOULDER_PIVOT);
   view.body.getObjectByName("avatar-hair")!.name = "dealer-cap";
   view.body.getObjectByName("face-features")!.name = "dealer-face-features";
-  const tie = new Mesh(ledger.track(new CylinderGeometry(.011,.017,.15,4)),ledger.track(new MeshStandardMaterial({color:0x763943,roughness:.8})));
-  tie.name="dealer-tie";tie.position.set(0,.89,.137); view.body.add(tie);
+  const tie = authoredMesh("dealer/tie", 0x763943, ledger, "dealer-tie");
+  const dealerShape = bodyProportions("male", "average");
+  tie.scale.set(dealerShape.shoulderHalfWidth/.205, dealerShape.torsoHeight/.52, dealerShape.chestDepth/.130);
+  tie.position.y = TORSO_BASE_Y; view.body.add(tie);
   for (const side of [-1,1]) {
     const a=[side*.215*.88,DEALER_SHOULDER_PIVOT[1],.02] as const;
     const b=[side===1?.245:side*.215*.76,.90,.17] as const;

@@ -1,0 +1,48 @@
+{
+  "pass": "targeted-character-revision",
+  "tool": "Blender MCP / Blender 4.5.13",
+  "sourceTests": {
+    "scope": "src/scene3d and src/lib/opponentAppearance.test.ts",
+    "testFiles": 37,
+    "passed": 266,
+    "status": "passed"
+  },
+  "productionBuild": "passed",
+  "windowsPackage": "passed",
+  "licenseSidecars": "passed",
+  "staticBudgets": {
+    "status": "passed",
+    "largestDeferredSceneChunkGzipBytes": 357680
+  },
+  "packagedScene": {
+    "webgl2": {
+      "status": "passed",
+      "drawCalls": 179,
+      "triangles": 324567,
+      "frameP95Ms": 2.100000001490116
+    },
+    "forcedWebglFailure": {
+      "status": "passed",
+      "fallback": "2D table restored"
+    }
+  },
+  "preservedMeshes": [
+    "body/legs",
+    "chair/frame",
+    "chair/piping",
+    "chair/upholstery",
+    "limb/forearm",
+    "limb/sleeve",
+    "marker/band",
+    "marker/body",
+    "marker/face",
+    "neck",
+    "top/hem"
+  ],
+  "reviewArtifacts": [
+    "cast.png",
+    "faces.png",
+    "gameplay.png",
+    "characters.blend"
+  ]
+}

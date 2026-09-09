@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { foregroundPart } from "./foregroundLibrary";
 import {
   BODY_PROPORTIONS,
   FACE_PROPORTIONS,
@@ -34,14 +35,14 @@ describe("the character library covers the owner's specified set", () => {
     }
   });
 
-  it("has five hair styles for each presented gender", () => {
-    expect(MALE_HAIR_STYLES).toHaveLength(5);
-    expect(FEMALE_HAIR_STYLES).toHaveLength(5);
-    for (const style of MALE_HAIR_STYLES) {
-      expect(hairParts("male", style).length).toBeGreaterThan(0);
-    }
-    for (const style of FEMALE_HAIR_STYLES) {
-      expect(hairParts("female", style).length).toBeGreaterThan(0);
+  it("ships all curated hair silhouettes as authored meshes", () => {
+    expect(MALE_HAIR_STYLES).toHaveLength(8);
+    expect(FEMALE_HAIR_STYLES).toHaveLength(7);
+    for (const style of [...MALE_HAIR_STYLES,...FEMALE_HAIR_STYLES]) {
+      if (style === "bald") continue;
+      const geometry = foregroundPart(`hair/${style}`);
+      expect(geometry.getIndex()!.count).toBeGreaterThan(0);
+      geometry.dispose();
     }
   });
 
@@ -133,7 +134,10 @@ describe("characters are per-identity and independent of behaviour", () => {
       expect(hair).toContain(character.hairStyle);
       // And the geometry lookups must resolve without falling back.
       expect(BODY_PROPORTIONS[`${character.gender}:${character.body}`]).toBeDefined();
-      expect(hairParts(character.gender, character.hairStyle).length).toBeGreaterThan(0);
+      if (character.hairStyle !== "bald") {
+        const geometry = foregroundPart(`hair/${character.hairStyle}`);
+        expect(geometry.getIndex()!.count).toBeGreaterThan(0); geometry.dispose();
+      }
     }
   });
 
@@ -157,7 +161,7 @@ describe("characters are per-identity and independent of behaviour", () => {
     }
     expect(seen.gender.size).toBe(2);
     expect(seen.body.size).toBe(8);
-    expect(seen.hairStyle.size).toBe(10);
+    expect(seen.hairStyle.size).toBe(MALE_HAIR_STYLES.length + FEMALE_HAIR_STYLES.length);
     expect(seen.face.size).toBe(Object.keys(FACE_PROPORTIONS).length);
     expect(seen.outfit.size).toBeGreaterThanOrEqual(8);
     expect(seen.height.size).toBeGreaterThan(20);
