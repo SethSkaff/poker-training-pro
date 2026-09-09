@@ -11,7 +11,8 @@ describe("chip ownership choreography", () => {
     expect(scene).toContain('if (isCommitting && betFrame) return betFrame.hand.position;');
     expect(scene).toContain('chip.ownership !== "rack"');
     expect(scene).toContain('setTravellingChipFrames(view.travellingChips, physicalChips, pose, resources)');
-    expect(scene).toContain('setChipStack(view.stackChips, rackLayoutAmount, resources, excludedRackChipIds)');
+    expect(scene).toContain('setChipStack(view.stackChips, rackLayoutAmount, resources, excludedRackChipIds, "rack", rackInventory)');
+    expect(scene).toContain('rackInventory: chipCommitment.rackInventory');
     expect(scene).toContain('betCirclePosition(pose)');
     expect(scene).toContain('view.travellingChips.visible = true');
   });

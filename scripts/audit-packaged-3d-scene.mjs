@@ -1477,6 +1477,24 @@ async function repeatContextRecovery(session, baselineContextLosses) {
   return { attempts };
 }
 
+export function sceneTriangleBudget(objects) {
+  // Retained denominations require more instances than the former scalar
+  // projection. Keep its scene allowance, adding only the measured cost of
+  // extra physical chips: body 576 + edge 256 + inlay 192 + at most 20 shadow
+  // triangles. Draw-call, frame-time and texture limits remain independent.
+  const piles = [
+    [objects?.potChipCount ?? 0, objects?.potRenderedChipValue ?? 0],
+    ...(objects?.seats ?? []).flatMap((seat) => [
+      [seat.stackChipCount, seat.stackRenderedChipValue],
+      [seat.betChipCount, seat.betRenderedChipValue],
+    ]),
+  ];
+  const extraChips = piles.reduce((total, [count, value]) => total
+    + (Number.isSafeInteger(count) && count >= 0 && Number.isSafeInteger(value) && value >= 0
+      ? Math.max(0, count - chipCountForAmount(value)) : 0), 0);
+  return sceneBudgets.triangles + extraChips * 1_044;
+}
+
 export function assertCase(result) {
   const before = result.before;
   const expectedRootCameraMotion = result.motionMode === "reduced" ? "off" : result.motionMode;
@@ -1500,7 +1518,7 @@ export function assertCase(result) {
   if (!before.diagnostics) throw new Error("Scene diagnostics bridge was unavailable.");
   assertDiagnosticSchema(before.diagnostics, result.kind === "webgl2");
   if (before.diagnostics.drawCalls > sceneBudgets.drawCalls
-    || before.diagnostics.triangles > sceneBudgets.triangles
+    || before.diagnostics.triangles > sceneTriangleBudget(before.diagnostics.objects)
     || before.diagnostics.textureEstimateMiB > sceneBudgets.textureEstimateMiB
     || before.diagnostics.frameP95Ms > sceneBudgets.frameP95Ms) {
     throw new Error(`Scene budget exceeded: ${JSON.stringify(before.diagnostics)}`);
@@ -1652,18 +1670,17 @@ function fixedCameraControlExpression() {
   })()`;
 }
 
-function assertPublicObjectParity(beat) {
+export function assertPublicObjectParity(beat) {
   const objects = beat?.sceneObjects;
   if (!objects || !Array.isArray(objects.boardCardCodes) || !Array.isArray(objects.seats)
     || !objects.markers || !Number.isFinite(beat.scenePot)) {
     throw new Error(`Renderer object diagnostics were unavailable: ${JSON.stringify(beat)}`);
   }
-  // Direction A renders each public main/side lane as a physical pile.  A
-  // split pot therefore has more visible chips than a single compressed pile
-  // for the same aggregate amount; require the aggregate's readable minimum
-  // rather than incorrectly treating multiple lanes as one object.
+  // The inclusive pot includes chips still in betting areas. Physical collected
+  // chips are pooled until settlement; never derive chip counts from value.
   if (JSON.stringify(objects.boardCardCodes) !== JSON.stringify(beat.boardCardCodes)
-    || objects.potChipCount < chipCountForAmount(beat.scenePot)) {
+    || !Number.isSafeInteger(objects.potChipCount) || objects.potChipCount < 0
+    || objects.potRenderedChipValue + objects.seats.reduce((sum, seat) => sum + seat.betRenderedChipValue, 0) !== beat.scenePot) {
     throw new Error(`Physical board or pot did not match mounted DOM: ${JSON.stringify(beat)}`);
   }
   const expectedPotLanes = beat.potLanes ?? [];
@@ -1675,8 +1692,10 @@ function assertPublicObjectParity(beat) {
   if (objects.seats.some((seat) => {
     const expected = expectedSeats.get(seat.id);
     return !expected || Object.hasOwn(seat, "cardCodes")
-      || seat.stackChipCount !== chipCountForAmount(expected.stack)
-      || seat.betChipCount !== chipCountForAmount(expected.bet);
+      || !denominationPileMatches(seat.stackDenominations, seat.stackChipCount, expected.stack)
+      || !denominationPileMatches(seat.betDenominations, seat.betChipCount, expected.bet)
+      || seat.stackRenderedChipValue !== expected.stack
+      || seat.betRenderedChipValue !== expected.bet;
   }) || objects.seats.length !== expectedSeats.size) {
     if (objects.seats.some((seat) => Object.hasOwn(seat, "cardCodes"))) {
       throw new Error(`Renderer object diagnostics leaked seat card identities: ${JSON.stringify(beat)}`);
@@ -1687,6 +1706,14 @@ function assertPublicObjectParity(beat) {
     || objects.actingPlayerId !== beat.actingPlayerId) {
     throw new Error(`Physical markers or acting object did not match mounted DOM: ${JSON.stringify(beat)}`);
   }
+}
+
+function denominationPileMatches(columns, count, value) {
+  return Array.isArray(columns)
+    && columns.every((column) => Number.isSafeInteger(column.denomination) && column.denomination > 0
+      && Number.isSafeInteger(column.count) && column.count > 0)
+    && columns.reduce((sum, column) => sum + column.count, 0) === count
+    && columns.reduce((sum, column) => sum + column.denomination * column.count, 0) === value;
 }
 
 /**
@@ -1798,9 +1825,13 @@ function assertSidePotParity(capture) {
     ? domLanes.filter((lane) => lane?.kind === "side" && Number.isFinite(lane.amount) && lane.amount > 0)
     : [];
   if (domSideLanes.length < 2 || !Array.isArray(sceneLanes)
+    || !Array.isArray(capture?.sceneObjects?.seats)
     || sceneLanes.length !== domLanes.length
     || sceneLanes.some((lane, index) => lane?.amount !== domLanes[index]?.amount
-      || !Number.isInteger(lane?.chipCount) || lane.chipCount < chipCountForAmount(lane.amount))) {
+      || !Number.isInteger(lane?.chipCount) || lane.chipCount < 0)
+    || capture.sceneObjects.potRenderedChipValue
+      + capture.sceneObjects.seats.reduce((sum, seat) => sum + seat.betRenderedChipValue, 0)
+      !== domLanes.reduce((sum, lane) => sum + lane.amount, 0)) {
     throw new Error(`Physical two-side-pot lanes did not match mounted DOM: ${JSON.stringify(capture)}`);
   }
 }

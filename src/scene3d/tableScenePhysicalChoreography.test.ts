@@ -39,7 +39,7 @@ describe("physical choreography renderer integration", () => {
     expect(scene).toContain("cardFrame.faceUpFraction >= 0.5");
     expect(scene).not.toContain('tableMeshGeometry("table/play-zone")');
     expect(scene).not.toContain('playZones.name = "table-play-zones"');
-    expect(scene).toContain('setChipStack(view.betChips, settledBet, resources, new Set(), "wager")');
+    expect(scene).toContain('setChipStack(view.betChips, settledBet, resources, new Set(), "wager", isCommitting ? chipCommitment?.betInventory : seat.betChipInventory)');
     expect(scene).not.toContain("boardDealPose(");
     expect(scene).not.toContain("burnCardPose(");
   });

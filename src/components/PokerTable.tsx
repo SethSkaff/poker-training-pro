@@ -3362,11 +3362,13 @@ export function PokerTable({
     // stable identity that keeps both physical packs and every dealt back in
     // lockstep for the entire round.
     handId: sceneHandId,
-    players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status })),
+    players: scenario.players.map((player) => ({ id: player.id, canonicalSeat: player.seat, stack: player.stack, bet: player.bet ?? 0, status: player.status, chipInventory: player.chipInventory, betChipInventory: player.betChipInventory })),
     heroId: scenario.players.find((player) => player.seat === scenario.heroSeat)?.id ?? "",
     actingPlayerId: scenario.actingPlayerId,
     publicActions: sceneActions,
     pot: scenario.pot,
+    collectedChipInventory: scenario.collectedChipInventory,
+    chipMovements: scenario.chipMovements,
     pots: (scenario.potBreakdown?.length
       ? scenario.potBreakdown
       : [{ id: "main", kind: "main", amount: scenario.pot }]
@@ -4502,6 +4504,7 @@ export function PokerTable({
                             heroStationIndexForTable,
                             activeCameraFrame,
                             player.stack,
+                            player.chipInventory,
                           )
                         : seatStackAmountViewportAnchor(
                             seatSceneSeat.relativeSeat,
@@ -4512,6 +4515,7 @@ export function PokerTable({
                             cameraZoom,
                             settings.cameraView,
                             player.stack,
+                            player.chipInventory,
                           )
                       : undefined
                   }

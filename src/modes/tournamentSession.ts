@@ -62,6 +62,10 @@ import {
   TWO_D_FEMALE_NAMES,
   TWO_D_MALE_NAMES,
 } from "../lib/twoDAvatarModels";
+import {
+  accountChips, assertChipLedger, chipValue, cloneChipLedger, collectChipBets,
+  createChipLedger, transferChipValue, combineChipInventories, type ChipLedger,
+} from "../engine/chips";
 
 export const SESSION_TABLE_SIZE = 6;
 export const SESSION_FORMAT = "compressed-six-seat" as const;
@@ -130,6 +134,8 @@ export interface SessionHandResult {
   pots: ContestablePot[];
   awards: PotAward[];
   eliminatedPlayerIds: string[];
+  /** Inventories before awards; the live ledger's pot accounts are empty after payout. */
+  chipPots: Record<string, import("../engine/chips").ChipInventory>;
 }
 
 export interface PairwiseEloEntry {
@@ -171,6 +177,7 @@ export interface TournamentSession {
   heroId: string;
   entrants: TournamentSessionEntrant[];
   tournament: TournamentState;
+  chips: ChipLedger;
   careerResults: TournamentSessionCareerResult[];
   activeHand?: SessionHandState;
   lastHand?: SessionHandResult;
@@ -449,6 +456,7 @@ export function createTournamentSession(
     heroId: options.hero.id,
     entrants,
     tournament,
+    chips: createChipLedger(tournament.players),
     careerResults,
     status: "playing",
   };
@@ -504,6 +512,37 @@ function cloneTournament(state: TournamentState): TournamentState {
     tables: state.tables.map((table) => ({ ...table })),
     breakingOrder: [...state.breakingOrder],
   };
+}
+
+/** Stable session boundaries must agree with the unchanged numeric rules ledger. */
+export function assertSessionChipInvariant(session: TournamentSession): void {
+  assertChipLedger(session.chips);
+  let committed = 0;
+  for (const player of session.tournament.players) {
+    if (chipValue(accountChips(session.chips, `player:${player.id}`)) !== player.stack) {
+      throw new Error(`Chip inventory does not match stack for ${player.id}`);
+    }
+    const betting = session.activeHand?.betting.players.find((p) => p.id === player.id);
+    const bet = chipValue(accountChips(session.chips, `bet:${player.id}`));
+    const collected = chipValue(accountChips(session.chips, `collected:${player.id}`));
+    if (bet !== (betting?.streetCommitted ?? 0) || bet + collected !== (betting?.totalCommitted ?? 0)) {
+      throw new Error(`Chip inventory does not match contribution for ${player.id}`);
+    }
+    if (betting && betting.stack !== player.stack) throw new Error("Betting and tournament stacks disagree");
+    committed += bet + collected;
+  }
+  if (committed !== (session.activeHand?.information.pot ?? 0)) throw new Error("Physical pot does not match contributed value");
+  if (Object.entries(session.chips.accounts).some(([id, chips]) => id.startsWith("pot:") && chipValue(chips ?? {}) !== 0)) {
+    throw new Error("Unpaid settlement pot at stable boundary");
+  }
+  if (session.tournament.players.reduce((sum, p) => sum + p.stack, committed) !== session.chips.tournamentValue) {
+    throw new Error("Session tournament value changed");
+  }
+}
+
+function checkedSession(session: TournamentSession): TournamentSession {
+  assertSessionChipInvariant(session);
+  return session;
 }
 
 function postForced(
@@ -567,6 +606,8 @@ export function beginTournamentSessionHand(
     throw new Error("Cannot start a hand in a completed session");
   }
   if (source.activeHand) throw new Error("The current hand is not complete");
+  assertSessionChipInvariant(source);
+  const chips = cloneChipLedger(source.chips, true);
   const players = tournamentActivePlayers(source);
   if (players.length < 2) throw new Error("A hand requires two active players");
 
@@ -630,6 +671,8 @@ export function beginTournamentSessionHand(
     type: "big-blind",
     amount: bigBlind,
   });
+  transferChipValue(chips, `player:${smallBlindPlayer.id}`, `bet:${smallBlindPlayer.id}`, smallBlind, "small-blind");
+  transferChipValue(chips, `player:${bigBlindPlayer.id}`, `bet:${bigBlindPlayer.id}`, bigBlind, "big-blind");
 
   const preflopOrder = clockwisePlayersAfter(players, bigBlindSeat).map(
     (player) => player.id,
@@ -672,9 +715,10 @@ export function beginTournamentSessionHand(
     actions: forcedActions,
   };
 
-  return {
+  return checkedSession({
     ...source,
     tournament,
+    chips,
     activeHand: {
       handId,
       street: "preflop",
@@ -697,7 +741,7 @@ export function beginTournamentSessionHand(
       information,
     },
     lastHand: undefined,
-  };
+  });
 }
 
 function syncTournamentStacks(
@@ -752,7 +796,10 @@ export function applyTournamentSessionAction(
 ): TournamentSession {
   const hand = source.activeHand;
   if (!hand) throw new Error("No active session hand");
+  assertSessionChipInvariant(source);
   const result = applyBettingAction(hand.betting, playerId, command);
+  const chips = cloneChipLedger(source.chips);
+  transferChipValue(chips, `player:${playerId}`, `bet:${playerId}`, result.event.committed, "wager");
   const actions = [
     ...hand.information.actions,
     {
@@ -768,11 +815,12 @@ export function applyTournamentSessionAction(
   };
   nextHand.information = syncHandInformation(nextHand, result.state, actions);
 
-  return {
+  return checkedSession({
     ...source,
+    chips,
     tournament: syncTournamentStacks(source.tournament, result.state),
     activeHand: nextHand,
-  };
+  });
 }
 
 function nextStreet(street: Street): Exclude<Street, "preflop"> {
@@ -988,6 +1036,7 @@ export function settleTournamentSessionHand(
 ): TournamentSession {
   const hand = source.activeHand;
   if (!hand) throw new Error("No active session hand");
+  assertSessionChipInvariant(source);
   if (!hand.betting.complete) {
     throw new Error("Cannot settle while betting is still open");
   }
@@ -1018,6 +1067,27 @@ export function settleTournamentSessionHand(
     smallestChip: source.tournament.structure.smallestChip ?? 1,
   });
   const winnings = awardMap(resolved.awards, built.refunds);
+  const chips = cloneChipLedger(source.chips);
+  collectChipBets(chips);
+  for (const refund of built.refunds) {
+    transferChipValue(chips, `collected:${refund.playerId}`, `player:${refund.playerId}`, refund.amount, "refund");
+  }
+  const chipPots: SessionHandResult["chipPots"] = {};
+  let previousCap = 0;
+  for (const pot of built.pots) {
+    for (const player of hand.betting.players) {
+      const contribution = Math.max(0, Math.min(player.totalCommitted, pot.cap) - Math.min(player.totalCommitted, previousCap));
+      transferChipValue(chips, `collected:${player.id}`, `pot:${pot.id}`, contribution, "pot-allocation");
+    }
+    previousCap = pot.cap;
+    if (chipValue(accountChips(chips, `pot:${pot.id}`)) !== pot.amount) throw new Error("Physical side pot amount mismatch");
+    chipPots[pot.id] = { ...accountChips(chips, `pot:${pot.id}`) };
+    const awards = resolved.awards.filter((award) => award.potId === pot.id);
+    if (awards.reduce((sum, award) => sum + award.amount, 0) !== pot.amount) throw new Error("Payout does not conserve pot value");
+    for (const award of awards) {
+      transferChipValue(chips, `pot:${pot.id}`, `player:${award.playerId}`, award.amount, "payout");
+    }
+  }
   let tournament = cloneTournament(source.tournament);
   tournament.players = tournament.players.map((player) => ({
     ...player,
@@ -1042,6 +1112,7 @@ export function settleTournamentSessionHand(
   let next: TournamentSession = {
     ...source,
     tournament,
+    chips,
     activeHand: undefined,
     lastHand: {
       handId: hand.handId,
@@ -1053,6 +1124,7 @@ export function settleTournamentSessionHand(
       })),
       awards: resolved.awards.map((award) => ({ ...award })),
       eliminatedPlayerIds: eliminated.map((player) => player.id),
+      chipPots,
     },
   };
   const heroState = tournament.players.find(
@@ -1095,7 +1167,7 @@ export function settleTournamentSessionHand(
       next = { ...next, status: "playing", result: undefined };
     }
   }
-  return next;
+  return checkedSession(next);
 }
 
 /**
@@ -1111,6 +1183,7 @@ export function progressTournamentSessionHand(
   if (!hand.betting.complete) {
     throw new Error("Betting must complete before progressing the hand");
   }
+  assertSessionChipInvariant(source);
   if (hand.betting.handComplete || hand.street === "river") {
     return settleTournamentSessionHand(source, options);
   }
@@ -1133,9 +1206,12 @@ export function progressTournamentSessionHand(
     { playerId: "dealer", type: dealt.street },
   ];
   const information = syncHandInformation(staged, betting, actions);
+  const chips = cloneChipLedger(source.chips);
+  collectChipBets(chips);
 
-  return {
+  return checkedSession({
     ...source,
+    chips,
     activeHand: {
       ...staged,
       betting,
@@ -1145,7 +1221,7 @@ export function progressTournamentSessionHand(
         board: dealt.board.map((card) => ({ ...card })),
       },
     },
-  };
+  });
 }
 
 export function advanceTournamentSessionClock(
@@ -1412,6 +1488,8 @@ export function createPokerTableSnapshot(
       id: tournamentPlayer.id,
       name: tournamentPlayer.name,
       stack: tournamentPlayer.stack,
+      chipInventory: { ...accountChips(session.chips, `player:${tournamentPlayer.id}`) },
+      betChipInventory: { ...accountChips(session.chips, `bet:${tournamentPlayer.id}`) },
       seat: index,
       status:
         tournamentPlayer.status === "eliminated"
@@ -1476,6 +1554,9 @@ export function createPokerTableSnapshot(
     bigBlindSeat: Math.max(0, bigBlindIndex),
     actingPlayerId: actingId ?? undefined,
     pot: hand.information.pot,
+    collectedChipInventory: combineChipInventories(Object.entries(session.chips.accounts)
+      .filter(([id]) => id.startsWith("collected:")).map(([, chips]) => chips)),
+    chipMovements: session.chips.movements.map((movement) => ({ ...movement, chips: { ...movement.chips } })),
     potBreakdown,
     amountToCall: toCall,
     minimumRaise:

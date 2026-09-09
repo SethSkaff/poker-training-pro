@@ -59,6 +59,8 @@ import {
   CHIP_COLUMN_PITCH,
   CHIPS_PER_COLUMN,
   chipColumnLayoutForAmount,
+  chipColumnLayoutForInventory,
+  chipDisplayValue,
   chipRackColumnPosition,
   callChipPosition,
   collectChipPosition,
@@ -158,6 +160,8 @@ export interface SceneSeatState {
   readonly seat: number;
   readonly stack: number;
   readonly bet: number;
+  readonly chipInventory?: Readonly<Record<number, number>>;
+  readonly betChipInventory?: Readonly<Record<number, number>>;
   readonly folded: boolean;
   readonly acting: boolean;
   readonly isHero: boolean;
@@ -172,6 +176,9 @@ export interface TableSceneState {
   readonly handId?: string;
   readonly seats: readonly SceneSeatState[];
   readonly pot: number;
+  /** Actual collected chips, held together until settlement divides side pots. */
+  readonly collectedChipInventory?: Readonly<Record<number, number>>;
+  readonly chipMovements?: readonly import("../engine/chips").ChipMovement[];
   /** Public main/side lanes.  The aggregate remains a DOM-parity guard. */
   readonly pots?: readonly { id: string; kind: "main" | "side"; amount: number }[];
   readonly boardCards: number;
@@ -1135,11 +1142,27 @@ export function createTableScene(
       // has already normalised a prior street's `bet` to zero.
       const amount = Math.max(0, before.stack - after.stack, after.bet - before.bet);
       if (amount <= 0) continue;
+      const wager = [...(next.chipMovements ?? [])].reverse().find((movement) => movement.from === `player:${playerId}` && movement.reason === "wager");
+      let rackInventory: Record<number, number> | undefined;
+      let betInventory: Record<number, number> | undefined;
+      if (after.chipInventory && after.betChipInventory && wager?.value === amount) {
+        // The two equal-value bank legs are already settled. Reconstruct only
+        // the before-transfer display from the actual bundle, never its value.
+        rackInventory = { ...after.chipInventory };
+        betInventory = { ...after.betChipInventory };
+        for (const [key, count] of Object.entries(wager.chips)) {
+          const d = Number(key);
+          rackInventory[d] = (rackInventory[d] ?? 0) + count;
+          betInventory[d] = (betInventory[d] ?? 0) - count;
+        }
+      }
       chipCommitmentMotions.set(playerId, {
         transitionId: transition.id,
         stackBefore: before.stack,
         betBefore: before.bet,
         amount,
+        rackInventory,
+        betInventory,
       });
     }
   };
@@ -1324,6 +1347,8 @@ export function createTableScene(
               plan = createBetChoreographyPlan({
                 pose: entry.pose,
                 rackAmount: chipCommitment.stackBefore,
+                rackInventory: chipCommitment.rackInventory,
+                existingWagerInventory: chipCommitment.betInventory,
                 amount: chipCommitment.amount,
                 existingWagerAmount: chipCommitment.betBefore,
               });
@@ -1467,14 +1492,14 @@ export function createTableScene(
         activeFoldFrame,
         boardStreetFrame,
       );
-      placeMarker(buttonMarker, "D", state.buttonPlayerId, seatViews, state.seats.find((seat) => seat.id === state.buttonPlayerId)?.stack);
-      placeMarker(smallBlindMarker, "SB", state.smallBlindPlayerId, seatViews, state.seats.find((seat) => seat.id === state.smallBlindPlayerId)?.stack);
-      placeMarker(bigBlindMarker, "BB", state.bigBlindPlayerId, seatViews, state.seats.find((seat) => seat.id === state.bigBlindPlayerId)?.stack);
+      placeMarker(buttonMarker, "D", state.buttonPlayerId, seatViews, state.seats.find((seat) => seat.id === state.buttonPlayerId)?.stack, state.seats.find((seat) => seat.id === state.buttonPlayerId)?.chipInventory);
+      placeMarker(smallBlindMarker, "SB", state.smallBlindPlayerId, seatViews, state.seats.find((seat) => seat.id === state.smallBlindPlayerId)?.stack, state.seats.find((seat) => seat.id === state.smallBlindPlayerId)?.chipInventory);
+      placeMarker(bigBlindMarker, "BB", state.bigBlindPlayerId, seatViews, state.seats.find((seat) => seat.id === state.bigBlindPlayerId)?.stack, state.seats.find((seat) => seat.id === state.bigBlindPlayerId)?.chipInventory);
       placeTurnIndicator(turnIndicator, state.seats, seatViews);
       const payoutWinner = renderTransition?.kind === "pot-awarded"
         ? seatViews.get(renderTransition.payoutPlayerId ?? "")?.pose
         : undefined;
-      setPotLanes(potChips, state.pots, state.pot, renderTransition, resources, payoutWinner);
+      setPotLanes(potChips, state.pots, state.pot, renderTransition, resources, payoutWinner, state.collectedChipInventory);
       for (const lane of potChips.children) {
         const plaque = lane.getObjectByName("pot-amount-plaque");
         if (plaque) plaque.lookAt(camera.position);
@@ -1677,6 +1702,8 @@ interface SeatView {
 }
 
 interface ChipCommitmentMotion {
+  readonly rackInventory?: Readonly<Record<number, number>>;
+  readonly betInventory?: Readonly<Record<number, number>>;
   readonly transitionId: string;
   readonly stackBefore: number;
   readonly betBefore: number;
@@ -1971,6 +1998,7 @@ function placeMarker(
   playerId: string | undefined,
   seatViews: ReadonlyMap<string, { pose: SeatPose; view: SeatView }>,
   stackAmount = 15_000,
+  inventory?: Readonly<Record<number, number>>,
 ): void {
   const pose = playerId === undefined ? undefined : seatViews.get(playerId)?.pose;
   marker.visible = Boolean(pose);
@@ -1979,7 +2007,7 @@ function placeMarker(
   // Keep the button in the same physical lane as the represented rack, just
   // forward of its chips toward the table centre. The model reserves separate
   // D/SB slots, so this never reads as a central bet or a neighbouring seat's.
-  marker.position.set(...tableMarkerPosition(pose, label, stackAmount));
+  marker.position.set(...tableMarkerPosition(pose, label, stackAmount, inventory));
 }
 
 /**
@@ -2570,7 +2598,7 @@ function applySeat(
   }
 
   const settledBet = isCommitting ? (chipCommitment?.betBefore ?? seat.bet) : seat.bet;
-  setChipStack(view.betChips, settledBet, resources, new Set(), "wager");
+  setChipStack(view.betChips, settledBet, resources, new Set(), "wager", isCommitting ? chipCommitment?.betInventory : seat.betChipInventory);
   if (settledBet > 0) {
     const local = seatLocalPoint(pose, isCommitting
       ? betCirclePosition(pose)
@@ -2602,7 +2630,8 @@ function applySeat(
   const rackLayoutAmount = isCommitting && chipCommitment
     ? chipCommitment.stackBefore
     : displayedStack;
-  setChipStack(view.stackChips, rackLayoutAmount, resources, excludedRackChipIds);
+  const rackInventory = isCommitting ? chipCommitment?.rackInventory : seat.chipInventory;
+  setChipStack(view.stackChips, rackLayoutAmount, resources, excludedRackChipIds, "rack", rackInventory);
   /*
     Beside the player, in the player's own frame.
 
@@ -2615,7 +2644,7 @@ function applySeat(
     between two players. A fixed offset in the seat's local frame puts every
     stack in the same place relative to the person it belongs to.
   */
-  const stackWorld = restingChipStackPosition(pose, rackLayoutAmount);
+  const stackWorld = restingChipStackPosition(pose, rackLayoutAmount, rackInventory);
   const stackLocal = seatLocalPoint(pose, stackWorld);
   view.stackChips.position.set(
     stackLocal[0],
@@ -2717,8 +2746,11 @@ function setChipStack(
   resources: TableSceneResources,
   excludedChipIds: ReadonlySet<string> = new Set(),
   placement: "rack" | "wager" = "rack",
+  inventory?: Readonly<Record<number, number>>,
 ): void {
-  const layout = chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN);
+  const layout = inventory === undefined
+    ? chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN)
+    : chipColumnLayoutForInventory(inventory, CHIPS_PER_COLUMN);
   const renderedColumns = layout.map((column) => ({
     ...column,
     count: Array.from({ length: column.count }, (_, height) => height)
@@ -2841,8 +2873,9 @@ function setChipStack(
     .filter((column) => column.count > 0)
     .map((column) => ({ denomination: column.denomination, count: column.count }));
   group.userData.publicPlacement = placement;
-  if (excludedChipIds.size === 0 && renderedValue !== Math.max(0, Math.floor(amount))) {
-    throw new Error(`Rendered chip value mismatch: ${renderedValue} !== ${amount}`);
+  const representedAmount = chipDisplayValue(amount, inventory);
+  if (excludedChipIds.size === 0 && renderedValue !== representedAmount) {
+    throw new Error(`Rendered chip value mismatch: ${renderedValue} !== ${representedAmount}`);
   }
   return;
   if (false) {
@@ -3052,6 +3085,7 @@ function setPotLanes(
   transition: TableSceneState["transition"],
   resources: TableSceneResources,
   payoutWinner?: SeatPose,
+  collectedInventory?: Readonly<Record<number, number>>,
 ): void {
   const publicPots = pots && pots.length > 0
     ? pots
@@ -3096,7 +3130,10 @@ function setPotLanes(
     const chips = lane.getObjectByName("pot-chip-stack") as Group | undefined;
     const plaque = lane.getObjectByName("pot-amount-plaque") as Mesh | undefined;
     if (!chips || !plaque) return;
-    setChipStack(chips, amount, resources);
+    // Eligibility lanes are monetary views. Collected physical chips remain
+    // one pool until settlement allocates them; never duplicate them per lane.
+    setChipStack(chips, amount, resources, new Set(), "rack",
+      collectedInventory === undefined ? undefined : index === 0 ? collectedInventory : {});
     plaque.visible = amount > 0;
     plaque.material = resources.potPlaqueMaterial(potHologramLabel(pot.kind, amount), pot.kind);
     plaque.position.set(0, POT_HOLOGRAM.labelHeight, POT_HOLOGRAM_FORWARD);

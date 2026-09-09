@@ -8,6 +8,8 @@ export interface PublicScenePlayer {
   readonly canonicalSeat: number;
   readonly stack: number;
   readonly bet: number;
+  readonly chipInventory?: SceneSeatState["chipInventory"];
+  readonly betChipInventory?: SceneSeatState["betChipInventory"];
   readonly status: "active" | "folded" | "all-in" | "out";
 }
 
@@ -19,6 +21,8 @@ export interface TableSceneSnapshotInput {
   readonly actingPlayerId?: string;
   readonly publicActions?: Readonly<Record<string, SeatActionKind | undefined>>;
   readonly pot: number;
+  readonly collectedChipInventory?: TableSceneState["collectedChipInventory"];
+  readonly chipMovements?: TableSceneState["chipMovements"];
   readonly pots?: readonly { id: string; kind: "main" | "side"; amount: number }[];
   readonly boardCards: number;
   readonly publicBoardCardCodes?: readonly string[];
@@ -93,6 +97,8 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
       relativeSeat,
       seat,
       stack: player.stack,
+      chipInventory: player.chipInventory,
+      betChipInventory: player.betChipInventory,
       // The next betting street clears its authoritative `bet` values before
       // this public presentation beat plays. Retain only the public swept
       // amount long enough for the decorative chip pile to reach the pot.
@@ -131,6 +137,8 @@ export function createTableSceneSnapshot(input: TableSceneSnapshotInput): TableS
     handId: input.handId,
     seats,
     pot: input.pot,
+    collectedChipInventory: input.collectedChipInventory,
+    chipMovements: input.chipMovements,
     pots: input.pots,
     boardCards: input.boardCards,
     publicBoardCardCodes: input.publicBoardCardCodes ?? [],

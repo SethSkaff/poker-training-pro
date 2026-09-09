@@ -20,6 +20,7 @@ import {
   TABLE_HEIGHT,
   betCirclePosition,
   chipColumnLayoutForAmount,
+  chipColumnLayoutForInventory,
   chipInventoryForAmount,
   chipRackColumnPosition,
   restingChipStackPosition,
@@ -152,6 +153,9 @@ export interface BetChoreographyFrame {
 export interface BetChoreographyRequest {
   readonly pose: SeatPose;
   readonly rackAmount: number;
+  /** Public ledger inventories override scalar reconstruction, including dealer change. */
+  readonly rackInventory?: Readonly<Record<number, number>>;
+  readonly existingWagerInventory?: Readonly<Record<number, number>>;
   /** Exact chip value to leave the rack during this action. */
   readonly amount: number;
   /** Public amount already committed on this street before this increment. */
@@ -222,14 +226,18 @@ export function createBetChoreographyPlan(
     request.existingWagerAmount ?? 0,
     true,
   );
-  const existingWagerChipCount = chipInventoryForAmount(existingWagerAmount).length;
+  const existingWagerChipCount = request.existingWagerInventory === undefined
+    ? chipInventoryForAmount(existingWagerAmount).length
+    : Object.values(request.existingWagerInventory).reduce((sum, count) => sum + count, 0);
   if (amount > rackAmount) {
     throw new RangeError(`Wager ${amount} exceeds rack amount ${rackAmount}`);
   }
 
-  const layout = chipColumnLayoutForAmount(rackAmount, CHIPS_PER_COLUMN);
+  const layout = request.rackInventory === undefined ? chipColumnLayoutForAmount(rackAmount, CHIPS_PER_COLUMN)
+    : chipColumnLayoutForInventory(request.rackInventory, CHIPS_PER_COLUMN);
+  if (layout.reduce((sum, c) => sum + c.denomination * c.count, 0) !== rackAmount) throw new Error("Rack inventory does not match amount");
   const denominationCounts = exactDenominationSelection(layout, amount);
-  const rackOrigin = restingChipStackPosition(request.pose, rackAmount);
+  const rackOrigin = restingChipStackPosition(request.pose, rackAmount, request.rackInventory);
   const rackOriginLocal = seatLocalPoint(request.pose, rackOrigin);
 
   const selectedColumns = layout.flatMap((column) => {

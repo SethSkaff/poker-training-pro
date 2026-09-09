@@ -5,10 +5,37 @@ import { test } from "node:test";
 import {
   assertCase,
   assertForcedFallbackRunoutParity,
+  assertPublicObjectParity,
   chipCountForAmount,
+  sceneTriangleBudget,
 } from "./audit-packaged-3d-scene.mjs";
 
 const electronMainSource = readFileSync(resolve("electron/main.cjs"), "utf8");
+
+test("scene triangle allowance scales only with additional physical chips", () => {
+  const objects = { seats: [{ stackChipCount: 41, stackRenderedChipValue: 15_000,
+    betChipCount: 0, betRenderedChipValue: 0 }], potChipCount: 0, potRenderedChipValue: 0 };
+  assert.equal(sceneTriangleBudget(), 250_000);
+  assert.equal(sceneTriangleBudget(objects), 250_000 + 25 * 1_044);
+  const result = normalResult();
+  result.before.diagnostics.objects = objects;
+  result.before.diagnostics.triangles = sceneTriangleBudget(objects);
+  assert.doesNotThrow(() => assertCase(result));
+  result.before.diagnostics.triangles += 1;
+  assert.throws(() => assertCase(result), /budget exceeded/);
+});
+
+test("physical chip triangle allowance matches the existing authored geometry", async () => {
+  const { tableGeometry } = await import("../src/scene3d/generated/tableGeometry.ts");
+  const triangles = ["chip/body", "chip/edge", "chip/inlay"].reduce((total, name) => {
+    const geometry = tableGeometry[name];
+    const indices = typeof geometry.index === "string"
+      ? Buffer.from(geometry.index, "base64").length / (geometry.indexBits / 8)
+      : geometry.index.length;
+    return total + indices / 3;
+  }, 0);
+  assert.equal(triangles + 20, 1_044);
+});
 
 test("scene package audit follows the mixed 15K opening-rack contract", () => {
   assert.equal(chipCountForAmount(15_000), 16);
@@ -111,7 +138,8 @@ function normalResult(overrides = {}) {
         boardCardCodes: [...boardCardCodes],
         potChipCount: 0,
         potLanes: [{ id: "main-0", amount: 0, chipCount: 0 }],
-        seats: [{ id: "hero", stackChipCount: 0, betChipCount: 0 }],
+        potRenderedChipValue: 0,
+        seats: [{ id: "hero", stackChipCount: 0, betChipCount: 0, stackRenderedChipValue: 0, betRenderedChipValue: 0, stackDenominations: [], betDenominations: [] }],
         markers: { button: null, smallBlind: null, bigBlind: null },
         actingPlayerId: null,
       },
@@ -166,7 +194,7 @@ test("scene package audit accepts a classified normal and recovered scene", () =
   assert.doesNotThrow(() => assertCase(normalResult()));
 });
 
-test("scene package audit accepts two physical side-pot lanes from the deterministic runner", () => {
+test("scene package audit accepts a physical pool with two monetary side-pot lanes", () => {
   const result = normalResult({
     sceneAuditSeed: "scene-side-pot-0",
     sidePotCapture: {
@@ -177,10 +205,12 @@ test("scene package audit accepts two physical side-pot lanes from the determini
         { kind: "side", amount: 450 },
       ],
       sceneObjects: {
+        potRenderedChipValue: 3150,
+        seats: [],
         potLanes: [
-          { id: "main-0", amount: 1800, chipCount: 5 },
-          { id: "side-1", amount: 900, chipCount: 5 },
-          { id: "side-2", amount: 450, chipCount: 6 },
+          { id: "main-0", amount: 1800, chipCount: 16 },
+          { id: "side-1", amount: 900, chipCount: 0 },
+          { id: "side-2", amount: 450, chipCount: 0 },
         ],
       },
       screenshotBytes: 100,
@@ -201,6 +231,8 @@ test("scene package audit rejects a side-pot lane whose physical amount diverges
         { kind: "side", amount: 450 },
       ],
       sceneObjects: {
+        potRenderedChipValue: 3150,
+        seats: [],
         potLanes: [
           { id: "main-0", amount: 1800, chipCount: 5 },
           { id: "side-1", amount: 899, chipCount: 5 },
@@ -212,6 +244,25 @@ test("scene package audit rejects a side-pot lane whose physical amount diverges
     },
   });
   assert.throws(() => assertCase(result), /Physical two-side-pot lanes did not match/);
+});
+
+test("chip parity accepts persistent denominations and counts uncollected bets exactly once", () => {
+  const beat = normalResult().publicBeats[0];
+  beat.scenePot = 75;
+  beat.potLanes[0].amount = 75;
+  beat.seats = [{ id: "hero", stack: 1000, bet: 75 }];
+  beat.sceneObjects.potLanes[0].amount = 75;
+  beat.sceneObjects.seats = [{ id: "hero", stackChipCount: 10, betChipCount: 3,
+    stackRenderedChipValue: 1000, betRenderedChipValue: 75,
+    stackDenominations: [{ denomination: 100, count: 10 }],
+    betDenominations: [{ denomination: 25, count: 3 }],
+  }];
+  assert.doesNotThrow(() => assertPublicObjectParity(beat));
+  beat.sceneObjects.potRenderedChipValue = 75;
+  assert.throws(() => assertPublicObjectParity(beat), /Physical board or pot/);
+  beat.sceneObjects.potRenderedChipValue = 0;
+  beat.sceneObjects.seats[0].stackDenominations[0].count = 9;
+  assert.throws(() => assertPublicObjectParity(beat), /Physical seat chips/);
 });
 
 test("scene package audit rejects frames advancing while minimized", () => {

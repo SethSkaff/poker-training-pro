@@ -36,6 +36,9 @@ export interface SeatPlayer {
   id: string;
   name: string;
   stack: number;
+  /** Authoritative tournament inventory; absent on static Training fixtures. */
+  chipInventory?: import("../engine/chips").ChipInventory;
+  betChipInventory?: import("../engine/chips").ChipInventory;
   seat: number;
   status: "active" | "folded" | "all-in" | "out";
   bet: number;
@@ -69,6 +72,8 @@ export interface TrainingScenario {
   /** Public seat currently required to act; absent for static Training prompts. */
   actingPlayerId?: string;
   pot: number;
+  collectedChipInventory?: import("../engine/chips").ChipInventory;
+  chipMovements?: readonly import("../engine/chips").ChipMovement[];
   /** Public, live contestable-pot ledger for tournament all-ins. Training
    * scenarios leave this undefined because they model a single decision. */
   potBreakdown?: Array<{

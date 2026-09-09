@@ -302,13 +302,13 @@ export function chipRackColumnPosition(
 }
 
 /** Actual local footprint for a denomination-grouped rack. */
-export function chipRackLayoutBounds(amount: number): {
+export function chipRackLayoutBounds(amount: number, inventory?: Readonly<Record<number, number>>): {
   readonly minX: number;
   readonly maxX: number;
   readonly minZ: number;
   readonly maxZ: number;
 } {
-  const columns = chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN);
+  const columns = inventory === undefined ? chipColumnLayoutForAmount(amount, CHIPS_PER_COLUMN) : chipColumnLayoutForInventory(inventory, CHIPS_PER_COLUMN);
   if (columns.length === 0) return { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
   const points = columns.map((column) => chipRackColumnPosition(column.column, columns.length));
   return {
@@ -634,6 +634,7 @@ function rackClearsAllCardZones(
 function seatOccupancyCandidateSet(
   pose: SeatPose,
   amount = 15_000,
+  inventory?: Readonly<Record<number, number>>,
 ): SeatOccupancyCandidateSet {
   const cardOrigin = seatLocalPoint(pose, pose.feltPosition);
   const card = [
@@ -641,7 +642,7 @@ function seatOccupancyCandidateSet(
     cardOrigin[1],
     cardOrigin[2] + CARD_ZONE_LOCAL_CENTER_Z,
   ] as const;
-  const bounds = chipRackLayoutBounds(amount);
+  const bounds = chipRackLayoutBounds(amount, inventory);
   const rackCentreX = (bounds.minX + bounds.maxX) / 2;
   const rackCentreZ = (bounds.minZ + bounds.maxZ) / 2;
   const rackHalfX = Math.max(CHIP_PHYSICAL_RADIUS, (bounds.maxX - bounds.minX) / 2);
@@ -869,6 +870,7 @@ function seatOccupancyFallback(
 function seatOccupancyLayoutSingle(
   pose: SeatPose,
   amount: number,
+  inventory?: Readonly<Record<number, number>>,
 ): SeatOccupancyLayout {
   const cardOrigin = seatLocalPoint(pose, pose.feltPosition);
   const card = [
@@ -876,7 +878,7 @@ function seatOccupancyLayoutSingle(
     cardOrigin[1],
     cardOrigin[2] + CARD_ZONE_LOCAL_CENTER_Z,
   ] as const;
-  const candidateSet = seatOccupancyCandidateSet(pose, amount);
+  const candidateSet = seatOccupancyCandidateSet(pose, amount, inventory);
   const selected = candidateSet.candidates.find((candidate) => candidate.fits)
     ?? seatOccupancyFallback(pose, candidateSet);
   return seatOccupancyLayoutFromCandidate(pose, candidateSet.bounds, card, selected);
@@ -919,7 +921,7 @@ function occupancyCandidatesClear(
   return rectangularObjectsClear && markersClear && markerSlotsClear;
 }
 
-const authoredOccupancyLayoutCache = new Map<number, readonly SeatOccupancyLayout[]>();
+const authoredOccupancyLayoutCache = new Map<number | string, readonly SeatOccupancyLayout[]>();
 
 function authoredStationIndexForPose(pose: SeatPose): number {
   return AUTHORED_STATION_POSES.findIndex((stationPose) => (
@@ -928,11 +930,12 @@ function authoredStationIndexForPose(pose: SeatPose): number {
   ));
 }
 
-function authoredSeatOccupancyLayouts(amount: number): readonly SeatOccupancyLayout[] {
-  const cached = authoredOccupancyLayoutCache.get(amount);
+function authoredSeatOccupancyLayouts(amount: number, inventory?: Readonly<Record<number, number>>): readonly SeatOccupancyLayout[] {
+  const key = inventory === undefined ? amount : `columns:${chipColumnLayoutForInventory(inventory, CHIPS_PER_COLUMN).length}`;
+  const cached = authoredOccupancyLayoutCache.get(key);
   if (cached) return cached;
 
-  const candidateSets = AUTHORED_STATION_POSES.map((pose) => seatOccupancyCandidateSet(pose, amount));
+  const candidateSets = AUTHORED_STATION_POSES.map((pose) => seatOccupancyCandidateSet(pose, amount, inventory));
   const fallbackSelection = candidateSets.map((candidateSet, index) => (
     candidateSet.candidates.find((candidate) => candidate.fits)
       ?? seatOccupancyFallback(AUTHORED_STATION_POSES[index], candidateSet)
@@ -1010,7 +1013,7 @@ function authoredSeatOccupancyLayouts(amount: number): readonly SeatOccupancyLay
     ] as const;
     return seatOccupancyLayoutFromCandidate(pose, candidateSet.bounds, card, candidate);
   });
-  authoredOccupancyLayoutCache.set(amount, layouts);
+  authoredOccupancyLayoutCache.set(key, layouts);
   return layouts;
 }
 
@@ -1018,10 +1021,11 @@ function authoredSeatOccupancyLayouts(amount: number): readonly SeatOccupancyLay
 export function seatOccupancyLayout(
   pose: SeatPose,
   amount = 15_000,
+  inventory?: Readonly<Record<number, number>>,
 ): SeatOccupancyLayout {
   const stationIndex = authoredStationIndexForPose(pose);
-  if (stationIndex < 0) return seatOccupancyLayoutSingle(pose, amount);
-  return authoredSeatOccupancyLayouts(amount)[stationIndex];
+  if (stationIndex < 0) return seatOccupancyLayoutSingle(pose, amount, inventory);
+  return authoredSeatOccupancyLayouts(amount, inventory)[stationIndex];
 }
 
 /**
@@ -1034,8 +1038,9 @@ export function seatOccupancyLayout(
 export function restingChipStackPosition(
   pose: SeatPose,
   amount = 15_000,
+  inventory?: Readonly<Record<number, number>>,
 ): readonly [number, number, number] {
-  return seatOccupancyLayout(pose, amount).rackOrigin;
+  return seatOccupancyLayout(pose, amount, inventory).rackOrigin;
 }
 
 /**
@@ -1050,8 +1055,9 @@ export function tableMarkerPosition(
   pose: SeatPose,
   label: "D" | "SB" | "BB" = "D",
   amount = 15_000,
+  inventory?: Readonly<Record<number, number>>,
 ): readonly [number, number, number] {
-  const layout = seatOccupancyLayout(pose, amount);
+  const layout = seatOccupancyLayout(pose, amount, inventory);
   const base = seatLocalPoint(pose, layout.markerBase);
   const markerSide = layout.rackSide === 0
     ? CHIP_STACK_LOCAL_LEFT_SIDE
@@ -1070,8 +1076,9 @@ export function tableMarkerPosition(
 export function stackAmountPosition(
   pose: SeatPose,
   amount = 15_000,
+  inventory?: Readonly<Record<number, number>>,
 ): readonly [number, number, number] {
-  return seatOccupancyLayout(pose, amount).stackLabel;
+  return seatOccupancyLayout(pose, amount, inventory).stackLabel;
 }
 
 /** World anchor for the exact number that describes chips pushed forward. */
@@ -1178,13 +1185,14 @@ export function seatStackAmountViewportAnchor(
   cameraZoom = 0,
   cameraView: SceneCameraView = "standard",
   amount = 15_000,
+  inventory?: Readonly<Record<number, number>>,
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
   if (!Number.isInteger(relativeSeat) || relativeSeat < 0) return undefined;
   if (relativeSeat >= PLAYER_STATION_COUNT || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose) return undefined;
   const projected = projectToViewport(
-    stackAmountPosition(pose, amount),
+    stackAmountPosition(pose, amount, inventory),
     cameraPose(cameraPan, heroIndex, viewportWidth / viewportHeight, cameraLensZoom(cameraView, cameraZoom)),
     viewportWidth,
     viewportHeight,
@@ -1225,13 +1233,14 @@ export function seatStackAmountViewportAnchorFromCamera(
   heroIndex: number,
   activeCamera: ReturnType<typeof cameraPose>,
   amount = 15_000,
+  inventory?: Readonly<Record<number, number>>,
 ): { readonly xPercent: number; readonly yPercent: number } | undefined {
   if (!Number.isInteger(relativeSeat) || relativeSeat < 0 || relativeSeat >= PLAYER_STATION_COUNT) {
     return undefined;
   }
   const pose = seatPoses(PLAYER_STATION_COUNT, heroIndex)[relativeSeat];
   if (!pose || viewportWidth <= 0 || viewportHeight <= 0) return undefined;
-  const projected = projectToViewport(stackAmountPosition(pose, amount), activeCamera, viewportWidth, viewportHeight);
+  const projected = projectToViewport(stackAmountPosition(pose, amount, inventory), activeCamera, viewportWidth, viewportHeight);
   return projected.behind ? undefined : { xPercent: projected.xPercent, yPercent: projected.yPercent };
 }
 
@@ -1544,6 +1553,31 @@ export interface ChipColumnLayout {
   readonly denomination: number;
   readonly count: number;
   readonly column: number;
+}
+
+/** Physical pile value; an inclusive pot label may also count chips still at seats. */
+export function chipDisplayValue(amount: number, inventory?: Readonly<Record<number, number>>): number {
+  if (inventory === undefined) return Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0));
+  return Object.entries(inventory).reduce((sum, [key, count]) => sum + Number(key) * count, 0);
+}
+
+/** Render a ledger inventory without converting its balance into new chips. */
+export function chipColumnLayoutForInventory(
+  inventory: Readonly<Record<number, number>>,
+  chipsPerColumn = 20,
+): readonly ChipColumnLayout[] {
+  if (!Number.isSafeInteger(chipsPerColumn) || chipsPerColumn < 1) return [];
+  const result: ChipColumnLayout[] = [];
+  for (const [key, quantity] of Object.entries(inventory).sort(([a], [b]) => Number(a) - Number(b))) {
+    if (!Number.isSafeInteger(quantity) || quantity < 0) throw new Error("Invalid chip quantity");
+    let remaining = quantity;
+    while (remaining > 0) {
+      const count = Math.min(chipsPerColumn, remaining);
+      result.push({ denomination: Number(key), count, column: result.length });
+      remaining -= count;
+    }
+  }
+  return result;
 }
 
 /**

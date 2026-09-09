@@ -1,5 +1,6 @@
 import type { LegalActionSet, PlayerInformationSet } from "../engine";
 import { nextToAct } from "../engine";
+import { createChipLedger } from "../engine/chips";
 import type { BettingActionCommand } from "../engine/betting";
 import type { Card, PokerAction, Street } from "../types/poker";
 import { calculateAiDecisionTiming } from "./decisionTiming";
@@ -453,6 +454,7 @@ function shallowTournament(
     seed,
   });
   const startingStack = 600;
+  const players = session.tournament.players.map((player) => ({ ...player, stack: startingStack }));
   const levels = session.tournament.structure.levels.map((level) => ({
     ...level,
     smallBlind: 50,
@@ -461,6 +463,7 @@ function shallowTournament(
   }));
   return {
     ...session,
+    chips: createChipLedger(players),
     event: {
       ...session.event,
       structure: { ...session.event.structure, startingStack, levels },
@@ -468,10 +471,7 @@ function shallowTournament(
     tournament: {
       ...session.tournament,
       structure: { ...session.tournament.structure, startingStack, levels },
-      players: session.tournament.players.map((player) => ({
-        ...player,
-        stack: startingStack,
-      })),
+      players,
     },
   };
 }
