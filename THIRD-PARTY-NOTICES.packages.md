@@ -170,7 +170,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | @vitest/snapshot | 3.2.7 | MIT | node_modules/@vitest/snapshot/package.json#license |
 | @vitest/spy | 3.2.7 | MIT | node_modules/@vitest/spy/package.json#license |
 | @vitest/utils | 3.2.7 | MIT | node_modules/@vitest/utils/package.json#license |
-| @xmldom/xmldom | 0.8.13 | MIT | node_modules/@xmldom/xmldom/package.json#license |
+| @xmldom/xmldom | 0.8.15 | MIT | node_modules/@xmldom/xmldom/package.json#license |
 | abbrev | 4.0.0 | ISC | node_modules/abbrev/package.json#license |
 | acorn | 8.16.0 | MIT | node_modules/acorn/package.json#license |
 | agent-base | 6.0.2 | MIT | node_modules/axios/node_modules/agent-base/package.json#license |
@@ -315,7 +315,7 @@ Before distribution, retain and ship all copyright notices, license texts, attri
 | jiti | 2.7.0 | MIT | node_modules/jiti/package.json#license |
 | joi | 18.2.3 | BSD-3-Clause | node_modules/joi/package.json#license |
 | js-tokens | 9.0.1 | MIT | node_modules/strip-literal/node_modules/js-tokens/package.json#license |
-| js-yaml | 4.3.1 | MIT | node_modules/js-yaml/package.json#license |
+| js-yaml | 4.3.2 | MIT | node_modules/js-yaml/package.json#license |
 | json-buffer | 3.0.1 | MIT | node_modules/json-buffer/package.json#license |
 | json-schema-traverse | 1.0.0 | MIT | node_modules/app-builder-lib/node_modules/json-schema-traverse/package.json#license |
 | json-stringify-safe | 5.0.1 | ISC | node_modules/json-stringify-safe/package.json#license |
