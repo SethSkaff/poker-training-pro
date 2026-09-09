@@ -123,3 +123,107 @@ describe("policy bet/raise targets are always legal whole-chip amounts", () => {
     60_000,
   );
 });
+
+function heroPush(legal: ReturnType<typeof getLegalActions>) {
+  if (legal.call) return { type: "call" } as const;
+  if (legal.check) return { type: "check" } as const;
+  return { type: "fold" } as const;
+}
+
+/*
+  The wiring half of the Stage 15 fix.
+
+  The rule lives in the betting engine, but the engine only knows the rack if
+  the session hands it over. This drives one real career hand -- the same event
+  the exploitability gate plays -- and checks the structure's denomination has
+  reached the round, so a future refactor that drops the option is caught here
+  rather than in a 400-hand tournament.
+*/
+describe("the session hands its chip rack to the betting engine", () => {
+  function firstActor(seed: string) {
+    const session = beginTournamentSessionHand(
+      createTournamentSession({
+        eventId: "local-qualifier",
+        hero,
+        mode: "rational",
+        seed,
+      }),
+    );
+    const betting = session.activeHand?.betting;
+    if (!betting) throw new Error("Expected an active hand");
+    const actor = nextToAct(betting);
+    if (!actor) throw new Error("Expected an actor");
+    return { session, betting, actor, legal: getLegalActions(betting, actor) };
+  }
+
+  it("advertises the career structure's 25-chip rack on the opening hand", () => {
+    const { betting, legal } = firstActor("rack-wiring");
+    expect(betting.smallestChip).toBe(25);
+    expect(legal.chipStep).toBe(25);
+  });
+
+  it("refuses an off-rack raise and accepts the neighbouring rack target", () => {
+    const { session, actor, legal } = firstActor("rack-wiring");
+    const raise = legal.raise;
+    if (!raise) throw new Error("Expected a legal raise");
+    const offRack = raise.minTo + 13;
+    expect(offRack).toBeLessThan(raise.maxTo);
+    expect(offRack % 25).not.toBe(0);
+    expect(() =>
+      applyTournamentSessionAction(session, actor, {
+        type: "raise",
+        to: offRack,
+      }),
+    ).toThrow(/not payable in 25-chip units/);
+
+    const onRack = raise.minTo + 25;
+    const played = applyTournamentSessionAction(session, actor, {
+      type: "raise",
+      to: onRack,
+    });
+    expect(
+      played.activeHand?.betting.players.find((entry) => entry.id === actor)
+        ?.totalCommitted,
+    ).toBe(onRack);
+  });
+
+  it("keeps every commitment of a played-out career event on the rack", () => {
+    let session: TournamentSession = createTournamentSession({
+      eventId: "local-qualifier",
+      hero,
+      mode: "rational",
+      seed: "rack-sweep",
+    });
+    let commitments = 0;
+
+    for (let step = 0; step < 6_000 && session.status !== "complete"; step += 1) {
+      if (!session.activeHand) {
+        session = beginTournamentSessionHand(session);
+        continue;
+      }
+      if (session.activeHand.betting.complete) {
+        session = progressTournamentSessionHand(session);
+        continue;
+      }
+      const actor = nextToAct(session.activeHand.betting);
+      if (!actor) break;
+      const command =
+        actor === session.heroId
+          ? heroPush(getLegalActions(session.activeHand.betting, actor))
+          : chooseTournamentSessionPolicyAction(session, actor, {
+              simulations: 50,
+            }).command;
+      session = applyTournamentSessionAction(session, actor, command);
+      for (const entry of session.activeHand?.betting.players ?? []) {
+        expect(entry.totalCommitted % 25).toBe(0);
+        expect(entry.stack % 25).toBe(0);
+        commitments += 1;
+      }
+    }
+
+    expect(commitments).toBeGreaterThan(0);
+    for (const entry of session.tournament.players) {
+      expect(entry.stack % 25).toBe(0);
+    }
+  }, 60_000);
+});

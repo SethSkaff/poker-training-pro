@@ -472,6 +472,32 @@ export function createTournament(
   ) {
     throw new Error("Tournament smallest chip must be a positive safe integer");
   }
+  // Every chip that ever enters a hand starts as a stack or a forced bet, and
+  // the engine only ever adds, subtracts, and splits those amounts. So the
+  // whole money flow stays payable from the rack exactly when the schedule
+  // itself is -- and a structure that is off the rack here produces pots no
+  // physical stack can settle, several hundred hands later.
+  if (structure.smallestChip !== undefined && structure.smallestChip > 1) {
+    const chip = structure.smallestChip;
+    if (structure.startingStack % chip !== 0) {
+      throw new Error(
+        `Starting stack ${structure.startingStack} is not payable in ${chip}-chip units`,
+      );
+    }
+    for (const level of structure.levels) {
+      for (const [label, amount] of [
+        ["small blind", level.smallBlind],
+        ["big blind", level.bigBlind],
+        ["big blind ante", level.bigBlindAnte ?? 0],
+      ] as const) {
+        if (amount % chip !== 0) {
+          throw new Error(
+            `Level ${level.level} ${label} ${amount} is not payable in ${chip}-chip units`,
+          );
+        }
+      }
+    }
+  }
 
   const tableCount = Math.ceil(entrants.length / structure.maxSeats);
   const tables: TournamentTableState[] = Array.from(

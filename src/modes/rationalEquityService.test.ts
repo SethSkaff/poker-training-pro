@@ -87,6 +87,7 @@ function facingBetLegal(spot: PlayerInformationSet): LegalActionSet {
     allIn: true,
     allInTo,
     raisingReopened: true,
+    chipStep: 1,
   };
 }
 

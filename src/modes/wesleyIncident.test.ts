@@ -130,6 +130,7 @@ function wesleyLegal(): LegalActionSet {
     allIn: true,
     allInTo: 24_925,
     raisingReopened: true,
+    chipStep: 25,
   };
 }
 
@@ -335,6 +336,7 @@ describe("saved Wesley incident regression", () => {
         allIn: true,
         allInTo: 24_925,
         raisingReopened: true,
+        chipStep: 25,
       },
     }));
     for (const option of decision.distribution) {

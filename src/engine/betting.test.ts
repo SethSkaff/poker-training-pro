@@ -46,6 +46,7 @@ describe("betting round", () => {
       allIn: true,
       allInTo: 1_000,
       raisingReopened: true,
+      chipStep: 1,
     };
     expect(isStackOffCommand({ type: "all-in" }, legal)).toBe(true);
     expect(isStackOffCommand({ type: "raise", to: 1_000 }, legal)).toBe(true);
@@ -182,5 +183,121 @@ describe("betting round", () => {
     state = act(state, "c", "fold");
     expect(state.complete).toBe(true);
     expect(state.handComplete).toBe(true);
+  });
+});
+
+/*
+  Reproduces the Stage 15 exploitability crash geometry exactly.
+
+  At the local-qualifier's 25-chip rack a scripted opponent sized a raise as a
+  fraction of the advertised range and named 7,688. `getLegalActions` had
+  offered the range as a continuous integer interval, so the engine took it;
+  the opponent then made an exact call for the same amount, and settlement, 55
+  hands later, held a 15,376 main pot that no stack of 25-chip units can pay
+  out. The pot code detected that, but by then the illegal amount had been in
+  game state for the whole hand. The rack rule belongs here, where the amount
+  is chosen.
+*/
+describe("chip-denomination legality", () => {
+  function raiseSpot(
+    smallestChip: number | undefined,
+    heroStack = 6_250,
+  ): BettingRoundState {
+    return createBettingRound(
+      [
+        player("villain", 46_275, 5_000),
+        player("hero", heroStack, 2_500),
+      ],
+      ["hero", "villain"],
+      {
+        minimumBet: 2_500,
+        currentBet: 5_000,
+        lastFullRaise: 2_500,
+        smallestChip,
+      },
+    );
+  }
+
+  it("advertises the rack increment alongside the raise range", () => {
+    const legal = getLegalActions(raiseSpot(25), "hero");
+    expect(legal.chipStep).toBe(25);
+    expect(legal.raise).toEqual({ minTo: 7_500, maxTo: 8_750 });
+  });
+
+  it("refuses the raise target that produced the 15,376 pot", () => {
+    expect(() => act(raiseSpot(25), "hero", "raise", 7_688)).toThrow(
+      /not payable in 25-chip units/,
+    );
+  });
+
+  it("accepts the neighbouring targets that the rack can actually make", () => {
+    for (const target of [7_500, 7_700, 8_725, 8_750]) {
+      const state = act(raiseSpot(25), "hero", "raise", target);
+      expect(
+        state.players.find((entry) => entry.id === "hero")?.totalCommitted,
+      ).toBe(target);
+    }
+  });
+
+  it("exempts the state-derived edges, which are not the caller's number", () => {
+    // A stack that is itself off the rack can still be pushed in exactly: the
+    // all-in is the amount the state dictates, not an amount anyone chose.
+    const state = raiseSpot(25, 6_260);
+    expect(getLegalActions(state, "hero").raise).toEqual({
+      minTo: 7_500,
+      maxTo: 8_760,
+    });
+    expect(
+      act(state, "hero", "raise", 8_760).players.find(
+        (entry) => entry.id === "hero",
+      )?.status,
+    ).toBe("all-in");
+    expect(
+      act(state, "hero", "all-in").players.find((entry) => entry.id === "hero")
+        ?.totalCommitted,
+    ).toBe(8_760);
+    expect(() => act(state, "hero", "raise", 8_755)).toThrow(
+      /not payable in 25-chip units/,
+    );
+  });
+
+  it("imposes no rack rule on a structure that does not model one", () => {
+    const state = act(raiseSpot(undefined), "hero", "raise", 7_688);
+    expect(getLegalActions(state, "villain").chipStep).toBe(1);
+    expect(
+      state.players.find((entry) => entry.id === "hero")?.totalCommitted,
+    ).toBe(7_688);
+  });
+
+  it("keeps an opening bet on the rack too", () => {
+    const state = createBettingRound(
+      [player("hero", 10_000), player("villain", 10_000)],
+      ["hero", "villain"],
+      { minimumBet: 500, smallestChip: 25 },
+    );
+    expect(getLegalActions(state, "hero").bet).toEqual({ min: 500, max: 10_000 });
+    expect(() => act(state, "hero", "bet", 1_469)).toThrow(
+      /not payable in 25-chip units/,
+    );
+    expect(
+      act(state, "hero", "bet", 1_475).players.find(
+        (entry) => entry.id === "hero",
+      )?.totalCommitted,
+    ).toBe(1_475);
+  });
+
+  it("rejects a chip denomination that is not a positive integer", () => {
+    expect(() =>
+      createBettingRound([player("a"), player("b")], ["a", "b"], {
+        minimumBet: 100,
+        smallestChip: 0,
+      }),
+    ).toThrow(/Smallest chip must be positive/);
+    expect(() =>
+      createBettingRound([player("a"), player("b")], ["a", "b"], {
+        minimumBet: 100,
+        smallestChip: 12.5,
+      }),
+    ).toThrow(/Smallest chip/);
   });
 });

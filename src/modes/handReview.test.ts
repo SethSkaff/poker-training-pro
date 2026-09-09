@@ -65,8 +65,11 @@ function playOpeningBet(seed: string): TournamentRunnerReplay {
     if (runner.session.status === "complete") break;
     const legal = heroTournamentLegalActions(runner);
     if (!legal) break;
-    if (legal.bet && legal.bet.max > legal.bet.min) {
-      const target = legal.bet.min + 1;
+    if (legal.bet && legal.bet.max >= legal.bet.min + legal.chipStep) {
+      // One rack increment above the minimum: distinct from `bet.min` so the
+      // UI's "raise" label is scored against the engine's `bet` command, and
+      // payable in the structure's chips so the engine accepts it.
+      const target = legal.bet.min + legal.chipStep;
       runner = applyHeroTournamentAction(
         runner,
         { action: "raise", raiseTo: target },

@@ -24,7 +24,7 @@ function frame() {
     ],
     actions: [],
   };
-  const legal = { playerId: "hero", toCall: 0, check: true, fold: true, call: false, callAmount: 0, bet: { min: 100, max: 1_000 }, allIn: true, allInTo: 1_000, raisingReopened: true };
+  const legal = { playerId: "hero", toCall: 0, check: true, fold: true, call: false, callAmount: 0, bet: { min: 100, max: 1_000 }, allIn: true, allInTo: 1_000, raisingReopened: true, chipStep: 1 };
   const action = canonicalizeBettingAction(state, { type: "check" });
   const geometry = computeWagerGeometry({ preState: state, canonicalAction: action, bigBlindChips: 100 });
   return captureDecisionBefore({

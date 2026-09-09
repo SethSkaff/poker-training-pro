@@ -231,6 +231,7 @@ function makeFixture(
       allIn: true,
       allInTo: chips,
       raisingReopened: true,
+      chipStep: 1,
     },
   };
 }

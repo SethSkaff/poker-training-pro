@@ -19,6 +19,13 @@ export interface BettingRoundState {
   players: BettingPlayerState[];
   /** Fixed chips represented by this round: stacks plus all hand commitments. */
   chipTotal: number;
+  /**
+   * Smallest physical chip on the table. Every *chosen* wager target must be a
+   * multiple of it; only state-derived amounts (an exact call, the minimum
+   * legal bet/raise, an exact all-in) may sit off the rack. Structures that do
+   * not model a rack pass 1, which admits every integer.
+   */
+  smallestChip: number;
   /** Full clockwise order, rotated so the first player to act is first. */
   actionOrder: string[];
   pending: string[];
@@ -33,6 +40,12 @@ export interface BettingRoundState {
 
 export interface CreateBettingRoundOptions {
   minimumBet: number;
+  /**
+   * Smallest physical chip in the structure. Defaults to 1, which imposes no
+   * denomination rule at all and preserves the behaviour of callers that do
+   * not model a chip rack.
+   */
+  smallestChip?: number;
   /**
    * Used pre-flop when a short big blind posted less than the scheduled blind.
    * The scheduled big blind remains the nominal opening wager.
@@ -54,6 +67,13 @@ export interface LegalActionSet {
   allIn: boolean;
   allInTo: number;
   raisingReopened: boolean;
+  /**
+   * Increment every freely chosen bet/raise target must land on. Callers that
+   * size a wager themselves -- sliders, policies, scripted opponents -- must
+   * snap to this lattice; the advertised `min`/`minTo` and `max`/`maxTo` edges
+   * are legal as given even when they fall between two steps.
+   */
+  chipStep: number;
 }
 
 /**
@@ -136,6 +156,8 @@ function cloneState(state: BettingRoundState): BettingRoundState {
  */
 export function assertBettingStateInvariant(state: BettingRoundState): void {
   assertChipAmount(state.chipTotal, "Betting chip total");
+  assertChipAmount(state.smallestChip, "Smallest chip");
+  if (state.smallestChip === 0) throw new Error("Smallest chip must be positive");
   let observedTotal = 0;
   for (const player of state.players) {
     assertChipAmount(player.stack, `Stack for ${player.id}`);
@@ -254,6 +276,9 @@ export function createBettingRound(
 ): BettingRoundState {
   assertChipAmount(options.minimumBet, "Minimum bet");
   if (options.minimumBet === 0) throw new Error("Minimum bet must be positive");
+  const smallestChip = options.smallestChip ?? 1;
+  assertChipAmount(smallestChip, "Smallest chip");
+  if (smallestChip === 0) throw new Error("Smallest chip must be positive");
 
   const ids = players.map((player) => player.id);
   if (new Set(ids).size !== ids.length) {
@@ -302,6 +327,7 @@ export function createBettingRound(
       (sum, player) => sum + player.stack + player.totalCommitted,
       0,
     ),
+    smallestChip,
     actionOrder: [...actionOrder],
     pending: [],
     currentBet,
@@ -364,13 +390,27 @@ export function getLegalActions(
       canIncreaseBet,
     allInTo,
     raisingReopened: reopened,
+    chipStep: state.smallestChip,
   };
 }
 
+/**
+ * Validates a freely chosen bet/raise target.
+ *
+ * A target must sit inside the advertised range *and* be payable from the
+ * table's chip rack. The two edges are exempt because they are derived from
+ * state rather than chosen: `minimum` is the smallest wager the rules permit
+ * (a min raise, which inherits whatever increment an earlier short all-in
+ * left behind) and `maximum` is the actor's exact all-in. Anything strictly
+ * between them is the caller's own number and must be a whole number of the
+ * smallest chip, or the hand can reach settlement holding a pot no physical
+ * stack can pay out.
+ */
 function requireTarget(
   command: BettingActionCommand,
   minimum: number,
   maximum: number,
+  smallestChip: number,
 ): number {
   if (command.to === undefined) {
     throw new Error(`${command.type} requires a total target`);
@@ -379,6 +419,15 @@ function requireTarget(
   if (command.to < minimum || command.to > maximum) {
     throw new Error(
       `${command.type} target must be between ${minimum} and ${maximum}`,
+    );
+  }
+  if (
+    command.to % smallestChip !== 0 &&
+    command.to !== minimum &&
+    command.to !== maximum
+  ) {
+    throw new Error(
+      `${command.type} target ${command.to} is not payable in ${smallestChip}-chip units`,
     );
   }
   return command.to;
@@ -413,11 +462,21 @@ export function applyBettingAction(
       break;
     case "bet":
       if (!legal.bet) throw new Error("Bet is not legal");
-      target = requireTarget(command, legal.bet.min, legal.bet.max);
+      target = requireTarget(
+        command,
+        legal.bet.min,
+        legal.bet.max,
+        state.smallestChip,
+      );
       break;
     case "raise":
       if (!legal.raise) throw new Error("Raise is not legal");
-      target = requireTarget(command, legal.raise.minTo, legal.raise.maxTo);
+      target = requireTarget(
+        command,
+        legal.raise.minTo,
+        legal.raise.maxTo,
+        state.smallestChip,
+      );
       break;
     case "all-in":
       if (!legal.allIn) throw new Error("All-in is not legal");

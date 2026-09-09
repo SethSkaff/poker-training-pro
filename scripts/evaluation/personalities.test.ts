@@ -20,7 +20,7 @@ function observation(profileKey: "anchor" | "pressure", index: number): StyleCon
       ],
       actions: [{ playerId: "v", type: "raise", amount: 1200 }, { playerId: "ai", type: "pending" }],
     },
-    legalActions: { playerId: "ai", toCall: 1200, check: false, fold: true, call: true, callAmount: 1200, raise: { minTo: 3600, maxTo: 18600 }, allIn: true, allInTo: 18600, raisingReopened: true },
+    legalActions: { playerId: "ai", toCall: 1200, check: false, fold: true, call: true, callAmount: 1200, raise: { minTo: 3600, maxTo: 18600 }, allIn: true, allInTo: 18600, raisingReopened: true, chipStep: 1 },
     evaluations: [
       { command: { type: "call" }, estimatedEv: 160, purpose: "defense" },
       { command: { type: "raise", to: 3600 }, estimatedEv: 148, purpose: "semi-bluff" },

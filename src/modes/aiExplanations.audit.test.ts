@@ -78,6 +78,7 @@ const legalActions: LegalActionSet = {
   allIn: true,
   allInTo: 8_000,
   raisingReopened: true,
+  chipStep: 1,
 };
 
 const normalEvaluations: readonly NormalActionEvaluation[] = [

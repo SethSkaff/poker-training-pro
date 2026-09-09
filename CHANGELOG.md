@@ -18,7 +18,13 @@ release.
 
 ### Fixed
 
-- Nothing recorded.
+- Bets and raises must now be payable from the table's chip rack. The betting
+  engine advertised its bet/raise range as a continuous interval, so a caller
+  that sized a wager arithmetically could commit an amount the structure's
+  chips cannot make (2,335 at a 25-chip table). The hand played on, and
+  settlement then held a pot that could not be divided into physical chips and
+  aborted the event. Structures now also fail fast when their own starting
+  stack or blind schedule is off their declared denomination.
 
 ### Security
 

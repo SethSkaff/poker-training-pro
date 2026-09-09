@@ -1757,6 +1757,7 @@ export default function App() {
       allIn: false,
       allInTo: 0,
       raisingReopened: false,
+      chipStep: runner.session.tournament.structure.smallestChip ?? 1,
     };
     const handNumber = runner.session.tournament.tables[0]?.handNumber ?? 1;
     const presentationEvent = pendingPresentation?.events[pendingPresentation.index];

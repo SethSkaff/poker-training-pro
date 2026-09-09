@@ -296,6 +296,7 @@ function facingBetLegal(
     allIn: toCall === 0 || allInTo <= spot.currentBet || canRaise,
     allInTo,
     raisingReopened: canRaise,
+    chipStep: 1,
   };
 }
 
@@ -313,6 +314,7 @@ function checkedToLegal(spot: PlayerInformationSet): LegalActionSet {
     allIn: true,
     allInTo: hero.stack + hero.streetCommitted,
     raisingReopened: true,
+    chipStep: 1,
   };
 }
 

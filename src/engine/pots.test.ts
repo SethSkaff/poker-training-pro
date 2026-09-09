@@ -146,4 +146,88 @@ describe("pot construction and resolution", () => {
       ),
     ).toEqual({ a: 33, b: 34, c: 34 });
   });
+
+  /*
+    The settlement-side detector for the Stage 15 crash.
+
+    A 15,376 heads-up pot is what two 7,688 commitments produce, and 7,688 is
+    what a caller gets by sizing a raise as a fraction of the legal range on a
+    25-chip table. `applyBettingAction` now refuses that target, so this pot is
+    unreachable from a real hand -- but the check stays, because it is the only
+    place that can catch a rack violation arriving from some other direction
+    (an imported hand history, a future structure with a mid-event colour-up).
+  */
+  const denominationSettlement = {
+    board: cards("2h", "3d", "7c", "9s", "Kh"),
+    holeCards: {
+      hero: cards("As", "Ad"),
+      villain: cards("Qs", "Qd"),
+    },
+    seats: { hero: 1, villain: 2 },
+    buttonSeat: 2,
+    tableSize: 6,
+    smallestChip: 25,
+  } as const;
+
+  it("refuses to settle a pot no 25-chip stack could pay out", () => {
+    const pots = buildPots([
+      { playerId: "hero", amount: 7_688 },
+      { playerId: "villain", amount: 7_688 },
+    ]).pots;
+    expect(pots[0].amount).toBe(15_376);
+    expect(() => resolvePots(pots, denominationSettlement)).toThrow(
+      /cannot be divided by the chip denomination/,
+    );
+  });
+
+  it("settles the same spot once both commitments are on the rack", () => {
+    const pots = buildPots([
+      { playerId: "hero", amount: 7_700 },
+      { playerId: "villain", amount: 7_700 },
+    ]).pots;
+    expect(pots[0].amount).toBe(15_400);
+    expect(resolvePots(pots, denominationSettlement).awards).toEqual([
+      expect.objectContaining({ playerId: "hero", amount: 15_400 }),
+    ]);
+  });
+
+  it("allocates the odd chip in whole denominations on a three-way tie", () => {
+    // 15,400 / 3 is 5,133.33; the rack can only make 5,125 each, leaving one
+    // 25-chip remainder for the first tied winner left of the button.
+    const result = resolvePots(
+      [
+        {
+          id: "main",
+          kind: "main",
+          amount: 15_400,
+          cap: 0,
+          contributorIds: ["a", "b", "c"],
+          eligiblePlayerIds: ["a", "b", "c"],
+        },
+      ],
+      {
+        board: cards("Ah", "Kh", "Qh", "Jh", "Th"),
+        holeCards: {
+          a: cards("2c", "3d"),
+          b: cards("4c", "5d"),
+          c: cards("6c", "7d"),
+        },
+        seats: { a: 1, b: 2, c: 3 },
+        buttonSeat: 1,
+        tableSize: 9,
+        smallestChip: 25,
+      },
+    );
+
+    const awards = Object.fromEntries(
+      result.awards.map((award) => [award.playerId, award.amount]),
+    );
+    expect(awards).toEqual({ a: 5_125, b: 5_150, c: 5_125 });
+    expect(Object.values(awards).reduce((sum, value) => sum + value, 0)).toBe(
+      15_400,
+    );
+    for (const amount of Object.values(awards)) {
+      expect(amount % 25).toBe(0);
+    }
+  });
 });

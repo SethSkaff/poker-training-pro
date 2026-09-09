@@ -124,6 +124,7 @@ describe("PokerTable live event-announcement regions", () => {
             allIn: true,
             allInTo: 5_000,
             raisingReopened: true,
+            chipStep: 1,
           },
           onAction: () => undefined,
           kind: "career",

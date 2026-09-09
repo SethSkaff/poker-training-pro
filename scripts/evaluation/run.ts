@@ -171,7 +171,7 @@ async function runFixturePipeline(options: EvaluationCliOptions, config: Record<
   await writeOutput(outputDir, "review-prototype.json", reviewEvidence);
   mark("T8", "complete", "review-prototype.json", `decision status ${reviewEvidence.decisionStatus}`);
   const wagerState = createBettingRound([{ id: "hero", stack: 1003, streetCommitted: 0, totalCommitted: 0, status: "active" }, { id: "villain", stack: 1003, streetCommitted: 0, totalCommitted: 0, status: "active" }], ["hero", "villain"], { minimumBet: 100 });
-  const wagerLegal = { playerId: "hero", toCall: 0, check: true, fold: true, call: false, callAmount: 0, bet: { min: 100, max: 1003 }, allIn: true, allInTo: 1003, raisingReopened: true } as const;
+  const wagerLegal = { playerId: "hero", toCall: 0, check: true, fold: true, call: false, callAmount: 0, bet: { min: 100, max: 1003 }, allIn: true, allInTo: 1003, raisingReopened: true, chipStep: 1 } as const;
   const wagerMenu = generateWagerReferenceMenu({ preState: wagerState, legal: wagerLegal, abstractTargets: [333], smallestChip: 25, productionCommands: [{ type: "bet", to: 325 }], playedCommand: { type: "all-in" } });
   const wagerReport = buildWagerReferenceReport(wagerMenu);
   await writeOutput(outputDir, "wagers.md", renderWagerReferenceReport(wagerReport));

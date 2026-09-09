@@ -650,6 +650,7 @@ export function beginTournamentSessionHand(
       minimumBet: level.bigBlind,
       nominalOpeningBet: level.bigBlind,
       lastFullRaise: level.bigBlind,
+      smallestChip: tournament.structure.smallestChip ?? 1,
     },
   );
 
@@ -816,7 +817,10 @@ function createPostflopBetting(
       streetCommitted: 0,
     })),
     order,
-    { minimumBet: level.bigBlind },
+    {
+      minimumBet: level.bigBlind,
+      smallestChip: session.tournament.structure.smallestChip ?? 1,
+    },
   );
 }
 

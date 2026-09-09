@@ -8,7 +8,7 @@ function unopened() {
     { id: "hero", stack: 1_003, streetCommitted: 0, totalCommitted: 0, status: "active" },
     { id: "villain", stack: 1_003, streetCommitted: 0, totalCommitted: 0, status: "active" },
   ], ["hero", "villain"], { minimumBet: 100 });
-  return { preState, legal: { playerId: "hero", toCall: 0, check: true, fold: true, call: false, callAmount: 0, bet: { min: 100, max: 1_003 }, allIn: true, allInTo: 1_003, raisingReopened: true } as const };
+  return { preState, legal: { playerId: "hero", toCall: 0, check: true, fold: true, call: false, callAmount: 0, bet: { min: 100, max: 1_003 }, allIn: true, allInTo: 1_003, raisingReopened: true, chipStep: 1 } as const };
 }
 
 describe("offline wager reference menu", () => {
@@ -40,7 +40,7 @@ describe("offline wager reference menu", () => {
     ], ["hero", "villain"], { minimumBet: 100, currentBet: 100 });
     const legal = {
       playerId: "hero", toCall: 100, check: false, fold: true, call: true, callAmount: 100,
-      raise: { minTo: 200, maxTo: 1_003 }, allIn: true, allInTo: 1_003, raisingReopened: true,
+      raise: { minTo: 200, maxTo: 1_003 }, allIn: true, allInTo: 1_003, raisingReopened: true, chipStep: 25,
     } as const;
     const menu = generateWagerReferenceMenu({
       preState,

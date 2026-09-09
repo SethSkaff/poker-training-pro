@@ -75,6 +75,7 @@ const legalActions: LegalActionSet = {
   allIn: true,
   allInTo: 18_600,
   raisingReopened: true,
+  chipStep: 1,
 };
 
 const drawEvaluations: readonly NormalActionEvaluation[] = [

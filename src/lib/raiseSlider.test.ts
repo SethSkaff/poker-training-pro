@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createBettingRound, getLegalActions } from "../engine/betting";
+import {
+  applyBettingAction,
+  createBettingRound,
+  getLegalActions,
+} from "../engine/betting";
 import { snapRaiseSliderToAmount } from "./raiseSlider";
 
 describe("raise slider total-to amount", () => {
@@ -77,5 +81,54 @@ describe("raise slider total-to amount", () => {
         chipStep: 100,
       }),
     ).toBe(legal.allInTo);
+  });
+
+  /*
+    The typed raise field snaps on the rack rather than on the big blind, and
+    every amount it produces has to be one the engine will accept. A player
+    typing 2,335 at a 25-chip table used to commit that amount, and the pot it
+    built could not be paid out in physical chips at showdown.
+  */
+  it("snaps a typed amount onto the chip rack the engine enforces", () => {
+    const state = createBettingRound(
+      [
+        {
+          id: "hero",
+          stack: 6_250,
+          streetCommitted: 2_500,
+          totalCommitted: 2_500,
+          status: "active",
+        },
+        {
+          id: "villain",
+          stack: 46_275,
+          streetCommitted: 5_000,
+          totalCommitted: 5_000,
+          status: "active",
+        },
+      ],
+      ["hero", "villain"],
+      {
+        minimumBet: 2_500,
+        currentBet: 5_000,
+        lastFullRaise: 2_500,
+        smallestChip: 25,
+      },
+    );
+    const legal = getLegalActions(state, "hero");
+    const bounds = {
+      minimumRaiseTo: legal.raise?.minTo ?? legal.allInTo,
+      allInTo: legal.allInTo,
+      chipStep: legal.chipStep,
+    };
+
+    for (const typed of [7_688, 7_701, 8_123, 12_000, 100]) {
+      const snapped = snapRaiseSliderToAmount(typed, bounds);
+      expect(snapped % 25).toBe(0);
+      expect(() =>
+        applyBettingAction(state, "hero", { type: "raise", to: snapped }),
+      ).not.toThrow();
+    }
+    expect(snapRaiseSliderToAmount(7_688, bounds)).toBe(7_700);
   });
 });

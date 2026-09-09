@@ -3212,6 +3212,18 @@ export function PokerTable({
     mode !== "training" && tournament
       ? tournament.legalActions.allInTo
       : Math.max(scenario.minimumRaise, heroStack);
+  /*
+    The smallest physical chip the table can make change with.
+
+    The slider deliberately steps in big blinds, which reads better than a
+    25-chip crawl across a deep stack. The typed field has no such reason to be
+    coarse -- a player may name any amount the rack can actually build -- but it
+    does have to respect the rack: the engine rejects a wager it cannot pay in
+    whole chips, so an unsnapped keystroke would fail at the moment the player
+    committed to it.
+  */
+  const chipStep =
+    mode !== "training" && tournament ? tournament.legalActions.chipStep : 1;
   const raisePresets = Array.from(
     new Set(
       [
@@ -4845,7 +4857,11 @@ export function PokerTable({
                       setRaiseAmountDraft(value);
                       if (value !== "" && Number.isFinite(Number(value))) {
                         setRaiseAmount(
-                          Math.max(minimumRaise, Math.min(allInAmount, Number(value))),
+                          snapRaiseSliderToAmount(Number(value), {
+                            minimumRaiseTo: minimumRaise,
+                            allInTo: allInAmount,
+                            chipStep,
+                          }),
                         );
                       }
                     }}

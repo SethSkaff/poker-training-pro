@@ -63,6 +63,51 @@ describe("tournament director", () => {
     ).toThrow(/smallest chip/i);
   });
 
+  /*
+    Every chip in a hand starts as a stack or a forced bet, and the engine only
+    adds, subtracts, and splits those amounts. So the money flow stays payable
+    from the rack exactly when the schedule is -- and a schedule that is not
+    produces its first unpayable pot hundreds of hands later, far from the
+    configuration that caused it.
+  */
+  it("rejects a schedule its own chip rack cannot pay", () => {
+    expect(() =>
+      createTournament(
+        "off-rack-stack",
+        { ...AUTHENTIC_MAIN_EVENT_STRUCTURE, startingStack: 60_010 },
+        entrants(2),
+        "denomination-seed",
+      ),
+    ).toThrow(/Starting stack 60010 is not payable in 25-chip units/);
+
+    expect(() =>
+      createTournament(
+        "off-rack-blind",
+        {
+          ...AUTHENTIC_MAIN_EVENT_STRUCTURE,
+          levels: AUTHENTIC_MAIN_EVENT_STRUCTURE.levels.map((level, index) =>
+            index === 2 ? { ...level, smallBlind: 210 } : level,
+          ),
+        },
+        entrants(2),
+        "denomination-seed",
+      ),
+    ).toThrow(/Level 3 small blind 210 is not payable in 25-chip units/);
+  });
+
+  it("accepts every shipped career structure against its own rack", () => {
+    for (const event of CAREER_EVENTS) {
+      expect(() =>
+        createTournament(
+          `${event.id}-rack`,
+          event.structure,
+          entrants(2),
+          "denomination-seed",
+        ),
+      ).not.toThrow();
+    }
+  });
+
   it("advances multiple blind levels without losing residual time", () => {
     const structure: TournamentStructure = {
       id: "test",
