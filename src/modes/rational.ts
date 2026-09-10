@@ -1,3 +1,4 @@
+import { calculation, type ReviewCalculation } from "../lib/reviewCalculation";
 import type { Card } from "../types/poker";
 import { formatFixedDecimal, formatPercentage } from "../lib/format";
 import type {
@@ -75,6 +76,7 @@ export interface OpponentRangeSummary {
 }
 
 export interface EquityEstimate {
+  calculation?: ReviewCalculation;
   /** Showdown share against the current hand's active opponent ranges. */
   showdownEquity: number;
   /** Compatibility alias for older callers; prefer `showdownEquity`. */
@@ -170,6 +172,7 @@ export type RationalActionRole =
   | "bluff";
 
 export interface RationalActionOption {
+  calculation?: ReviewCalculation;
   id: string;
   command: BettingActionCommand;
   probability: number;
@@ -202,6 +205,7 @@ export interface RationalWagerSizingAudit {
 }
 
 export interface RationalDecisionAudit {
+  calculations?: Record<string, ReviewCalculation>;
   policyVersion: string;
   informationBoundary: string;
   equityWork: EquityWorkMetrics;
@@ -1211,6 +1215,7 @@ function finishRangeEquityWork(state: RangeEquityWorkState): EquityEstimate {
   return {
     showdownEquity,
     equity: showdownEquity,
+    calculation: calculation("Equity = sum of sampled pot shares / samples", { shares: state.equityPoints, samples: state.simulations }, "shares / samples", showdownEquity),
     wins: state.wins,
     ties: state.ties,
     losses: state.losses,
@@ -2193,6 +2198,9 @@ function scoreCandidates(
     const foldEquity = response?.allFoldProbability ?? 0;
     const calledEquity = response?.callEquity ?? showdownEquity;
     let chipUtility = 0;
+    let reopenPenalty = 0;
+    let exposurePenalty = 0;
+    let baseEv = 0;
 
     if (type === "fold") {
       // Incremental regret convention: chips already in the pot are sunk, so
@@ -2238,7 +2246,8 @@ function scoreCandidates(
       // in an unopened pot, grows smoothly with visible aggression, and is
       // discounted for a robust value hand; it is not a global “never raise”
       // or SPR threshold.
-      chipUtility -= calculateReopenPenalty({
+      baseEv = chipUtility;
+      reopenPenalty = calculateReopenPenalty({
         wager,
         streetAggression,
         reRaisedProbability: reRaisedShare,
@@ -2247,6 +2256,8 @@ function scoreCandidates(
       });
     }
 
+    if (type === "fold" || type === "check" || type === "call") baseEv = chipUtility;
+    chipUtility -= reopenPenalty;
     // Tournament risk is deliberately applied after base chip EV is complete.
     // It changes the risk-adjusted ranking, never the current-hand ranges or
     // the number of opponents in any equity/response calculation.
@@ -2263,7 +2274,7 @@ function scoreCandidates(
     // attractive.  Both remain in chip-EV units and are part of candidate
     // scoring, rather than a hidden post-selection veto.
     if (type !== "fold" && type !== "check" && type !== "call") {
-      chipUtility -= calculateStackExposurePenalty({
+      exposurePenalty = calculateStackExposurePenalty({
         additionalRisk: candidate.additionalRisk,
         pot: informationSet.pot,
         effectiveStack: Math.max(1, effectiveStack),
@@ -2271,6 +2282,7 @@ function scoreCandidates(
         riskPremium,
       });
     }
+    chipUtility -= exposurePenalty;
     const utilityBigBlinds = chipUtility / bigBlind;
     const role = actionRole(
       candidate,
@@ -2296,6 +2308,9 @@ function scoreCandidates(
       id: candidate.id,
       command: { ...candidate.command },
       utilityBigBlinds,
+      calculation: calculation("EV (BB) = (branch EV - reopening cost - tournament risk cost - stack exposure cost) / big blind",
+        { base: baseEv, reopening: reopenPenalty, risk: type === "fold" ? 0 : riskPremium * candidate.additionalRisk, exposure: exposurePenalty, blind: bigBlind },
+        "(base - reopening - risk - exposure) / blind", utilityBigBlinds),
       uncertaintyBigBlinds,
       foldEquity,
       role,
@@ -2554,6 +2569,13 @@ function assembleRationalDecision(
     chosen,
     distribution,
     audit: {
+      calculations: {
+        potOdds: calculation("Pot odds = amount to match / max(1, pot + amount to match)", { call: legalActions.toCall, pot: informationSet.pot }, "call / max(1, pot + call)", potOdds),
+        requiredEquity: calculation("Required equity = clamp(pot odds + tournament risk premium, 0, 0.98)", { odds: potOdds, premium: riskPremium }, "clamp(odds + premium, 0, 0.98)", requiredEquity),
+        stackToPotRatio: calculation("SPR = effective stack / max(1, pot)", { stack: effectiveStack, pot: informationSet.pot }, "stack / max(1, pot)", spr),
+        effectiveStackBigBlinds: calculation("Effective stack (BB) = effective stack / big blind", { stack: effectiveStack, blind: input.bigBlind }, "stack / blind", effectiveStackBigBlinds),
+        ...(equity.calculation ? { showdownEquity: equity.calculation } : {}),
+      },
       policyVersion: POLICY_VERSION,
       informationBoundary:
         "Uses only the viewer's hole cards, public board/actions/stacks, legal actions, and tournament context. Opponent cards and future deck state are not accepted by this policy contract.",

@@ -1,67 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatChips, formatFixedDecimal } from "../lib/format";
-import { formatMessage, localeTextAttributes } from "../lib/localeMessages";
-import {
-  countNotable,
-  nextPlaybackStep,
-  type ReviewPlaybackMode,
-} from "../lib/reviewPlayback";
-import { PlayingCard } from "./PlayingCard";
-import {
-  deriveHandReview,
-  filterDecisions,
-  HandReviewCancelledError,
-  type HandReview,
-  type ReviewDecision,
-  type ReviewPreflopAction,
-  type ReviewQuality,
-} from "../modes/handReview";
+import { formatMessage } from "../lib/localeMessages";
+import { nextPlaybackStep } from "../lib/reviewPlayback";
+import { calculation, type ReviewCalculation } from "../lib/reviewCalculation";
+import { defaultSettings, defaultProgress } from "../lib/storage";
+import { PokerTable } from "./PokerTable";
+import { deriveHandReview, HandReviewCancelledError, type HandReview, type ReviewDecision, type ReviewPreflopAction, type ReviewQuality } from "../modes/handReview";
 import type { TournamentRunnerReplay } from "../modes/tournamentRunner";
-
-/**
- * Post-round review.
- *
- * Everything shown here is derived on demand from the stored replay (see
- * `modes/handReview`), already viewer-redacted, and deliberately labelled as
- * the game's own estimate rather than a solved answer.
- */
+import type { GameSettings, PlayerProgress } from "../types/poker";
 
 interface HandReviewScreenProps {
   replay: TournamentRunnerReplay;
   onBack: () => void;
-  /**
-   * Called once per derived round with that round's totals. Only aggregates
-   * leave this screen — the per-decision annotations stay ephemeral.
-   */
-  onReviewed?: (totals: {
-    decisions: number;
-    bestDecisions: number;
-    totalRegretBigBlinds: number;
-  }) => void;
+  settings?: GameSettings;
+  progress?: PlayerProgress;
+  onReviewed?: (totals: { decisions: number; bestDecisions: number; totalRegretBigBlinds: number }) => void;
 }
-
-/** Non-colour glyph per quality band, so red/green stays supplemental. */
-const QUALITY_GLYPH: Record<ReviewQuality, string> = {
-  best: "✔",
-  close: "≈",
-  inaccuracy: "!",
-  mistake: "✕",
-  blunder: "✕✕",
-};
-
-function qualityLabel(quality: ReviewQuality): string {
-  return formatMessage(`review.quality.${quality}`);
-}
-
-function actionLabel(
-  action: { type: string; to?: number },
-  semantic?: ReviewPreflopAction,
-): string {
+const QUALITY_GLYPH: Record<ReviewQuality, string> = { best: "✓", close: "≈", inaccuracy: "!", mistake: "×", blunder: "××" };
+function actionLabel(action: { type: string; to?: number }, semantic?: ReviewPreflopAction) {
   const label = formatMessage(`review.action.${semantic ?? action.type}`);
   return action.to === undefined ? label : `${label} ${formatChips(action.to)}`;
 }
-
 /** Explicitly names hand-local counts before the separate tournament count. */
 export function reviewPlayerCountSummary(
   decision: Pick<
@@ -89,565 +49,89 @@ export function reviewPlayerCountSummary(
   ].join(" · ");
 }
 
-export function HandReviewScreen({
-  replay,
-  onBack,
-  onReviewed,
-}: HandReviewScreenProps) {
+
+/** Reuses Training Lab's term button and compact contextual-popover pattern. */
+export function ReviewMetric({ label, value, audit }: { label: string; value: string; audit?: ReviewCalculation }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setOpen(false); }, [audit]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); } };
+    window.addEventListener("keydown", close, true);
+    return () => window.removeEventListener("keydown", close, true);
+  }, [open]);
+  return <span className="review-metric">
+    <span>{label}</span>
+    {audit ? <button type="button" className="math-vocab-term" aria-expanded={open} aria-label={`${label}: ${value}. Inspect calculation`} onClick={() => setOpen(v => !v)}>{value}</button> : <strong>{value}</strong>}
+    {open && audit && <span className="math-vocab-popover review-calculation" role="status">
+      <span><strong>{audit.formula}</strong><span>= {audit.substituted} = {value}</span></span>
+      <button type="button" aria-label="Close calculation" onClick={() => setOpen(false)}>×</button>
+    </span>}
+  </span>;
+}
+const noop = () => undefined;
+export function HandReviewScreen({ replay, onBack, onReviewed, settings = defaultSettings, progress = defaultProgress }: HandReviewScreenProps) {
   const [review, setReview] = useState<HandReview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
-  /*
-    Playback replaces the old "Noteworthy only" filter (E27-011). The filter
-    removed every ordinary decision from the timeline, so the player lost the
-    shape of their round. The timeline is now always complete; this only drives
-    what playback does.
-  */
-  const [playback, setPlayback] = useState<{
-    mode: ReviewPlaybackMode;
-    running: boolean;
-    paused: boolean;
-  } | null>(null);
-  const [mistakesOnly, setMistakesOnly] = useState(false);
-  const [streetFilter, setStreetFilter] = useState<string | undefined>();
-
   useEffect(() => {
-    // Derivation is sliced and abortable: leaving the screen stops the work
-    // rather than letting an abandoned round finish computing.
-    const controller = new AbortController();
-    setReview(null);
-    setError(null);
-    void deriveHandReview(replay, { signal: controller.signal })
-      .then((derived) => {
-        if (controller.signal.aborted) return;
-        setReview(derived);
-        onReviewed?.({
-          decisions: derived.decisions.length,
-          bestDecisions: derived.decisions.filter(
-            (decision) => decision.quality === "best",
-          ).length,
-          totalRegretBigBlinds: derived.decisions.reduce(
-            (sum, decision) => sum + decision.math.evRegretBigBlinds,
-            0,
-          ),
-        });
-      })
-      .catch((cause: unknown) => {
-        if (cause instanceof HandReviewCancelledError) return;
-        if (controller.signal.aborted) return;
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : formatMessage("review.error.generic"),
-        );
-      });
+    const controller = new AbortController(); setReview(null); setError(null); setSelected(0);
+    void deriveHandReview(replay, { signal: controller.signal }).then(derived => {
+      if (controller.signal.aborted) return;
+      setReview(derived);
+      onReviewed?.({ decisions: derived.decisions.length, bestDecisions: derived.decisions.filter(d => d.quality === "best").length, totalRegretBigBlinds: derived.decisions.reduce((sum, d) => sum + d.math.evRegretBigBlinds, 0) });
+    }).catch(cause => { if (!controller.signal.aborted && !(cause instanceof HandReviewCancelledError)) setError(cause instanceof Error ? cause.message : "Review unavailable"); });
     return () => controller.abort();
-    // `onReviewed` is intentionally excluded: a new identity from the parent
-    // must not re-derive an already-reviewed round.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replay]);
-
-  const visible = useMemo(
-    () =>
-      review
-        ? filterDecisions(review, {
-            notableOnly: false,
-            mistakesOnly,
-            street: streetFilter as ReviewDecision["street"] | undefined,
-          })
-        : [],
-    [review, mistakesOnly, streetFilter],
-  );
-
-  const decision =
-    visible.find((entry) => entry.index === selected) ?? visible[0];
-
+  const decision = review?.decisions[selected];
+  const nextKey = useMemo(() => review ? nextPlaybackStep(review.decisions, decision?.index ?? null, "noteworthy") : null, [review, decision]);
+  const hasNextKey = Boolean(review?.decisions.slice(selected + 1).some(d => d.notable));
   useEffect(() => {
-    // Keyboard navigation across the timeline, including jump-to-next-mistake.
-    function onKeyDown(event: KeyboardEvent) {
-      if (!visible.length) return;
-      const position = Math.max(
-        0,
-        visible.findIndex((entry) => entry.index === decision?.index),
-      );
-      if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-        event.preventDefault();
-        setSelected(visible[Math.min(visible.length - 1, position + 1)].index);
-      } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-        event.preventDefault();
-        setSelected(visible[Math.max(0, position - 1)].index);
-      } else if (event.key === "m" || event.key === "M") {
-        const next = visible
-          .slice(position + 1)
-          .find((entry) => entry.quality !== "best" && entry.quality !== "close");
-        if (next) setSelected(next.index);
-      } else if (event.key === " " || event.code === "Space") {
-        // Space continues a paused noteworthy run, which is the resume control
-        // the design calls for. Only meaningful while playback is paused, so it
-        // never swallows the spacebar during ordinary browsing.
-        if (playback?.running && playback.paused) {
-          event.preventDefault();
-          setPlayback({ ...playback, paused: false });
-        }
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [visible, decision, playback]);
-
-  /*
-    The playback driver. It moves the *selection* through the timeline; it never
-    changes what the timeline contains. A noteworthy run pauses on arrival at
-    each notable decision and waits for Continue or Space (E27-011).
-  */
-  useEffect(() => {
-    if (!review || !playback?.running || playback.paused) return;
-    const decisions = review.decisions.map((entry) => ({
-      index: entry.index,
-      notable: Boolean(entry.notable),
-    }));
-    const step = nextPlaybackStep(
-      decisions,
-      decision?.index ?? null,
-      playback.mode,
-    );
-    if (step.index === null) {
-      setPlayback(null);
-      return;
-    }
-    // Routine decisions in a noteworthy run go by quickly; a decision the run
-    // stopped at is held until the player continues.
-    const dwellMs = playback.mode === "noteworthy" ? 240 : 900;
-    const timer = window.setTimeout(() => {
-      setSelected(step.index as number);
-      if (step.pause) {
-        setPlayback((current) =>
-          current ? { ...current, paused: true } : current,
-        );
-      } else if (step.finished) {
-        setPlayback(null);
-      }
-    }, dwellMs);
-    return () => window.clearTimeout(timer);
-  }, [review, playback, decision]);
-
-  if (error) {
-    return (
-      <main className="night-shell review-shell" {...localeTextAttributes()}>
-        <section className="review-panel">
-          <button className="night-back" type="button" onClick={onBack}>
-            <ArrowLeft size={18} /> {formatMessage("common.back")}
-          </button>
-          <p role="alert">{error}</p>
-        </section>
-      </main>
-    );
-  }
-
-  if (!review) {
-    return (
-      <main className="night-shell review-shell" {...localeTextAttributes()}>
-        <section className="review-panel">
-          <p role="status">{formatMessage("review.deriving")}</p>
-        </section>
-      </main>
-    );
-  }
-
-  return (
-    <main
-      className="night-shell review-shell"
-      aria-labelledby="review-title"
-      {...localeTextAttributes()}
-    >
-      <section className="review-panel">
-        <header className="review-header">
-          <button className="night-back" type="button" onClick={onBack}>
-            <ArrowLeft size={18} /> {formatMessage("common.back")}
-          </button>
-          <h1 id="review-title">{formatMessage("review.title")}</h1>
-          <p className="review-score">
-            <strong>
-              {formatMessage("review.accuracy", {
-                accuracy: formatFixedDecimal(review.accuracy * 100, 0),
-              })}
-            </strong>
-            <strong>
-              {formatMessage("review.goodAccuracy", {
-                accuracy: formatFixedDecimal(review.goodAccuracy * 100, 0),
-              })}
-            </strong>
-            <span>
-              {formatMessage("review.decisionCount", {
-                count: review.decisions.length,
-              })}
-            </span>
-          </p>
-          {/* The review never claims solved correctness. */}
-          <p className="review-approximation">
-            {formatMessage("review.approximationNotice")}
-          </p>
-          {review.truncated ? (
-            <p className="review-truncated" role="status">
-              {formatMessage("review.truncated", {
-                count: review.decisions.length,
-              })}
-            </p>
-          ) : null}
+    const key = (event: KeyboardEvent) => {
+      if (!review || event.defaultPrevented || (event.target as HTMLElement).closest("input, select, button")) return;
+      if (event.key === "ArrowRight") { event.preventDefault(); setSelected(s => Math.min(review.decisions.length - 1, s + 1)); }
+      if (event.key === "ArrowLeft") { event.preventDefault(); setSelected(s => Math.max(0, s - 1)); }
+      if (event.key.toLowerCase() === "m" && hasNextKey && nextKey?.index != null) { event.preventDefault(); setSelected(nextKey.index); }
+    };
+    window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
+  }, [review, hasNextKey, nextKey]);
+  if (!review || !decision) return <main className="night-shell review-shell"><section className="review-panel"><button className="night-back" onClick={onBack}><ArrowLeft /> Back</button><p role={error ? "alert" : "status"}>{error ?? (review ? "No recorded decisions yet." : formatMessage("review.deriving"))}</p></section></main>;
+  const best = review.decisions.filter(d => d.quality === "best").length;
+  const accuracy = calculation("Accuracy = best decisions / reviewed decisions × 100", { best, total: review.decisions.length }, "best / total × 100", review.accuracy * 100);
+  const metric = (id: string, label: string, percent = false) => {
+    const audit = decision.math.calculations?.[id];
+    const value = decision.math[id as keyof typeof decision.math];
+    if (typeof value !== "number") return null;
+    return <ReviewMetric key={id} label={label} audit={audit} value={`${formatFixedDecimal(value * (percent ? 100 : 1), percent ? 1 : 2)}${percent ? "%" : ""}`} />;
+  };
+  return <PokerTable mode={replay.mode} scenario={decision.tableSnapshot} settings={{...settings, spatialScene: false}} progress={progress}
+    onProgressChange={noop} onSettingsChange={noop} onNextScenario={noop} onExit={onBack}
+    review={{
+      controls: <nav className="action-dock review-navigation" aria-label="Review navigation">
+        <button className="action-button" disabled={selected === 0} onClick={() => setSelected(s => s - 1)}><ChevronLeft /><strong>BACK</strong></button>
+        <button className="action-button" disabled={selected >= review.decisions.length - 1} onClick={() => setSelected(s => s + 1)}><strong>NEXT</strong><ChevronRight /></button>
+        <button className="action-button" disabled={!hasNextKey} onClick={() => { if (nextKey?.index != null) setSelected(nextKey.index); }}><strong>NEXT KEY MOVE</strong><ChevronRight /></button>
+      </nav>,
+      overlay: <div className="review-projections" key={decision.index}>
+        <header className="review-table-heading"><h1>GAME REVIEW</h1><ReviewMetric label="Model best" value={`${formatFixedDecimal(review.accuracy * 100, 0)}%`} audit={accuracy} />
+          <label>Decision <select value={selected} onChange={e => setSelected(Number(e.target.value))}>{review.decisions.map((d, i) => <option value={i} key={d.index}>{i + 1} · Hand {d.handNumber} · {d.street}{d.notable ? " · Key move" : ""}</option>)}</select></label>
+          <small>{reviewPlayerCountSummary(decision)}</small>
+          {review.truncated && <small>Review limited to {review.decisions.length} decisions</small>}
         </header>
-
-        <div className="review-segments">
-          {(["street", "phase", "risk", "decisionType"] as const).map((group) => (
-            <div key={group} className="review-segment-group">
-              <h2>{formatMessage(`review.segment.${group}`)}</h2>
-              <ul>
-                {review.segments[group]
-                  .filter((entry) => entry.decisions > 0)
-                  .map((entry) => (
-                    <li key={entry.key}>
-                      <button
-                        type="button"
-                        aria-pressed={
-                          group === "street" ? streetFilter === entry.key : undefined
-                        }
-                        onClick={() =>
-                          group === "street"
-                            ? setStreetFilter(
-                                streetFilter === entry.key ? undefined : entry.key,
-                              )
-                            : undefined
-                        }
-                      >
-                        <span>{formatMessage(`review.key.${entry.key}`)}</span>
-                        <strong>
-                          {formatFixedDecimal(entry.accuracy * 100, 0)}%
-                        </strong>
-                        {/* A tiny sample is stated as such rather than
-                            presented as a finding. */}
-                        <small>
-                          {entry.reliable
-                            ? formatMessage("review.sampleCount", {
-                                count: entry.decisions,
-                              })
-                            : formatMessage("review.sampleTooSmall", {
-                                count: entry.decisions,
-                              })}
-                        </small>
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-
-        <div className="review-body">
-          <ol
-            className="review-timeline"
-            aria-label={formatMessage("review.timelineLabel")}
-          >
-            {visible.map((entry) => (
-              <li key={entry.index}>
-                <button
-                  type="button"
-                  className={entry.index === decision?.index ? "is-selected" : ""}
-                  aria-current={entry.index === decision?.index ? "true" : undefined}
-                  data-quality={entry.quality}
-                  onClick={() => setSelected(entry.index)}
-                >
-                  <span className="review-timeline__glyph" aria-hidden="true">
-                    {QUALITY_GLYPH[entry.quality]}
-                  </span>
-                  <span className="review-timeline__detail">
-                    <strong>
-                      {formatMessage("review.handStreet", {
-                        handNumber: entry.handNumber,
-                        street: formatMessage(`review.key.${entry.street}`),
-                      })}
-                    </strong>
-                    <small>
-                      {actionLabel(entry.chosen, entry.chosenPreflopAction)} ·{" "}
-                      {formatMessage("review.potLabel", {
-                        pot: formatChips(entry.math.potBefore),
-                      })}
-                    </small>
-                    {/* Quality and magnitude in words, for assistive tech and
-                        for anyone who cannot use the colour. */}
-                    <em>
-                      {qualityLabel(entry.quality)}
-                      {entry.notable
-                        ? ` · ${formatMessage(`review.notable.${entry.notableReason}`)}`
-                        : ""}
-                    </em>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ol>
-
-          {decision ? (
-            <article className="review-detail" aria-live="polite">
-              <header>
-                <h2>
-                  {formatMessage("review.handStreet", {
-                    handNumber: decision.handNumber,
-                    street: formatMessage(`review.key.${decision.street}`),
-                  })}
-                </h2>
-                <p>{reviewPlayerCountSummary(decision)}</p>
-                {decision.preflopSituation ? (
-                  <p className="review-context">
-                    {formatMessage("review.preflopContext", {
-                      context: formatMessage(
-                        `review.preflop.${decision.preflopSituation}`,
-                      ),
-                    })}
-                  </p>
-                ) : null}
-              </header>
-
-              <div className="review-cards">
-                <div>
-                  <h3>{formatMessage("review.yourCards")}</h3>
-                  <div className="review-card-row">
-                    {(decision.informationSet.players.find(
-                      (player) => player.id === replay.hero.id,
-                    )?.holeCards ?? []).map((card) => (
-                      <PlayingCard
-                        key={`${card.rank}${card.suit}`}
-                        card={card}
-                        small
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <h3>{formatMessage("review.board")}</h3>
-                  <div className="review-card-row">
-                    {decision.informationSet.board.length === 0 ? (
-                      <p>{formatMessage("review.noBoardYet")}</p>
-                    ) : (
-                      decision.informationSet.board.map((card) => (
-                        <PlayingCard
-                          key={`${card.rank}${card.suit}`}
-                          card={card}
-                          small
-                        />
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <p className="review-verdict">
-                <strong>{formatMessage("review.youPlayed")}</strong>{" "}
-                {actionLabel(decision.chosen, decision.chosenPreflopAction)}
-                {" · "}
-                <strong>{formatMessage("review.modelPreferred")}</strong>{" "}
-                {actionLabel(
-                  decision.recommended,
-                  decision.recommendedPreflopAction,
-                )}
-                {" · "}
-                <span data-quality={decision.quality}>
-                  {qualityLabel(decision.quality)}
-                </span>
-              </p>
-
-              <dl className="review-math">
-                <div>
-                  <dt>{formatMessage("review.math.potBefore")}</dt>
-                  <dd>{formatChips(decision.math.potBefore)}</dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.costToCall")}</dt>
-                  <dd>{formatChips(decision.math.costToCall)}</dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.potAfterCalling")}</dt>
-                  <dd>{formatChips(decision.math.potAfterCalling)}</dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.potOdds")}</dt>
-                  <dd>{formatFixedDecimal(decision.math.potOdds * 100, 1)}%</dd>
-                </div>
-                <div>
-                  <dt>
-                    {formatMessage(
-                      decision.math.requiredEquityApplicable
-                        ? "review.math.requiredEquity"
-                        : "review.math.requiredEquityReference",
-                    )}
-                  </dt>
-                  <dd>
-                    {formatFixedDecimal(decision.math.requiredEquity * 100, 1)}%
-                  </dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.showdownEquity")}</dt>
-                  <dd>
-                    {formatFixedDecimal(decision.math.showdownEquity * 100, 1)}%
-                  </dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.foldEquity")}</dt>
-                  <dd>
-                    {formatFixedDecimal(decision.math.foldEquity * 100, 1)}%
-                  </dd>
-                </div>
-                <div>
-                  <dt>
-                    {formatMessage("review.math.opponentsAbleToRespond")}
-                  </dt>
-                  <dd>{decision.math.opponentsAbleToRespond}</dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.confidence")}</dt>
-                  <dd>
-                    {formatMessage(`review.confidence.${decision.math.confidence}`)} · {formatFixedDecimal(decision.math.equityConfidenceInterval[0] * 100, 1)}–{formatFixedDecimal(decision.math.equityConfidenceInterval[1] * 100, 1)}%
-                  </dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.source")}</dt>
-                  <dd>
-                    {formatMessage(
-                      decision.math.evaluationSource ===
-                        "preflop-continuation-rollout"
-                        ? "review.source.preflop"
-                        : "review.source.postflop",
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.spr")}</dt>
-                  <dd>{formatFixedDecimal(decision.math.stackToPotRatio, 1)}</dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.tournamentPressure")}</dt>
-                  <dd>
-                    {formatFixedDecimal(
-                      decision.math.tournamentPressure * 100,
-                      1,
-                    )}
-                    %
-                  </dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.blindUrgency")}</dt>
-                  <dd>
-                    {formatFixedDecimal(decision.math.blindUrgency * 100, 1)}%
-                    {decision.math.imminentBigBlind
-                      ? ` · ${formatMessage("review.math.bigBlindNext")}`
-                      : ""}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{formatMessage("review.math.evRegret")}</dt>
-                  <dd>
-                    {formatFixedDecimal(decision.math.evRegretBigBlinds, 2)} BB
-                  </dd>
-                </div>
-              </dl>
-
-              <h3>{formatMessage("review.actionValues")}</h3>
-              <ul className="review-action-values">
-                {[...decision.math.actionValues]
-                  .sort(
-                    (left, right) =>
-                      right.expectedValueBigBlinds - left.expectedValueBigBlinds,
-                  )
-                  .map((option) => (
-                    <li key={option.id}>
-                      <strong>{actionLabel(option, option.semantic)}</strong>
-                      <span>
-                        {formatFixedDecimal(option.expectedValueBigBlinds, 2)} BB
-                        {option.uncertaintyBigBlinds !== undefined
-                          ? ` ± ${formatFixedDecimal(option.uncertaintyBigBlinds, 2)}`
-                          : ""}
-                      </span>
-                      <small>{option.rationale}</small>
-                    </li>
-                  ))}
-              </ul>
-              <p className="review-basis">
-                {formatMessage("review.basis", {
-                  simulations: decision.math.simulations,
-                })}
-              </p>
-            </article>
-          ) : (
-            <p className="review-detail">{formatMessage("review.noneMatch")}</p>
-          )}
-        </div>
-
-        <footer className="review-controls">
-          {/*
-            Playback controls, not filters (E27-011). The timeline behind them
-            stays complete in every mode: Play all walks every decision, Play
-            noteworthy passes over the routine ones and stops at each notable
-            one so it can be read. Both leave every decision selectable by hand.
-          */}
-          <button
-            type="button"
-            aria-pressed={playback?.mode === "all" && playback.running}
-            onClick={() =>
-              setPlayback((current) =>
-                current?.mode === "all" && current.running
-                  ? null
-                  : { mode: "all", running: true, paused: false },
-              )
-            }
-          >
-            <Play size={14} aria-hidden="true" />{" "}
-            {playback?.mode === "all" && playback.running
-              ? formatMessage("review.playback.stop")
-              : formatMessage("review.playback.all")}
-          </button>
-          <button
-            type="button"
-            aria-pressed={playback?.mode === "noteworthy" && playback.running}
-            onClick={() =>
-              setPlayback((current) =>
-                current?.mode === "noteworthy" && current.running
-                  ? null
-                  : { mode: "noteworthy", running: true, paused: false },
-              )
-            }
-          >
-            <Play size={14} aria-hidden="true" />{" "}
-            {playback?.mode === "noteworthy" && playback.running
-              ? playback.paused
-                ? formatMessage("review.playback.continue")
-                : formatMessage("review.playback.stop")
-              : formatMessage("review.playback.notable")}
-            {review ? (
-              <small>
-                {" "}
-                {formatMessage("review.playback.notableCount", {
-                  count: countNotable(
-                    review.decisions.map((entry) => ({
-                      index: entry.index,
-                      notable: Boolean(entry.notable),
-                    })),
-                  ),
-                })}
-              </small>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            aria-pressed={mistakesOnly}
-            onClick={() => setMistakesOnly((value) => !value)}
-          >
-            {formatMessage("review.filter.mistakes")}
-          </button>
-          <span className="review-hint">
-            <ChevronLeft size={13} aria-hidden="true" />
-            <ChevronRight size={13} aria-hidden="true" />{" "}
-            {formatMessage("review.keyboardHint")}
-          </span>
-        </footer>
-      </section>
-    </main>
-  );
+        <aside className="review-felt-math" aria-label="Decision mathematics"><h2>THE MATH</h2>
+          {metric("potOdds", "Pot odds", true)}{metric("requiredEquity", decision.math.requiredEquityApplicable ? "Required equity" : "Equity reference", true)}
+          {metric("showdownEquity", "Estimated equity", true)}{metric("stackToPotRatio", "Stack / pot")}{metric("effectiveStackBigBlinds", "Effective BB")}{metric("evRegretBigBlinds", "EV loss · BB")}
+        </aside>
+        <section className="review-felt-verdict" aria-live="polite" data-quality={decision.quality}>
+          <small>HAND {decision.handNumber} · {decision.street.toUpperCase()}</small>
+          <h2>{QUALITY_GLYPH[decision.quality]} {formatMessage(`review.quality.${decision.quality}`)}</h2>
+          <p>You played <strong>{actionLabel(decision.chosen, decision.chosenPreflopAction)}</strong></p>
+          <p>Model preferred <strong>{actionLabel(decision.recommended, decision.recommendedPreflopAction)}</strong></p>
+        </section>
+        <aside className="review-felt-details"><h2>ALTERNATIVES · EV IN BB</h2>
+          {decision.math.actionValues.map(option => <ReviewMetric key={option.id} label={actionLabel(option, option.semantic)} value={formatFixedDecimal(option.expectedValueBigBlinds, 2)} audit={option.calculation} />)}
+          <small title={formatMessage("review.approximationNotice")}>Model estimates, not solved play. · {decision.math.confidence} confidence</small>
+        </aside>
+      </div>
+    }} />;
 }

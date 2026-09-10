@@ -154,6 +154,8 @@ export type TournamentPresentationEvent =
   | {
       id: string;
       kind: "pot-awarded";
+      potId?: string;
+      awardIndex?: number;
       handId: string;
       playerId: string;
       amount: number;
@@ -571,6 +573,8 @@ function progressHandPresentationEvents(
     events.push({
       id: presentationEventId(source, result.handId, "pot-awarded", index),
       kind: "pot-awarded",
+      potId: award.potId,
+      awardIndex: index,
       handId: result.handId,
       playerId: award.playerId,
       amount: award.amount,

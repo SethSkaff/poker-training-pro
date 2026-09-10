@@ -1,6 +1,7 @@
 export type SoundName =
   | "click"
   | "chip"
+  | "payout"
   | "fold"
   | "success"
   | "error"
@@ -180,6 +181,7 @@ export class GameAudio {
       { frequency: number; duration: number; type: OscillatorType }
     > = {
       click: { frequency: 320, duration: 0.045, type: "sine" },
+      payout: { frequency: 940, duration: 0.06, type: "triangle" },
       chip: { frequency: 880, duration: 0.08, type: "triangle" },
       fold: { frequency: 190, duration: 0.12, type: "sine" },
       success: { frequency: 660, duration: 0.2, type: "triangle" },
@@ -193,6 +195,20 @@ export class GameAudio {
     };
 
     try {
+      if (sound === "payout") {
+        for (let i = 0; i < 9; i += 1) {
+          const start = context.currentTime + i * 0.035;
+          const tone = context.createOscillator();
+          const gain = context.createGain();
+          tone.type = "triangle";
+          tone.frequency.setValueAtTime(i === 8 ? 1320 : 740 + (i % 3) * 120, start);
+          gain.gain.setValueAtTime(i === 8 ? 0.18 : 0.28, start);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + (i === 8 ? 0.13 : 0.035));
+          tone.connect(gain); gain.connect(this.effectsGain);
+          tone.start(start); tone.stop(start + 0.14);
+        }
+        return true;
+      }
       const profile = profiles[sound];
       const oscillator = context.createOscillator();
       const envelope = context.createGain();

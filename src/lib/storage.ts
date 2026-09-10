@@ -68,3 +68,17 @@ export function saveProgress(progress: PlayerProgress) {
     // The in-memory session remains playable when storage is unavailable.
   }
 }
+
+/** Browser fallback for the same private deterministic checkpoint used by desktop. */
+export function loadReplayCheckpoint(): Record<string, unknown> | undefined {
+  try {
+    const value = JSON.parse(localStorage.getItem("poker-training-pro:replay") ?? "null");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+  } catch { return undefined; }
+}
+export function saveReplayCheckpoint(value?: Record<string, unknown>): void {
+  try {
+    if (value) localStorage.setItem("poker-training-pro:replay", JSON.stringify(value));
+    else localStorage.removeItem("poker-training-pro:replay");
+  } catch { /* The current in-memory run remains playable. */ }
+}

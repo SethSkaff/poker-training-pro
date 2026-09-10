@@ -12257,3 +12257,110 @@ body:has(.table-screen--2d),
   .table-screen--2d .tournament-hud { gap: 4px 8px; padding: 5px 7px; font-size: 9px; }
   .table-screen--2d .training-context { top: 100px; left: 8px; width: 24%; gap: 4px; font-size: 10px; }
 }
+
+/* Shared 2D play / review presentation. */
+.table-screen--2d .table-corner-status { flex-direction: row; align-items: flex-start; gap: 22px; max-width: 52%; top: 12px; }
+.table-screen--2d .blinds-placard { position: relative; margin-top: 17px; padding: 12px 24px; border: 1px solid #5a625a; border-radius: 5px; background: linear-gradient(#2a302d, #171d1a); box-shadow: 0 5px 12px #0005; }
+.blinds-placard::before, .blinds-placard::after { content: ""; position: absolute; top: -25px; height: 26px; width: 3px; background: linear-gradient(90deg,#545e54,#adb4a1,#484e47); }
+.blinds-placard::before { left: 24px; } .blinds-placard::after { right: 24px; }
+.table-screen--2d .blinds-placard span { display: grid; text-align: center; gap: 6px; }
+.table-screen--2d .blinds-placard b { font-size: 9px; letter-spacing: .22em; color: #aeb7ac; }
+.table-screen--2d .blinds-placard strong { font-size: clamp(18px,2vw,28px); color: #f0eddb; font-weight: 650; white-space: nowrap; }
+.table-screen--2d .poker-scene { --avatar-size: clamp(54px, 9cqh, 76px); }
+.table-screen--2d .player-seat--hero .seat-figure,
+.table-screen--2d .player-seat--hero .seat-figure .seat-avatar { width: var(--avatar-size); height: var(--avatar-size); }
+/* Cards share the hero's physical dimensions and face their own seat. */
+.table-screen--2d .player-seat .opponent-cards,
+.table-screen--2d .player-seat.is-showdown-revealed.is-winner .opponent-cards {
+  position: absolute; top: var(--cards-y, 20px); left: var(--cards-x, 120px); right: auto; bottom: auto;
+  display: flex; flex-direction: row; gap: 5px; width: max-content; padding: 0; border: 0; background: none;
+  transform: translate(-50%, -50%) rotate(var(--cards-angle, 0deg)); z-index: 6; animation: none;
+}
+.table-screen--2d .player-seat .opponent-cards .playing-card { width: var(--hero-card-width); height: var(--hero-card-height); min-width: 0; transform: none; }
+.table-screen--2d .player-seat .opponent-cards .playing-card + .playing-card { margin: 0; transform: rotate(5deg) translateY(3px); }
+.table-screen--2d .player-seat--top { --cards-x: 50%; --cards-y: calc(100% + var(--hero-card-height) * .64); --cards-angle: 180deg; }
+.table-screen--2d .player-seat--upper-left { --cards-x: calc(100% + var(--hero-card-height) * 1.15); --cards-y: calc(var(--avatar-half) + 50px); --cards-angle: 125deg; }
+.table-screen--2d .player-seat--lower-left { --cards-x: calc(100% + var(--hero-card-height) * 1.15); --cards-y: calc(var(--avatar-half) - 32px); --cards-angle: 55deg; }
+.table-screen--2d .player-seat--upper-right { --cards-x: calc(var(--hero-card-height) * -1.15); --cards-y: calc(var(--avatar-half) + 50px); --cards-angle: -125deg; }
+.table-screen--2d .player-seat--lower-right { --cards-x: calc(var(--hero-card-height) * -1.15); --cards-y: calc(var(--avatar-half) - 32px); --cards-angle: -55deg; }
+.winner-reveal { position: absolute; z-index: 70; left: 0; right: 0; top: 32%; min-height: 34%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: clamp(20px,4vw,70px); padding: 26px 7%; color: #eeeede; background: linear-gradient(transparent, #070b0de0 13%, #070b0de0 87%, transparent); pointer-events: none; }
+.winner-reveal__name > span { font-size: 11px; letter-spacing: .24em; color: #bfcfc4; }
+.winner-reveal__name h2 { font-size: clamp(25px,3.3vw,52px); margin: 12px 0; font-weight: 600; }
+.winner-reveal__name > strong { display: block; font-size: clamp(20px,2.5vw,34px); color: #c8dab5; }
+.winner-reveal__name small { display: block; margin-top: 5px; color: #abb7ae; font-size: 11px; }
+.winner-reveal__board, .winner-reveal__hand, .winner-reveal__hand > div { display: flex; gap: 8px; align-items: center; }
+.winner-reveal__hand { margin-top: 10px; }
+.winner-reveal__hand > strong { margin-left: 14px; max-width: 160px; text-transform: uppercase; font-size: clamp(13px,1.6vw,23px); font-weight: 550; letter-spacing: .05em; }
+.table-screen--2d .winner-reveal .playing-card, .winner-card-slot { width: clamp(40px,4.4vw,67px); height: clamp(56px,6.2vw,94px); }
+.winner-card-slot { border: 1px solid #99aca32b; border-radius: 5px; }
+.table-screen--2d .winner-reveal .is-winning { box-shadow: 0 0 0 2px #b9d7ac, 0 0 16px #bbdf9755; transform: translateY(-2px); }
+.winner-reveal__avatar { position: relative; justify-self: end; width: clamp(100px,15vw,220px); aspect-ratio: 1; overflow: hidden; border-radius: 50%; background: #23392e; box-shadow: 0 0 0 2px #a4b39c55; }
+.winner-reveal__avatar svg { width: 100%; height: 100%; }
+.pot-group { position: relative; }
+.chip-payout-stream { position: absolute; z-index: 40; top: 0; left: 50%; width: 0; height: 0; }
+.chip-payout-stream i { position: absolute; width: 21px; height: 10px; border: 2px dashed #ede1b7; border-radius: 50%; background: #92713d; box-shadow: 0 3px 0 #47351f, 0 5px 5px #0006; }
+.pot-group:has(.chip-payout-stream) .center-pot { visibility: hidden; }
+.table-screen--2d[data-review="true"] .hero-card-control,
+.table-screen--2d[data-review="true"] .hero-hole-cards .peek-label,
+.table-screen--2d[data-review="true"] .action-context { display: none; }
+.table-screen--2d[data-review="true"] .hero-hole-cards { pointer-events: none; }
+.review-projections { position: absolute; inset: 0; z-index: 35; pointer-events: none; color: #e0e8df; }
+.review-projections > * { position: absolute; pointer-events: auto; }
+.review-table-heading { top: 20px; right: 24px; display: grid; gap: 8px; width: 245px; }
+.review-table-heading h1 { margin: 0; font-size: 18px; letter-spacing: .12em; }
+.review-table-heading label { font-size: 11px; display: flex; align-items: center; gap: 8px; }
+.review-table-heading select { min-width: 0; max-width: 200px; padding: 5px; color: #d8e2d7; background: #1e2924; border: 1px solid #59655b; border-radius: 4px; }
+.review-felt-math, .review-felt-details { top: 43%; width: 19%; max-width: 245px; padding: 12px; background: linear-gradient(90deg,#0a241ba1,#0a241b18); border-left: 1px solid #d7e6b740; }
+.review-felt-math { left: 20%; }
+.review-felt-details { right: 20%; }
+.review-felt-math h2, .review-felt-details h2 { margin: 0 0 10px; font-size: 9px; color: #bdcdb7; letter-spacing: .12em; }
+.review-metric { position: relative; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 11px; line-height: 1.5; margin: 4px 0; }
+.review-metric > span:first-child { color: #c1d0bf; }
+.review-metric .math-vocab-term { color: #f0ebc9; font-variant-numeric: tabular-nums; font-weight: 650; }
+.review-calculation.math-vocab-popover { position: absolute; z-index: 100; top: 100%; left: 0; width: min(360px,70vw); max-width: none; display: flex; gap: 12px; font-size: 12px; padding: 12px; line-height: 1.5; background: #101b17; }
+.review-calculation > span { display: grid; gap: 8px; }
+.review-calculation strong { font-size: 12px; }
+.review-felt-details .review-calculation { right: 0; left: auto; }
+.review-felt-details > small { display: block; margin-top: 14px; color: #b3c2ae; font-size: 9px; line-height: 1.5; }
+.review-felt-verdict { top: 66%; left: 38%; width: 24%; text-align: center; }
+.review-felt-verdict > small { color: #bbcfb8; font-size: 9px; }
+.review-felt-verdict h2 { margin: 5px 0 10px; font-size: clamp(16px,2vw,26px); color: #d6e9bc; }
+.review-felt-verdict[data-quality="mistake"] h2, .review-felt-verdict[data-quality="blunder"] h2 { color: #ffc1a5; }
+.review-felt-verdict[data-quality="inaccuracy"] h2, .review-felt-verdict[data-quality="close"] h2 { color: #e9d7a0; }
+.review-felt-verdict p { margin: 5px 0; font-size: 11px; }
+.review-navigation .action-button { color: #e3e8dd; background: #24342c; border: 1px solid #657660; }
+.review-navigation .action-button:disabled { opacity: .4; cursor: default; }
+.run-entry__content { position: relative; z-index: 2; margin: auto; width: min(680px,90vw); padding-top: 14vh; display: grid; justify-items: start; gap: 20px; }
+.run-entry__eyebrow { color: #c7cea5; font-size: 11px; letter-spacing: .18em; }
+.run-entry__content h1 { font-size: clamp(36px,5vw,72px); margin: 0; font-weight: 550; }
+.run-entry__start { padding: 16px 70px; font-size: 20px; letter-spacing: .1em; font-weight: 650; color: #13241c; background: #d4dab3; border: 0; border-radius: 5px; cursor: pointer; }
+@media (max-width: 760px) {
+  .table-screen--2d .table-corner-status { gap: 6px; max-width: 52%; }
+  .table-screen--2d .blinds-placard { padding: 8px 10px; }
+  .table-screen--2d .blinds-placard strong { font-size: 16px; }
+  .winner-reveal { gap: 12px; padding: 20px 3%; grid-template-columns: 1fr auto auto; }
+  .winner-reveal__avatar { width: clamp(44px,10vw,80px); }
+  .winner-reveal__name h2 { font-size: clamp(15px,3vw,24px); }
+  .winner-reveal__hand > strong { margin-left: 4px; font-size: 11px; }
+  .winner-reveal__board, .winner-reveal__hand, .winner-reveal__hand > div { gap: 4px; }
+  .table-screen--2d .winner-reveal .playing-card, .winner-card-slot { width: 33px; height: 47px; }
+  .review-table-heading { right: 8px; width: 180px; }
+  .review-table-heading h1 { font-size: 13px; }
+  .review-table-heading label { font-size: 9px; }
+  .review-felt-math { left: 18%; width: 26%; padding: 6px; }
+  .review-felt-details { right: 14%; width: 28%; padding: 6px; }
+  .review-metric { font-size: 9px; gap: 4px; }
+  .review-felt-verdict { left: 28%; width: 44%; top: 67%; }
+  .review-felt-verdict p { font-size: 10px; }
+  .review-felt-details > small { display: none; }
+}
+
+.table-screen--2d .pot-groups { left: 42%; }
+.table-screen--2d .table-readout { left: 42%; }
+
+.table-screen--2d .table-readout, .table-screen--2d .pot-groups { left: 35%; }
+.review-felt-math { left: 25.5%; width: 13%; padding: 8px; }
+.review-felt-details { right: 25.5%; width: 13%; padding: 8px; }
+.review-felt-verdict { top: 53.5%; }
+.review-felt-verdict h2 { margin: 3px 0 5px; }
+.review-table-heading > small { font-size: 9px; line-height: 1.4; color: #b4c6b1; }

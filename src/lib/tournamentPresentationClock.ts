@@ -33,6 +33,14 @@ export function presentationEventDelayMs(
   settings: PresentationMotionSettings,
   context: PresentationPacingContext = {},
 ): number {
+  if (context.twoDMode && (event.kind === "showdown" || event.kind === "hand-result")) {
+    // Each actual recipient gets an entrance, three seconds settled, and exit.
+    const recipients = new Set(event.awards.filter(a => a.amount > 0).map(a => a.playerId)).size;
+    return Math.max(1200, Math.round(3800 / Math.max(0.5, speed))) * Math.max(1, recipients);
+  }
+  if (context.twoDMode && event.kind === "pot-awarded") {
+    return Math.max(180, Math.round(800 / Math.max(0.5, speed)));
+  }
   const base =
     event.kind === "all-in-reveal"
       ? // Long enough to read two-to-three freshly turned hands and the first

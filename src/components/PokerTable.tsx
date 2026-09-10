@@ -1,3 +1,5 @@
+import { WinnerReveal } from "./WinnerReveal";
+import { ChipPayoutStream } from "./ChipPayoutStream";
 import {
   ArrowLeft,
   Check,
@@ -573,6 +575,8 @@ export function seatPresentationUpdate(
 }
 
 interface PokerTableProps {
+  /** Read-only analysis slots; no live action is accepted while reviewing. */
+  review?: { overlay: React.ReactNode; controls: React.ReactNode };
   mode: GameMode;
   scenario: RatedTrainingScenario | TrainingScenario;
   settings: GameSettings;
@@ -1795,6 +1799,7 @@ export function PokerTable({
   onNextScenario,
   onExit,
   tournament,
+  review,
 }: PokerTableProps) {
   const isTwoDMode = !settings.spatialScene;
   type ActiveCameraFrame = {
@@ -2431,7 +2436,7 @@ export function PokerTable({
     group.add(delay);
     publishSceneEventProgress(
       event.id,
-      settings.reducedMotion || settings.transitionMotion === "off" ? 1 : 0,
+      (settings.reducedMotion || settings.transitionMotion === "off") && !(isTwoDMode && ["showdown", "hand-result", "pot-awarded"].includes(event.kind)) ? 1 : 0,
     );
     return () => {
       delay.cancel();
@@ -2646,12 +2651,13 @@ export function PokerTable({
       soundedPresentationEvents.current = new Set([event.id]);
     }
     const sound = publicPresentationSound(event);
-    if (sound) gameAudio.play(sound);
+    if (sound && !review) gameAudio.play(isTwoDMode && tournament?.presentationEvent?.kind === "pot-awarded" ? "payout" : sound);
   }, [tournament?.presentationEvent]);
 
   const handleAction = useCallback(
     (nextAction: PokerAction, requestedRaiseTo = raiseAmount) => {
       if (
+        review ||
         action ||
         paused ||
         tournament?.presentationEvent ||
@@ -3272,7 +3278,7 @@ export function PokerTable({
     (tournament ? `tournament:hand-${tournament.handNumber}` : scenario.id);
   const cardsDealt = !newHandPresentation && cardsDealtHandId === scenario.id;
   const heroDecisionActive =
-    mode === "training" || tournament?.heroDecision !== false;
+    !review && (mode === "training" || tournament?.heroDecision !== false);
   const callAction = scenario.amountToCall > 0 ? "call" : "check";
   /*
     The label is derived from the hero's stack as well as the bet, so a call
@@ -3689,6 +3695,10 @@ export function PokerTable({
   const showdownWinnerIds = new Set(
     showdownAwards.map((award) => award.playerId),
   );
+  const payoutEvent = tournament?.presentationEvent?.kind === "pot-awarded" ? tournament.presentationEvent : undefined;
+  const paidAwards = payoutEvent ? showdownAwards.slice(0, payoutEvent.awardIndex ?? 0)
+    : ["eliminated", "cards-collected"].includes(tournament?.presentationEvent?.kind ?? "") ? showdownAwards : [];
+  const visiblePotGroups = potGroups.map(group => ({ ...group, amount: Math.max(0, group.amount - paidAwards.filter(a => a.potId === group.id).reduce((sum, a) => sum + a.amount, 0)) })).filter(group => group.amount > 0);
   const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
   const heroAllInRevealed =
     isTwoDMode &&
@@ -3818,6 +3828,7 @@ export function PokerTable({
       data-event-tier={tournament?.tier ?? "local"}
       data-camera-motion={settings.cameraMotion}
       data-table-motion={settings.tableMotion}
+      data-review={review ? "true" : undefined}
       data-transition-motion={settings.transitionMotion}
       {...(showdownVisualActive ? { "data-table-phase": "showdown" } : {})}
       style={tableStyle}
@@ -3921,50 +3932,20 @@ export function PokerTable({
             What remains up here is the tournament HUD below: global state only,
             in a corner, no paragraphs.
           */}
-          {isTwoDMode && playbackControls}
+          {isTwoDMode && !review && playbackControls}
+          {review?.overlay}
+          {isTwoDMode && resultEvent && (
+            <WinnerReveal event={resultEvent} board={displayedBoard} players={scenario.players}
+              identities={twoDPlayerIdentities} progress={activeEventProgress}
+              reducedMotion={settings.reducedMotion || settings.transitionMotion !== "full"} />
+          )}
           <div className={isTwoDMode ? "table-corner-status" : undefined}>
-            <aside
-              className="tournament-hud"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              aria-label={heroStackAriaLabel({
-                stack: heroStack,
-                streetCommitted: heroStreetCommitted,
-                totalCommitted: heroTotalCommitted,
-                position: heroPositionLabel || undefined,
-              })}
-            >
-              <span>
-                <b>{formatMessage("table.hud.blinds")}</b>
-                {formatChips(scenario.blinds[0])}/{formatChips(scenario.blinds[1])}
-              </span>
-              {tournament?.blindLevel ? (
-                <span>
-                  <b>{formatMessage("table.hud.level")}</b>
-                  {tournament.blindLevel}
-                </span>
-              ) : null}
-              {tournament?.nextLevelInMs !== undefined ? (
-                <span>
-                  <b>{formatMessage("table.hud.nextLevel")}</b>
-                  {/* `formatClock` takes milliseconds; dividing first turned four
-                      minutes into 240 ms and printed 0:00. */}
-                  {formatClock(Math.max(0, tournament.nextLevelInMs))}
-                </span>
-              ) : null}
-              <span>
-                <b>{formatMessage("table.hud.handPlayers")}</b>
-                {activePlayersInHand}
-              </span>
-              {tournament ? (
-                <span>
-                  <b>{formatMessage("table.hud.tournamentPlayers")}</b>
-                  {tournament.tournamentPlayersRemaining}
-                </span>
-              ) : null}
-            </aside>
             {isTwoDMode && leaveTableControl}
+            <aside className="tournament-hud blinds-placard" aria-label="Current blinds">
+              <span><b>{formatMessage("table.hud.blinds")}</b>
+                <strong>{formatChips(scenario.blinds[0])} / {formatChips(scenario.blinds[1])}</strong>
+              </span>
+            </aside>
           </div>
           {/*
             The situation, stated (E27-013). The reported ace-five all-in could
@@ -4230,7 +4211,7 @@ export function PokerTable({
                 the same frame their fold is accepted, rather than waiting for
                 the next presentation event to arrive.
               */}
-              {!heroDecisionActive || action ? (
+              {!review && !resultEvent && !payoutEvent && (!heroDecisionActive || action) ? (
                 <button
                   type="button"
                   className="skip-hand"
@@ -4396,13 +4377,20 @@ export function PokerTable({
                   role="group"
                   aria-label={formatMessage("table.pot.groupsAriaLabel")}
                 >
-                  {potGroups.map((group) => (
+                  {visiblePotGroups.map((group) => (
                     <div
                       className={`pot-group pot-group--${group.kind}`}
                       key={group.id}
                       data-pot-kind={group.kind}
                       data-pot-amount={group.amount}
                     >
+                      {isTwoDMode && tournament?.presentationEvent?.kind === "pot-awarded" &&
+                        (!tournament.presentationEvent.potId || tournament.presentationEvent.potId === group.id) ? (
+                          <ChipPayoutStream playerId={tournament.presentationEvent.playerId}
+                            amount={tournament.presentationEvent.amount} progress={activeEventProgress}
+                            stackCount={potChipStackCount(tournament.presentationEvent.amount)}
+                            reducedMotion={settings.reducedMotion || settings.transitionMotion !== "full"} />
+                        ) : null}
                       <div
                         className="center-pot"
                         aria-hidden="true"
@@ -4625,7 +4613,7 @@ export function PokerTable({
                   <span className="hero-card-wrap" key={cardLabel(card)}>
                     <PlayingCard
                       card={card}
-                      hidden={!peeked && !showdownHeroRevealed}
+                      hidden={!review && !peeked && !showdownHeroRevealed}
                       className={[
                         "deal-card",
                         `deal-card--${index + 1}`,
@@ -4729,7 +4717,7 @@ export function PokerTable({
             </aside>
           )}
 
-          {!action && !presentationActive && heroDecisionActive ? (
+          {review ? review.controls : !action && !presentationActive && heroDecisionActive ? (
             <div className="action-dock">
               <button
                 className="action-button action-button--fold"

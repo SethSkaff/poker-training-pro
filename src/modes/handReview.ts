@@ -1,3 +1,4 @@
+import { calculation, type ReviewCalculation } from "../lib/reviewCalculation";
 /**
  * Post-round review: derives an annotated decision log from a stored replay.
  *
@@ -45,7 +46,7 @@ import {
   type RationalActionOption,
   type RationalActionResponseAudit,
 } from "./rational";
-import { tournamentPolicyContextForSession } from "./tournamentSession";
+import { createPokerTableSnapshot, tournamentPolicyContextForSession } from "./tournamentSession";
 import type { PokerAction } from "../types/poker";
 
 /** Thrown when the caller abandons a derivation at a slice boundary. */
@@ -112,6 +113,7 @@ export type ReviewQuality =
   | "blunder";
 
 export interface ReviewMath {
+  calculations?: Record<string, ReviewCalculation>;
   potBefore: number;
   costToCall: number;
   potAfterCalling: number;
@@ -141,6 +143,7 @@ export interface ReviewMath {
     type: ReviewDecisionType;
     to?: number;
     expectedValueBigBlinds: number;
+    calculation?: ReviewCalculation;
     uncertaintyBigBlinds?: number;
     foldEquity: number;
     role: RationalActionOption["role"];
@@ -185,6 +188,7 @@ export interface ReviewDecision {
    * viewer-redacted. Opponent hole cards are absent by construction.
    */
   informationSet: PlayerInformationSet;
+  tableSnapshot: import("../types/poker").TrainingScenario;
 }
 
 export interface ReviewSegmentScore {
@@ -640,6 +644,8 @@ export async function deriveHandReview(
       type: commandType(option.command.type),
       to: option.command.to,
       expectedValueBigBlinds: option.utilityBigBlinds,
+      calculation: option.calculation,
+      response: option.response,
       uncertaintyBigBlinds: option.uncertaintyBigBlinds,
       foldEquity: option.foldEquity,
       role: option.role,
@@ -677,6 +683,11 @@ export async function deriveHandReview(
     });
 
     const math: ReviewMath = {
+      calculations: { ...evaluation.audit.calculations,
+        evRegretBigBlinds: calculation("EV loss = max(0, best EV - played EV - max(best uncertainty, played uncertainty))",
+          { best: canonical.best.expectedValueBigBlinds, played: canonical.played.expectedValueBigBlinds, bestUncertainty: canonical.best.uncertaintyBigBlinds ?? 0, playedUncertainty: canonical.played.uncertaintyBigBlinds ?? 0 },
+          "max(0, best - played - max(bestUncertainty, playedUncertainty))", evRegretBigBlinds),
+      },
       potBefore: informationSet.pot,
       costToCall,
       potAfterCalling: informationSet.pot + costToCall,
@@ -734,6 +745,7 @@ export async function deriveHandReview(
       ...(recommendedPreflopAction ? { recommendedPreflopAction } : {}),
       math,
       informationSet,
+      tableSnapshot: createPokerTableSnapshot(runner.session, heroId),
     };
     const notableReason = notabilityFor(partial);
     decisions.push(

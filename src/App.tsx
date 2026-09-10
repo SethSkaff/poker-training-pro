@@ -1,3 +1,4 @@
+import { resolveProgressionRun, nextRunEvent } from "./lib/progressionRun";
 import {
   Suspense,
   useCallback,
@@ -14,7 +15,6 @@ import {
   TableViewSelect,
   TimedSetup,
   TournamentCeremony,
-  TourLobby,
 } from "./components/Dashboard";
 import { RecoveryScreen } from "./components/RecoveryScreen";
 import {
@@ -50,6 +50,8 @@ import {
   defaultProgress,
   defaultSettings,
   loadProgress,
+  loadReplayCheckpoint,
+  saveReplayCheckpoint,
   loadSettings,
   saveProgress,
   saveSettings,
@@ -234,6 +236,7 @@ function careerWithCompletedEvent(
   return {
     ...base,
     [mode]: {
+      activeEventId: nextRunEvent(result.eventId, result.qualified),
       // Replaying an event supersedes its earlier result rather than
       // accumulating duplicates.
       results: [
@@ -402,6 +405,7 @@ export default function App() {
   const activeReplayRef = useRef<Record<string, unknown> | undefined>(
     undefined,
   );
+  const suspendedCareerReplayRef = useRef<Record<string, unknown> | undefined>(undefined);
   const tournamentPausedAtRef = useRef<number | null>(null);
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
   const [progress, setProgress] = useState(() => loadProgress());
@@ -490,6 +494,17 @@ export default function App() {
 
   const loadAuthoritativeStartup = useCallback(async () => {
     if (!persistence) {
+      const checkpoint = loadReplayCheckpoint();
+      const replay = asTournamentReplay(checkpoint);
+      if (replay) {
+        try {
+          const restored = restoreTournamentRunnerReplay(replay);
+          activeReplayRef.current = checkpoint;
+          if (restored.kind === "career") suspendedCareerReplayRef.current = checkpoint;
+          if (restored.session.status === "playing") setResumeCandidate(restored);
+          else setLastPublicReplay(checkpoint);
+        } catch { setStartupError(formatMessage("shell.error.tournamentReplayFailed")); }
+      }
       setStartup({ kind: "first-run" });
       return;
     }
@@ -507,6 +522,7 @@ export default function App() {
           // checkpoint only in the private ref; the player-visible export
           // path stays redacted by the native backend.
           activeReplayRef.current = loaded.replay;
+          if (restored.kind === "career" && restored.session.status === "playing") suspendedCareerReplayRef.current = loaded.replay;
           if (restored.session.status === "playing") {
             setResumeCandidate(restored);
           } else if (restored.session.status === "complete") {
@@ -570,10 +586,16 @@ export default function App() {
       nextProgress: PlayerProgress,
       replay?: Record<string, unknown>,
     ) => {
-      const checkpoint = replay ?? activeReplayRef.current;
+      const candidate = replay ?? activeReplayRef.current;
+      const candidateTournament = asTournamentReplay(candidate);
+      if (candidateTournament?.kind === "career") suspendedCareerReplayRef.current = candidate;
+      // A deliberate practice visit must not replace the private active-run checkpoint.
+      const hasActiveRun = Boolean(nextProgress.career?.normal.activeEventId || nextProgress.career?.rational.activeEventId);
+      const checkpoint = hasActiveRun && !candidateTournament && suspendedCareerReplayRef.current ? suspendedCareerReplayRef.current : candidate;
       if (!persistence) {
         saveSettings(nextSettings);
         saveProgress(nextProgress);
+        saveReplayCheckpoint(checkpoint);
         return;
       }
       const operation =
@@ -812,7 +834,7 @@ export default function App() {
 
   useEffect(() => {
     const handleBack = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       if (screen === "practice" || screen === "tournament-table") return;
       if (tournamentResult) {
         setTournamentResult(null);
@@ -900,7 +922,11 @@ export default function App() {
       // mid-event resumes it rather than losing which event was underway.
       const startedProgress: PlayerProgress = {
         ...progress,
-        career: careerWithActiveEvent(progress.career, tourMode, eventId),
+        career: careerWithActiveEvent(
+          resolveProgressionRun(progress.career?.[tourMode]).status === "active"
+            ? progress.career
+            : { ...(progress.career ?? emptyCareer()), [tourMode]: { results: [] } },
+          tourMode, eventId),
       };
       setProgress(startedProgress);
       const created = createCareerTournamentRunner({
@@ -915,7 +941,7 @@ export default function App() {
         // its ordinary UI actions can deterministically expose every public
         // board street. Normal sessions retain their career-scoped seed.
         seed: window.desktop?.sceneAuditSeed ?? `career:${eventId}:${Date.now()}`,
-        careerResults: tourResults[tourMode],
+        careerResults: toSessionCareerResults(startedProgress.career?.[tourMode].results),
       });
       const opening = advanceTournamentRunnerOneStep(created, {
         policy: { simulations: 60 },
@@ -1052,7 +1078,7 @@ export default function App() {
 
   const skipTournamentPresentation = useCallback(() => {
     const pending = pendingPresentationRef.current;
-    if (!pending || pending.skipResultVisible) return;
+    if (!pending || pending.skipResultVisible || ["showdown", "hand-result", "pot-awarded"].includes(pending.events[pending.index]?.kind)) return;
     // Skipping is a presentation-only operation. Resume authoritative play
     // from the already-computed current transition, then use the retained
     // synchronous run-to-hero path to reach the exact state the event queue
@@ -1082,6 +1108,11 @@ export default function App() {
               ...(award.hand ? { hand: award.hand } : {}),
             })),
           },
+          ...result.awards.map((award, index) => ({
+            id: `skip:${result.handId}:award:${index}`, kind: "pot-awarded" as const,
+            handId: result.handId, playerId: award.playerId, amount: award.amount,
+            potId: award.potId, awardIndex: index,
+          })),
         ],
         index: 0,
         skipResultVisible: true,
@@ -1549,12 +1580,12 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
-                activeReplayRef.current = undefined;
                 setResumeCandidate(null);
+                setScreen("home");
                 persistBoundary("lifecycle", settings, progress);
               }}
             >
-              {formatMessage("shell.resumeTournament.abandonButton")}
+              Back to menu
             </button>
           </div>
         </section>
@@ -1712,7 +1743,7 @@ export default function App() {
               eventName: runner.session.event.name,
             })}
             onCancel={() => {
-              activeReplayRef.current = undefined;
+              persistBoundary("lifecycle", settings, progress);
               setRunner(null);
               setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
             }}
@@ -1801,7 +1832,6 @@ export default function App() {
           <SceneLoadingFallback
             label={formatMessage("shell.loading.tournamentTable")}
             onCancel={() => {
-              activeReplayRef.current = undefined;
               persistBoundary("lifecycle", settings, progress);
               setRunner(null);
               setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
@@ -1819,8 +1849,12 @@ export default function App() {
         onPauseChange={handleTournamentPause}
         onNextScenario={() => undefined}
         onExit={() => {
-          activeReplayRef.current = undefined;
-          persistBoundary("lifecycle", settings, progress);
+          if (decisionAbortRef.current) decisionAbortRef.current.aborted = true;
+          equityServiceRef.current?.cancelPending();
+          const pending = pendingPresentationRef.current;
+          pendingPresentationRef.current = null; setPendingPresentation(null);
+          if (pending) commitTournamentAdvance(pending.source, pending.next);
+          else persistBoundary("lifecycle", settings, progress);
           setRunner(null);
           setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
         }}
@@ -1936,6 +1970,8 @@ export default function App() {
         >
           <HandReviewScreen
             replay={reviewable}
+            settings={effectiveSettings}
+            progress={progress}
             onBack={() => setScreen("home")}
             onReviewed={(totals) => {
               // Only the rolling totals persist; the annotations behind them
@@ -2010,7 +2046,7 @@ export default function App() {
           setScreen("home");
         }}
         onNext={
-          tournamentResult.nextEventId
+          nextRunEvent(tournamentResult.eventId, tournamentResult.qualified)
             ? () => {
                 persistBoundary("lifecycle", settings, progress);
                 // The next event's scenes are what the travel sequence is
@@ -2019,7 +2055,7 @@ export default function App() {
                 void PokerTable.preload();
                 setTravelLeg({
                   fromEventId: tournamentResult.eventId,
-                  toEventId: tournamentResult.nextEventId!,
+                  toEventId: nextRunEvent(tournamentResult.eventId, tournamentResult.qualified)!,
                 });
                 setTournamentResult(null);
                 setRunner(null);
@@ -2086,7 +2122,8 @@ export default function App() {
                 "Fullscreen unavailable; continuing in a window.",
               );
             }
-            navigate("play");
+            setTourMode("normal");
+            navigate(spatialScene ? "play" : "tour");
           })();
         }}
       />
@@ -2136,16 +2173,29 @@ export default function App() {
   }
 
   if (screen === "tour") {
-    return (
-      <TourLobby
-        key={tourMode}
-        mode={tourMode}
-        careerResults={tourResults[tourMode]}
-        activeEventId={progress.career?.[tourMode].activeEventId}
-        onBack={() => navigate("play")}
-        onStartEvent={startCareerEvent}
-      />
-    );
+    const run = resolveProgressionRun(progress.career?.[tourMode]);
+    const event = listTournamentSessionEvents([]).find(entry => entry.id === run.eventId)!;
+    return <main className="night-shell run-entry"><NightCircuitScene quiet />
+      <section className="run-entry__content">
+        <button className="night-back" onClick={() => navigate("table-view-select")}><ArrowLeft size={18} /> Back</button>
+        <p className="run-entry__eyebrow">POKER TRAINING PRO · THE CIRCUIT</p>
+        <h1>{run.status === "active" ? "Your run continues." : run.status === "lost" ? "A new run awaits." : run.status === "complete" ? "Circuit complete." : "Take your seat."}</h1>
+        <p>{event.name}</p>
+        <button className="run-entry__start" onClick={() => {
+          const stored = asTournamentReplay(suspendedCareerReplayRef.current ?? activeReplayRef.current);
+          if (run.status === "active" && stored?.eventId === run.eventId && stored.mode === tourMode) {
+            const restored = restoreTournamentRunnerReplay(stored);
+            if (restored.session.status === "playing") {
+              pendingPresentationRef.current = null; setPendingPresentation(null);
+              setActiveAllInReveal(undefined); setTournamentResult(null);
+              setRunner(restored); setScreen("tournament-table"); return;
+            }
+          }
+          startCareerEvent(run.eventId);
+        }}>{run.label}</button>
+        <button className="night-back" onClick={() => navigate("play")}>Training & practice</button>
+      </section>
+    </main>;
   }
 
   if (screen === "settings") {
