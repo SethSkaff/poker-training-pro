@@ -48,10 +48,12 @@ The gate currently discovers the complete declared animation/transition and time
 - the title prompt opacity cycle, start-menu light/drift declarations, and menu shimmer;
 - the thinking-ring rotation and short card/chip deal, muck, and push effects;
 - hover/focus transforms and color/filter transitions;
-- the scripted flythrough phase timers, arrival overlay timer, decision-presentation delays, and 100 ms elapsed-time status update; and
+- the scripted flythrough phase timers, arrival overlay timer, decision-presentation delays, Quick Count's hold before the answer prompt, and 100 ms elapsed-time status update; and
 - the dormant start-menu looping-video code path. `START_MENU_LOOP` is currently undefined, so no loop asset is selected by the current source.
 
-The global CSS contains both the saved `.reduced-motion` override and the operating-system media query. `RoomFlythrough.tsx` also selects its short completion path when the saved setting is enabled. These are positive source findings, not proof of runtime behavior.
+The global CSS contains both the saved `.reduced-motion` override and the operating-system media query. `RoomFlythrough.tsx` also selects its short completion path when the saved setting is enabled. Quick Count's hold between the last dealt card and the answer prompt likewise shortens to a single deal interval (`quickCountHoldMs`). These are positive source findings, not proof of runtime behavior.
+
+Rule 5's "stable end state" is not the same as "immediately". Quick Count's hold is the only display time its final card receives, because the dealing effect advances to the hold the moment that card appears rather than granting it an interval of its own. Reduced motion therefore drops the presentational settle and keeps one deal interval of counting time: the drill stays legible at every pace, and the answer prompt still arrives without the scripted wait. Reduced motion is a vestibular-safety preference, not a request for haste, and must not remove comprehension time that content depends on — the same principle `minimumReadableMs` applies to result milestones.
 
 ## Required manual release checks
 

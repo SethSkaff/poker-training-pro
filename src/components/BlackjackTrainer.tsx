@@ -52,6 +52,14 @@ import {
 interface BlackjackTrainerProps {
   onBack: () => void;
   onProductModeChange: (mode: ProductMode) => void;
+  /**
+   * The reduced-motion value App.tsx has already resolved: the saved setting,
+   * the live OS preference when the player never made an explicit choice, and
+   * Safe Mode over both. Taking the resolved boolean rather than re-reading the
+   * media query here is what keeps this screen honouring an explicit in-app
+   * "full motion" choice, and it updates while mounted because App re-renders.
+   */
+  reducedMotion: boolean;
 }
 
 type BlackjackSection = "quick-count" | "tables" | "trainer" | "guide";
@@ -74,6 +82,38 @@ const DEAL_SPEEDS = [
 ] as const;
 
 const COUNT_SEQUENCE_LENGTHS = [10, 25, 50] as const;
+
+/** The full-motion hold between the last dealt card and the answer prompt. */
+const QUICK_COUNT_SETTLE_MS = 1_000;
+
+/**
+ * How long the completed sequence stays on screen before the answer form
+ * replaces the dealt cards.
+ *
+ * The dealing effect flips to `holding` as soon as the final card becomes
+ * visible, so this hold *is* that card's exposure -- unlike every other card it
+ * never gets a deal interval of its own. The fixed second is therefore one
+ * interval of counting time plus a presentational settle on top.
+ *
+ * Reduced motion drops the settle and keeps the counting time: the last card
+ * gets exactly the exposure every other card got, and the answer state arrives
+ * without the scripted wait. It can only shorten the hold, never lengthen it.
+ *
+ * The drill itself is untouched. Reduced motion exists for vestibular safety,
+ * not for haste, so it must not cost the comprehension time the exercise
+ * depends on -- the same reasoning as `minimumReadableMs` in
+ * `tournamentPresentationClock`, which floors result beats rather than scaling
+ * them away.
+ */
+export function quickCountHoldMs(
+  speed: number,
+  reducedMotion: boolean,
+): number {
+  const dealIntervalMs = Math.round(1_000 / Math.max(0.1, speed));
+  return reducedMotion
+    ? Math.min(QUICK_COUNT_SETTLE_MS, dealIntervalMs)
+    : QUICK_COUNT_SETTLE_MS;
+}
 
 function signedUnits(value: number): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)} u`;
@@ -193,7 +233,7 @@ interface QuickAttempt {
   elapsedMs: number;
 }
 
-function QuickCountPanel() {
+function QuickCountPanel({ reducedMotion }: { reducedMotion: boolean }) {
   const [length, setLength] = useState<number>(25);
   const [speed, setSpeed] = useState<number>(2.5);
   const [sequence, setSequence] = useState<BlackjackCard[]>([]);
@@ -217,11 +257,18 @@ function QuickCountPanel() {
     return () => window.clearTimeout(timer);
   }, [phase, sequence.length, speed, visibleCount]);
 
+  // Dealing pace is the exercise and is never touched. This hold is the one
+  // scripted presentation step: reduced motion reaches the same stable answer
+  // state without the settle, while `quickCountHoldMs` keeps the final card's
+  // counting exposure. Re-deriving on every change means a preference flip
+  // while the panel is mounted takes effect, and the cleanup guarantees a
+  // superseded timer can never advance the phase behind the new one.
+  const holdMs = quickCountHoldMs(speed, reducedMotion);
   useEffect(() => {
     if (phase !== "holding") return;
-    const timer = window.setTimeout(() => setPhase("answer"), 1000);
+    const timer = window.setTimeout(() => setPhase("answer"), holdMs);
     return () => window.clearTimeout(timer);
-  }, [phase]);
+  }, [phase, holdMs]);
 
   const startRound = () => {
     const nextSequence = shuffleShoe(createShoe(), Date.now() + length * 17).slice(0, length);
@@ -1219,7 +1266,11 @@ function GuidePanel() {
   );
 }
 
-export function BlackjackTrainer({ onBack, onProductModeChange }: BlackjackTrainerProps) {
+export function BlackjackTrainer({
+  onBack,
+  onProductModeChange,
+  reducedMotion,
+}: BlackjackTrainerProps) {
   const [activeSection, setActiveSection] = useState<BlackjackSection>("quick-count");
 
   return (
@@ -1229,7 +1280,9 @@ export function BlackjackTrainer({ onBack, onProductModeChange }: BlackjackTrain
         <ProductHeader onBack={onBack} onProductModeChange={onProductModeChange} />
         <SectionNav activeSection={activeSection} onChange={setActiveSection} />
         <div className="blackjack-content">
-          {activeSection === "quick-count" ? <QuickCountPanel /> : null}
+          {activeSection === "quick-count" ? (
+            <QuickCountPanel reducedMotion={reducedMotion} />
+          ) : null}
           {activeSection === "tables" ? <TablesPanel /> : null}
           {activeSection === "trainer" ? <TrainerPanel /> : null}
           {activeSection === "guide" ? <GuidePanel /> : null}

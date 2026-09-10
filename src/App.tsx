@@ -2005,6 +2005,7 @@ export default function App() {
   if (screen === "blackjack") {
     return (
       <BlackjackTrainer
+        reducedMotion={effectiveSettings.reducedMotion}
         onBack={() => {
           setProductMode("poker");
           navigate("table-view-select");
