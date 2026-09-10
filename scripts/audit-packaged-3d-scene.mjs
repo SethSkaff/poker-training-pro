@@ -1220,8 +1220,7 @@ async function reachTableWithScene(session, requestedMotionMode = "full") {
   }
   await session.waitFor(".mode-stage", "mode selection");
   await session.clickSelector(".mode-stage__choice--normal", "normal mode");
-  await session.waitForButton("Enter event", "event lobby");
-  await session.clickButton("Enter event");
+  await session.clickSelector(".run-entry__start", "start the progression run");
   await session.waitFor(".room-flight", "room arrival");
   await session.clickButton("Skip arrival");
   await session.waitFor(".poker-table", "live table");

@@ -64,7 +64,7 @@ describe("table UI restraint and card peek", () => {
     expect(table.indexOf('className="room-depth"')).toBeLessThan(
       table.indexOf('className="camera-controls"'),
     );
-    expect(table).toContain("disabled={Boolean(action) || heroDealtCardCount === 0 || heroFolded}");
+    expect(table).toContain("disabled={review ? undefined : Boolean(action) || heroDealtCardCount === 0 || heroFolded}");
   });
 
   it("keeps card taps as a private toggle while preserving drag-fold protection", () => {
@@ -73,9 +73,9 @@ describe("table UI restraint and card peek", () => {
     expect(table).toContain("const shouldFold = !cancelled && didDrag.current && foldProgress >= 82");
     // A table action can be in flight while the player is still entitled to
     // read their own cards. Only undealt or mucked cards reject a normal tap.
-    expect(table).toContain("disabled={Boolean(action) || heroDealtCardCount === 0 || heroFolded}");
+    expect(table).toContain("disabled={review ? undefined : Boolean(action) || heroDealtCardCount === 0 || heroFolded}");
     // Opponent cards remain hidden until a legal public showdown reveal.
-    expect(table).toContain("hidden={!peeked && !showdownHeroRevealed}");
+    expect(table).toContain("hidden={!review && !peeked && !showdownHeroRevealed}");
   });
 
   it("keeps the existing keyboard peek action available through the shared action map", () => {

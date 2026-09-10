@@ -21,7 +21,7 @@ describe("hole-card deal presentation", () => {
       strengthening the gate does not read as breaking it.
     */
     expect(tableSource).toMatch(
-      /disabled=\{Boolean\(action\) \|\| heroDealtCardCount === 0 \|\| heroFolded\}/,
+      /disabled=\{review \? undefined : Boolean\(action\) \|\| heroDealtCardCount === 0 \|\| heroFolded\}/,
     );
     expect(tableSource).toContain("const visiblePrivateCardCount = Math.max(0, Math.min(2, Math.floor(dealtCardCount)))");
     expect(tableSource).toContain("scenario.heroCards.slice(0, heroDealtCardCount)");

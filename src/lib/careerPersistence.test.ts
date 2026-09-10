@@ -120,7 +120,7 @@ describe("career persistence", () => {
     const app = readFileSync(path.join(sourceRoot, "App.tsx"), "utf8");
     expect(app).not.toContain("setTourResults");
     expect(app).toContain("progress.career?.normal.results");
-    expect(app).toContain("careerWithCompletedEvent(");
+    expect(app).toContain("progressAfterTournamentResult(");
     expect(app).toContain("careerWithActiveEvent(");
   });
 

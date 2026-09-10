@@ -12299,7 +12299,7 @@ body:has(.table-screen--2d),
 .pot-group { position: relative; }
 .chip-payout-stream { position: absolute; z-index: 40; top: 0; left: 50%; width: 0; height: 0; }
 .chip-payout-stream i { position: absolute; width: 21px; height: 10px; border: 2px dashed #ede1b7; border-radius: 50%; background: #92713d; box-shadow: 0 3px 0 #47351f, 0 5px 5px #0006; }
-.pot-group:has(.chip-payout-stream) .center-pot { visibility: hidden; }
+.pot-group:has(.chip-payout-stream) { min-width: 72px; min-height: 18px; }
 .table-screen--2d[data-review="true"] .hero-card-control,
 .table-screen--2d[data-review="true"] .hero-hole-cards .peek-label,
 .table-screen--2d[data-review="true"] .action-context { display: none; }
@@ -12339,7 +12339,7 @@ body:has(.table-screen--2d),
   .table-screen--2d .blinds-placard { padding: 8px 10px; }
   .table-screen--2d .blinds-placard strong { font-size: 16px; }
   .winner-reveal { gap: 12px; padding: 20px 3%; grid-template-columns: 1fr auto auto; }
-  .winner-reveal__avatar { width: clamp(44px,10vw,80px); }
+  .winner-reveal__avatar { width: clamp(60px,15vw,90px); }
   .winner-reveal__name h2 { font-size: clamp(15px,3vw,24px); }
   .winner-reveal__hand > strong { margin-left: 4px; font-size: 11px; }
   .winner-reveal__board, .winner-reveal__hand, .winner-reveal__hand > div { gap: 4px; }
@@ -12355,8 +12355,6 @@ body:has(.table-screen--2d),
   .review-felt-details > small { display: none; }
 }
 
-.table-screen--2d .pot-groups { left: 42%; }
-.table-screen--2d .table-readout { left: 42%; }
 
 .table-screen--2d .table-readout, .table-screen--2d .pot-groups { left: 35%; }
 .review-felt-math { left: 25.5%; width: 13%; padding: 8px; }
@@ -12364,3 +12362,41 @@ body:has(.table-screen--2d),
 .review-felt-verdict { top: 53.5%; }
 .review-felt-verdict h2 { margin: 3px 0 5px; }
 .review-table-heading > small { font-size: 9px; line-height: 1.4; color: #b4c6b1; }
+
+.chip-payout-stream i { width: 18px; height: 7px; border: 1px solid #eee2c294; background: #8b5637; box-shadow: 0 1px 2px #0006, inset 0 1px 0 #ffffff1f; }
+
+.review-mobile-tabs { display: none; }
+.table-screen--2d[data-review="true"] .seat-action-label { width: max-content; max-width: 110px; white-space: nowrap; }
+.table-screen--2d[data-review="true"] .player-seat--hero .seat-action-label { display: none; }
+@media (max-width: 760px) {
+  .table-screen--2d .poker-scene { --avatar-size: clamp(38px,11vw,52px); --hero-card-height: clamp(42px,12vw,58px); --table-top: 190px; }
+  .table-screen--2d .player-seat--top { top: calc(var(--table-top) - 56px); }
+  .table-screen--2d .player-seat--upper-left, .table-screen--2d .player-seat--upper-right { --cards-y: calc(var(--avatar-half) + 24px); }
+  .table-screen--2d .player-seat--lower-left, .table-screen--2d .player-seat--lower-right { --cards-y: calc(var(--avatar-half) - 16px); }
+  .table-screen--2d .hero-hole-cards-visual { top: calc(var(--table-bottom) - var(--hero-card-height) - 8px); min-height: 0; }
+  .table-screen--2d .hero-hole-cards-visual .playing-card { width: var(--hero-card-width); height: var(--hero-card-height); }
+  .table-screen--2d .hero-hole-cards__cards { width: calc(var(--hero-card-width) * 2 + 9px); height: var(--hero-card-height); }
+  .table-screen--2d .table-tools { top: 100px; right: 8px; }
+  .table-screen--2d .skip-hand { top: 140px; right: 8px; }
+  .table-screen--2d .player-seat .seat-label { min-width: 58px; }
+  .table-screen--2d .player-seat:not(.player-seat--hero) { width: var(--avatar-size); }
+  .table-screen--2d .community-cards .playing-card, .table-screen--2d .community-placeholder { width: clamp(27px,7.7vw,38px); height: clamp(38px,10.8vw,54px); }
+  .review-table-heading { right: 12px; width: 160px; }
+  .review-table-heading select { max-width: 115px; }
+  .review-table-heading > small { font-size: 8px; }
+  .review-felt-verdict { top: 56%; left: 25%; width: 50%; }
+  .review-felt-verdict h2 { font-size: 18px; }
+  .review-mobile-tabs { display: flex; top: 68%; left: 27%; gap: 8px; }
+  .review-mobile-tabs button { color: #d7e5cd; background: #183e2e; border: 1px solid #839c7160; border-radius: 4px; padding: 7px 10px; font-size: 10px; }
+  .review-felt-math, .review-felt-details { display: none; left: 21%; right: auto; top: 35%; width: 58%; max-width: none; padding: 14px; background: #102a23f5; border: 1px solid #819c7060; border-radius: 6px; z-index: 2; }
+  .review-projections[data-mobile-analysis="math"] .review-felt-math, .review-projections[data-mobile-analysis="details"] .review-felt-details { display: block; }
+  .review-metric { font-size: 11px; }
+  .review-calculation.math-vocab-popover { width: min(300px,75vw); left: 50%; right: auto; transform: translateX(-50%); }
+}
+
+@media (max-width: 760px) {
+  .table-screen--2d .table-readout { left: 50%; top: 25%; }
+  .table-screen--2d .pot-groups { left: 50%; top: 34%; }
+  .review-mobile-tabs { left: 50%; top: 65%; transform: translateX(-50%); width: max-content; flex-direction: column; gap: 4px; }
+  .review-mobile-tabs button { padding: 5px 8px; }
+}

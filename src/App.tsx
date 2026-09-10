@@ -1,4 +1,6 @@
-import { resolveProgressionRun, nextRunEvent } from "./lib/progressionRun";
+import { readCheckpointBank, rememberCheckpoint } from "./lib/checkpointBank";
+import { skipToOutcome } from "./lib/skipToOutcome";
+import { resolveProgressionRun, nextRunEvent, progressAfterTournamentResult } from "./lib/progressionRun";
 import {
   Suspense,
   useCallback,
@@ -225,36 +227,6 @@ function toSessionCareerResults(
     .map((result) => ({ ...result, fieldSize: SESSION_TABLE_SIZE }));
 }
 
-/** Records a completed career event and clears that track's active event. */
-function careerWithCompletedEvent(
-  career: PlayerProgress["career"],
-  mode: TournamentPolicyMode,
-  result: TournamentSessionResult,
-): NonNullable<PlayerProgress["career"]> {
-  const base = career ?? emptyCareer();
-  const track = base[mode];
-  return {
-    ...base,
-    [mode]: {
-      activeEventId: nextRunEvent(result.eventId, result.qualified),
-      // Replaying an event supersedes its earlier result rather than
-      // accumulating duplicates.
-      results: [
-        ...track.results.filter((entry) => entry.eventId !== result.eventId),
-        {
-          eventId: result.eventId,
-          finishPlace: result.finishPlace,
-          fieldSize: result.fieldSize,
-          sourceFieldSize: result.sourceFieldSize,
-          qualifyingPlaces: result.qualifyingPlaces,
-          qualified: result.qualified,
-          tournamentEloDelta: result.tournamentEloDelta,
-        },
-      ],
-    },
-  };
-}
-
 /** Marks an event as the one in progress for a track. */
 function careerWithActiveEvent(
   career: PlayerProgress["career"],
@@ -405,7 +377,7 @@ export default function App() {
   const activeReplayRef = useRef<Record<string, unknown> | undefined>(
     undefined,
   );
-  const suspendedCareerReplayRef = useRef<Record<string, unknown> | undefined>(undefined);
+  const checkpointBankRef = useRef(readCheckpointBank());
   const tournamentPausedAtRef = useRef<number | null>(null);
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
   const [progress, setProgress] = useState(() => loadProgress());
@@ -494,13 +466,14 @@ export default function App() {
 
   const loadAuthoritativeStartup = useCallback(async () => {
     if (!persistence) {
-      const checkpoint = loadReplayCheckpoint();
+      checkpointBankRef.current = readCheckpointBank(loadReplayCheckpoint());
+      const checkpoint = checkpointBankRef.current.current;
       const replay = asTournamentReplay(checkpoint);
       if (replay) {
         try {
           const restored = restoreTournamentRunnerReplay(replay);
           activeReplayRef.current = checkpoint;
-          if (restored.kind === "career") suspendedCareerReplayRef.current = checkpoint;
+
           if (restored.session.status === "playing") setResumeCandidate(restored);
           else setLastPublicReplay(checkpoint);
         } catch { setStartupError(formatMessage("shell.error.tournamentReplayFailed")); }
@@ -513,7 +486,9 @@ export default function App() {
     if (loaded.kind === "ready") {
       setSettings(loaded.save.data.settings);
       setProgress(loaded.save.data.progress);
-      const replay = asTournamentReplay(loaded.replay);
+      checkpointBankRef.current = readCheckpointBank(loaded.replay);
+      const loadedCheckpoint = checkpointBankRef.current.current;
+      const replay = asTournamentReplay(loadedCheckpoint);
       if (replay) {
         try {
           const restored = restoreTournamentRunnerReplay(replay);
@@ -521,19 +496,19 @@ export default function App() {
           // must remain available after a normal app restart. Keep the raw
           // checkpoint only in the private ref; the player-visible export
           // path stays redacted by the native backend.
-          activeReplayRef.current = loaded.replay;
-          if (restored.kind === "career" && restored.session.status === "playing") suspendedCareerReplayRef.current = loaded.replay;
+          activeReplayRef.current = loadedCheckpoint;
+
           if (restored.session.status === "playing") {
             setResumeCandidate(restored);
           } else if (restored.session.status === "complete") {
-            setLastPublicReplay(loaded.replay);
+            setLastPublicReplay(loadedCheckpoint);
           }
         } catch {
           setStartupError(formatMessage("shell.error.tournamentReplayFailed"));
         }
       } else {
         const trainingCheckpoint = restoreTrainingCheckpoint(
-          loaded.replay,
+          loadedCheckpoint,
           new Set(trainingScenarios.map((scenario) => scenario.id)),
         );
         if (trainingCheckpoint) {
@@ -586,30 +561,30 @@ export default function App() {
       nextProgress: PlayerProgress,
       replay?: Record<string, unknown>,
     ) => {
-      const candidate = replay ?? activeReplayRef.current;
-      const candidateTournament = asTournamentReplay(candidate);
-      if (candidateTournament?.kind === "career") suspendedCareerReplayRef.current = candidate;
-      // A deliberate practice visit must not replace the private active-run checkpoint.
-      const hasActiveRun = Boolean(nextProgress.career?.normal.activeEventId || nextProgress.career?.rational.activeEventId);
-      const checkpoint = hasActiveRun && !candidateTournament && suspendedCareerReplayRef.current ? suspendedCareerReplayRef.current : candidate;
+      // Accepted engine transitions are durable immediately, even if their visuals are still running.
+      const pending = pendingPresentationRef.current;
+      const candidate = pending ? createTournamentRunnerReplay(pending.next, 60) as unknown as Record<string, unknown> : replay ?? activeReplayRef.current;
+      const durableProgress = pending ? progressAfterTournamentResult(nextProgress, pending.next) : nextProgress;
+      checkpointBankRef.current = rememberCheckpoint(checkpointBankRef.current, candidate);
+      const checkpoint = checkpointBankRef.current as unknown as Record<string, unknown>;
       if (!persistence) {
         saveSettings(nextSettings);
-        saveProgress(nextProgress);
+        saveProgress(durableProgress);
         saveReplayCheckpoint(checkpoint);
         return;
       }
       const operation =
         boundary === "settings"
-          ? persistence.commitSettings(nextSettings, nextProgress, checkpoint)
+          ? persistence.commitSettings(nextSettings, durableProgress, checkpoint)
           : boundary === "hand"
-            ? persistence.commitHand(nextSettings, nextProgress, checkpoint)
+            ? persistence.commitHand(nextSettings, durableProgress, checkpoint)
             : boundary === "result"
-              ? persistence.commitResult(nextSettings, nextProgress, checkpoint)
+              ? persistence.commitResult(nextSettings, durableProgress, checkpoint)
               : boundary === "lifecycle"
-                ? persistence.commitLifecycle(nextSettings, nextProgress, checkpoint)
+                ? persistence.commitLifecycle(nextSettings, durableProgress, checkpoint)
                 : persistence.commitAction(
                     nextSettings,
-                    nextProgress,
+                    durableProgress,
                     checkpoint,
                   );
       void operation.then((result) => {
@@ -887,21 +862,7 @@ export default function App() {
       // A finished career event updates the persisted track inside the same
       // progress object that gets written to disk, and clears the active
       // event so mode entry advances instead of resuming what just finished.
-      const nextProgress: PlayerProgress = {
-        ...progress,
-        tournamentElo: Math.max(
-          100,
-          progress.tournamentElo + result.tournamentEloDelta,
-        ),
-        career:
-          nextRunner.kind === "career"
-            ? careerWithCompletedEvent(
-                progress.career,
-                nextRunner.session.mode,
-                result,
-              )
-            : progress.career,
-      };
+      const nextProgress = progressAfterTournamentResult(progress, nextRunner);
       setProgress(nextProgress);
       persistBoundary(
         "result",
@@ -1037,6 +998,18 @@ export default function App() {
     [finishRunner, persistBoundary, progress, settings],
   );
 
+  const leaveTournamentTable = () => {
+    if (decisionAbortRef.current) decisionAbortRef.current.aborted = true;
+    equityServiceRef.current?.cancelPending();
+    const pending = pendingPresentationRef.current;
+    pendingPresentationRef.current = null;
+    setPendingPresentation(null);
+    if (pending) commitTournamentAdvance(pending.source, pending.next);
+    else persistBoundary("lifecycle", settings, progress);
+    setRunner(null);
+    setScreen(runner?.kind === "timed" ? "timed-setup" : "tour");
+  };
+
   const publishTournamentPresentation = useCallback(
     (source: TournamentRunner, transition: TournamentPresentationStep) => {
       if (transition.runner === source && transition.events.length === 0) {
@@ -1058,8 +1031,9 @@ export default function App() {
       };
       pendingPresentationRef.current = next;
       setPendingPresentation(next);
+      persistBoundary("action", settings, progress);
     },
-    [commitTournamentAdvance],
+    [commitTournamentAdvance, persistBoundary, settings, progress],
   );
 
   const completeTournamentPresentationEvent = useCallback(() => {
@@ -1079,55 +1053,19 @@ export default function App() {
   const skipTournamentPresentation = useCallback(() => {
     const pending = pendingPresentationRef.current;
     if (!pending || pending.skipResultVisible || ["showdown", "hand-result", "pot-awarded"].includes(pending.events[pending.index]?.kind)) return;
-    // Skipping is a presentation-only operation. Resume authoritative play
-    // from the already-computed current transition, then use the retained
-    // synchronous run-to-hero path to reach the exact state the event queue
-    // would otherwise have produced without replaying a submitted action.
-    const fastForwarded = advanceTournamentRunnerToHero(pending.next, {
-      policy: { simulations: 60 },
-    });
-    const skippedHandId = pending.events[pending.index]?.handId;
-    const skippedEvent = pending.events[pending.index];
-    const result = fastForwarded.session.lastHand;
-    if (result && result.handId === skippedHandId) {
-      // Keep one public, card-safe result beat on screen. The engine has
-      // already progressed deterministically, but committing it waits until
-      // this event has been readable so the next hand cannot replace a win.
-      const resultBeat: PendingTournamentPresentation = {
-        source: pending.source,
-        next: fastForwarded,
-        events: [
-          {
-            id: `skip:${result.handId}:hand-result`,
-            kind: "hand-result",
-            handId: result.handId,
-            awards: result.awards.map((award) => ({
-              potId: award.potId,
-              playerId: award.playerId,
-              amount: award.amount,
-              ...(award.hand ? { hand: award.hand } : {}),
-            })),
-          },
-          ...result.awards.map((award, index) => ({
-            id: `skip:${result.handId}:award:${index}`, kind: "pot-awarded" as const,
-            handId: result.handId, playerId: award.playerId, amount: award.amount,
-            potId: award.potId, awardIndex: index,
-          })),
-        ],
-        index: 0,
-        skipResultVisible: true,
-        skipTerminalFoldedPlayerIds: skippedEvent?.kind === "action" && skippedEvent.command.type === "fold"
-          ? [skippedEvent.playerId]
-          : undefined,
-      };
+    const skipped = skipToOutcome(pending.source, { runner: pending.next, events: pending.events, awaitingHero: false });
+    if (skipped.step.events.length) {
+      const resultBeat: PendingTournamentPresentation = { source: skipped.source, next: skipped.step.runner, events: skipped.step.events, index: 0, skipResultVisible: true };
+      setRunner(skipped.source);
       pendingPresentationRef.current = resultBeat;
       setPendingPresentation(resultBeat);
-      return;
+      persistBoundary("action", settings, progress);
+    } else {
+      pendingPresentationRef.current = null;
+      setPendingPresentation(null);
+      commitTournamentAdvance(pending.source, skipped.step.runner);
     }
-    pendingPresentationRef.current = null;
-    setPendingPresentation(null);
-    commitTournamentAdvance(pending.source, fastForwarded);
-  }, [commitTournamentAdvance]);
+  }, [commitTournamentAdvance, persistBoundary, settings, progress]);
 
   const advanceTournamentPresentation = useCallback(() => {
     const source = runnerRef.current;
@@ -1742,11 +1680,7 @@ export default function App() {
             label={formatMessage("shell.loading.enteringEvent", {
               eventName: runner.session.event.name,
             })}
-            onCancel={() => {
-              persistBoundary("lifecycle", settings, progress);
-              setRunner(null);
-              setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
-            }}
+            onCancel={leaveTournamentTable}
           />
         }
       >
@@ -1831,11 +1765,7 @@ export default function App() {
         fallback={
           <SceneLoadingFallback
             label={formatMessage("shell.loading.tournamentTable")}
-            onCancel={() => {
-              persistBoundary("lifecycle", settings, progress);
-              setRunner(null);
-              setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
-            }}
+            onCancel={leaveTournamentTable}
           />
         }
       >
@@ -1848,16 +1778,7 @@ export default function App() {
         onSettingsChange={updateSettings}
         onPauseChange={handleTournamentPause}
         onNextScenario={() => undefined}
-        onExit={() => {
-          if (decisionAbortRef.current) decisionAbortRef.current.aborted = true;
-          equityServiceRef.current?.cancelPending();
-          const pending = pendingPresentationRef.current;
-          pendingPresentationRef.current = null; setPendingPresentation(null);
-          if (pending) commitTournamentAdvance(pending.source, pending.next);
-          else persistBoundary("lifecycle", settings, progress);
-          setRunner(null);
-          setScreen(runner.kind === "timed" ? "timed-setup" : "tour");
-        }}
+        onExit={leaveTournamentTable}
         tournament={{
           legalActions: legalActions ?? spectatorLegalActions,
           onAction: actInTournament,
@@ -2182,10 +2103,14 @@ export default function App() {
         <h1>{run.status === "active" ? "Your run continues." : run.status === "lost" ? "A new run awaits." : run.status === "complete" ? "Circuit complete." : "Take your seat."}</h1>
         <p>{event.name}</p>
         <button className="run-entry__start" onClick={() => {
-          const stored = asTournamentReplay(suspendedCareerReplayRef.current ?? activeReplayRef.current);
+          const stored = asTournamentReplay(checkpointBankRef.current.careers[tourMode] ?? activeReplayRef.current);
           if (run.status === "active" && stored?.eventId === run.eventId && stored.mode === tourMode) {
-            const restored = restoreTournamentRunnerReplay(stored);
+            let restored: TournamentRunner;
+            try { restored = restoreTournamentRunnerReplay(stored); }
+            catch { setStartupError(formatMessage("shell.error.tournamentReplayFailed")); return; }
             if (restored.session.status === "playing") {
+              activeReplayRef.current = stored as unknown as Record<string, unknown>;
+              setStartupError(undefined);
               pendingPresentationRef.current = null; setPendingPresentation(null);
               setActiveAllInReveal(undefined); setTournamentResult(null);
               setRunner(restored); setScreen("tournament-table"); return;
@@ -2193,6 +2118,7 @@ export default function App() {
           }
           startCareerEvent(run.eventId);
         }}>{run.label}</button>
+        {startupError && <p role="alert">{startupError}</p>}
         <button className="night-back" onClick={() => navigate("play")}>Training & practice</button>
       </section>
     </main>;
@@ -2211,6 +2137,7 @@ export default function App() {
               persistence={persistence}
               replay={activeReplayRef.current ?? lastPublicReplay}
               onAuthoritativeDataChanged={async () => {
+                checkpointBankRef.current = readCheckpointBank();
                 activeReplayRef.current = undefined;
                 setLastPublicReplay(undefined);
                 setResumeCandidate(null);

@@ -39,7 +39,7 @@ describe("poker table live announcements", () => {
     expect(source).toContain('aria-pressed={settings.muted}');
     expect(source).toContain('onSettingsChange({ ...settings, muted: !settings.muted })');
     expect(source).toContain("elapsedStartedAt.current = performance.now() - elapsedMs");
-    expect(source).toContain("}, [action, paused]);");
+    expect(source).toContain("}, [action, paused, isReview]);");
   });
 
   it("pairs invalid math-entry audio with a persistent visible alert", () => {

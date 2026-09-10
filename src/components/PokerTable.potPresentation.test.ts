@@ -64,7 +64,7 @@ describe("pot structure is shown on the felt, not narrated in a panel", () => {
   it("renders pots as grouped chip piles", () => {
     expect(source).toContain("pot-groups");
     expect(source).toContain("pot-group__amount");
-    expect(source).toContain("potChipStackCount(group.amount)");
+    expect(source).toContain("potChipStackCount(group.stationaryAmount)");
   });
 
   it("labels the piles only once the pot has actually split", () => {

@@ -1,8 +1,10 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { calculation } from "../lib/reviewCalculation";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { reviewPlayerCountSummary } from "./HandReviewScreen";
+import { ReviewMetric, reviewPlayerCountSummary } from "./HandReviewScreen";
 
 const sourceRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -48,66 +50,13 @@ describe("hand review screen", () => {
     expect(screen).toContain("return () => controller.abort();");
   });
 
-  it("states that its numbers are estimates rather than solved play", () => {
+  it("uses the live table and replaces its action controls", () => {
+    expect(screen).toContain("<PokerTable");
+    expect(screen).toContain("scenario={decision.tableSnapshot}");
+    expect(screen).toContain("NEXT KEY MOVE");
+    expect(screen).toMatch(/nextPlaybackStep\(\s*review\.decisions/);
     expect(screen).toContain("review.approximationNotice");
-    expect(screen).toContain("review.goodAccuracy");
-    expect(screen).toContain("review.basis");
-  });
-
-  it("carries quality without relying on colour", () => {
-    // A glyph per band...
-    expect(screen).toContain("QUALITY_GLYPH");
-    for (const quality of ["best", "close", "inaccuracy", "mistake", "blunder"]) {
-      expect(screen).toContain(`${quality}:`);
-    }
-    // ...and the quality written out in words on every timeline entry.
-    expect(screen).toContain("qualityLabel(entry.quality)");
-  });
-
-  it("supports keyboard navigation including jump-to-next-mistake", () => {
-    expect(screen).toContain('event.key === "ArrowDown"');
-    expect(screen).toContain('event.key === "ArrowUp"');
-    expect(screen).toContain('event.key === "m"');
-  });
-
-  it("renders every mathematical value the review promises", () => {
-    for (const key of [
-      "potBefore",
-      "costToCall",
-      "potAfterCalling",
-      "potOdds",
-      "requiredEquity",
-      "requiredEquityReference",
-      "showdownEquity",
-      "foldEquity",
-      "opponentsAbleToRespond",
-      "confidence",
-      "source",
-      "spr",
-      "tournamentPressure",
-      "evRegret",
-    ]) {
-      expect(screen).toContain(`review.math.${key}`);
-    }
-    expect(screen).toContain("review.actionValues");
-    expect(screen).toContain("review.math.blindUrgency");
-  });
-
-  it("marks small samples instead of presenting them as findings", () => {
-    expect(screen).toContain("review.sampleTooSmall");
-    expect(screen).toContain("entry.reliable");
-  });
-
-  it("has the styles the timeline and detail panes need", () => {
-    for (const selector of [
-      ".review-timeline",
-      ".review-detail",
-      ".review-math",
-      ".review-segments",
-      ".review-action-values",
-    ]) {
-      expect(css).toContain(selector);
-    }
+    expect(screen).toContain("QUALITY_GLYPH[decision.quality]");
   });
 
   it("documents the state, including Back and mid-review quit behaviour", () => {
@@ -115,4 +64,19 @@ describe("hand review screen", () => {
     expect(stateMachine).toContain("EventResult --> HandReview");
     expect(stateMachine).toContain("| Hand review |");
   });
+});
+
+it("formats the clickable metric from its audit result, so displayed math cannot disagree", () => {
+  const audit = calculation(
+    "Odds = call / (pot + call)",
+    { call: 500, pot: 1500 },
+    "call / (pot + call)",
+    0.25,
+  );
+  const html = renderToStaticMarkup(
+    <ReviewMetric label="Pot odds" audit={audit} percent digits={1} />,
+  );
+  expect(html).toContain("25.0%");
+  expect(html).toContain("Inspect calculation");
+  expect(audit.substituted).toBe("500 / (1500 + 500)");
 });

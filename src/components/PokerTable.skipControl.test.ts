@@ -95,7 +95,7 @@ describe("the skip control is findable and distinct from speed", () => {
   it("appears as soon as the hero has no decision, including the fold frame", () => {
     // `action` covers the frame between submitting and the engine answering,
     // so the control does not wait for the next presentation event to arrive.
-    expect(tableSource).toContain("{!heroDecisionActive || action ? (");
+    expect(tableSource).toContain("{!review && !resultEvent && !payoutEvent && (!heroDecisionActive || action) ? (");
   });
 
   it("tells assistive technology what is skipped and what is not", () => {
@@ -157,7 +157,7 @@ describe("skipping cannot change what happened", () => {
   });
 
   it("keeps one readable result beat instead of jumping past the outcome", () => {
-    // The skip path in App.tsx re-queues a single `hand-result` event and
+    // The skip path retains the actual public result and award events and
     // guards re-entry with `skipResultVisible`, so the result cannot be
     // replaced by the next hand before it has been seen (E27-003).
     const appSource = readFileSync(
@@ -167,7 +167,7 @@ describe("skipping cannot change what happened", () => {
     expect(appSource).toContain("skipResultVisible");
     expect(appSource).toContain("skipTerminalFoldedPlayerIds");
     expect(tableSource).toContain("retainSceneTerminalFoldedPlayers");
-    expect(appSource).toContain('kind: "hand-result"');
+    expect(appSource).toContain("skipToOutcome(");
   });
 
   it("keeps the DOM seat folded during Skip's readable pre-fold result beat", () => {
