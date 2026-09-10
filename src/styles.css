@@ -12347,16 +12347,19 @@ body:has(.table-screen--2d),
   .review-table-heading { right: 8px; width: 180px; }
   .review-table-heading h1 { font-size: 13px; }
   .review-table-heading label { font-size: 9px; }
-  .review-felt-math { left: 18%; width: 26%; padding: 6px; }
-  .review-felt-details { right: 14%; width: 28%; padding: 6px; }
+  /* The felt columns and verdict are positioned for this width by the second
+     max-width: 760px block below, after the unconditional desktop overrides.
+     Do not re-position them here: an equal-specificity rule later in the file
+     wins regardless of the media query, so anything set here is discarded. */
   .review-metric { font-size: 9px; gap: 4px; }
-  .review-felt-verdict { left: 28%; width: 44%; top: 67%; }
   .review-felt-verdict p { font-size: 10px; }
   .review-felt-details > small { display: none; }
 }
 
 
 .table-screen--2d .table-readout, .table-screen--2d .pot-groups { left: 35%; }
+/* Final desktop placement for the review felt columns. These follow the first
+   narrow-width block on purpose; the narrow layout is re-applied afterwards. */
 .review-felt-math { left: 25.5%; width: 13%; padding: 8px; }
 .review-felt-details { right: 25.5%; width: 13%; padding: 8px; }
 .review-felt-verdict { top: 53.5%; }

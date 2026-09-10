@@ -69,6 +69,64 @@ export function reviewPlayerCountSummary(
   ].join(" · ");
 }
 
+/**
+ * Which decision a review key press selects, or null when the key is not a
+ * review shortcut.
+ *
+ * The Vitest environment has no DOM, so the navigation contract lives here as
+ * pure arithmetic and the effect below is only the wiring. Down/Right both
+ * advance and Up/Left both step back: the pre-redesign review was a vertical
+ * timeline whose users learned the vertical pair, and the redesign lays the
+ * same decisions out horizontally, so binding both axes means neither habit
+ * silently stops working. `M` jumps to the next key move, matching the button.
+ */
+export function reviewKeyboardTarget(
+  key: string,
+  state: { selected: number; count: number; nextKeyMoveIndex: number | null },
+): number | null {
+  if (state.count <= 0) return null;
+  const last = state.count - 1;
+  switch (key) {
+    case "ArrowRight":
+    case "ArrowDown":
+      return Math.min(last, state.selected + 1);
+    case "ArrowLeft":
+    case "ArrowUp":
+      return Math.max(0, state.selected - 1);
+    default:
+      break;
+  }
+  if (key.toLowerCase() === "m") {
+    return state.nextKeyMoveIndex;
+  }
+  return null;
+}
+
+/**
+ * A decision's entry in the selector carries its quality as a glyph *and* as
+ * words. `data-quality` colours the verdict panel, and colour alone must never
+ * be the only way to read how a decision went.
+ */
+export function decisionOptionLabel(
+  decision: Pick<ReviewDecision, "handNumber" | "street" | "quality" | "notable">,
+  position: number,
+): string {
+  const quality = `${QUALITY_GLYPH[decision.quality]} ${formatMessage(
+    `review.quality.${decision.quality}`,
+  )}`;
+  const label = formatMessage("review.decisionOption", {
+    position: position + 1,
+    hand: formatMessage("review.handStreet", {
+      handNumber: decision.handNumber,
+      street: decision.street,
+    }),
+    quality,
+  });
+  return decision.notable
+    ? `${label} · ${formatMessage("review.notableTag")}`
+    : label;
+}
+
 /** Reuses Training Lab's term button and compact contextual-popover pattern. */
 export function ReviewMetric({
   label,
@@ -83,7 +141,7 @@ export function ReviewMetric({
 }) {
   const value = audit
     ? `${formatFixedDecimal(audit.result * (percent ? 100 : 1), digits)}${percent ? "%" : ""}`
-    : "Unavailable";
+    : formatMessage("review.unavailable");
   const [open, setOpen] = useState(false);
   useEffect(() => {
     setOpen(false);
@@ -108,7 +166,7 @@ export function ReviewMetric({
           type="button"
           className="math-vocab-term"
           aria-expanded={open}
-          aria-label={`${label}: ${value}. Inspect calculation`}
+          aria-label={`${label}: ${value}. ${formatMessage("review.inspectCalculation")}`}
           onClick={() => setOpen((v) => !v)}
         >
           {value}
@@ -126,7 +184,7 @@ export function ReviewMetric({
           </span>
           <button
             type="button"
-            aria-label="Close calculation"
+            aria-label={formatMessage("review.closeCalculation")}
             onClick={() => setOpen(false)}
           >
             ×
@@ -175,7 +233,9 @@ export function HandReviewScreen({
           !(cause instanceof HandReviewCancelledError)
         )
           setError(
-            cause instanceof Error ? cause.message : "Review unavailable",
+            cause instanceof Error
+              ? cause.message
+              : formatMessage("review.error.generic"),
           );
       });
     return () => controller.abort();
@@ -203,37 +263,29 @@ export function HandReviewScreen({
         (event.target as HTMLElement).closest("input, select")
       )
         return;
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        setSelected((s) => Math.min(review.decisions.length - 1, s + 1));
-      }
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        setSelected((s) => Math.max(0, s - 1));
-      }
-      if (
-        event.key.toLowerCase() === "m" &&
-        hasNextKey &&
-        nextKey?.index != null
-      ) {
-        event.preventDefault();
-        setSelected(nextKey.index);
-      }
+      const target = reviewKeyboardTarget(event.key, {
+        selected,
+        count: review.decisions.length,
+        nextKeyMoveIndex: hasNextKey ? (nextKey?.index ?? null) : null,
+      });
+      if (target === null) return;
+      event.preventDefault();
+      setSelected(target);
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [review, hasNextKey, nextKey]);
+  }, [review, hasNextKey, nextKey, selected]);
   if (!review || !decision)
     return (
       <main className="night-shell review-shell">
         <section className="review-panel">
           <button className="night-back" onClick={onBack}>
-            <ArrowLeft /> Back
+            <ArrowLeft /> {formatMessage("common.back")}
           </button>
           <p role={error ? "alert" : "status"}>
             {error ??
               (review
-                ? "No recorded decisions yet."
+                ? formatMessage("review.noDecisions")
                 : formatMessage("review.deriving"))}
           </p>
         </section>
@@ -284,7 +336,7 @@ export function HandReviewScreen({
         controls: (
           <nav
             className="action-dock review-navigation"
-            aria-label="Review navigation"
+            aria-label={formatMessage("review.navigationLabel")}
           >
             <button
               className="action-button"
@@ -292,14 +344,14 @@ export function HandReviewScreen({
               onClick={() => setSelected((s) => s - 1)}
             >
               <ChevronLeft />
-              <strong>BACK</strong>
+              <strong>{formatMessage("common.back")}</strong>
             </button>
             <button
               className="action-button"
               disabled={selected >= review.decisions.length - 1}
               onClick={() => setSelected((s) => s + 1)}
             >
-              <strong>NEXT</strong>
+              <strong>{formatMessage("review.nav.next")}</strong>
               <ChevronRight />
             </button>
             <button
@@ -309,7 +361,7 @@ export function HandReviewScreen({
                 if (nextKey?.index != null) setSelected(nextKey.index);
               }}
             >
-              <strong>NEXT KEY MOVE</strong>
+              <strong>{formatMessage("review.nav.nextKeyMove")}</strong>
               <ChevronRight />
             </button>
           </nav>
@@ -320,14 +372,17 @@ export function HandReviewScreen({
             key={decision.index}
             data-mobile-analysis={mobileAnalysis ?? "none"}
           >
-            <nav className="review-mobile-tabs" aria-label="Review analysis">
+            <nav
+              className="review-mobile-tabs"
+              aria-label={formatMessage("review.analysisLabel")}
+            >
               <button
                 aria-expanded={mobileAnalysis === "math"}
                 onClick={() =>
                   setMobileAnalysis((v) => (v === "math" ? null : "math"))
                 }
               >
-                Math
+                {formatMessage("review.tab.math")}
               </button>
               <button
                 aria-expanded={mobileAnalysis === "details"}
@@ -335,55 +390,71 @@ export function HandReviewScreen({
                   setMobileAnalysis((v) => (v === "details" ? null : "details"))
                 }
               >
-                Alternatives
+                {formatMessage("review.tab.alternatives")}
               </button>
             </nav>
             <header className="review-table-heading">
-              <h1>GAME REVIEW</h1>
+              <h1>{formatMessage("review.title")}</h1>
               <ReviewMetric
-                label="Model best"
+                label={formatMessage("review.modelBestShare")}
                 percent
                 digits={0}
                 audit={accuracy}
               />
               <label>
-                Decision{" "}
+                {formatMessage("review.decisionSelectLabel")}{" "}
                 <select
                   value={selected}
                   onChange={(e) => setSelected(Number(e.target.value))}
                 >
                   {review.decisions.map((d, i) => (
                     <option value={i} key={d.index}>
-                      {i + 1} · Hand {d.handNumber} · {d.street}
-                      {d.notable ? " · Key move" : ""}
+                      {decisionOptionLabel(d, i)}
                     </option>
                   ))}
                 </select>
               </label>
               <small>{reviewPlayerCountSummary(decision)}</small>
+              <small className="review-keyboard-hint">
+                {formatMessage("review.keyboardHint")}
+              </small>
               {review.truncated && (
                 <small>
-                  Review limited to {review.decisions.length} decisions
+                  {formatMessage("review.truncated", {
+                    count: review.decisions.length,
+                  })}
                 </small>
               )}
             </header>
             <aside
               className="review-felt-math"
-              aria-label="Decision mathematics"
+              aria-label={formatMessage("review.mathLabel")}
             >
-              <h2>THE MATH</h2>
-              {metric("potOdds", "Pot odds", true)}
+              <h2>{formatMessage("review.mathHeading")}</h2>
+              {metric("potOdds", formatMessage("review.math.potOdds"), true)}
               {metric(
                 "requiredEquity",
-                decision.math.requiredEquityApplicable
-                  ? "Required equity"
-                  : "Equity reference",
+                formatMessage(
+                  decision.math.requiredEquityApplicable
+                    ? "review.math.requiredEquity"
+                    : "review.math.requiredEquityReference",
+                ),
                 true,
               )}
-              {metric("showdownEquity", "Estimated equity", true)}
-              {metric("stackToPotRatio", "Stack / pot")}
-              {metric("effectiveStackBigBlinds", "Effective BB")}
-              {metric("evRegretBigBlinds", "EV loss · BB")}
+              {metric(
+                "showdownEquity",
+                formatMessage("review.math.estimatedEquity"),
+                true,
+              )}
+              {metric("stackToPotRatio", formatMessage("review.math.spr"))}
+              {metric(
+                "effectiveStackBigBlinds",
+                formatMessage("review.math.effectiveStack"),
+              )}
+              {metric(
+                "evRegretBigBlinds",
+                formatMessage("review.math.evRegret"),
+              )}
             </aside>
             <section
               className="review-felt-verdict"
@@ -391,20 +462,23 @@ export function HandReviewScreen({
               data-quality={decision.quality}
             >
               <small>
-                HAND {decision.handNumber} · {decision.street.toUpperCase()}
+                {formatMessage("review.handStreet", {
+                  handNumber: decision.handNumber,
+                  street: decision.street,
+                })}
               </small>
               <h2>
                 {QUALITY_GLYPH[decision.quality]}{" "}
                 {formatMessage(`review.quality.${decision.quality}`)}
               </h2>
               <p>
-                You played{" "}
+                {formatMessage("review.youPlayed")}{" "}
                 <strong>
                   {actionLabel(decision.chosen, decision.chosenPreflopAction)}
                 </strong>
               </p>
               <p>
-                Model preferred{" "}
+                {formatMessage("review.modelPreferred")}{" "}
                 <strong>
                   {actionLabel(
                     decision.recommended,
@@ -414,7 +488,7 @@ export function HandReviewScreen({
               </p>
             </section>
             <aside className="review-felt-details">
-              <h2>ALTERNATIVES · EV IN BB</h2>
+              <h2>{formatMessage("review.actionValues")}</h2>
               {decision.math.actionValues.map((option) => (
                 <ReviewMetric
                   key={option.id}
@@ -423,8 +497,14 @@ export function HandReviewScreen({
                 />
               ))}
               <small title={formatMessage("review.approximationNotice")}>
-                Model estimates, not solved play. · {decision.math.confidence}{" "}
-                confidence
+                {formatMessage("review.approximationNotice")}
+              </small>
+              <small>
+                {formatMessage(`review.confidence.${decision.math.confidence}`)}
+                {" · "}
+                {formatMessage("review.basis", {
+                  simulations: decision.math.simulations,
+                })}
               </small>
             </aside>
           </div>
