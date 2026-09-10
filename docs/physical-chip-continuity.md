@@ -126,9 +126,12 @@ must explicitly extend the issue/removal or equal-value exchange contract.
   and collected chips exactly once. The triangle budget retains the previous
   scene allowance plus the measured geometry cost of additional retained chips;
   draw-call, frame-time, and texture limits are unchanged.
-- Windows installer and portable executable built. The packaged 3D audit and
-  license-sidecar audit passed against that build after updating the chip-count
-  and triangle-budget contracts.
+- Windows installer and portable executable built. The refreshed `app.asar`
+  contains the inventory and movement fields, and the license-sidecar audit
+  passed. The native 3D audit completed startup and gameplay checks but timed
+  out during its composition matrix after the separate character-asset
+  revision; the earlier chip-focused package audit passed before that asset
+  revision.
 - The earlier full-suite run passed 1,509 tests, with one unrelated failure in
   `components/PseudoLocaleScreens.test.tsx:488`: the separate 2D layout change
   removed the combined street/player summary expected by that test. This work
