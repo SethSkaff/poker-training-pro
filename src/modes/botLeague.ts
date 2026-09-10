@@ -75,7 +75,15 @@ interface NormalProfileReport {
   profileId: string;
   decisions: number;
   selectedBestRate: number;
+  /**
+   * Share of decisions that spent the profile's EV-loss budget on a modeled
+   * mistake. Tied-continuation mixes are excluded: they are a strategy choice
+   * between lines the evaluator never separated, so pooling them here would
+   * hide how disciplined a profile actually is.
+   */
   deviationRate: number;
+  /** Share of decisions resolved by the tied-continuation mix. */
+  continuationMixRate: number;
   meanEvLossBigBlinds: number;
   maxEvLossBigBlinds: number;
   evBudgetBreaches: number;
@@ -319,6 +327,7 @@ function normalEvaluations(decision: RationalDecision): NormalActionEvaluation[]
   return decision.distribution.map((option) => ({
     command: { ...option.command },
     estimatedEv: option.utilityBigBlinds * BIG_BLIND,
+    uncertaintyChips: option.uncertaintyBigBlinds * BIG_BLIND,
     purpose:
       option.role === "showdown"
         ? "defense"
@@ -336,6 +345,7 @@ function normalProfileReport(
   const actions = emptyDistribution();
   let selectedBest = 0;
   let deviations = 0;
+  let continuationMixes = 0;
   let totalEvLossBb = 0;
   let maxEvLossBb = 0;
   let breaches = 0;
@@ -356,7 +366,9 @@ function normalProfileReport(
       const lossBb = decision.evLoss / BIG_BLIND;
       decisions += 1;
       selectedBest += decision.selectedBestAction ? 1 : 0;
-      deviations += decision.usedPersonalityDeviation ? 1 : 0;
+      deviations +=
+        decision.usedPersonalityDeviation && !decision.usedContinuationMix ? 1 : 0;
+      continuationMixes += decision.usedContinuationMix ? 1 : 0;
       totalEvLossBb += lossBb;
       maxEvLossBb = Math.max(maxEvLossBb, lossBb);
       if (decision.evLoss > decision.evLossBudget + Number.EPSILON) breaches += 1;
@@ -368,6 +380,7 @@ function normalProfileReport(
     decisions,
     selectedBestRate: round(selectedBest / decisions),
     deviationRate: round(deviations / decisions),
+    continuationMixRate: round(continuationMixes / decisions),
     meanEvLossBigBlinds: round(totalEvLossBb / decisions),
     maxEvLossBigBlinds: round(maxEvLossBb),
     evBudgetBreaches: breaches,
@@ -604,7 +617,7 @@ export function runBotLeague(): BotLeagueReport {
     policies: {
       rationalPolicyVersion,
       // Kept in sync with Normal's public decision-seed namespace.
-      normalPolicyVersion: "normal-policy-v1",
+      normalPolicyVersion: "normal-policy-v2",
       rational: {
         overall: rationalSlice(all),
         byPosition: slice(["early", "middle", "late"], (fixture) => fixture.position),

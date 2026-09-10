@@ -162,6 +162,14 @@ Normal layer intentionally preserves aggressive Rational best lines in
 high-leverage pots. The measurement is retained as a methodology risk rather
 than “fixed” by a hard action clamp.
 
+> **Resolved 2026-09-10.** Both findings had one cause -- Normal’s selection
+> rule was the point argmax of Rational’s utilities, with an eligible-deviation
+> set that was empty in 83% of decisions and two hard branches that removed the
+> rest in the aggressive direction. See the
+> [Normal-policy calibration study](normal-continuation-mix-calibration-2026-09-10.md).
+> Call rate 0.115 -> 0.207, separation 0.013 -> 0.123, with no clamp and no
+> change to Rational.
+
 The revised eight-seed behavior/pacing gate was run end-to-end. All deep-tail,
 raise-chain, aggregate all-in, and pacing bounds passed. It correctly remained
 red for two independent residual findings: Normal facing-bet calls at 11.5%
@@ -261,9 +269,11 @@ Permanent tests now cover:
 
 Evidence-supported risks that remain are:
 
-- Normal is still a thin wrapper over Rational in high-leverage spots, so its
-  aggregate call share and mode separation need deliberate calibration rather
-  than a Wesley-specific clamp;
+- Normal was still a thin wrapper over Rational in high-leverage spots, so its
+  aggregate call share and mode separation needed deliberate calibration rather
+  than a Wesley-specific clamp. That study was carried out on 2026-09-10; see
+  the [calibration study](normal-continuation-mix-calibration-2026-09-10.md),
+  whose own residual risks supersede this entry;
 - the strategy is Monte Carlo/range-heuristic based, not a solver or full ICM
   model, and 60-sample narrow branches carry material uncertainty;
 - custom tournament structures that omit `smallestChip` intentionally retain
@@ -277,3 +287,8 @@ next useful step is an intentionally separate strategy-calibration study of
 Normal/Rational separation, call/fold mix, and ICM/deep-stack benchmarks using
 larger seeded samples. That study should consume the semantic metrics here
 instead of starting another anecdotal playtest.
+
+The Normal/Rational separation and call/fold half of that recommendation was
+completed on 2026-09-10 and is written up in
+[`normal-continuation-mix-calibration-2026-09-10.md`](normal-continuation-mix-calibration-2026-09-10.md).
+The ICM and deep-stack benchmark half remains open.

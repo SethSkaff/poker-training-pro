@@ -93,6 +93,39 @@ const drawEvaluations: readonly NormalActionEvaluation[] = [
   },
 ];
 
+/**
+ * An unopened-pot shape with the evaluator's own error bars attached, which is
+ * what production always supplies. The raise leads the flat by 220 chips while
+ * the comparison carries roughly a 990-chip resolution, so the rollout has not
+ * separated escalating from simply continuing.
+ */
+const tiedContinuationInformationSet: PlayerInformationSet = {
+  ...informationSet(),
+  street: "preflop",
+  board: [],
+  pot: 1_800,
+  actions: [
+    { playerId: "villain", type: "raise", amount: 1_200 },
+    { playerId: "normal-ai", type: "pending" },
+  ],
+};
+
+const tiedContinuationEvaluations: readonly NormalActionEvaluation[] = [
+  {
+    command: { type: "raise", to: 3_600 },
+    estimatedEv: 340,
+    uncertaintyChips: 820,
+    purpose: "value",
+  },
+  {
+    command: { type: "call" },
+    estimatedEv: 120,
+    uncertaintyChips: 560,
+    purpose: "defense",
+  },
+  { command: { type: "fold" }, estimatedEv: 0, purpose: "neutral" },
+];
+
 describe("Normal mode policy", () => {
   it("ships stable named personality vectors with 90–95% competence", () => {
     const profiles = Object.values(NORMAL_OPPONENT_PROFILES);
@@ -159,7 +192,14 @@ describe("Normal mode policy", () => {
       legalActions,
       evaluations: [
         { command: { type: "raise", to: 3_600 }, estimatedEv: 160, purpose: "value" },
-        { command: { type: "call" }, estimatedEv: 148, purpose: "defense" },
+        // Resolvably losing, so the tied-continuation mix cannot apply and the
+        // high-leverage forcing branch is the only thing under test here.
+        {
+          command: { type: "call" },
+          estimatedEv: -400,
+          uncertaintyChips: 40,
+          purpose: "defense",
+        },
       ],
       profile: "pressure",
       bigBlind: 200,
@@ -284,41 +324,168 @@ describe("Normal mode policy", () => {
     expect(semiBluffs).toBeGreaterThan(0);
   });
 
-  it("mixes bounded flats instead of automatically 3-betting a close-EV open", () => {
-    const preflopInformationSet: PlayerInformationSet = {
-      ...informationSet(),
-      street: "preflop",
-      board: [],
-      pot: 1_800,
-      actions: [
-        { playerId: "villain", type: "raise", amount: 1_200 },
-        { playerId: "normal-ai", type: "pending" },
-      ],
-    };
-    const evaluations: readonly NormalActionEvaluation[] = [
-      { command: { type: "raise", to: 3_600 }, estimatedEv: 160, purpose: "value" },
-      { command: { type: "call" }, estimatedEv: 148, purpose: "defense" },
-      { command: { type: "fold" }, estimatedEv: 0, purpose: "neutral" },
-    ];
+  it("mixes a continuation the range model cannot separate from its aggressive best line", () => {
+    // Production always supplies the evaluator's own error bar. Here the raise
+    // leads the flat by 220 chips while the comparison carries a much larger
+    // resolution, so the model has not separated the two lines and taking the
+    // flat is a mix rather than a modeled mistake.
     let raises = 0;
+    let flats = 0;
     const sampleSize = 4_000;
     for (let index = 0; index < sampleSize; index += 1) {
       const decision = decideNormalAction({
-        informationSet: preflopInformationSet,
+        informationSet: tiedContinuationInformationSet,
         legalActions,
-        evaluations,
+        evaluations: tiedContinuationEvaluations,
         profile: "pressure",
         bigBlind: 200,
-        seed: `three-bet-mix-${index}`,
+        seed: `tied-continuation-${index}`,
       });
       if (decision.command.type === "raise") raises += 1;
+      if (decision.command.type === "call") {
+        flats += 1;
+        expect(decision.usedContinuationMix).toBe(true);
+        expect(decision.modelResolution).toBeGreaterThan(0);
+      }
       expect(decision.evLoss).toBeLessThanOrEqual(
         decision.evLossBudget + Number.EPSILON,
       );
+      expect(decision.evLossBudget).toBeCloseTo(
+        decision.profileEvLossBudget + decision.modelResolution,
+        9,
+      );
     }
 
-    expect(raises / sampleSize).toBeGreaterThan(0.88);
-    expect(raises / sampleSize).toBeLessThan(0.91);
+    // A pressure profile still escalates the clear majority of the time, but it
+    // is no longer a deterministic copy of the point argmax.
+    expect(raises / sampleSize).toBeGreaterThan(0.5);
+    expect(flats / sampleSize).toBeGreaterThan(0.15);
+  });
+
+  it("never mixes into a continuation the model has resolved as losing", () => {
+    const evaluations: readonly NormalActionEvaluation[] = [
+      {
+        command: { type: "raise", to: 3_600 },
+        estimatedEv: 380,
+        uncertaintyChips: 700,
+        purpose: "value",
+      },
+      // Below a fold's zero by far more than its own error bar: the rollout has
+      // established that this call loses money, so no frequency may select it.
+      {
+        command: { type: "call" },
+        estimatedEv: -900,
+        uncertaintyChips: 300,
+        purpose: "defense",
+      },
+      { command: { type: "fold" }, estimatedEv: 0, purpose: "neutral" },
+    ];
+    for (let index = 0; index < 2_000; index += 1) {
+      const decision = decideNormalAction({
+        informationSet: tiedContinuationInformationSet,
+        legalActions,
+        evaluations,
+        profile: "wideLens",
+        bigBlind: 200,
+        seed: `resolved-losing-${index}`,
+      });
+      expect(decision.command.type).not.toBe("call");
+      expect(decision.usedContinuationMix).toBe(false);
+    }
+  });
+
+  it("keeps escalating when the edge is larger than the model can blur", () => {
+    const evaluations: readonly NormalActionEvaluation[] = [
+      {
+        command: { type: "raise", to: 3_600 },
+        estimatedEv: 4_000,
+        uncertaintyChips: 60,
+        purpose: "value",
+      },
+      {
+        command: { type: "call" },
+        estimatedEv: 120,
+        uncertaintyChips: 60,
+        purpose: "defense",
+      },
+      { command: { type: "fold" }, estimatedEv: 0, purpose: "neutral" },
+    ];
+    for (let index = 0; index < 2_000; index += 1) {
+      const decision = decideNormalAction({
+        informationSet: tiedContinuationInformationSet,
+        legalActions,
+        evaluations,
+        profile: "anchor",
+        bigBlind: 200,
+        seed: `resolved-edge-${index}`,
+      });
+      expect(decision.command.type).toBe("raise");
+    }
+  });
+
+  it("lets a patient profile continue more often than a pressure profile on the same tie", () => {
+    const flatRate = (profile: "anchor" | "tempo" | "pressure"): number => {
+      let flats = 0;
+      const sampleSize = 3_000;
+      for (let index = 0; index < sampleSize; index += 1) {
+        const decision = decideNormalAction({
+          informationSet: tiedContinuationInformationSet,
+          legalActions,
+          evaluations: tiedContinuationEvaluations,
+          profile,
+          bigBlind: 200,
+          seed: `profile-order-${index}`,
+        });
+        if (decision.command.type === "call") flats += 1;
+      }
+      return flats / sampleSize;
+    };
+    const anchor = flatRate("anchor");
+    const tempo = flatRate("tempo");
+    const pressure = flatRate("pressure");
+    expect(anchor).toBeGreaterThan(tempo);
+    expect(tempo).toBeGreaterThan(pressure);
+    // Every profile still mixes both ways; none of them is a quota.
+    expect(pressure).toBeGreaterThan(0);
+    expect(anchor).toBeLessThan(1);
+  });
+
+  it("keeps push-fold pressure on the aggressive best line even when the continuation ties", () => {
+    const shallow: PlayerInformationSet = {
+      ...tiedContinuationInformationSet,
+      players: tiedContinuationInformationSet.players.map((player) =>
+        player.id === tiedContinuationInformationSet.viewerId
+          ? { ...player, stack: 4_000 }
+          : player,
+      ),
+    };
+    for (let index = 0; index < 500; index += 1) {
+      const decision = decideNormalAction({
+        informationSet: shallow,
+        legalActions,
+        evaluations: tiedContinuationEvaluations,
+        profile: "anchor",
+        bigBlind: 200,
+        seed: `short-stack-tie-${index}`,
+      });
+      expect(decision.command.type).toBe("raise");
+      expect(decision.usedContinuationMix).toBe(false);
+    }
+  });
+
+  it("rejects a negative evaluator error bar before it can widen the tolerance", () => {
+    expect(() =>
+      decideNormalAction({
+        informationSet: tiedContinuationInformationSet,
+        legalActions,
+        evaluations: [
+          { command: { type: "call" }, estimatedEv: 10, uncertaintyChips: -1 },
+        ],
+        profile: "tempo",
+        bigBlind: 200,
+        seed: "negative-uncertainty",
+      }),
+    ).toThrow(/uncertainty/i);
   });
 
   it("does not suppress the best aggressive line once its stack reaches push-fold pressure", () => {

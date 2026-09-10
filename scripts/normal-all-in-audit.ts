@@ -32,7 +32,7 @@ import type { Street } from "../src/types/poker";
 // v2 records semantic stack-offs (including raise-to-max targets) rather than
 // only the engine's explicit `all-in` command spelling.
 export const NORMAL_ALL_IN_AUDIT_VERSION = "normal-all-in-audit-v2";
-export const NORMAL_POLICY_VERSION = "normal-policy-v1";
+export const NORMAL_POLICY_VERSION = "normal-policy-v2";
 export const POLICY_OPTIONS = { simulations: 60, temperature: 0.48 } as const;
 export const MS_PER_LIVE_CLOCK_HAND = 75_000;
 
@@ -62,6 +62,9 @@ export const DOCUMENTED_ALL_IN_REFERENCE = {
   },
   canonicalDecisionBaseline: {
     id: "policy-baseline-2026-07-23",
+    // Frozen historical record: this baseline was measured under the v1
+    // Normal selection rule and is not restamped when the live policy
+    // version moves.
     normalPolicyVersion: "normal-policy-v1",
     normalProfileChosenAllInShare: 0,
   },

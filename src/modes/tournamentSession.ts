@@ -1369,6 +1369,11 @@ function assembleSessionPolicyDecision(
     (option) => ({
       command: { ...option.command },
       estimatedEv: option.utilityBigBlinds * level.bigBlind,
+      // Normal needs the evaluator's own resolution, not just its point
+      // estimate: two actions inside this band have not been separated by the
+      // rollout, so continuing rather than escalating there is a mix and not a
+      // competence failure.
+      uncertaintyChips: option.uncertaintyBigBlinds * level.bigBlind,
       purpose: mapRationalRole(option.role),
     }),
   );

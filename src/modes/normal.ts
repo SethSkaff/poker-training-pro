@@ -24,6 +24,14 @@ export interface NormalActionEvaluation {
   /** Chip EV calculated from the acting player's information set. */
   estimatedEv: number;
   purpose?: NormalActionPurpose;
+  /**
+   * Approximate 95% uncertainty of `estimatedEv`, in chips, as reported by the
+   * evaluator that produced it. The Rational utilities Normal consumes come
+   * from a bounded Monte Carlo rollout, so two actions separated by less than
+   * this band have not actually been distinguished. Optional: an evaluator
+   * that does not publish an error bar is treated as exact (zero).
+   */
+  uncertaintyChips?: number;
 }
 
 export interface NormalPersonalityVector {
@@ -83,10 +91,26 @@ export interface NormalDecision {
   estimatedEv: number;
   bestEv: number;
   evLoss: number;
+  /**
+   * Tolerance actually enforced for the selected action: the profile's hard
+   * EV-loss budget, plus the evaluator's own resolution when the selection was
+   * a statistical-tie continuation mix. `evLoss` never exceeds it.
+   */
   evLossBudget: number;
+  /** Profile hard EV-loss budget alone, in chips. */
+  profileEvLossBudget: number;
+  /** Evaluator resolution credited to the selected action, in chips. */
+  modelResolution: number;
   profileId: string;
   selectedBestAction: boolean;
   usedPersonalityDeviation: boolean;
+  /**
+   * True when the selection came from the tied-continuation mix rather than
+   * from the profile's error budget. Both show up as
+   * `usedPersonalityDeviation`, but only the latter is a modeled mistake, so
+   * competence and style reports must not pool them.
+   */
+  usedContinuationMix: boolean;
   reason: string;
   publicSignals: PublicExploitSignals;
   adaptationPressure: number;
@@ -106,8 +130,12 @@ export interface NormalSelectionDistribution {
   deviationProbability: number;
   bestActionKey: string;
   eligibleDeviationKeys: string[];
+  /** Continuations the evaluator cannot separate from an aggressive best line. */
+  continuationMixKeys: string[];
+  /** Total probability mass assigned to that tied-continuation mix. */
+  continuationMixProbability: number;
   bestForced: boolean;
-  branch: "best-only" | "forced-best" | "mixture";
+  branch: "best-only" | "forced-best" | "mixture" | "continuation-mix";
   entries: NormalSelectionDistributionEntry[];
 }
 
@@ -455,29 +483,19 @@ function isAggressive(command: BettingActionCommand): boolean {
   );
 }
 
-/**
- * The first voluntary preflop raise is an open; responding aggressively to it
- * is a 3-bet.  Keep this derived solely from the public information set so the
- * personality layer can mix calls/folds without receiving hidden state from
- * the engine.
- */
-function isPreflopThreeBetOpportunity(
-  informationSet: PlayerInformationSet,
-): boolean {
-  if (informationSet.street !== "preflop") return false;
-  const raises = informationSet.actions.filter((action) => {
-    const type = action.type.toLowerCase();
-    return type === "bet" || type === "raise" || type === "all-in";
-  }).length;
-  return raises === 1;
-}
-
 function assertLegalEvaluation(
   evaluation: NormalActionEvaluation,
   legal: LegalActionSet,
 ): void {
   if (!Number.isFinite(evaluation.estimatedEv)) {
     throw new Error("Normal action EVs must be finite numbers");
+  }
+  if (
+    evaluation.uncertaintyChips !== undefined &&
+    (!Number.isFinite(evaluation.uncertaintyChips) ||
+      evaluation.uncertaintyChips < 0)
+  ) {
+    throw new Error("Normal action uncertainty must be a non-negative number");
   }
 
   const { command } = evaluation;
@@ -541,6 +559,30 @@ function purposeAllowed(
   return true;
 }
 
+/**
+ * How much a personality likes an action *type* before any hand-texture
+ * reasoning is applied. Split out so a tie between two lines the evaluator
+ * cannot separate can be resolved by style alone: the purpose bonuses below
+ * restate hand strength, which the tied utilities have already priced.
+ */
+function actionStyleWeight(
+  command: BettingActionCommand,
+  profile: NormalOpponentProfile,
+  legal: LegalActionSet,
+): number {
+  const vector = profile.personality;
+  const pressure = clamp01(legal.toCall / Math.max(1, legal.allInTo));
+  let weight = 0.2;
+  if (command.type === "fold") {
+    weight += (1 - vector.looseness) * 0.8 + pressure * (1 - vector.riskTolerance);
+  } else if (command.type === "check" || command.type === "call") {
+    weight += vector.looseness * 0.55 + (1 - vector.aggression) * 0.35;
+  } else {
+    weight += vector.aggression * 0.8 + vector.riskTolerance * 0.25;
+  }
+  return weight;
+}
+
 function candidateWeight(
   evaluation: NormalActionEvaluation,
   profile: NormalOpponentProfile,
@@ -551,16 +593,8 @@ function candidateWeight(
   const vector = profile.personality;
   const purpose = evaluation.purpose ?? "neutral";
   const command = evaluation.command;
-  const pressure = clamp01(legal.toCall / Math.max(1, legal.allInTo));
 
-  let weight = 0.2;
-  if (command.type === "fold") {
-    weight += (1 - vector.looseness) * 0.8 + pressure * (1 - vector.riskTolerance);
-  } else if (command.type === "check" || command.type === "call") {
-    weight += vector.looseness * 0.55 + (1 - vector.aggression) * 0.35;
-  } else {
-    weight += vector.aggression * 0.8 + vector.riskTolerance * 0.25;
-  }
+  let weight = actionStyleWeight(command, profile, legal);
 
   if (purpose === "value") weight += vector.aggression * hand.showdownStrength;
   if (purpose === "thin-value") {
@@ -613,25 +647,48 @@ export function prepareNormalSelectionDistribution(input: {
   deviationProbability: number;
   bestForced: boolean;
   weights: ReadonlyMap<string, number>;
+  continuationMix?: {
+    alternatives: readonly NormalActionEvaluation[];
+    probability: number;
+    weights: ReadonlyMap<string, number>;
+  };
 }): NormalSelectionDistribution {
   const eligibleKeys = input.eligibleDeviations.map((evaluation) => commandKey(evaluation.command));
   const probabilities = new Map(input.ranked.map((evaluation) => [commandKey(evaluation.command), 0]));
   const bestKey = commandKey(input.best.command);
   const q = clamp01(input.deviationProbability);
+  const mix = input.continuationMix;
+  const mixKeys = mix ? mix.alternatives.map((evaluation) => commandKey(evaluation.command)) : [];
+  // The tied-continuation mix is drawn first, so it owns its mass outright and
+  // the competence/deviation split shares whatever is left.
+  const mixProbability = mixKeys.length > 0 ? clamp01(mix!.probability) : 0;
+  const remainder = 1 - mixProbability;
+  const addMass = (key: string, mass: number): void => {
+    probabilities.set(key, (probabilities.get(key) ?? 0) + mass);
+  };
+  if (mixProbability > 0) {
+    const weighted = mixKeys.map((key) => ({
+      key,
+      weight: Math.max(0, mix!.weights.get(key) ?? 0),
+    }));
+    const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+    if (total <= 0) addMass(weighted[0].key, mixProbability);
+    else for (const entry of weighted) addMass(entry.key, mixProbability * entry.weight / total);
+  }
   const bestOnly = input.bestForced || input.eligibleDeviations.length === 0;
   if (bestOnly) {
-    probabilities.set(bestKey, 1);
+    addMass(bestKey, remainder);
   } else {
-    probabilities.set(bestKey, 1 - q);
+    addMass(bestKey, remainder * (1 - q));
     const weighted = input.eligibleDeviations.map((evaluation) => ({
       key: commandKey(evaluation.command),
       weight: Math.max(0, input.weights.get(commandKey(evaluation.command)) ?? 0),
     }));
     const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
     if (total <= 0) {
-      probabilities.set(weighted[0].key, q);
+      addMass(weighted[0].key, remainder * q);
     } else {
-      for (const entry of weighted) probabilities.set(entry.key, q * entry.weight / total);
+      for (const entry of weighted) addMass(entry.key, remainder * q * entry.weight / total);
     }
   }
   const entries = input.ranked.map((evaluation) => {
@@ -645,13 +702,22 @@ export function prepareNormalSelectionDistribution(input: {
     };
   });
   const total = entries.reduce((sum, entry) => sum + entry.probability, 0);
-  if (Math.abs(total - 1) > Number.EPSILON * 16) throw new Error("Normal selection distribution does not sum to one");
+  if (Math.abs(total - 1) > Number.EPSILON * 64) throw new Error("Normal selection distribution does not sum to one");
   return {
     deviationProbability: q,
     bestActionKey: bestKey,
     eligibleDeviationKeys: eligibleKeys,
+    continuationMixKeys: mixKeys,
+    continuationMixProbability: mixProbability,
     bestForced: input.bestForced,
-    branch: input.bestForced ? "forced-best" : bestOnly ? "best-only" : "mixture",
+    branch:
+      mixProbability > 0
+        ? "continuation-mix"
+        : input.bestForced
+          ? "forced-best"
+          : bestOnly
+            ? "best-only"
+            : "mixture",
     entries,
   };
 }
@@ -665,7 +731,7 @@ function publicDecisionSeed(
     .join(",");
   return deriveSeed(
     input.seed,
-    "normal-policy-v1",
+    "normal-policy-v2",
     input.informationSet.handId,
     input.informationSet.viewerId,
     input.informationSet.street,
@@ -744,7 +810,7 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
       (signals.foldToPressure * profile.personality.aggression * 0.9 +
         signals.looseness * profile.personality.aggression * 0.35),
   );
-  const baseDeviationProbability = clamp01(
+  const deviationProbability = clamp01(
     (1 - profile.competenceRate) * (1 + adaptationPressure) +
       profile.personality.bluffAppetite * 0.025 +
       // Keep close profiles measurably distinct even when a frozen matrix
@@ -754,22 +820,6 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
       profile.personality.aggression * 0.001 -
       0.005 +
       (profile.id === "wide-lens" ? 0.04 : 0),
-  );
-  const threeBetOpportunity = isPreflopThreeBetOpportunity(
-    input.informationSet,
-  );
-  // A close-EV flat is a strategic mix, not an error. Rational's top option is
-  // intentionally deterministic, so blindly inheriting it made Normal
-  // opponents 3-bet nearly every hand in which a raise narrowly led a call.
-  // In this one public context, give each profile a stable flatting frequency;
-  // tighter profiles flat more often and pressure profiles still re-raise
-  // more. The hard EV-loss filter below remains authoritative.
-  const threeBetMixProbability = threeBetOpportunity
-    ? 0.1 + (1 - profile.personality.aggression) * 0.055
-    : 0;
-  const deviationProbability = Math.max(
-    baseDeviationProbability,
-    threeBetMixProbability,
   );
   const viewerStack = input.informationSet.players.find(
     (player) => player.id === input.informationSet.viewerId,
@@ -783,17 +833,103 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
     input.informationSet.street !== "preflop" &&
     input.informationSet.pot / input.bigBlind >= 3;
   const eliminationPressure = shortStackPressure || highLeveragePot;
-  // Once a stack is short or a pot is already high-leverage, do not turn the
-  // model's best aggressive line into a passive personality deviation.
-  // Conversely, a close aggressive alternative is the coherent deviation
-  // from a passive best line. This preserves tournament attrition without
-  // widening the EV budget or changing ordinary-pot profile texture.
-  const preserveAggressiveBest =
-    isAggressive(best.command) && !threeBetOpportunity;
+
+  // Escalating versus simply continuing is a mix, not a competence test.
+  //
+  // Rational's utilities come from a bounded Monte Carlo rollout and are
+  // published with a 95% uncertainty band. When an aggressive best line leads
+  // the plain continuation by less than that band, the model has not actually
+  // separated the two, so calling the continuation an "EV loss" is false
+  // precision. Inheriting the point argmax anyway is what collapsed Normal
+  // into a deterministic copy of Rational's best action: measured over eight
+  // frozen seeds it open-raised 88% of unopened small blinds, completed 3.9%,
+  // and never once limped from any other seat.
+  //
+  // This generalises the flat that previously existed only in the preflop
+  // 3-bet context. Two tests keep it a strategic mix rather than a loose-call
+  // quota, and both read the evaluator rather than a target frequency:
+  //   * the modeled loss must sit inside the profile's error budget plus the
+  //     resolution of the comparison, so a line the model has genuinely
+  //     separated is still taken; and
+  //   * the continuation must not be resolvably losing, which is what excludes
+  //     the negative-EV open-limps a plain temperature sampler produces with
+  //     junk hands.
+  //
+  // The resolution term is added here and not to the ordinary deviation filter
+  // below because the two answer different questions. That filter may pick any
+  // legal alternative, including one the model is confident is worse, so its
+  // point estimate is the whole evidence and the profile budget is the whole
+  // tolerance. This path is restricted to a passive continuation of the same
+  // pot that has *also* been shown not to lose, so the only thing left between
+  // the two lines is a difference the rollout cannot resolve.
+  //
+  // `highLeveragePot` deliberately does not gate this. That guard stops an
+  // error-budget deviation from surrendering a large pot, and both tests above
+  // already answer it: a tied, non-losing continuation risks less than the
+  // escalation it replaces and cannot be a punt. Genuine push/fold pressure is
+  // different in kind, so a short stack still keeps the aggressive best line.
+
+  // Resolution of the *comparison*, not of either estimate alone. The
+  // aggressive line's error bar is usually dominated by its response-branch
+  // sample and the continuation's by the showdown-equity sample, so the two are
+  // largely independent and their difference carries the combined error.
+  const resolutionFor = (evaluation: NormalActionEvaluation): number => {
+    const bestUncertainty = Math.max(0, best.uncertaintyChips ?? 0);
+    const candidateUncertainty = Math.max(0, evaluation.uncertaintyChips ?? 0);
+    return Math.hypot(bestUncertainty, candidateUncertainty);
+  };
+  const continuationCandidates =
+    isAggressive(best.command) && !shortStackPressure
+      ? ranked.slice(1).filter((evaluation) => {
+          if (
+            evaluation.command.type !== "call" &&
+            evaluation.command.type !== "check"
+          ) {
+            return false;
+          }
+          const resolution = resolutionFor(evaluation);
+          // "Not losing" is read at the same resolution, for the same reason:
+          // a continuation the rollout places below a fold's zero by less than
+          // its own error bar has not been shown to lose. One the model *has*
+          // resolved as losing stays out, which is what stops this from
+          // becoming a loose-call quota.
+          if (evaluation.estimatedEv + resolution < 0) return false;
+          const loss = bestEv - evaluation.estimatedEv;
+          return loss >= 0 && loss <= hardBudget + resolution + Number.EPSILON;
+        })
+      : [];
+  const continuationWeights = new Map(
+    continuationCandidates.map((candidate) => [
+      commandKey(candidate.command),
+      candidateWeight(candidate, profile, hand, signals, input.legalActions),
+    ]),
+  );
+  // Nothing here invents a target frequency. When the evaluator cannot separate
+  // the two lines, the tie is resolved by the personality layer's own action
+  // preference, so an aggressive profile escalates more than a patient one and
+  // every profile still mixes both ways.
+  const escalationWeight = actionStyleWeight(
+    best.command,
+    profile,
+    input.legalActions,
+  );
+  const continuationWeight = Math.max(
+    0,
+    ...continuationCandidates.map((candidate) =>
+      actionStyleWeight(candidate.command, profile, input.legalActions),
+    ),
+  );
+  const continuationMixProbability =
+    continuationCandidates.length > 0 && continuationWeight + escalationWeight > 0
+      ? clamp01(continuationWeight / (continuationWeight + escalationWeight))
+      : 0;
+  const useContinuationMix =
+    continuationCandidates.length > 0 && random() < continuationMixProbability;
+
   const useBest =
-    preserveAggressiveBest ||
-    (eliminationPressure && isAggressive(best.command)) ||
-    random() >= deviationProbability;
+    !useContinuationMix &&
+    ((eliminationPressure && isAggressive(best.command)) ||
+      random() >= deviationProbability);
 
   const deviations = ranked.slice(1).filter((evaluation) => {
     const loss = bestEv - evaluation.estimatedEv;
@@ -804,17 +940,12 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
     );
   });
 
-  const passiveThreeBetAlternatives = threeBetOpportunity && !eliminationPressure
-    ? deviations.filter((evaluation) => !isAggressive(evaluation.command))
-    : [];
   const aggressivePressureAlternatives = eliminationPressure
     ? deviations.filter((evaluation) => isAggressive(evaluation.command))
     : [];
   const eligibleDeviations =
-    passiveThreeBetAlternatives.length > 0
-      ? passiveThreeBetAlternatives
-      : aggressivePressureAlternatives.length > 0
-        ? aggressivePressureAlternatives
+    aggressivePressureAlternatives.length > 0
+      ? aggressivePressureAlternatives
       : deviations;
 
   const deviationWeights = new Map(
@@ -823,9 +954,7 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
       candidateWeight(candidate, profile, hand, signals, input.legalActions),
     ]),
   );
-  const bestForced =
-    preserveAggressiveBest ||
-    (eliminationPressure && isAggressive(best.command));
+  const bestForced = eliminationPressure && isAggressive(best.command);
   const selectionDistribution = prepareNormalSelectionDistribution({
     ranked,
     best,
@@ -833,10 +962,24 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
     deviationProbability,
     bestForced,
     weights: deviationWeights,
+    ...(continuationCandidates.length > 0
+      ? {
+          continuationMix: {
+            alternatives: continuationCandidates,
+            probability: continuationMixProbability,
+            weights: continuationWeights,
+          },
+        }
+      : {}),
   });
 
-  const chosen =
-    useBest || eligibleDeviations.length === 0
+  const chosen = useContinuationMix
+    ? weightedChoice(
+        continuationCandidates,
+        (candidate) => continuationWeights.get(commandKey(candidate.command)) ?? 0,
+        random,
+      )
+    : useBest || eligibleDeviations.length === 0
       ? best
       : weightedChoice(
           eligibleDeviations,
@@ -844,6 +987,8 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
           random,
         );
   const evLoss = Math.max(0, bestEv - chosen.estimatedEv);
+  const modelResolution = useContinuationMix ? resolutionFor(chosen) : 0;
+  const evLossBudget = hardBudget + modelResolution;
   const selectedBestAction = commandKey(chosen.command) === commandKey(best.command);
   const purpose = chosen.purpose ?? "neutral";
 
@@ -853,13 +998,18 @@ export function decideNormalAction(input: NormalDecisionInput): NormalDecision {
     estimatedEv: chosen.estimatedEv,
     bestEv,
     evLoss,
-    evLossBudget: hardBudget,
+    evLossBudget,
+    profileEvLossBudget: hardBudget,
+    modelResolution,
     profileId: profile.id,
     selectedBestAction,
     usedPersonalityDeviation: !selectedBestAction,
+    usedContinuationMix: useContinuationMix,
     reason: selectedBestAction
       ? `${profile.name} selected the highest modeled-EV line under its current range estimate.`
-      : `${profile.name} used a bounded ${purpose} deviation supported by its own hole-card texture and public action history${adaptationPressure > 0.08 ? "; public pressure signals increased its attack frequency" : ""}.`,
+      : useContinuationMix
+        ? `${profile.name} continued rather than escalated on a line the range model cannot separate from its best action.`
+        : `${profile.name} used a bounded ${purpose} deviation supported by its own hole-card texture and public action history${adaptationPressure > 0.08 ? "; public pressure signals increased its attack frequency" : ""}.`,
     publicSignals: signals,
     adaptationPressure,
     selectionDistribution,
