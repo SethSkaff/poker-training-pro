@@ -99,6 +99,18 @@ export default defineConfig({
       "node_modules/**",
       "dist/**",
       "outputs/**",
+      /*
+        `work/` is scratch space, and release staging drops whole repo
+        snapshots into it (`work/layout-release/`, `work/character-revision/`).
+        Each snapshot carries its own copy of every suite -- and its own
+        `node_modules` -- so Vitest re-ran the entire project once per
+        snapshot and reported failures against frozen copies of files that
+        had already been fixed here. It sits beside `dist/` and `outputs/` in
+        `.gitignore` for the same reason and belongs beside them here: a clean
+        CI checkout has no `work/`, so excluding it makes a local run agree
+        with the one that gates the release.
+      */
+      "work/**",
       "scripts/**/*.test.mjs",
     ],
   },

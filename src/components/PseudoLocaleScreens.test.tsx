@@ -474,21 +474,48 @@ describe("pseudo-locale completeness sweep", () => {
       />,
     );
     /*
-      The scenario counter was removed from the player interface (E27-013): it
-      framed Training as a twelve-question pack with an end. Training now
-      reports street and field like every other mode, so that is the
-      interpolated string checked here. The point of the assertion is unchanged
-      -- interpolated values must survive pseudo-wrapping intact, and digits are
-      never transliterated -- and `formatMessage` resolves through the same
-      pseudo-locale mock the rendered screen used, so this is the exact expected
-      string rather than a guessed transliteration.
+      What this asserts, and why the targets have moved twice.
+
+      The point has never changed: an interpolated value must survive
+      pseudo-wrapping intact, and digits are never transliterated. Only the
+      string carrying those values has changed as the table UI changed.
+
+      First the scenario counter went (E27-013) -- "Scenario 6 of 12" framed
+      Training as a content pack with an end -- and this checked the
+      street/field status line that replaced it. Then 063a316 removed the top
+      bar from the 2D table to open up the canvas, and that status line went
+      with it; 2D is the layout this test renders, so the assertion was left
+      demanding a string the product had deliberately stopped drawing.
+
+      The Training situation label is the stronger successor and is rendered
+      here: six interpolated values in one message, `activePlayersInHand`
+      among them, so the field count the old status line carried is still
+      covered and the stack, blinds, pot and call amount now are too. The
+      live-region announcement carries the street, which is the other half of
+      what the old line said.
+
+      Both resolve through the same pseudo-locale mock the rendered screen
+      used, so these are exact expected strings rather than guessed
+      transliterations.
     */
     expect(markup).not.toContain("scenarioProgress");
+    const trainingContext = describeTrainingContext(scenario);
+    expect(markup).toContain(
+      formatMessage("table.context.ariaLabel", {
+        stack: formatChips(trainingContext.stackChips),
+        bigBlinds: trainingContext.stackBigBlinds ?? 0,
+        blinds: `${formatChips(trainingContext.smallBlind)}/${formatChips(trainingContext.bigBlind)}`,
+        pot: formatChips(trainingContext.pot),
+        toCall: formatChips(trainingContext.amountToCall),
+        activePlayersInHand: trainingContext.activePlayersInHand,
+      }),
+    );
+    // The live region still names the street beside the formatted pot.
     const street = `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`;
     expect(markup).toContain(
-      formatMessage("table.status.streetPlayersInHand", {
+      formatMessage("table.announce.streetPot", {
         street,
-        playersInHand: describeTrainingContext(scenario).activePlayersInHand,
+        pot: formatChips(scenario.pot),
       }),
     );
     // The decision clock's visible "{seconds}s" label keeps its digits.
