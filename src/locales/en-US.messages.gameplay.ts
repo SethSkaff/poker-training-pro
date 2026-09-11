@@ -584,6 +584,7 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.sidePot.label": "Side pot",
   "table.sidePot.eligible": "Eligible: {players}",
   "table.allIn.label": "All-in",
+  "table.allIn.hero": "You are all-in",
   "table.allIn.player": "{player} is all-in",
   "table.allIn.runoutHint": "Remaining cards will play out in order.",
   "table.heroStack.label": "Your stack",

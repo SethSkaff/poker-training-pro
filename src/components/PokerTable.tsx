@@ -433,6 +433,13 @@ export function describeLiveSidePot(
   return `This side pot contains chips outside the main-pot cap. Only ${contenders} can win it.`;
 }
 
+/** Use a first-person sentence for the hero; opponents keep the name-based form. */
+export function allInBannerPlayerText(isHero: boolean, playerName: string): string {
+  return isHero
+    ? formatMessage("table.allIn.hero")
+    : formatMessage("table.allIn.player", { player: playerName });
+}
+
 /**
  * Map a public betting action onto the body movement the 3D scene plays.
  *
@@ -4140,12 +4147,10 @@ export function PokerTable({
             <aside className="all-in-banner" role="status" aria-live="assertive" aria-atomic="true">
               <span>{formatMessage("table.allIn.label")}</span>
               <strong>
-                {formatMessage("table.allIn.player", {
-                  player:
-                    allInPlayer?.seat === scenario.heroSeat
-                      ? formatMessage("table.seat.you")
-                      : (allInPlayer?.name ?? allInEvent.playerId),
-                })}
+                {allInBannerPlayerText(
+                  allInPlayer?.seat === scenario.heroSeat,
+                  allInPlayer?.name ?? allInEvent.playerId,
+                )}
               </strong>
               <small>{formatMessage("table.allIn.runoutHint")}</small>
             </aside>

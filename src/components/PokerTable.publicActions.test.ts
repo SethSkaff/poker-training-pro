@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isTrainingActionLegal,
+  allInBannerPlayerText,
   presentationEventLabel,
   publicActionLabel,
   publicPresentationSound,
@@ -11,6 +12,11 @@ import { trainingScenarios } from "../data/trainingScenarios";
 const handId = "hand-public-actions";
 
 describe("public tournament action presentation", () => {
+  it("uses are for the hero all-in banner and is for opponents", () => {
+    expect(allInBannerPlayerText(true, "You")).toBe("You are all-in");
+    expect(allInBannerPlayerText(false, "Maya")).toBe("Maya is all-in");
+  });
+
   it("keeps Training Lab moves available independently of EV coverage", () => {
     const scenario = trainingScenarios.find(
       (item) => item.id === "turn-spr-commitment",
