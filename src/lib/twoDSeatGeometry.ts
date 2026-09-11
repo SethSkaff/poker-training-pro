@@ -23,8 +23,17 @@ export function twoDSeatGeometry(position: TableSeatPosition, width: number, hei
     }
     return p;
   };
-  const stack = fit({x:card.x+left.x*(pairHalf+48),y:card.y+left.y*(pairHalf+48)},42,20);
-  const bet = {x:card.x+inward.x*(cardHeight+14),y:card.y+inward.y*(cardHeight+14)};
+  // Keep the stack just outside the complete two-card footprint.  The previous
+  // clearance was enough for the old compact card lane, but the authored 2D
+  // cards are taller and their shadows made the lower side seats read as if
+  // the amount plaque were touching a card corner.
+  const stack = fit({x:card.x+left.x*(pairHalf+80),y:card.y+left.y*(pairHalf+80)},42,20);
+  // Bets sit on the inward radial lane.  Give side-seat cards a little more
+  // separation so a long amount cannot intrude into the nearest card face;
+  // the hero keeps its tighter lane because its cards already have a dedicated
+  // bottom station and the extra distance would detach the wager from it.
+  const betClearance = position === "hero" ? cardHeight + 14 : cardHeight + 42;
+  const bet = {x:card.x+inward.x*betClearance,y:card.y+inward.y*betClearance};
   const revealInset = position === "top" ? .12 : position === "hero" ? .16 : .28;
   const runout = {x:card.x+(center.x-card.x)*revealInset,y:card.y+(center.y-card.y)*revealInset};
   return {card,stack,bet,runout,inward,left,angle};
