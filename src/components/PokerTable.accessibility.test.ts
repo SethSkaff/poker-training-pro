@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { trainingScenarios } from "../data/trainingScenarios";
 import { formatChips, formatFixedDecimal } from "../lib/format";
 import { formatMessage } from "../lib/localeMessages";
+import { defaultProgress, defaultSettings } from "../lib/storage";
+import { tableChipPresentation } from "../lib/tableChipPresentation";
 import {
+  PokerTable,
   buildPokerTableAnnouncement,
   decisionClockAriaLabel,
   playerSeatAriaLabel,
@@ -245,5 +250,153 @@ describe("poker table live announcements", () => {
       "data-scene-acting": "false",
     });
     expect(sceneSeatDomAttributes(undefined)).toEqual({});
+  });
+});
+
+/*
+  The 2D redesign split one number into two: `scenario.pot` stays the
+  authoritative inclusive hand total that poker maths uses, while the felt's
+  central pile shows only the chips physically gathered into the middle. The
+  redesign then fed the gathered amount into the live region, so the table
+  announced "Pot 500" while asking the same player for 1,800 to call. Pricing
+  that call off the announced number gives 1800/(500+1800) = 78% required
+  equity instead of the true 1800/(2700+1800) = 40%.
+
+  These assertions pin the split itself, so either half moving is a failure
+  rather than a silent change of meaning.
+*/
+describe("gathered center chips are never announced as the pot", () => {
+  // A scenario whose inclusive pot is genuinely larger than what has been
+  // gathered, because the street's wagers are still in front of the seats.
+  const scenario = trainingScenarios.find(
+    (candidate) =>
+      candidate.players.reduce((sum, player) => sum + player.bet, 0) > 0 &&
+      candidate.amountToCall > 0,
+  );
+  if (!scenario) throw new Error("Expected a scenario with outstanding wagers");
+
+  const outstanding = scenario.players.reduce(
+    (sum, player) => sum + player.bet,
+    0,
+  );
+  const gathered = tableChipPresentation(scenario, undefined, 0, []).pot;
+
+  it("splits the inclusive pot into gathered chips plus outstanding wagers", () => {
+    // No chip is counted twice and none goes missing: the two physical places
+    // chips can be must add back up to the authoritative total.
+    expect(gathered + outstanding).toBe(scenario.pot);
+    expect(gathered).toBeLessThan(scenario.pot);
+    expect(outstanding).toBeGreaterThan(0);
+  });
+
+  it("announces the authoritative inclusive pot, not the center pile", () => {
+    const announcement = buildPokerTableAnnouncement({
+      action: null,
+      scenario,
+    });
+
+    expect(announcement).toContain(
+      formatMessage("table.announce.streetPot", {
+        street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
+        pot: formatChips(scenario.pot),
+      }),
+    );
+    // The price and the pot it is priced against have to be the same hand.
+    expect(announcement).toContain(
+      formatMessage("table.announce.amountToCall", {
+        amount: formatChips(scenario.amountToCall),
+      }),
+    );
+    expect(announcement).not.toContain(
+      formatMessage("table.announce.streetPot", {
+        street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
+        pot: formatChips(gathered),
+      }),
+    );
+  });
+
+  it("renders the gathered amount on the felt while the live region says the pot", () => {
+    const markup = renderToStaticMarkup(
+      createElement(PokerTable, {
+        mode: "training",
+        scenario,
+        settings: defaultSettings,
+        progress: defaultProgress,
+        onProgressChange: () => undefined,
+        onSettingsChange: () => undefined,
+        onNextScenario: () => undefined,
+        onExit: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('class="table-screen table-screen--2d"');
+    // The center pile is the gathered chips only.
+    expect(markup).toContain(`data-pot-amount="${gathered}"`);
+    // Outstanding wagers stay physically in front of their seats.
+    for (const player of scenario.players.filter((entry) => entry.bet > 0)) {
+      expect(markup).toContain(`data-bet-amount="${player.bet}"`);
+    }
+    // The scene still carries the authoritative total for poker reasoning.
+    expect(markup).toContain(`data-scene-pot="${scenario.pot}"`);
+    // And the live region prices the decision off that same total.
+    expect(markup).toContain(
+      formatMessage("table.announce.streetPot", {
+        street: `${scenario.street[0].toUpperCase()}${scenario.street.slice(1)}`,
+        pot: formatChips(scenario.pot),
+      }),
+    );
+  });
+
+  it("names the felt readout for the quantity it actually shows", () => {
+    const markup = renderToStaticMarkup(
+      createElement(PokerTable, {
+        mode: "training",
+        scenario,
+        settings: defaultSettings,
+        progress: defaultProgress,
+        onProgressChange: () => undefined,
+        onSettingsChange: () => undefined,
+        onNextScenario: () => undefined,
+        onExit: () => undefined,
+      }),
+    );
+
+    // The readout is the center pile, so its accessible name says so rather
+    // than calling a fraction of the hand total "Pot".
+    // Scoped to the attribute: the live region legitimately contains the word
+    // "Pot" beside the inclusive total, so a bare substring would collide.
+    expect(markup).toContain(
+      `aria-label="${formatMessage("table.readout.gatheredAriaLabel", {
+        amount: formatChips(gathered),
+      })}"`,
+    );
+    expect(markup).not.toContain(
+      `aria-label="${formatMessage("table.readout.potAriaLabel", {
+        amount: formatChips(gathered),
+      })}"`,
+    );
+  });
+
+  it("leaves the Training decision context on the inclusive pot", () => {
+    const markup = renderToStaticMarkup(
+      createElement(PokerTable, {
+        mode: "training",
+        scenario,
+        settings: defaultSettings,
+        progress: defaultProgress,
+        onProgressChange: () => undefined,
+        onSettingsChange: () => undefined,
+        onNextScenario: () => undefined,
+        onExit: () => undefined,
+      }),
+    );
+
+    // Pot odds are taught from this panel; it must never quote the center pile.
+    const context = markup.slice(
+      markup.indexOf('class="training-context"'),
+      markup.indexOf("poker-scene"),
+    );
+    expect(context).toContain(formatChips(scenario.pot));
+    expect(context).toContain(formatChips(scenario.amountToCall));
   });
 });

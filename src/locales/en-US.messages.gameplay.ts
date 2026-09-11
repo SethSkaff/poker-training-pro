@@ -558,6 +558,14 @@ export const EN_US_GAMEPLAY_MESSAGES = Object.freeze({
   "table.felt.brand": "PTP · CHAMPIONSHIP",
   "table.felt.dealerLabel": "DEALER",
   "table.readout.potLabel": "Pot",
+  // The felt readout's accessible name says which quantity the number is. In
+  // 2D it is the gathered center pile, which is only part of the inclusive
+  // hand pot while street wagers are still in front of the seats, so it must
+  // not be announced as "Pot" -- a screen-reader user pricing a call from it
+  // would compute the wrong pot odds. 3D shows the inclusive pot and keeps the
+  // plain label.
+  "table.readout.potAriaLabel": "Pot {amount}",
+  "table.readout.gatheredAriaLabel": "Gathered in the center: {amount}",
   // Pot structure is shown as grouped chips on the felt; these label the piles
   // only when there is more than one, and carry eligibility to assistive tech
   // rather than printing it on the table (E27-002).

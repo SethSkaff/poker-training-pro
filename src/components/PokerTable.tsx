@@ -3743,10 +3743,18 @@ export function PokerTable({
   const heroAllInWinProbability = heroAllInRevealed
     ? displayedAllInEquity.get(heroPlayerId)
     : undefined;
+  // The live region states the decision the player is being asked to make, so
+  // it reports the authoritative inclusive pot. `displayedPot` is the gathered
+  // center pile, which in 2D is only the chips physically collected into the
+  // middle and can be a fraction of the hand total while street wagers are
+  // still in front of the seats. Announcing that as "Pot" beside "1,800 to
+  // call" hands a screen-reader user pot odds computed against the wrong
+  // denominator. The center pile itself stays gathered-only on the felt; see
+  // the inclusive-pot convention in docs/table-presentation-contract.md.
   const tableAnnouncement = buildPokerTableAnnouncement({
     action,
     latestPublicAction: tournament?.actionHistory.at(-1),
-    scenario: isTwoDMode ? { ...scenario, pot: displayedPot } : scenario,
+    scenario,
   });
 
   // Public result of the hand that just finished, resolved from the same
@@ -3796,7 +3804,15 @@ export function PokerTable({
   );
   const playbackControls = (
     <div className="table-tools">
-      {!isTwoDMode && <span
+      {/*
+        The decision clock is the only `role="timer"` on the table and the only
+        readout of how long the player has been deciding. 2D is the default
+        mode, so suppressing it there removed that entirely rather than moving
+        it; `063a316` had already tuned `.table-screen--2d .decision-clock` to
+        sit compactly in this tools cluster, and that rule is still in the
+        stylesheet.
+      */}
+      <span
         className="decision-clock"
         role="timer"
         aria-label={decisionClockAriaLabel(elapsedMs)}
@@ -3805,7 +3821,7 @@ export function PokerTable({
         {formatMessage("table.decisionClock.visibleLabel", {
           seconds: formatFixedDecimal(elapsedMs / 1000, 1),
         })}
-      </span>}
+      </span>
       {tournament && (
         <label className="table-speed-control">
           <FastForward size={15} />
@@ -4222,7 +4238,7 @@ export function PokerTable({
               Recenter was previously keyboard-only (X), so a pointer player
               had no way back to a square view except panning by eye. It is
               also the live readout of where the camera is pointing, and it
-              disables itself when already centred rather than disappearing.
+              disables itself when already centerd rather than disappearing.
             */}
             <button
               type="button"
@@ -4395,7 +4411,12 @@ export function PokerTable({
                 <div
                   className="table-readout"
                   role="img"
-                  aria-label={`Pot ${formatChips(displayedPot)}`}
+                  aria-label={formatMessage(
+                    isTwoDMode
+                      ? "table.readout.gatheredAriaLabel"
+                      : "table.readout.potAriaLabel",
+                    { amount: formatChips(displayedPot) },
+                  )}
                 >
                   <strong>{formatChips(displayedPot)}</strong>
                 </div>
@@ -4445,7 +4466,7 @@ export function PokerTable({
 
                 {/*
                   Pot structure as chips rather than a paragraph (E27-002).
-                  With one pot this is the single centre pile it always was.
+                  With one pot this is the single center pile it always was.
                   With side pots each pot becomes its own labelled pile, so a
                   player can watch which chips form which pot and, at the award,
                   which pile goes to whom -- the thing the old text panel was
