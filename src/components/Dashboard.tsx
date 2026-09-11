@@ -603,6 +603,9 @@ function resultForEvent(
 }
 
 interface TourLobbyProps {
+  error?: string;
+  requiredEventId?: string;
+  startLabel?: string;
   mode: TournamentPolicyMode;
   careerResults: readonly TournamentSessionCareerResult[];
   /**
@@ -616,6 +619,9 @@ interface TourLobbyProps {
 }
 
 export function TourLobby({
+  error,
+  requiredEventId,
+  startLabel,
   mode,
   careerResults,
   activeEventId,
@@ -638,14 +644,14 @@ export function TourLobby({
         event.unlocked && !resultForEvent(careerResults, event.id)?.qualified,
     ) ?? events.find((event) => event.unlocked) ?? events[0];
   const [selectedId, setSelectedId] = useState(initialEvent.id);
-  const selected = events.find((event) => event.id === selectedId) ?? initialEvent;
+  const selected = events.find((event) => event.id === (requiredEventId ?? selectedId)) ?? initialEvent;
   const selectedResult = resultForEvent(careerResults, selected.id);
   const openingLevel = selected.structure.levels[0];
   // The marker sits on the current event's slot: with N events the slots are
   // centred at (i + 0.5)/N of the route's width.
   const currentIndex = Math.max(
     0,
-    events.findIndex((event) => event.id === initialEvent.id),
+    events.findIndex((event) => event.id === (requiredEventId ?? initialEvent.id)),
   );
   const routeProgress = ((currentIndex + 0.5) / Math.max(1, events.length)) * 100;
 
@@ -717,17 +723,17 @@ export function TourLobby({
               ? "future"
               : result?.qualified
                 ? "complete"
-                : event.id === initialEvent.id
+                : event.id === (requiredEventId ?? initialEvent.id)
                   ? "current"
                   : "future";
             return (
               <li key={event.id} data-stage={stage}>
                 <button
                   type="button"
-                  disabled={!event.unlocked}
+                  disabled={requiredEventId ? event.id !== requiredEventId : !event.unlocked}
                   className={selected.id === event.id ? "is-selected" : ""}
                   aria-current={selected.id === event.id ? "true" : undefined}
-                  onClick={() => setSelectedId(event.id)}
+                  onClick={() => { if (!requiredEventId) setSelectedId(event.id); }}
                 >
                   <span className="event-route__index">
                     {stage === "complete" ? (
@@ -798,12 +804,13 @@ export function TourLobby({
             disabled={!onStartEvent}
             onClick={() => onStartEvent?.(selected.id)}
           >
-            {onStartEvent
+            {startLabel ?? (onStartEvent
               ? selectedResult
                 ? formatMessage("dashboard.tour.playAgain")
                 : formatMessage("dashboard.tour.enterEvent")
-              : formatMessage("dashboard.tour.connectionPending")}
+              : formatMessage("dashboard.tour.connectionPending"))}
           </button>
+          {error && <p role="alert">{error}</p>}
           <small className="event-board__disclosure">
             {formatMessage("dashboard.tour.disclosure")}
           </small>

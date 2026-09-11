@@ -11,7 +11,7 @@ describe("hole-card deal presentation", () => {
   it("gates hero interaction on the public deal event and passes deal state to seats", () => {
     expect(tableSource).toContain('presentationEvent?.kind === "hole-cards-dealt"');
     expect(tableSource).toContain("setCardsDealtHandId(presentationEvent.handId)");
-    expect(tableSource).toContain("!presentationEvent && tournament.heroDecision");
+    expect(tableSource).toContain("!presentationEvent && (tournament.heroDecision || tournament.allInReveal?.handId === scenario.id)");
     expect(tableSource).toContain("dealtCardCount={dealtCardCountForPlayer(player.id)}");
     /*
       Hero interaction stays gated on the public deal event and on a pending

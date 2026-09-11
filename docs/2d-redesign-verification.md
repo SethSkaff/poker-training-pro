@@ -127,3 +127,50 @@ Original request: C:/Users/19496/.codex/attachments/4ae82df7-7128-40c4-88b4-1736
   HTML/JavaScript/CSS entry assets match the production build byte-for-byte.
   `npm run release:update-shortcut` updated the Desktop shortcut to
   `outputs/current/win-unpacked/Poker Training Pro.exe`.
+
+
+## Seat geometry and review extension — 2026-09-11
+
+- Replaced independent seat offsets with a shared ellipse projection. Card pairs
+  follow the local tangent; stack piles use the seat's personal-left and wagers
+  move along the inward direction. Raised the composition to an 80px offset and
+  moved Skip below the table, clear of speed/pause controls.
+- Zero gathered pot has no visible readout. Inclusive engine accounting and the
+  upstream accessible total-pot announcement remain intact. The 2D timer stays
+  removed as requested; speed, pause, and audio remain available.
+- All-in reveals now require closed betting and include every live hand when at
+  most one player retains an actionable stack. Unequal caps and a covering stack
+  are supported. The existing public equity estimator and tie semantics are reused.
+- Evaluator-selected winning five receive lift, scale, a yellow border and gold
+  glow. No hand ranking or payout arithmetic changed.
+- Enlarged review columns/verdict; anchored the verdict below the measured board.
+  The bottom review hand sits beside the board. Restored summary and meaningful
+  street metrics from retained HandReview calculations above the central pot.
+- Continuous move Accuracy uses the evaluator's uncertainty-adjusted regret:
+  100% inside the 0.02 BB best tolerance, with the 0.35 BB good boundary anchoring
+  95% and exponential decay beyond. Existing strategic classifications are unchanged.
+  Its displayed calculation exposes both tolerances and the actual regret.
+- One shared formula selection replaces the previous formula; only the general
+  and substituted expressions are shown. Escape closes it. Move On calls the
+  existing exit callback when no later key move remains.
+- Restored the existing TourLobby route and event board, with current-only
+  Start/Resume and retained loss-reset behavior. Wrapped titles within route nodes.
+- Actual component previews inspected at 1280x720: all six simultaneous wagers,
+  zero gathered pot, speed without timer, five highlighted winner cards, unequal
+  six-way all-in flop/turn/river, preflop/flop review, formula replacement, Move On,
+  and completed/current/future route nodes. Review also inspected in a 1920x1080
+  frame. Verdict starts 8px below the board; bottom identity ends about 56px above
+  the action buttons at 1280x720. Formula width/height had no scroll overflow.
+- Six-way runout equity changed from [13.6, 4.2, 2.0, 13.0, 64.4, 2.8] on the flop
+  to [95.2, 0, 0, 0, 4.8, 0] on the turn and [100, 0, 0, 0, 0, 0] on the river
+  (seat order: lower-left, upper-left, top, upper-right, lower-right, bottom).
+- 128 focused tests passed: geometry, accuracy, all-in privacy/closed betting,
+  pot/payout presentation, review, progression, winner, runner, and accessibility.
+  Production build/typecheck passed; no lint script is configured. Vite retains
+  its chunk-size advisory. No unrelated audit repairs were attempted.
+- Integrated upstream commits 5af4884 and 14fdffc without rewriting history.
+  Used the shared Windows installer packaging entry point after the final build,
+  excluding unrelated packaged audits per the requested scope.
+- Packaged HTML and all eight referenced JavaScript/CSS assets match the final
+  production build byte-for-byte. The Desktop shortcut was updated to the current
+  unpacked executable with `npm run release:update-shortcut`.

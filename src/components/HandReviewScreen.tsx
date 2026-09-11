@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { reviewMoveAccuracy } from "../lib/reviewAccuracy";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatChips, formatFixedDecimal } from "../lib/format";
 import { formatMessage } from "../lib/localeMessages";
@@ -8,6 +9,7 @@ import { defaultSettings, defaultProgress } from "../lib/storage";
 import { PokerTable } from "./PokerTable";
 import {
   deriveHandReview,
+  GOOD_MOVE_MAX_EV_LOSS_BB,
   HandReviewCancelledError,
   type HandReview,
   type ReviewDecision,
@@ -127,72 +129,15 @@ export function decisionOptionLabel(
     : label;
 }
 
-/** Reuses Training Lab's term button and compact contextual-popover pattern. */
-export function ReviewMetric({
-  label,
-  audit,
-  percent = false,
-  digits = 2,
-}: {
-  label: string;
-  audit?: ReviewCalculation;
-  percent?: boolean;
-  digits?: number;
-}) {
-  const value = audit
-    ? `${formatFixedDecimal(audit.result * (percent ? 100 : 1), digits)}${percent ? "%" : ""}`
-    : formatMessage("review.unavailable");
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    setOpen(false);
-  }, [audit]);
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        setOpen(false);
-      }
-    };
-    window.addEventListener("keydown", close, true);
-    return () => window.removeEventListener("keydown", close, true);
-  }, [open]);
-  return (
-    <span className="review-metric">
-      <span>{label}</span>
-      {audit ? (
-        <button
-          type="button"
-          className="math-vocab-term"
-          aria-expanded={open}
-          aria-label={`${label}: ${value}. ${formatMessage("review.inspectCalculation")}`}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {value}
-        </button>
-      ) : (
-        <strong>{value}</strong>
-      )}
-      {open && audit && (
-        <span className="math-vocab-popover review-calculation" role="status">
-          <span>
-            <strong>{audit.formula}</strong>
-            <span>
-              = {audit.substituted} = {value}
-            </span>
-          </span>
-          <button
-            type="button"
-            aria-label={formatMessage("review.closeCalculation")}
-            onClick={() => setOpen(false)}
-          >
-            ×
-          </button>
-        </span>
-      )}
-    </span>
-  );
+interface ExpandedCalculation {label:string; value:string; audit:ReviewCalculation}
+const CalculationContext=createContext<{open:ExpandedCalculation|null; select:(value:ExpandedCalculation|null)=>void}>({open:null,select:()=>{}});
+export function ReviewMetric({label,audit,percent=false,digits=2}:{label:string;audit?:ReviewCalculation;percent?:boolean;digits?:number}) {
+  const {open,select}=useContext(CalculationContext);
+  const value=audit?`${formatFixedDecimal(audit.result*(percent?100:1),digits)}${percent?"%":""}`:formatMessage("review.unavailable");
+  const expanded=Boolean(audit && open?.label===label);
+  return <span className="review-metric"><span>{label}</span>{audit?
+    <button type="button" className="math-vocab-term" aria-expanded={expanded} aria-label={`${label}: ${value}. ${formatMessage("review.inspectCalculation")}`} onClick={()=>select(expanded?null:{label,value,audit})}>{value}</button>
+    :<strong>{value}</strong>}</span>;
 }
 const noop = () => undefined;
 export function HandReviewScreen({
@@ -202,6 +147,7 @@ export function HandReviewScreen({
   settings = defaultSettings,
   progress = defaultProgress,
 }: HandReviewScreenProps) {
+  const [expandedCalculation,setExpandedCalculation]=useState<ExpandedCalculation|null>(null);
   const [review, setReview] = useState<HandReview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
@@ -240,6 +186,19 @@ export function HandReviewScreen({
       });
     return () => controller.abort();
   }, [replay]);
+  useEffect(()=>setExpandedCalculation(null),[selected,replay]);
+  useEffect(() => {
+    if (!expandedCalculation) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setExpandedCalculation(null);
+      }
+    };
+    window.addEventListener("keydown", close, true);
+    return () => window.removeEventListener("keydown", close, true);
+  }, [expandedCalculation]);
   const decision = review?.decisions[selected];
   const nextKey = useMemo(
     () =>
@@ -293,7 +252,7 @@ export function HandReviewScreen({
     );
   const best = review.decisions.filter((d) => d.quality === "best").length;
   const accuracy = calculation(
-    "Accuracy = best decisions / reviewed decisions",
+    "Model Best = best decisions / reviewed decisions",
     { best, total: review.decisions.length },
     "best / total",
     review.accuracy,
@@ -313,6 +272,7 @@ export function HandReviewScreen({
     );
   };
   return (
+    <CalculationContext.Provider value={{open:expandedCalculation,select:setExpandedCalculation}}>
     <PokerTable
       mode={replay.mode}
       scenario={decision.tableSnapshot}
@@ -356,12 +316,12 @@ export function HandReviewScreen({
             </button>
             <button
               className="action-button"
-              disabled={!hasNextKey}
               onClick={() => {
-                if (nextKey?.index != null) setSelected(nextKey.index);
+                if (hasNextKey && nextKey?.index != null) setSelected(nextKey.index);
+                else onBack();
               }}
             >
-              <strong>{formatMessage("review.nav.nextKeyMove")}</strong>
+              <strong>{formatMessage(hasNextKey ? "review.nav.nextKeyMove" : "review.nav.moveOn")}</strong>
               <ChevronRight />
             </button>
           </nav>
@@ -395,12 +355,7 @@ export function HandReviewScreen({
             </nav>
             <header className="review-table-heading">
               <h1>{formatMessage("review.title")}</h1>
-              <ReviewMetric
-                label={formatMessage("review.modelBestShare")}
-                percent
-                digits={0}
-                audit={accuracy}
-              />
+
               <label>
                 {formatMessage("review.decisionSelectLabel")}{" "}
                 <select
@@ -426,6 +381,14 @@ export function HandReviewScreen({
                 </small>
               )}
             </header>
+            <section className="review-summary-strip" aria-label={formatMessage("review.summaryLabel")}>
+              <div><ReviewMetric label={formatMessage("review.modelBestShare")} percent digits={0} audit={accuracy}/></div>
+              <div><ReviewMetric label={formatMessage("review.goodMovesShare")} percent digits={0} audit={calculation("Good Moves = good decisions / reviewed decisions",{good:review.decisions.filter(d=>d.math.evRegretBigBlinds<=GOOD_MOVE_MAX_EV_LOSS_BB).length,total:review.decisions.length},"good / total",review.goodAccuracy)}/></div>
+              {review.segments.street.filter(segment=>segment.decisions>0).map(segment=><div key={segment.key}>
+                <ReviewMetric label={`${formatMessage(`review.key.${segment.key}`)} ${formatMessage("review.accuracyLabel")}`} percent digits={0} audit={calculation("Street accuracy = model-best moves / street decisions",{best:Math.round(segment.accuracy*segment.decisions),total:segment.decisions},"best / total",segment.accuracy)}/>
+                <small>{segment.decisions} {formatMessage(segment.decisions === 1 ? "review.moveLabel" : "review.movesLabel")}</small>
+              </div>)}
+            </section>
             <aside
               className="review-felt-math"
               aria-label={formatMessage("review.mathLabel")}
@@ -477,7 +440,8 @@ export function HandReviewScreen({
                   {actionLabel(decision.chosen, decision.chosenPreflopAction)}
                 </strong>
               </p>
-              <p>
+              <div className="review-move-scores"><span><small>{formatMessage("review.modelBestShare")}</small><strong>{actionLabel(decision.recommended,decision.recommendedPreflopAction)}</strong></span><ReviewMetric label={formatMessage("review.accuracyLabel")} audit={reviewMoveAccuracy(decision.math.evRegretBigBlinds)} percent digits={1}/></div>
+              <p className="visually-hidden">
                 {formatMessage("review.modelPreferred")}{" "}
                 <strong>
                   {actionLabel(
@@ -496,9 +460,7 @@ export function HandReviewScreen({
                   audit={option.calculation}
                 />
               ))}
-              <small title={formatMessage("review.approximationNotice")}>
-                {formatMessage("review.approximationNotice")}
-              </small>
+
               <small>
                 {formatMessage(`review.confidence.${decision.math.confidence}`)}
                 {" · "}
@@ -507,9 +469,16 @@ export function HandReviewScreen({
                 })}
               </small>
             </aside>
+            <small className="review-model-note">{formatMessage("review.approximationNotice")}</small>
+            {expandedCalculation && <aside className="review-formula" role="status" aria-label={expandedCalculation.label}>
+              <button aria-label={formatMessage("review.closeCalculation")} onClick={()=>setExpandedCalculation(null)}>×</button>
+              <strong>{expandedCalculation.audit.formula}</strong>
+              <span>{expandedCalculation.audit.substituted} = {expandedCalculation.value}</span>
+            </aside>}
           </div>
         ),
       }}
     />
+    </CalculationContext.Provider>
   );
 }

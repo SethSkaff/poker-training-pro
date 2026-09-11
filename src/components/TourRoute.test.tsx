@@ -101,7 +101,7 @@ describe("career continuity", () => {
       elo: { heroRating: 1022 },
       newlyUnlockedEventIds: [],
       unlockedEventIds: [],
-      nextEventId: "regional-classic",
+      nextEventId: "regional-open",
       ...overrides,
     }) as unknown as Parameters<typeof TournamentCeremony>[0]["result"];
 
@@ -129,4 +129,13 @@ describe("career continuity", () => {
     expect(markup).toContain("stays open");
     expect(markup).toContain("Local Qualifier");
   });
+});
+
+it("restores the full route with only the forced current event selectable",()=>{
+ const html=renderToStaticMarkup(<TourLobby mode="normal" careerResults={[qualified("local-qualifier")]} activeEventId="regional-open" requiredEventId="regional-open" startLabel="RESUME" onBack={()=>{}} onStartEvent={()=>{}}/>);
+ const route=html.slice(html.indexOf('<ol'),html.indexOf('</ol>'));
+ expect(route.match(/<li /g)).toHaveLength(5);
+ expect(route.match(/disabled=""/g)).toHaveLength(4);
+ expect(route).toContain('data-stage="complete"');expect(route).toContain('data-stage="current"');expect(route).toContain('data-stage="future"');
+ expect(html).toContain('RESUME');expect(html).not.toContain('Play again');
 });

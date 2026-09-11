@@ -17,6 +17,7 @@ import {
   TableViewSelect,
   TimedSetup,
   TournamentCeremony,
+  TourLobby,
 } from "./components/Dashboard";
 import { RecoveryScreen } from "./components/RecoveryScreen";
 import {
@@ -2096,14 +2097,10 @@ export default function App() {
 
   if (screen === "tour") {
     const run = resolveProgressionRun(progress.career?.[tourMode]);
-    const event = listTournamentSessionEvents([]).find(entry => entry.id === run.eventId)!;
-    return <main className="night-shell run-entry"><NightCircuitScene quiet />
-      <section className="run-entry__content">
-        <button className="night-back" onClick={() => navigate("table-view-select")}><ArrowLeft size={18} /> Back</button>
-        <p className="run-entry__eyebrow">POKER TRAINING PRO · THE CIRCUIT</p>
-        <h1>{run.status === "active" ? "Your run continues." : run.status === "lost" ? "A new run awaits." : run.status === "complete" ? "Circuit complete." : "Take your seat."}</h1>
-        <p>{event.name}</p>
-        <button className="run-entry__start" onClick={() => {
+    return <TourLobby mode={tourMode} careerResults={run.status === "lost" ? [] : tourResults[tourMode]}
+      activeEventId={run.status === "active" ? run.eventId : undefined}
+      requiredEventId={run.eventId} startLabel={run.label} error={startupError}
+      onBack={()=>navigate("play")} onStartEvent={()=>{
           const stored = asTournamentReplay(checkpointBankRef.current.careers[tourMode] ?? activeReplayRef.current);
           if (run.status === "active" && stored?.eventId === run.eventId && stored.mode === tourMode) {
             let restored: TournamentRunner;
@@ -2118,11 +2115,7 @@ export default function App() {
             }
           }
           startCareerEvent(run.eventId);
-        }}>{run.label}</button>
-        {startupError && <p role="alert">{startupError}</p>}
-        <button className="night-back" onClick={() => navigate("play")}>Training & practice</button>
-      </section>
-    </main>;
+      }}/>;
   }
 
   if (screen === "settings") {

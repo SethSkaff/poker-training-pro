@@ -25,7 +25,7 @@ import {
   type TimedBlindDecision,
 } from "./timedBlindDirector";
 import type { HandValue } from "../engine/evaluator";
-import { isUncontestedAllInRunout } from "../lib/allInPresentation";
+import { canRevealAllInRunout } from "../lib/allInPresentation";
 
 export type TournamentRunnerKind = "career" | "timed";
 
@@ -456,22 +456,21 @@ function progressHandPresentationEvents(
   if (nextHand) {
     const newlyDealt = nextHand.board.length - previousHand.board.length;
     if (newlyDealt <= 0) return [];
-    const allInPlayerIds = previousHand.betting.players
+    const livePlayerIds = previousHand.betting.players
       .filter((player) => player.status !== "folded")
-      .filter((player) => player.status === "all-in")
       .map((player) => player.id);
     const revealAllInHands =
       newlyDealt >= 1 &&
-      allInPlayerIds.length >= 2 &&
-      isUncontestedAllInRunout(previousHand.betting.players);
+      livePlayerIds.length >= 2 &&
+      canRevealAllInRunout(previousHand.betting.players, previousHand.betting.complete);
     return [
       ...(revealAllInHands
         ? [{
             id: presentationEventId(source, previousHand.handId, "all-in-reveal", previousHand.board.length),
             kind: "all-in-reveal" as const,
             handId: previousHand.handId,
-            playerIds: allInPlayerIds,
-            reveals: allInPlayerIds.flatMap((playerId) => {
+            playerIds: livePlayerIds,
+            reveals: livePlayerIds.flatMap((playerId) => {
               const cards = previousHand.holeCards[playerId];
               return cards?.length === 2
                 ? [{ playerId, cards: cards.map((card) => ({ ...card })) }]

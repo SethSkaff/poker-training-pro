@@ -44,3 +44,10 @@ export function interpolateAllInEquities(
     (start.get(playerId) ?? 0) + (equity - (start.get(playerId) ?? 0)) * eased,
   ]));
 }
+
+/** No early reveal until the betting engine has closed action and at most one
+ * live player retains chips. Covers multiway caps and the covering stack. */
+export function canRevealAllInRunout(players: readonly AllInPresentationPlayer[], bettingClosed:boolean):boolean {
+  const live=players.filter(p=>p.status!=="folded"&&p.status!=="out");
+  return bettingClosed && live.length>=2 && live.some(p=>p.status==="all-in") && live.filter(p=>p.status==="active").length<=1;
+}

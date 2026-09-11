@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALL_IN_EQUITY_TRANSITION_MS, interpolateAllInEquities, isUncontestedAllInRunout } from "./allInPresentation";
+import { canRevealAllInRunout, ALL_IN_EQUITY_TRANSITION_MS, interpolateAllInEquities, isUncontestedAllInRunout } from "./allInPresentation";
 
 describe("all-in presentation policy", () => {
   it("allows an early reveal only for an equal-cap all-in table", () => {
@@ -27,4 +27,12 @@ describe("all-in presentation policy", () => {
     expect(mid.get("a")).toBeLessThan(0.52);
     expect(interpolateAllInEquities(from, target, ALL_IN_EQUITY_TRANSITION_MS).get("a")).toBe(0.52);
   });
+});
+
+it("requires closed betting and preserves every live capped or covering hand",()=>{
+ const players=[{status:"all-in" as const,totalCommitted:200},{status:"all-in" as const,totalCommitted:500},{status:"active" as const,totalCommitted:500},{status:"folded" as const,totalCommitted:50}];
+ expect(canRevealAllInRunout(players,false)).toBe(false);
+ expect(canRevealAllInRunout(players,true)).toBe(true);
+ expect(canRevealAllInRunout([...players,{status:"active",totalCommitted:500}],true)).toBe(false);
+ expect(canRevealAllInRunout([{status:"active",totalCommitted:200},{status:"active",totalCommitted:200}],true)).toBe(false);
 });

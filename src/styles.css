@@ -12477,3 +12477,124 @@ body:has(.table-screen--2d),
   .review-felt-verdict p { font-size: 9px; }
   .review-mobile-tabs { top: 70%; flex-direction: row; }
 }
+
+/* Seat-local correction: all physical positions are projected from the same oval. */
+.table-screen--2d .poker-scene { transform: translateY(-80px); --hero-card-height: clamp(50px,8cqh,76px); --board-card-height: clamp(42px,6.2cqh,62px); }
+.table-screen--2d .skip-hand { top: 175px; right: 20px; }
+.table-screen--2d .player-seat .opponent-cards,
+.table-screen--2d .player-seat.is-showdown-revealed.is-winner .opponent-cards { left: var(--local-cards-x); top: var(--local-cards-y); transform: translate(-50%,-50%) rotate(var(--local-card-angle)); min-height: 0; height: var(--hero-card-height); }
+.table-screen--2d .player-seat .opponent-cards .playing-card + .playing-card { transform: none; }
+.table-screen--2d .player-seat .seat-stack-chips { left: var(--local-stack-x); top: var(--local-stack-y); }
+.table-screen--2d .player-seat .seat-bet-chips { left: var(--local-bet-x); top: var(--local-bet-y); }
+.table-screen--2d .hero-hole-cards-visual { left: var(--bottom-cards-x); top: var(--bottom-cards-y); width: calc(2 * var(--hero-card-width) + 5px); height: var(--hero-card-height); min-height: 0; padding: 0; transform: translate(-50%,-50%); }
+.table-screen--2d .hero-hole-cards__cards { width: 100%; height: var(--hero-card-height); gap: 5px; }
+.table-screen--2d .hero-hole-cards-visual .playing-card { width: var(--hero-card-width); height: var(--hero-card-height); }
+.table-screen--2d .hero-card-wrap, .table-screen--2d .hero-card-wrap + .hero-card-wrap { transform: none; }
+.table-screen--2d .community-cards { top: 56%; }
+.table-screen--2d .pot-groups { top: 72%; }
+.table-screen--2d .table-readout { top: 80%; font-size: 14px; }
+.table-screen--2d .player-seat.is-all-in-revealed .opponent-cards { left: var(--local-runout-x); top: var(--local-runout-y); transform: translate(-50%,-50%); }
+.table-screen--2d .hero-hole-cards-visual.is-all-in-revealed { left: var(--bottom-runout-x); top: var(--bottom-runout-y); transform: translate(-50%,-50%); }
+.table-screen--2d .all-in-win-probability { top: calc(100% + 7px); bottom: auto; left: 50%; right: auto; transform: translateX(-50%); width: max-content; padding: 3px 8px; background: #111b20ed; border: 1px solid #c9d4bd70; border-radius: 4px; font-size: 14px; line-height: 1.2; color: #fff6c7; }
+.table-screen--2d .winner-reveal .is-winning,
+.table-screen--2d .player-seat .opponent-cards .playing-card.is-winning,
+.table-screen--2d .hero-hole-cards-visual .playing-card.is-winning,
+.table-screen--2d .community-cards .playing-card.is-winning { transform: translateY(-14px) scale(1.09); border: 3px solid #ffdd35; box-shadow: 0 0 0 2px #9e7600, 0 0 22px #ffd52ab0; z-index: 5; }
+.table-screen--2d .winner-reveal__board, .table-screen--2d .winner-reveal__hand { gap: 12px; }
+.review-table-heading { gap: 4px; width: 240px; }
+.review-summary-strip { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); display: flex; gap: 7px; width: max-content; max-width: 74%; justify-content: center; }
+.review-summary-strip > div { min-width: 92px; padding: 8px 10px; background: #222a2eea; border: 1px solid #9aa6a33d; border-radius: 6px; text-align: center; }
+.review-summary-strip .review-metric { display: flex; flex-direction: column; gap: 5px; font-size: 11px; margin: 0; }
+.review-summary-strip .math-vocab-term { font-size: 19px; }
+.review-summary-strip small { font-size: 9px; color: #bac6c3; }
+.table-screen--2d[data-review="true"] .pot-groups { top: 40%; }
+.table-screen--2d[data-review="true"] .table-readout { top: 47%; }
+.table-screen--2d[data-review="true"] .community-cards { top: 61%; }
+.review-felt-math, .review-felt-details { top: 43%; width: 23%; max-width: 370px; max-height: none; overflow: visible; padding: 18px; }
+.review-felt-math { left: 16%; }
+.review-felt-details { right: 16%; }
+.review-metric { font-size: clamp(13px,1.15vw,17px); line-height: 1.45; margin: 8px 0; gap: 10px; }
+.review-felt-math h2, .review-felt-details h2 { font-size: 12px; letter-spacing: .09em; }
+.review-felt-details > small { font-size: 11px; line-height: 1.45; margin-top: 10px; }
+.review-felt-verdict { top: 49%; left: 40%; width: 20%; padding: 12px; background: #23282bf2; }
+.review-felt-verdict > small { font-size: 10px; line-height: 14px; }
+.review-felt-verdict h2 { font-size: clamp(26px,2.6vw,40px); line-height: 1.1; margin: 8px 0; }
+.review-felt-verdict p { font-size: 12px; line-height: 1.4; margin: 5px 0; }
+.review-move-scores { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding-top: 8px; margin-top: 8px; border-top: 1px solid #b6c0b52b; }
+.review-move-scores > span { display: flex; flex-direction: column; gap: 5px; font-size: 12px; margin: 0; }
+.review-move-scores small { font-size: 10px; color: #c1ccc0; }
+.review-formula { position: absolute; z-index: 150; left: 50%; bottom: 110px; transform: translateX(-50%); width: min(720px,84%); display: grid; gap: 12px; padding: 22px 45px 22px 22px; border: 1px solid #aebdab75; border-radius: 8px; background: #151d22fa; color: #f1eee1; box-shadow: 0 8px 25px #0007; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; white-space: normal; }
+.review-formula button { position: absolute; top: 8px; right: 10px; color: #eee; background: none; border: 0; font-size: 24px; }
+@media(max-width:760px) {
+ .table-screen--2d .poker-scene { transform: translateY(-65px); --hero-card-height: clamp(32px,8.5vw,45px); --board-card-height: 34px; }
+ .table-screen--2d .skip-hand { top: 220px; right: 8px; }
+ .table-screen--2d .seat-chip-stack i { width: 8px; }
+ .table-screen--2d .seat-stack-chips .seat-chip-stack { gap: 2px; }
+ .table-screen--2d .all-in-win-probability { font-size: 9px; padding: 2px 4px; }
+ .review-summary-strip { top: 24%; max-width: 85%; gap: 3px; flex-wrap: wrap; }
+ .review-summary-strip > div { min-width: 58px; padding: 5px; }
+ .review-summary-strip .review-metric { font-size: 8px; }
+ .review-summary-strip .math-vocab-term { font-size: 13px; }
+ .review-felt-math, .review-felt-details { left: 8%; right: auto; top: 31%; width: 84%; max-width: none; padding: 14px; z-index: 4; }
+ .review-felt-verdict { top: 48%; left: 22%; width: 56%; padding: 10px; }
+ .review-felt-verdict h2 { font-size: 24px; }
+ .review-mobile-tabs { top: 69%; }
+ .review-formula { bottom: 100px; font-size: 12px; padding: 16px 34px 16px 16px; }
+}
+
+.table-screen--2d .blinds-placard { transform: translateY(-20px); }
+.table-screen--2d .community-cards { top: 50%; }
+.table-screen--2d .pot-groups { top: 62%; }
+.table-screen--2d .table-readout { top: 68%; }
+.table-screen--2d .table-readout strong { font-size: 22px; line-height: 1.1; }
+.table-screen--2d[data-review="true"] .pot-groups { top: 48%; }
+.table-screen--2d[data-review="true"] .table-readout { top: 55%; }
+.table-screen--2d[data-review="true"] .community-cards { top: 69%; }
+.table-screen--2d[data-review="true"] .hero-hole-cards-visual { left: var(--review-hand-x); top: var(--review-hand-y); }
+.table-screen--2d[data-review="true"] .hero-hole-cards-visual::after { content: attr(aria-label); position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); font-size: 10px; white-space: nowrap; color: #d8deca; }
+.table-screen--2d[data-review="true"] .player-seat--hero { margin-top: 20px; }
+.review-summary-strip { top: 25%; }
+.review-summary-strip > div { padding: 6px 9px; }
+.review-summary-strip .review-metric { line-height: 1.1; gap: 3px; }
+.review-summary-strip .math-vocab-term { font-size: 17px; line-height: 20px; padding: 0; }
+.review-summary-strip small { font-size: 8px; line-height: 10px; }
+.review-felt-math, .review-felt-details { top: 50.5%; }
+.review-metric { margin: 6px 0; font-size: clamp(13px,1.1vw,17px); line-height: 1.35; }
+.review-felt-verdict { top: 49%; padding: 10px; }
+.review-felt-verdict h2 { font-size: clamp(28px,2.5vw,40px); line-height: 1.1; margin: 6px 0; }
+.review-move-scores { padding-top: 5px; margin-top: 5px; gap: 8px; }
+.review-move-scores > span { font-size: 11px; gap: 3px; }
+.review-model-note { position: absolute; bottom: 94px; left: 17%; width: 66%; padding: 5px 10px; font-size: 10px; line-height: 1.4; color: #bdc7be; background: #171e20ed; border-radius: 4px; text-align: center; }
+@media(max-width:760px) {
+ .review-summary-strip { top: 25%; }
+ .review-summary-strip > div { padding: 4px; }
+ .review-felt-math, .review-felt-details { top: 30%; }
+ .review-model-note { display: none; }
+ .review-felt-verdict { top: 51%; }
+ .table-screen--2d[data-review="true"] .hero-hole-cards-visual { left: 50%; top: var(--bottom-cards-y); }
+}
+
+.table-screen--2d[data-review="true"] .player-seat--hero { margin-top: 0; }
+.review-felt-verdict { top: var(--review-verdict-top, 48.5%); padding: 5px 8px; }
+.review-felt-verdict h2 { margin: 4px 0; }
+.review-felt-verdict p { margin: 3px 0; font-size: 11px; }
+
+.table-screen--2d .skip-hand { top: auto; bottom: -42px; }
+.table-screen--2d .player-seat.is-all-in-revealed .opponent-cards .playing-card { width: var(--hero-card-width); height: var(--hero-card-height); opacity: 1; filter: none; }
+.table-screen--2d .hero-hole-cards-visual.is-all-in-revealed .playing-card { opacity: 1; filter: none; }
+.table-screen--2d .pot-groups--split { gap: 10px; }
+.table-screen--2d .pot-groups--split .center-pot { gap: 0; }
+.table-screen--2d .pot-groups--split .chip-stack + .chip-stack { margin-left: -12px; }
+.table-screen--2d .pot-groups--split .pot-group { gap: 2px; }
+.table-screen--2d .pot-groups--split .pot-group__amount { font-size: 9px; }
+.table-screen--2d .poker-table:has(.pot-groups--split) .table-readout { top: 72%; }
+
+.table-screen--2d .player-seat.is-all-in-revealed .opponent-cards { width: calc(2 * var(--hero-card-width) + 5px); height: var(--hero-card-height); min-height: 0; }
+
+/* Keep the restored five-stop route legible within its original column. */
+.event-route button { grid-template-columns: minmax(0,1fr); padding: 11px 7px; gap: 5px; }
+.event-route button div { min-width: 0; }
+.event-route strong { font-size: clamp(14px,1.3vw,22px); overflow-wrap: anywhere; }
+
+.review-felt-details .review-metric { margin: 4px 0; }
+.review-model-note { bottom: 86px; }

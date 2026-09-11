@@ -1,3 +1,4 @@
+import { useTwoDSeatGeometry } from "../lib/useTwoDSeatGeometry";
 import { tableChipPresentation, type TableChipMemory } from "../lib/tableChipPresentation";
 import { WinnerReveal } from "./WinnerReveal";
 import { ChipPayoutStream } from "./ChipPayoutStream";
@@ -2019,6 +2020,7 @@ export function PokerTable({
     reserve different amounts of height at different native sizes.
   */
   const sceneElementRef = useRef<HTMLDivElement | null>(null);
+  useTwoDSeatGeometry(sceneElementRef, isTwoDMode, scenario.id);
   const [sceneViewport, setSceneViewport] = useState<{ width: number; height: number }>(
     { width: 0, height: 0 },
   );
@@ -2620,7 +2622,7 @@ export function PokerTable({
        * authoritative identity.
        */
       setCardsDealtHandId(presentationEvent.handId);
-    } else if (!presentationEvent && tournament.heroDecision) {
+    } else if (!presentationEvent && (tournament.heroDecision || tournament.allInReveal?.handId === scenario.id)) {
       /*
        * Skip fast-forwards the remainder of the current hand to the next hero
        * decision.  That deliberately elides the intervening presentation
@@ -3578,7 +3580,7 @@ export function PokerTable({
   const allInPlayer = allInEvent
     ? scenario.players.find((player) => player.id === allInEvent.playerId)
     : undefined;
-  const allInRevealEvent = tournament?.allInReveal ??
+  const allInRevealEvent = (tournament?.allInReveal?.handId === scenario.id ? tournament.allInReveal : undefined) ??
     (tournament?.presentationEvent?.kind === "all-in-reveal"
       ? tournament.presentationEvent
       : undefined);
@@ -3804,15 +3806,7 @@ export function PokerTable({
   );
   const playbackControls = (
     <div className="table-tools">
-      {/*
-        The decision clock is the only `role="timer"` on the table and the only
-        readout of how long the player has been deciding. 2D is the default
-        mode, so suppressing it there removed that entirely rather than moving
-        it; `063a316` had already tuned `.table-screen--2d .decision-clock` to
-        sit compactly in this tools cluster, and that rule is still in the
-        stylesheet.
-      */}
-      <span
+      {!isTwoDMode && <span
         className="decision-clock"
         role="timer"
         aria-label={decisionClockAriaLabel(elapsedMs)}
@@ -3821,7 +3815,7 @@ export function PokerTable({
         {formatMessage("table.decisionClock.visibleLabel", {
           seconds: formatFixedDecimal(elapsedMs / 1000, 1),
         })}
-      </span>
+      </span>}
       {tournament && (
         <label className="table-speed-control">
           <FastForward size={15} />
@@ -4408,7 +4402,7 @@ export function PokerTable({
                   <b>{formatMessage("table.felt.dealerLabel")}</b>
                 </div>
 
-                <div
+                {(!isTwoDMode || displayedPot > 0) && <div
                   className="table-readout"
                   role="img"
                   aria-label={formatMessage(
@@ -4419,7 +4413,7 @@ export function PokerTable({
                   )}
                 >
                   <strong>{formatChips(displayedPot)}</strong>
-                </div>
+                </div>}
 
                 <div
                   className="community-cards"
