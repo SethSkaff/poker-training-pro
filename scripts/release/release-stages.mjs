@@ -203,9 +203,20 @@ export const stages = (node) => [
     args: [join("scripts", "audit-packaged-lifecycle-bridge-security.mjs")],
   },
   {
+    // This fixture imports the generated `tableGeometry.ts` to check the chip
+    // triangle allowance against the authored geometry rather than a copied
+    // number. Type stripping is on by default only from Node 22.18, and
+    // `.node-version` pins 22.12.0 -- so without the flag CI dies on
+    // ERR_UNKNOWN_FILE_EXTENSION while a developer on a newer 22.x passes.
+    // The stage was never reached in CI until the packaged executable it
+    // follows existed, which is how that stayed hidden.
     name: "Packaged 3D scene audit negative self-tests",
     command: node,
-    args: ["--test", join("scripts", "audit-packaged-3d-scene.test.mjs")],
+    args: [
+      "--experimental-strip-types",
+      "--test",
+      join("scripts", "audit-packaged-3d-scene.test.mjs"),
+    ],
   },
   {
     name: "Deterministic release manifest generation",
