@@ -102,6 +102,94 @@ function isProductionRuntimeSource(filePath) {
   );
 }
 
+/**
+ * Blanks out comment text so the capability vocabulary below is matched against
+ * code and string literals rather than English prose.
+ *
+ * The capability rules answer "does this build contain a payment capability",
+ * and the release policy already states that ordinary domain language is
+ * deliberately not a violation -- the poker verbs and the required disclosure
+ * are both exempted for exactly that reason. Engineering English is the same
+ * class: every occurrence of "checkout" in this repository is the Git sense
+ * (`actions/checkout`, "a clean CI checkout has no `work/`"), and a comment
+ * cannot itself take a payment.
+ *
+ * String literals are deliberately preserved, because that is where a real
+ * route, endpoint or product identifier would live: `"/checkout"` and
+ * `checkout()` must still fail. Anything this cannot confidently classify is
+ * kept rather than dropped, so an unterminated literal or comment widens the
+ * scan instead of silently hiding a finding.
+ */
+function stripCommentText(source) {
+  let output = "";
+  let index = 0;
+  while (index < source.length) {
+    const character = source[index];
+
+    // A quoted or templated literal is retained verbatim. Scanning it as a
+    // unit also stops a `//` or `/*` inside a URL or message from being read
+    // as the start of a comment.
+    if (character === '"' || character === "'" || character === "`") {
+      let end = index + 1;
+      let terminated = false;
+      while (end < source.length) {
+        if (source[end] === "\\") {
+          end += 2;
+          continue;
+        }
+        if (source[end] === character) {
+          end += 1;
+          terminated = true;
+          break;
+        }
+        end += 1;
+      }
+      // An unterminated literal means the rest of the file cannot be tokenized
+      // with any confidence. Keep all of it.
+      if (!terminated) {
+        output += source.slice(index);
+        break;
+      }
+      output += source.slice(index, end);
+      index = end;
+      continue;
+    }
+
+    if (character === "/" && source[index + 1] === "/") {
+      // `https://`, `file://` and unquoted CSS `url(...)` values are not
+      // comments. Only treat `//` as one when a scheme separator does not
+      // immediately precede it.
+      if (source[index - 1] === ":") {
+        output += character;
+        index += 1;
+        continue;
+      }
+      const newline = source.indexOf("\n", index);
+      if (newline < 0) break;
+      output += " ";
+      index = newline;
+      continue;
+    }
+
+    if (character === "/" && source[index + 1] === "*") {
+      const close = source.indexOf("*/", index + 2);
+      // An unterminated block comment is not something to trust either.
+      if (close < 0) {
+        output += source.slice(index);
+        break;
+      }
+      // Keep the newlines so line structure survives the blanking.
+      output += ` ${source.slice(index, close).replace(/[^\n]/g, "")}`;
+      index = close + 2;
+      continue;
+    }
+
+    output += character;
+    index += 1;
+  }
+  return output;
+}
+
 function stripApprovedDisclosure(source) {
   return approvedDisclosureFragments.reduce(
     (current, expression) => current.replace(expression, ""),
@@ -110,7 +198,7 @@ function stripApprovedDisclosure(source) {
 }
 
 function scanText(label, source, findings) {
-  const capabilityText = stripApprovedDisclosure(source);
+  const capabilityText = stripApprovedDisclosure(stripCommentText(source));
   for (const rule of prohibitedCapability) {
     const match = capabilityText.match(rule.expression);
     if (match) {
@@ -121,6 +209,9 @@ function scanText(label, source, findings) {
       });
     }
   }
+  // Endpoints stay matched against the raw file. A payment host is specific
+  // enough that there is no prose false positive to avoid, so mentioning one in
+  // a comment still earns a look.
   const endpoint = source.match(prohibitedEndpoint);
   if (endpoint) {
     findings.push({
@@ -387,6 +478,61 @@ function runSelfTests() {
         ...fixture(""),
         packageManifest: { dependencies: { "@stripe/stripe-js": "1.0.0" } },
       },
+      expected: false,
+    },
+    {
+      name: "source-control checkout in a line comment passes",
+      input: fixture(
+        "// A clean CI checkout contains no generated work directory.",
+      ),
+      expected: true,
+    },
+    {
+      name: "source-control checkout in a block comment passes",
+      input: fixture(
+        ["/*", "  a clean CI checkout has no `work/`", "*/"].join("\n"),
+      ),
+      expected: true,
+    },
+    {
+      name: "checkout route in a string still fails",
+      input: fixture('const route = "/checkout";'),
+      expected: false,
+    },
+    {
+      name: "capitalised checkout label in a string still fails",
+      input: fixture('const label = "Checkout";'),
+      expected: false,
+    },
+    {
+      name: "checkout call in code still fails",
+      input: fixture("export function checkout(cart) { return cart; }"),
+      expected: false,
+    },
+    {
+      name: "payment word commented out still passes, the code beside it does not",
+      input: fixture('const route = "/billing"; // payment route'),
+      expected: false,
+    },
+    {
+      name: "comment blanking cannot hide a route on the same line",
+      input: fixture('// note\nconst route = "/cash-out";'),
+      expected: false,
+    },
+    {
+      name: "a url containing a double slash is not treated as a comment",
+      input: fixture(
+        "body { background: url(https://api.stripe.com/logo.png); }",
+      ),
+      expected: false,
+    },
+    {
+      name: "an apostrophe in prose cannot swallow later code",
+      input: fixture(
+        ["// the runner's workspace is clean", 'const route = "/checkout";'].join(
+          "\n",
+        ),
+      ),
       expected: false,
     },
     {

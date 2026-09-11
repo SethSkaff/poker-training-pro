@@ -42,9 +42,24 @@ blind, all-in, chips, chip EV, and pot odds—are deliberately not violations.
 The gate also recognizes the exact required negative disclosure instead of
 mistaking it for a real-money feature.
 
-The self-test proves the gate accepts simulated betting and the disclosure,
-then rejects a chip sale, cash-out route, billing IPC, payment endpoint,
-payment dependency, and missing disclosure.
+Engineering English in comments is the same class. The capability vocabulary is
+matched against code and string literals, with comment text blanked first, so
+the Git sense of "checkout"—`actions/checkout`, "a clean CI checkout has no
+`work/`"—does not read as commercial checkout. A comment cannot take a payment.
+String literals are deliberately kept, because that is where a real route,
+endpoint or product identifier lives: `"/checkout"` and `checkout()` still fail.
+Anything the tokenizer cannot confidently classify, such as an unterminated
+literal or block comment, is retained rather than dropped, so the failure
+direction is a wider scan rather than a hidden finding. Payment-provider
+endpoints and dependency names are still matched against the raw file, since a
+named payment host is specific enough to be worth a look wherever it appears.
+
+The self-test proves the gate accepts simulated betting, the disclosure, and
+source-control terminology in both comment forms, then rejects a chip sale,
+cash-out route, billing IPC, payment endpoint, payment dependency, missing
+disclosure, a checkout route, a checkout label, a checkout function, and the
+tokenizer edge cases—an unquoted `https://` URL, an apostrophe in prose, and a
+commented line beside live code—that could otherwise hide one.
 
 ## Release interpretation and remaining manual work
 
