@@ -494,8 +494,19 @@ describe("pseudo-locale completeness sweep", () => {
       live-region announcement carries the street, which is the other half of
       what the old line said.
 
-      Both resolve through the same pseudo-locale mock the rendered screen
-      used, so these are exact expected strings rather than guessed
+      Then `e114728` removed the visible decision clock from 2D by design, and
+      the clock's "{seconds}s" label went the same way as the status line. The
+      call price took its place here: it is the number the player is acting on,
+      it is drawn beside the prompt in the layout this test renders, and it is
+      a formatted chip amount whose thousands separator has to survive intact.
+
+      The clock was this file's only *decimal* interpolation, and a decimal is
+      a distinct corruption risk from a grouped integer -- the separator and
+      the radix point are different characters. 3D still draws the clock, so
+      that case moved to its own render below rather than being dropped.
+
+      All of these resolve through the same pseudo-locale mock the rendered
+      screen used, so they are exact expected strings rather than guessed
       transliterations.
     */
     expect(markup).not.toContain("scenarioProgress");
@@ -518,13 +529,57 @@ describe("pseudo-locale completeness sweep", () => {
         pot: formatChips(scenario.pot),
       }),
     );
-    // The decision clock's visible "{seconds}s" label keeps its digits.
+    // The visible call price keeps its grouped digits. This is the amount the
+    // action dock is asking the player to commit, drawn next to the prompt.
+    expect(markup).toContain(
+      formatMessage("table.actionContext.toCall", {
+        amount: formatChips(scenario.amountToCall),
+      }),
+    );
+    // The pot readout keeps the formatted chip count intact.
+    expect(markup).toContain(formatChips(scenario.pot));
+    // 2D deliberately draws no decision clock, so its label must not appear
+    // here at all -- see `omits the 2D decision clock by design` in
+    // PokerTable.accessibility.test.ts.
+    expect(markup).not.toContain("decision-clock");
+  });
+
+  it("keeps the 3D decision clock's decimal seconds intact under pseudo-localization", () => {
+    /*
+      A radix point is not a thousands separator. Every other interpolated
+      value on this screen is a grouped integer, so without this the suite
+      would no longer prove that a fractional value survives pseudo-wrapping
+      -- which is what the 2D assertion used to cover before `e114728`
+      removed that readout from 2D by design.
+
+      The clock lives in the table-tools cluster rather than the WebGL canvas,
+      so it renders in static markup with the spatial scene enabled.
+    */
+    const scenario = trainingScenarios[0];
+    const markup = renderToStaticMarkup(
+      <PokerTable
+        mode="training"
+        scenario={scenario}
+        settings={{ ...defaultSettings, spatialScene: true }}
+        progress={defaultProgress}
+        onProgressChange={() => undefined}
+        onSettingsChange={() => undefined}
+        onNextScenario={() => undefined}
+        onExit={() => undefined}
+      />,
+    );
+    expect(markup).toContain("decision-clock");
     expect(markup).toContain(
       formatMessage("table.decisionClock.visibleLabel", {
         seconds: formatFixedDecimal(0, 1),
       }),
     );
-    // The pot readout keeps the formatted chip count intact.
-    expect(markup).toContain(formatChips(scenario.pot));
+    expect(markup).toContain(
+      formatMessage("table.decisionClock.ariaLabel", {
+        seconds: formatFixedDecimal(0, 1),
+      }),
+    );
+    // The digits and the radix point are never transliterated.
+    expect(markup).toContain(formatFixedDecimal(0, 1));
   });
 });
