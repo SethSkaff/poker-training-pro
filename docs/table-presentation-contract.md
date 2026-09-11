@@ -1,43 +1,37 @@
 # Table Presentation Contract
 
-The tournament engine is authoritative. It updates a public table snapshot
-immediately after every legal action; presentation never delays, replays, or
-modifies that state.
+The tournament engine owns legality, commitments, odds, refunds and settlement.
+Presentation projects public snapshots and the ordered presentation event queue.
 
 ## Inclusive-pot convention
 
-`scenario.pot` is the exact, authoritative total committed to the hand. It
-includes a player's currently displayed street wager. The central numeric pot
-and its compact chip-stack scale therefore always represent the whole pot,
-including wagers that are still visibly parked at seats. A seat wager is a
-ledger/readability marker, not a second physical inventory of chips.
+`scenario.pot` remains the authoritative inclusive hand total, including current
+street bets. Evaluators and pot odds continue to use this value unchanged.
 
-This avoids a misleading intermediate number such as a centre pot that omits a
-call which has already been accepted by the engine. The centre remains labeled
-as the total pot while seat labels explicitly say **Committed**.
+The 2D central pot displays **gathered chips only**, using
+`scenario.collectedChipInventory`. Training snapshots without an inventory use
+`pot - sum(street bets)`. Outstanding wagers are physical chips in front of each
+seat, with their own labels. The persistent stack has a separate chip pile and
+amount; the identity panel contains only the name.
 
 ## Presentation beats
 
-The public event queue adds visual explanation without changing the convention:
-
-1. `action` (bet, raise, call, blind, or all-in): a transient chip token
-   travels from that player's stack lane toward their committed-wager lane. The
-   authoritative stack and inclusive total pot already match the snapshot.
-2. `bets-collected`: a token travels from the committed lane to the central
-   pot. The numeric pot does not jump because it already included that value.
-3. `pot-awarded`: a token travels from the central pot to the public award
-   recipient. The next authoritative snapshot contains the resulting stack.
-
-The renderer owns only these transient tokens; it is safe to skip or reduce
-their motion because it never derives chips from them. When motion is reduced,
-the same public event label and updated amounts remain visible.
+- `bets-collected`: street piles move to the center. At completion their labels
+  disappear and the central amount increases once. This state persists through
+  subsequent board events until the next authoritative street snapshot.
+- Result events collect any remaining wagers. Uncalled returns use the engine's
+  public contribution rules and credit their owner separately from winner awards.
+- `pot-awarded`: the ordered authoritative award ledger transfers each amount
+  from its central pile to the recipient's stack. Completed award credits persist
+  through event-less frames and the next hand's opening beats while App still
+  holds the previous snapshot. They reset when the new hand snapshot arrives.
 
 ## Invariants
 
-- Exact numeric amounts come from the engine, never animation deltas.
-- The central pot's numeric amount equals the sum of committed chips in the
-  current public state.
-- Seat commitment, remaining stack, and total-hand commitment use distinct
-  labels and lanes.
-- No transient animation is persisted, exported, or used for replay.
-- A presentation event is public-only and cannot reveal folded or hidden cards.
+- No presentation value changes engine state or settlement.
+- Outstanding bets and gathered chips are never counted twice on the 2D felt.
+- Completed payouts cannot briefly reappear in the central pot or revert stacks.
+- Split pots and refunds conserve the inclusive hand total.
+- Presentation memory is local, transient and never persisted or exported.
+- No event reveals hidden or folded private cards.
+- The existing 3D renderer retains its own physical chip projection.

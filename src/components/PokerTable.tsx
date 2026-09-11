@@ -1,4 +1,4 @@
-import { payoutPresentation } from "../lib/payoutPresentation";
+import { tableChipPresentation, type TableChipMemory } from "../lib/tableChipPresentation";
 import { WinnerReveal } from "./WinnerReveal";
 import { ChipPayoutStream } from "./ChipPayoutStream";
 import {
@@ -850,8 +850,9 @@ interface PlayerSeatProps {
   displayName?: string;
   avatarModel?: TwoDAvatarModel;
   appearance?: OpponentAppearance;
-  /** Render the current street bet in the seat label for the flat table. */
-  showCurrentBet?: boolean;
+  /** Place stack and street-bet chips on the felt for the flat table. */
+  physicalChips?: boolean;
+  collectionProgress?: number;
 }
 
 /**
@@ -960,8 +961,21 @@ function PlayerSeat({
   displayName,
   avatarModel,
   appearance: suppliedAppearance,
-  showCurrentBet = false,
+  physicalChips = false,
+  collectionProgress,
 }: PlayerSeatProps) {
+  const betPile = useRef<HTMLDivElement>(null);
+  const [collectionOffset, setCollectionOffset] = useState({ x: 0, y: 0 });
+  const collecting = collectionProgress !== undefined;
+  useLayoutEffect(() => {
+    const pile = betPile.current;
+    const stage = pile?.closest<HTMLElement>(".poker-scene");
+    const target = stage?.querySelector(".pot-groups");
+    if (!collecting || !pile || !stage || !target) return;
+    const a = pile.getBoundingClientRect(), b = target.getBoundingClientRect();
+    const zoom = stage.getBoundingClientRect().width / stage.offsetWidth;
+    setCollectionOffset({ x: (b.x + b.width / 2 - a.x - a.width / 2) / zoom, y: (b.y - a.y) / zoom });
+  }, [collecting]);
   const appearance = suppliedAppearance ?? describeOpponentAppearance(player.id);
   const isMucking = isSeatFoldedForPresentation(
     player.status,
@@ -1150,23 +1164,20 @@ function PlayerSeat({
         </div>
       </div>
       {/*
-        The seat's own pile, sized in big blinds (E27-009). It sits with the
-        name and number rather than replacing them: chips answer "how deep is
-        this player" at a glance, the numeral answers "exactly how much".
+        Keep the persistent stack beside this seat's cards. The amount belongs
+        below its chips; the identity panel is reserved for the name.
       */}
-      <SeatChipStack stack={player.stack} bigBlind={bigBlind} />
+      {physicalChips ? <div className="seat-stack-chips" aria-hidden="true" data-stack-amount={player.stack}>
+        <SeatChipStack stack={player.stack} bigBlind={bigBlind} />
+        <small className="chip-amount">{formatChips(player.stack)}</small>
+      </div> : <SeatChipStack stack={player.stack} bigBlind={bigBlind} />}
       <div
         className="seat-label" aria-hidden="true"
         {...(isHero ? { "data-hero-identity": "true" } : {})}
       >
         <span className="seat-name">{isHero ? formatMessage("table.seat.you") : displayName ?? player.name.split(" ")[0]}</span>
-        <strong>{formatChips(player.stack)}</strong>
-        {showCurrentBet && (
-          <span className="seat-current-bet">
-            <small>BET</small>
-            <b>{formatChips(player.bet)}</b>
-          </span>
-        )}
+        {!physicalChips && <strong>{formatChips(player.stack)}</strong>}
+
       </div>
       {/*
         The hero's committed wager sits at the hero's seat, exactly as every
@@ -1175,11 +1186,15 @@ function PlayerSeat({
       */}
       {player.bet > 0 && (
         <div
-          className="seat-bet"
+          ref={betPile}
+          className={physicalChips ? "seat-bet-chips" : "seat-bet"}
+          style={physicalChips && collecting ? { translate: `${collectionOffset.x * collectionProgress!}px ${collectionOffset.y * collectionProgress!}px` } : undefined}
+          data-bet-amount={player.bet}
           aria-hidden="true"
           data-bet-badge={isHero ? "hero" : "opponent"}
         >
-          <b>{formatChips(player.bet)}</b>
+          {physicalChips && <SeatChipStack stack={player.bet} bigBlind={bigBlind} />}
+          <b className={physicalChips ? "chip-amount" : undefined}>{formatChips(player.bet)}</b>
         </div>
       )}
       {isFolded && (
@@ -3703,12 +3718,23 @@ export function PokerTable({
     showdownAwards.map((award) => award.playerId),
   );
   const payoutEvent = tournament?.presentationEvent?.kind === "pot-awarded" ? tournament.presentationEvent : undefined;
-  const payout = payoutPresentation(isTwoDMode ? showdownAwards : [], tournament?.presentationEvent, activeEventProgress);
-  const visiblePotGroups = potGroups.map(group => ({ ...group,
-    amount: Math.max(0, group.amount - payout.fromPot(group.id)),
-    stationaryAmount: Math.max(0, group.amount - payout.fromPot(group.id) - (payout.active?.potId === group.id ? payout.active.amount : 0)),
-  })).filter(group => group.amount > 0);
-  const displayedPot = Math.max(0, scenario.pot - payout.paid);
+  const chipMemory = useRef<TableChipMemory | undefined>(undefined);
+  const chips = tableChipPresentation(scenario, isTwoDMode ? tournament?.presentationEvent : undefined, activeEventProgress, isTwoDMode ? showdownAwards : [], chipMemory.current);
+  useLayoutEffect(() => { chipMemory.current = chips.memory; });
+  const payout = chips.payout;
+  let remainingGathered = isTwoDMode ? chips.gathered : scenario.pot;
+  const visiblePotGroups = potGroups.map(group => {
+    const potAmount = isTwoDMode && chips.settledPots
+      ? chips.settledPots.find(pot => pot.id === group.id)?.amount ?? 0
+      : group.amount;
+    const gatheredAmount = Math.min(potAmount, remainingGathered);
+    remainingGathered -= gatheredAmount;
+    return { ...group,
+      amount: Math.max(0, gatheredAmount - payout.fromPot(group.id)),
+      stationaryAmount: Math.max(0, gatheredAmount - payout.fromPot(group.id) - (payout.active?.potId === group.id ? payout.active.amount : 0)),
+    };
+  }).filter(group => group.amount > 0);
+  const displayedPot = isTwoDMode ? chips.pot : scenario.pot;
   const showdownHeroRevealed = revealedCardsByPlayer.has(heroPlayer?.id ?? "");
   const heroAllInRevealed =
     isTwoDMode &&
@@ -3720,7 +3746,7 @@ export function PokerTable({
   const tableAnnouncement = buildPokerTableAnnouncement({
     action,
     latestPublicAction: tournament?.actionHistory.at(-1),
-    scenario,
+    scenario: isTwoDMode ? { ...scenario, pot: displayedPot } : scenario,
   });
 
   // Public result of the hand that just finished, resolved from the same
@@ -3770,7 +3796,7 @@ export function PokerTable({
   );
   const playbackControls = (
     <div className="table-tools">
-      <span
+      {!isTwoDMode && <span
         className="decision-clock"
         role="timer"
         aria-label={decisionClockAriaLabel(elapsedMs)}
@@ -3779,7 +3805,7 @@ export function PokerTable({
         {formatMessage("table.decisionClock.visibleLabel", {
           seconds: formatFixedDecimal(elapsedMs / 1000, 1),
         })}
-      </span>
+      </span>}
       {tournament && (
         <label className="table-speed-control">
           <FastForward size={15} />
@@ -4486,7 +4512,8 @@ export function PokerTable({
               return (
                 <PlayerSeat
                   key={player.id}
-                  player={{ ...player, stack: player.stack + payout.toPlayer(player.id) }}
+                  player={{ ...player, stack: player.stack + (isTwoDMode ? chips.credit(player.id) : 0), bet: isTwoDMode ? chips.bet(player.bet) : player.bet }}
+                  collectionProgress={isTwoDMode ? chips.collectionProgress : undefined}
                   position={seatPositions[index]}
                   bigBlind={scenario.blinds[1]}
                   isHero={player.seat === scenario.heroSeat}
@@ -4521,7 +4548,7 @@ export function PokerTable({
                       ? displayedAllInEquity.get(player.id)
                       : undefined
                   }
-                  sceneSeat={seatSceneSeat ? { ...seatSceneSeat, stack: seatSceneSeat.stack + payout.toPlayer(player.id) } : undefined}
+                  sceneSeat={seatSceneSeat ? { ...seatSceneSeat, stack: seatSceneSeat.stack + (isTwoDMode ? chips.credit(player.id) : 0), bet: isTwoDMode ? chips.bet(player.bet) : seatSceneSeat.bet } : undefined}
                   railAnchor={
                     sceneReadyForPlaques && seatSceneSeat
                       ? seatPlaqueViewportAnchor(
@@ -4583,7 +4610,7 @@ export function PokerTable({
                   }
                   displayName={isTwoDMode ? twoDPlayerIdentities.get(player.id)?.displayName : undefined}
                   avatarModel={isTwoDMode ? twoDPlayerIdentities.get(player.id)?.model : undefined}
-                  showCurrentBet={isTwoDMode}
+                  physicalChips={isTwoDMode}
                 />
               );
             })}

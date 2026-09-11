@@ -28,8 +28,8 @@ describe("isolated 2D table layout contract", () => {
   });
 
   it("keeps the 2D surface quiet while making bets and cards unambiguous", () => {
-    expect(tableSource).toContain("showCurrentBet={isTwoDMode}");
-    expect(tableSource).toContain('className="seat-current-bet"');
+    expect(tableSource).toContain("physicalChips={isTwoDMode}");
+    expect(tableSource).toContain('className="seat-stack-chips"');
     expect(twoDStyles).toContain("--table-height: calc(100% - var(--table-top) - 76px);");
     expect(twoDStyles).toContain("border-radius: 50%;");
     expect(twoDStyles).toContain("--side-upper-y: calc(var(--table-top) + var(--table-height) * 0.2);");

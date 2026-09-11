@@ -19,7 +19,7 @@ describe("committed wager presentation", () => {
     expect(source).not.toContain("!isHero && player.bet > 0");
     expect(source).toContain("{player.bet > 0 && (");
     expect(source).not.toContain('formatMessage("table.seat.committed")');
-    expect(source).toContain('<b>{formatChips(player.bet)}</b>');
+    expect(source).toContain('<b className={physicalChips ? "chip-amount" : undefined}>{formatChips(player.bet)}</b>');
   });
 
   it("keeps the wager lane clear of the balance plate", () => {

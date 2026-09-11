@@ -34,7 +34,7 @@ export function ChipPayoutStream({
     const seat = [
       ...(stage?.querySelectorAll<HTMLElement>("[data-scene-player-id]") ?? []),
     ].find((el) => el.dataset.scenePlayerId === playerId);
-    const target = seat?.querySelector(".seat-label");
+    const target = seat?.querySelector(".seat-stack-chips");
     if (!start || !stage || !target) return;
     const measure = () => {
       const a = start.getBoundingClientRect();

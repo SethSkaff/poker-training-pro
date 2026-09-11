@@ -97,3 +97,33 @@ why re-adding it there would not work.
 Audit navigation was updated from the removed Enter event button to the progression START control. Logs: `work/redesign/activation-package.log` and `work/redesign/activation-licenses.log`.
 
 Original request: C:/Users/19496/.codex/attachments/4ae82df7-7128-40c4-88b4-173652bde5ac/pasted-text.txt
+
+
+## Focused correction pass — 2026-09-10
+
+- Raised the full 2D composition, extended placard supports to the screen edge,
+  removed the visual timer while retaining speed/pause/audio controls, and
+  centered the gathered pot with its amount.
+- Corrected the six card lanes and kept markers beside identities. Name panels
+  now contain only names. Persistent stacks sit beside the card area; lower-seat
+  stacks use the open outside corner to avoid avatars. Bet piles sit inward.
+  Compact layouts place stack piles above/below cards where lateral room is tight.
+- Enlarged review columns and added charcoal backing to the verdict below the
+  board. Long explanations can scroll within the right panel above navigation.
+- Added transient gathered-pot/collection/payout memory, including ordered split
+  awards and uncalled returns. Inclusive engine amounts and settlement are unchanged.
+- Inspected actual React table/review components in the browser at 1280×720 and
+  in 390×844 frames: six active seats, preflop/flop review, bet collection,
+  payout travel and the event-less frame after payout. Observed 0 central + 25/50
+  outstanding, then 75 central + no outstanding labels. Observed the final
+  winner stack remain 31,175 with central pot 0 after payout and card collection.
+- Focused Vitest suite: 99 passing tests, including nine accounting regressions.
+  Typecheck and Vite production build passed. No lint script is configured.
+  The production build reports the existing large-chunk advisory.
+- Packaging uses the build/electron-builder stages directly, honoring the request
+  to avoid unrelated audits. The first current-output attempt hit a Windows file
+  lock; the user closed the running app before replacement was retried.
+- Final Windows NSIS/portable packaging completed successfully. The packaged
+  HTML/JavaScript/CSS entry assets match the production build byte-for-byte.
+  `npm run release:update-shortcut` updated the Desktop shortcut to
+  `outputs/current/win-unpacked/Poker Training Pro.exe`.
