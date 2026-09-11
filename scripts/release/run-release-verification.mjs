@@ -34,5 +34,5 @@ for (const [index, stage] of stages.entries()) {
 }
 
 console.log(
-  "\nAutomated release verification passed. Review the generated third-party audit's manual blockers separately. This gate does not sign/package installers, smoke-test an installed package, or perform active penetration testing.",
+  "\nAutomated release verification passed. Review the generated third-party audit's manual blockers separately. This gate audits an already-built unpacked package; it does not sign/package installers, smoke-test an installed package, or perform active penetration testing.",
 );

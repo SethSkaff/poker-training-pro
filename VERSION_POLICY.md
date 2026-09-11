@@ -23,6 +23,12 @@ reason to create a new output folder.
 The desktop shortcut points to that same executable, so it continues to launch
 the approved build after each verified package.
 
+`npm run package:win-unpacked` fills the same slot with the same application
+from the same build configuration, stopping before the NSIS and portable
+installers. It is what the release-quality workflow runs so its packaged audit
+stage has a real executable to inspect; use it locally for the same reason.
+Producing a public installer is still `npm run package:win`.
+
 ## Rules for agents
 
 - Never create folders named with feature, date, milestone, revision, or agent

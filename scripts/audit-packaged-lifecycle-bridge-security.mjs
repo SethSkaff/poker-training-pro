@@ -6,7 +6,7 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
@@ -53,13 +53,35 @@ try {
   const port = await waitForDevToolsPort(profile, child, deadline, output);
   const target = await waitForPageTarget(port, child, deadline, output);
   client = await CdpClient.connect(target.webSocketDebuggerUrl, deadline);
+
+  /*
+    Wait for the bridge before judging it.
+
+    The page target exists before `contextBridge` has exposed `window.desktop`,
+    so evaluating immediately can win the race against the preload and read an
+    empty window. This check and the leak check used to be one expression, and
+    an empty window failed it -- accusing the product of exposing an audit-only
+    bridge because the preload had not attached yet. Observed once as a false
+    product failure directly after a heavy local package run.
+
+    Waiting cannot hide a leak. `electron/preload.cjs` exposes
+    `testLifecycleWindow`, `sceneDiagnosticsEnabled`, and `sceneAuditSeed` in
+    the same single `exposeInMainWorld("desktop", ...)` call, so the object
+    never exists without its full key set; and `__ptpSceneDiagnostics` is
+    installed by the renderer only when that same object carries
+    `sceneDiagnosticsEnabled`. So the surface either appears clean or appears
+    leaking -- never clean first and leaking later.
+  */
+  if (!(await waitForValue(client, "typeof window.desktop === 'object' && window.desktop !== null", deadline))) {
+    throw new Error("Normal packaged preload never exposed its bridge.");
+  }
   const result = await client.send("Runtime.evaluate", {
     expression:
-      "typeof window.desktop === 'object' && window.desktop !== null && typeof window.desktop.testLifecycleWindow === 'undefined' && typeof window.desktop.sceneDiagnosticsEnabled === 'undefined' && typeof window.desktop.sceneAuditSeed === 'undefined' && typeof window.__ptpSceneDiagnostics === 'undefined'",
+      "typeof window.desktop.testLifecycleWindow === 'undefined' && typeof window.desktop.sceneDiagnosticsEnabled === 'undefined' && typeof window.desktop.sceneAuditSeed === 'undefined' && typeof window.__ptpSceneDiagnostics === 'undefined'",
     returnByValue: true,
   });
   if (result.result?.value !== true) {
-    throw new Error("Normal packaged preload was unavailable or exposed an audit-only lifecycle/diagnostics bridge.");
+    throw new Error("Normal packaged preload exposed an audit-only lifecycle/diagnostics bridge.");
   }
 } catch (error) {
   // A CDP command deadline proves neither a passing check nor a regression;
@@ -80,4 +102,21 @@ const report = reportCdpOutcome(
   },
   { failure, transportTimeout },
 );
+// A clean checkout has no ignored `work/`, and this audit runs standalone as
+// well as after the stages that happen to create it. Writing the evidence is
+// part of passing, so do not depend on another stage having gone first.
+await mkdir(dirname(reportPath), { recursive: true });
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+
+/** Poll an expression until it is truthy, bounded by the audit's own deadline. */
+async function waitForValue(cdp, expression, deadline) {
+  while (Date.now() < deadline) {
+    const result = await cdp.send("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+    });
+    if (result.result?.value) return true;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 70));
+  }
+  return false;
+}

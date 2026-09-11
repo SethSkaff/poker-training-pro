@@ -58,6 +58,25 @@ jobs:
         working-directory: node_modules/electron-winstaller
         run: node script/select-7z-arch.js
 
+      # `electron` 43 declares no install lifecycle script, so neither
+      # `npm ci --ignore-scripts` nor a plain `npm ci` fetches its platform
+      # runtime. This is the package's own version-pinned entry point
+      # (`install-electron` in its bin map): it reads the version from the
+      # pinned package and checks the download against the checksums shipped
+      # inside it. It is not in the install-script allowlist because the
+      # lockfile records no install script for it to approve.
+      - name: Install approved pinned Electron runtime
+        working-directory: node_modules/electron
+        run: node install.js
+
+      # The packaged audit stages of `release:verify` launch the real unpacked
+      # executable. A clean checkout has no ignored `outputs/`, so the gate
+      # could only ever pass on a machine where an earlier local package
+      # happened to survive. Build the app -- no installer, no signing -- so
+      # the audit inspects an artifact this run produced.
+      - name: Build the unpacked Windows package the packaged audits inspect
+        run: npm run package:win-unpacked
+
       - name: Verify release inputs and production artifacts
         run: npm run release:verify
 
