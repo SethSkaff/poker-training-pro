@@ -1933,7 +1933,7 @@ export default function App() {
               /*
                 Replay export is a support and diagnostics workflow, not a
                 player feature (E27-011). "Export event replay" sat on the
-                ceremony beside Next event and Review, offering an ordinary
+                ceremony beside Advance and Game Review, offering an ordinary
                 player a raw JSON file they have no use for.
               */
               onExportReplay: async () => {
@@ -1958,6 +1958,14 @@ export default function App() {
               },
             }
           : {})}
+        onRetry={
+          runner?.kind === "career" && !tournamentResult.qualified
+            ? () => {
+                setTournamentResult(null);
+                startCareerEvent(tournamentResult.eventId);
+              }
+            : undefined
+        }
         onMenu={() => {
           // Keep the completed-event replay through ordinary navigation and
           // restart. Starting another event replaces it at that new safe

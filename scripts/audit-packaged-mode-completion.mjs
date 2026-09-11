@@ -296,11 +296,11 @@ async function driveToCeremony(cdp, child, deadline, { sceneEnabled: requireScen
 async function auditPostEventSurfaces(cdp, deadline) {
   const result = { review: undefined, travel: undefined };
 
-  const reviewOffered = await evaluate(cdp, buttonExpression("Review key hand", false));
+  const reviewOffered = await evaluate(cdp, buttonExpression("Game Review", false));
   if (!reviewOffered) {
     result.review = { reached: false, reason: "the ceremony offered no review button" };
   } else {
-    await clickText(cdp, "Review key hand", deadline);
+    await clickText(cdp, "Game Review", deadline);
     await waitFor(cdp, ".review-shell", deadline, "hand review screen");
     // The shell renders for the deriving placeholder and the error branch too,
     // so the shell alone is not evidence the review was produced.
@@ -337,7 +337,7 @@ async function auditPostEventSurfaces(cdp, deadline) {
     await waitFor(cdp, ".ceremony-board", deadline, "ceremony after review");
   }
 
-  const travelOffered = await evaluate(cdp, buttonExpression("Next event", false));
+  const travelOffered = await evaluate(cdp, buttonExpression("Advance", false));
   if (!travelOffered) {
     result.travel = {
       reached: false,
@@ -345,7 +345,7 @@ async function auditPostEventSurfaces(cdp, deadline) {
     };
     return result;
   }
-  await clickText(cdp, "Next event", deadline);
+  await clickText(cdp, "Advance", deadline);
   await waitFor(cdp, ".career-travel", deadline, "career travel");
   const travel = await evaluate(cdp, `(() => {
     const travel = document.querySelector('.career-travel');

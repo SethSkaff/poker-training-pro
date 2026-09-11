@@ -8371,8 +8371,21 @@ body:has(.table-screen--3d),
   text-align: center;
 }
 
+.ceremony-board[data-outcome="out"] {
+  border-top-color: var(--red);
+  border-bottom-color: rgba(239, 112, 105, 0.42);
+  box-shadow:
+    0 30px 100px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(239, 112, 105, 0.18),
+    0 0 60px rgba(239, 112, 105, 0.12);
+}
+
 .ceremony-board > svg {
   color: #ebbd5d;
+}
+
+.ceremony-board[data-outcome="out"] > svg {
+  color: var(--red);
 }
 
 .ceremony-board > p:first-of-type {
@@ -8385,6 +8398,7 @@ body:has(.table-screen--3d),
 
 .ceremony-board h1 {
   margin-bottom: 8px;
+  color: #fff8e8;
   font-size: clamp(64px, 7vw, 100px);
   line-height: 0.84;
   text-transform: uppercase;
@@ -8394,6 +8408,11 @@ body:has(.table-screen--3d),
   color: #edbf5e;
   font-family: "Barlow Condensed", sans-serif;
   font-size: 32px;
+}
+
+.ceremony-board[data-outcome="out"] .ceremony-board__place,
+.ceremony-board[data-outcome="out"] .ceremony-board__qualification {
+  color: var(--red);
 }
 
 .ceremony-board__qualification {
@@ -8427,19 +8446,31 @@ body:has(.table-screen--3d),
 
 .ceremony-board dd {
   margin: 4px 0 0;
+  color: #fff8e8;
   font-size: 20px;
   font-weight: 800;
 }
 
 .ceremony-board dd span {
   margin-left: 7px;
-  color: #e9b854;
+}
+
+.ceremony-board__elo-delta--positive {
+  color: var(--green);
+}
+
+.ceremony-board__elo-delta--negative {
+  color: var(--red);
+}
+
+.ceremony-board__elo-delta--neutral {
+  color: var(--muted-dim);
 }
 
 .ceremony-board__unlocks {
   display: flex;
   flex-direction: column;
-  margin-top: 18px;
+  margin: 18px 0;
 }
 
 .ceremony-board__unlocks span {
@@ -8457,15 +8488,16 @@ body:has(.table-screen--3d),
 
 .ceremony-board__actions {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   gap: 8px;
   margin-top: 24px;
 }
 
 .ceremony-board__actions button {
   display: inline-flex;
-  min-height: 43px;
+  width: 100%;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   border: 1px solid #5c5137;
   padding: 0 17px;
@@ -8477,10 +8509,51 @@ body:has(.table-screen--3d),
   text-transform: uppercase;
 }
 
-.ceremony-board__actions button:first-child {
-  border-color: #d0a34b;
-  color: #151008;
-  background: #eabd5d;
+.ceremony-board__review {
+  min-height: 60px;
+  border-color: #63ae6b !important;
+  color: #08150d !important;
+  background: linear-gradient(180deg, #b8ee96, var(--green)) !important;
+  box-shadow: 0 8px 26px rgba(155, 215, 95, 0.18);
+  font-size: 15px !important;
+  letter-spacing: 0.12em;
+}
+
+.ceremony-board__review:hover {
+  background: linear-gradient(180deg, #c7f5a9, #a5e875) !important;
+}
+
+.ceremony-board__secondary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ceremony-board__secondary-actions--single {
+  grid-template-columns: 1fr;
+}
+
+.ceremony-board__secondary-actions button {
+  min-height: 43px;
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.ceremony-board__utility {
+  min-height: 32px !important;
+  border: 0 !important;
+  padding: 0 12px !important;
+  color: #918e87 !important;
+  background: none !important;
+  font-size: 9px !important;
+  letter-spacing: 0.08em;
+}
+
+.ceremony-board__export-status {
+  margin: 2px 0 0;
+  color: #918e87;
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 @media (max-height: 780px) {
@@ -8545,6 +8618,19 @@ body:has(.table-screen--3d),
 
   .event-board dl div {
     padding: 8px 0;
+  }
+
+  .ceremony-board {
+    padding-top: 30px;
+    padding-bottom: 26px;
+  }
+
+  .ceremony-board dl div {
+    padding: 10px;
+  }
+
+  .ceremony-board__review {
+    min-height: 54px;
   }
 
   .record-sheet,
@@ -10858,22 +10944,6 @@ body:has(.table-screen--3d),
   gap: 10px 28px;
 }
 
-/* The ceremony's "what happens next" line, and a clear primary action so the
-   career reads as continuing rather than dead-ending into a menu (E20-001). */
-.ceremony-board__next {
-  margin: 18px 0 0;
-  color: #d9cfb8;
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-.ceremony-board__primary {
-  border-color: #e0ae4b !important;
-  color: #0a100e !important;
-  background: linear-gradient(180deg, #ffd98a, #d9a445) !important;
-  font-weight: 600;
-}
-
 /* "How this trainer works" orientation, above the poker reference (E21-004). */
 .reference-orientation h2,
 .reference-heading {
@@ -12590,6 +12660,16 @@ body:has(.table-screen--2d),
 .table-screen--2d .poker-table:has(.pot-groups--split) .table-readout { top: 72%; }
 
 .table-screen--2d .player-seat.is-all-in-revealed .opponent-cards { width: calc(2 * var(--hero-card-width) + 5px); height: var(--hero-card-height); min-height: 0; }
+
+/* A button seat carries both a position marker and the dealer puck. Keep them
+   in one compact lane beside the identity instead of painting one over the
+   other. The extra four pixels are a visible separation without changing the
+   table's seat anchors. */
+.table-screen--2d .player-seat .dealer-button { top: 36px; }
+
+@media (max-width: 760px) {
+  .table-screen--2d .player-seat .dealer-button { top: 22px; }
+}
 
 /* Keep the restored five-stop route legible within its original column. */
 .event-route button { grid-template-columns: minmax(0,1fr); padding: 11px 7px; gap: 5px; }

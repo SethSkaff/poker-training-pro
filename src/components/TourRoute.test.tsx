@@ -105,16 +105,23 @@ describe("career continuity", () => {
       ...overrides,
     }) as unknown as Parameters<typeof TournamentCeremony>[0]["result"];
 
-  it("names the next event after qualifying", () => {
+  it("offers game review and advance controls after qualifying", () => {
     const markup = renderToStaticMarkup(
-      <TournamentCeremony result={ceremonyResult()} onMenu={() => undefined} />,
+      <TournamentCeremony
+        result={ceremonyResult()}
+        onMenu={() => undefined}
+        onNext={() => undefined}
+        onReview={() => undefined}
+      />,
     );
-    expect(markup).toContain("Next on the road");
+    expect(markup).toContain('class="ceremony-board__review"');
+    expect(markup).toContain("Game Review");
+    expect(markup).toContain("Advance");
+    expect(markup).toContain("Return to menu");
+    expect(markup).not.toContain("Review key hand");
   });
 
-  it("states the path forward after failing to qualify", () => {
-    // Previously a failed run offered only "Return to menu", which is what
-    // made the career feel like it dead-ended.
+  it("offers retry without the failed-run explanatory sentence", () => {
     const markup = renderToStaticMarkup(
       <TournamentCeremony
         result={ceremonyResult({
@@ -124,10 +131,31 @@ describe("career continuity", () => {
           nextEventId: undefined,
         })}
         onMenu={() => undefined}
+        onRetry={() => undefined}
+        onReview={() => undefined}
       />,
     );
-    expect(markup).toContain("stays open");
-    expect(markup).toContain("Local Qualifier");
+    expect(markup).toContain('data-outcome="out"');
+    expect(markup).toContain('class="ceremony-board__review"');
+    expect(markup).toContain("Try again");
+    expect(markup).toContain("Return to menu");
+    expect(markup).not.toContain("You did not qualify this time");
+    expect(markup).not.toContain("stays open");
+  });
+
+  it("marks tournament ELO deltas by sign while leaving the rating separate", () => {
+    const renderResult = (tournamentEloDelta: number) =>
+      renderToStaticMarkup(
+        <TournamentCeremony
+          result={ceremonyResult({ tournamentEloDelta })}
+          onMenu={() => undefined}
+        />,
+      );
+
+    expect(renderResult(4)).toContain("ceremony-board__elo-delta--positive");
+    expect(renderResult(-4)).toContain("ceremony-board__elo-delta--negative");
+    expect(renderResult(0)).toContain("ceremony-board__elo-delta--neutral");
+    expect(renderResult(4)).toContain("1022");
   });
 });
 

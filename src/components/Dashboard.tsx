@@ -878,6 +878,7 @@ interface TournamentCeremonyProps {
   onMenu: () => void;
   onNext?: (eventId: string) => void;
   onReview?: () => void;
+  onRetry?: () => void;
   onExportReplay?: () => Promise<
     { ok: true; fileName?: string } | { ok: false; message: string }
   >;
@@ -888,6 +889,7 @@ export function TournamentCeremony({
   onMenu,
   onNext,
   onReview,
+  onRetry,
   onExportReplay,
 }: TournamentCeremonyProps) {
   const [exportBusy, setExportBusy] = useState(false);
@@ -901,6 +903,15 @@ export function TournamentCeremony({
   const eventNames = new Map(
     listTournamentSessionEvents([]).map((event) => [event.id, event.name]),
   );
+  const eloDeltaTone =
+    result.tournamentEloDelta > 0
+      ? "positive"
+      : result.tournamentEloDelta < 0
+        ? "negative"
+        : "neutral";
+  const hasSecondaryAction = result.qualified
+    ? Boolean(result.nextEventId && onNext)
+    : Boolean(onRetry);
 
   return (
     <main className="night-shell night-shell--ceremony" {...localeTextAttributes()}>
@@ -920,22 +931,6 @@ export function TournamentCeremony({
         <p className="ceremony-board__qualification">
           {result.qualificationLabel}
         </p>
-        <dl>
-          <div>
-            <dt>{formatMessage("dashboard.record.tournamentElo")}</dt>
-            <dd>
-              {result.elo.heroRating}{" "}
-              <span>
-                {result.tournamentEloDelta >= 0 ? "+" : ""}
-                {result.tournamentEloDelta}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt>{formatMessage("dashboard.ceremony.handsPlayed")}</dt>
-            <dd>{result.handNumber}</dd>
-          </div>
-        </dl>
 
         {result.newlyUnlockedEventIds.length > 0 && (
           <div className="ceremony-board__unlocks">
@@ -948,39 +943,62 @@ export function TournamentCeremony({
           </div>
         )}
 
-        {/* What happens next, always stated. Qualifying used to show a Next
-            button while a failed run showed only "Return to menu", which is
-            what made the career feel like it dead-ended into a menu. */}
-        <p className="ceremony-board__next" role="status">
-          {result.nextEventId
-            ? formatMessage("dashboard.ceremony.nextUp", {
-                eventName:
-                  eventNames.get(result.nextEventId) ?? result.nextEventId,
-              })
-            : result.qualified
-              ? formatMessage("dashboard.ceremony.journeyComplete")
-              : formatMessage("dashboard.ceremony.retryPath", {
-                  eventName: result.eventName,
-                })}
-        </p>
+        <dl>
+          <div>
+            <dt>{formatMessage("dashboard.record.tournamentElo")}</dt>
+            <dd>
+              {result.elo.heroRating}{" "}
+              <span
+                className={`ceremony-board__elo-delta ceremony-board__elo-delta--${eloDeltaTone}`}
+              >
+                {result.tournamentEloDelta >= 0 ? "+" : ""}
+                {result.tournamentEloDelta}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>{formatMessage("dashboard.ceremony.handsPlayed")}</dt>
+            <dd>{result.handNumber}</dd>
+          </div>
+        </dl>
 
         <div className="ceremony-board__actions">
-          {result.nextEventId && onNext && (
-            <button
-              className="ceremony-board__primary"
-              type="button"
-              onClick={() => onNext(result.nextEventId!)}
-            >
-              {formatMessage("dashboard.ceremony.nextEvent")} <ArrowRight size={18} />
-            </button>
-          )}
           {onReview && (
-            <button type="button" onClick={onReview}>
-              {formatMessage("dashboard.ceremony.reviewKeyHand")}
+            <button
+              className="ceremony-board__review"
+              type="button"
+              onClick={onReview}
+            >
+              <BookOpen size={18} aria-hidden="true" />
+              {formatMessage("review.title")}
             </button>
           )}
+          <div
+            className={`ceremony-board__secondary-actions${
+              hasSecondaryAction ? "" : " ceremony-board__secondary-actions--single"
+            }`}
+          >
+            <button type="button" onClick={onMenu}>
+              {formatMessage("dashboard.ceremony.returnToMenu")}
+            </button>
+            {result.qualified
+              ? result.nextEventId && onNext && (
+                  <button
+                    type="button"
+                    onClick={() => onNext(result.nextEventId!)}
+                  >
+                    {formatMessage("dashboard.tour.advance")} <ArrowRight size={16} />
+                  </button>
+                )
+              : onRetry && (
+                  <button type="button" onClick={onRetry}>
+                    {formatMessage("dashboard.ceremony.tryAgain")}
+                  </button>
+                )}
+          </div>
           {onExportReplay && (
             <button
+              className="ceremony-board__utility"
               type="button"
               disabled={exportBusy}
               onClick={() => {
@@ -1006,9 +1024,6 @@ export function TournamentCeremony({
               {formatMessage("dashboard.ceremony.exportReplay")}
             </button>
           )}
-          <button type="button" onClick={onMenu}>
-            {formatMessage("dashboard.ceremony.returnToMenu")}
-          </button>
         </div>
         {onExportReplay && (
           <p
