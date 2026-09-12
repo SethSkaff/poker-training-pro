@@ -51,7 +51,7 @@ describe("compact training math card", () => {
     );
     expect(css).toMatch(/\.math-question\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?margin:\s*0 0 12px;/);
     expect(css).toMatch(/\.math-answer-row\s*\{[\s\S]*?margin-top:\s*0;/);
-    expect(css).toContain("max-height: calc(100dvh - 176px);");
+    expect(css).toContain("max-height: calc(calc(100 * var(--game-dvh, 1dvh)) - 176px);");
     expect(css).toContain("overflow: auto;");
   });
 

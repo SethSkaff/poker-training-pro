@@ -53,7 +53,7 @@ import {
   type DesktopPersistenceBridge,
   type DurablePersistence,
 } from "../lib/durablePersistence";
-import { formatChips, formatFixedDecimal } from "../lib/format";
+import { formatChips } from "../lib/format";
 import { describeTrainingContext } from "../lib/trainingScenarioContext";
 import { formatMessage } from "../lib/localeMessages";
 import { defaultProgress, defaultSettings } from "../lib/storage";
@@ -518,12 +518,8 @@ describe("pseudo-locale completeness sweep", () => {
         pot: formatChips(scenario.pot),
       }),
     );
-    // The decision clock's visible "{seconds}s" label keeps its digits.
-    expect(markup).toContain(
-      formatMessage("table.decisionClock.visibleLabel", {
-        seconds: formatFixedDecimal(0, 1),
-      }),
-    );
+    // The 2D composition no longer renders the 3D decision clock. The public
+    // situation and pot above cover interpolation in this screen's actual HUD.
     // The pot readout keeps the formatted chip count intact.
     expect(markup).toContain(formatChips(scenario.pot));
   });

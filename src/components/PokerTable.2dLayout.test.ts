@@ -9,6 +9,15 @@ const styleSource = readFileSync(path.join(componentDirectory, "..", "styles.css
 const twoDStyles = styleSource.slice(styleSource.lastIndexOf("Isolated 2D table pass"));
 
 describe("isolated 2D table layout contract", () => {
+  it("fits the complete desktop HUD in the canonical frame and isolates compact rules", () => {
+    expect(tableSource).toContain('<GameViewport enabled={isTwoDMode}>');
+    expect(styleSource).toContain("--game-vw: 19.2px;");
+    expect(styleSource).toContain("--game-vh: 10.8px;");
+    expect(styleSource).toContain(":root #root:has(.desktop-game-viewport) { zoom: 1; }");
+    expect(styleSource).toContain(":where(:root:not(:has(.desktop-game-frame))) .table-screen--2d .poker-scene");
+    expect(tableSource).toContain("gamePointerPoint(event.currentTarget, event.clientX, event.clientY)");
+  });
+
   it("ships only the current isolated 2D pass", () => {
     expect(styleSource.match(/Isolated 2D table pass/g)).toHaveLength(1);
     expect(styleSource).not.toContain("The fallback is a deliberate flat table");
@@ -45,7 +54,7 @@ describe("isolated 2D table layout contract", () => {
 
   it("anchors every 2D seat to the rail and keeps opponent cards inside the viewport", () => {
     expect(twoDStyles).toContain("overflow: visible;");
-    expect(twoDStyles).toContain("--rail-gap: clamp(5px, 0.55vw, 8px);");
+    expect(twoDStyles).toContain("--rail-gap: clamp(5px, calc(0.55 * var(--game-vw, 1vw)), 8px);");
     expect(twoDStyles).toContain(
       "left: var(--side-inset);",
     );

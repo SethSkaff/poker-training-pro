@@ -1,4 +1,6 @@
 import { useTwoDSeatGeometry } from "../lib/useTwoDSeatGeometry";
+import { GameViewport } from "./GameViewport";
+import { gamePointerPoint } from "../lib/gameViewport";
 import { tableChipPresentation, type TableChipMemory } from "../lib/tableChipPresentation";
 import { WinnerReveal } from "./WinnerReveal";
 import { ChipPayoutStream } from "./ChipPayoutStream";
@@ -3052,7 +3054,7 @@ export function PokerTable({
     // gesture from becoming a table-look drag after the stage has already
     // rejected button targets in its capture handler.
     event.stopPropagation();
-    dragStart.current = { x: event.clientX, y: event.clientY };
+    dragStart.current = gamePointerPoint(event.currentTarget, event.clientX, event.clientY);
     didDrag.current = false;
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -3060,8 +3062,9 @@ export function PokerTable({
   const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     event.stopPropagation();
     if (!dragStart.current || action) return;
-    const deltaX = event.clientX - dragStart.current.x;
-    const deltaY = event.clientY - dragStart.current.y;
+    const point = gamePointerPoint(event.currentTarget, event.clientX, event.clientY);
+    const deltaX = point.x - dragStart.current.x;
+    const deltaY = point.y - dragStart.current.y;
     if (Math.hypot(deltaX, deltaY) > 7) {
       didDrag.current = true;
       setDragging(true);
@@ -3868,6 +3871,7 @@ export function PokerTable({
   );
 
   return (
+    <GameViewport enabled={isTwoDMode}>
     <div
       className={`table-screen ${isTwoDMode ? "table-screen--2d" : "table-screen--3d"}`}
       data-game-mode={mode}
@@ -5317,5 +5321,6 @@ export function PokerTable({
         </span>
       </footer>}
     </div>
+    </GameViewport>
   );
 }

@@ -3,6 +3,39 @@
 The tournament engine owns legality, commitments, odds, refunds and settlement.
 Presentation projects public snapshots and the ordered presentation event queue.
 
+## Desktop 2D coordinate system
+
+`GameViewport` fits a single 1920×1080 DOM frame into its available viewport with
+`min(width / 1920, height / 1080)` and centers it over the existing dark room.
+Electron always uses this frame; the browser's existing <=760px compact layout
+and the 3D renderer retain their responsive behavior. The normal interface zoom
+setting still applies to other screens, but does not add a second game scale.
+
+The entire `PokerTable` subtree belongs to this frame, including HUD controls,
+training/review overlays, raise controls, and pause dialogs. Gameplay viewport
+lengths resolve through `--game-vw`, `--game-vh`, and `--game-dvh`, set to 19.2px
+and 10.8px in the desktop frame. Their native viewport fallbacks preserve compact
+and 3D styling. Physical size media rules exclude the desktop frame; container
+units and percentage anchors resolve against its fixed logical stage. Preserve
+that distinction when adding gameplay CSS: a new physical `vw`/`vh` or media
+query must not silently reintroduce desktop reflow.
+
+The existing seat/card/stack/bet geometry hook now measures an invariant logical
+table. Resize changes only the ancestor transform. Its DOM measurements, chip
+collection offsets, and chip payout destinations already divide screen-space
+rectangles by the ancestor scale, so those animation vectors remain logical.
+Native controls, hover regions, and overlays share the transform. Card-drag
+distances explicitly convert client coordinates into frame coordinates before
+applying peek/fold thresholds. The 3D projected hit-test path stays unchanged.
+
+`src/lib/gameViewport.test.ts` covers fit, centering, and pointer conversion.
+`node scripts/audit-2d-game-frame.mjs` verifies the packaged Electron app at
+720p, 1080p, 1440p, 4K, ultrawide, tall, and narrow desktop viewports. It compares
+normalized DOM geometry, fonts, and rotations for Training and a six-player
+hand, tests interface-scale isolation, and sends native mouse input to cards,
+raise and speed sliders, audio, and pause/resume. `--dev` uses Vite on port 5173.
+Screenshots and the report are written to ignored `work/fixed-frame/`.
+
 ## Inclusive-pot convention
 
 `scenario.pot` remains the authoritative inclusive hand total, including current
