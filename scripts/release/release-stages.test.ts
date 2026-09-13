@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -53,6 +53,27 @@ describe("release verification stages", () => {
     ).toBeLessThan(
       names.indexOf("Versioned release-operations documentation gate"),
     );
+  });
+
+  it("enables type stripping for any node --test fixture that imports TypeScript", () => {
+    // `.node-version` pins 22.12.0, where type stripping is still behind a
+    // flag; it became the default in 22.18. A fixture that imports a `.ts`
+    // module therefore passes on a developer's newer 22.x and dies in CI with
+    // ERR_UNKNOWN_FILE_EXTENSION. Read the fixtures rather than trusting the
+    // flag list: a new `.ts` import is exactly what would reintroduce this.
+    for (const stage of stages) {
+      const fixture = stage.args.find((argument) =>
+        /\.test\.[cm]?js$/.test(argument),
+      );
+      if (!fixture || !stage.args.includes("--test")) continue;
+      const source = readFileSync(path.join(projectRoot, fixture), "utf8");
+      if (!/\bfrom\s*["'][^"']+\.ts["']|\bimport\(\s*["'][^"']+\.ts["']/.test(source)) {
+        continue;
+      }
+      expect(stage.args, `${stage.name} imports TypeScript`).toContain(
+        "--experimental-strip-types",
+      );
+    }
   });
 
   it("passes script arguments after `--` for vite-node stages", () => {

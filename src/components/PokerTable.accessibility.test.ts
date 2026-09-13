@@ -47,6 +47,78 @@ describe("poker table live announcements", () => {
     expect(source).toContain("}, [action, paused, isReview]);");
   });
 
+  it("omits the 2D decision clock by design while keeping the timer it fed", () => {
+    /*
+      DELIBERATE OMISSION -- do not "fix" this by restoring the clock.
+
+      `e114728` removed the visible decision clock from the 2D table on
+      request. 2D is the default layout, so this is what most players see, and
+      the comment that commit deleted from `PokerTable.tsx` had argued the
+      other way; that argument lost. This test exists so the next session
+      finds the decision recorded as a contract rather than as an absence,
+      and so the one thing that would make the removal a real regression --
+      losing the elapsed timer itself -- is checked instead of assumed.
+
+      What was removed is a readout. `elapsedMs` still runs in both layouts and
+      still feeds the two things that consume it: Training grading, and the
+      tournament blind schedule through its own separately-drained clock.
+    */
+    const scenario = trainingScenarios[0];
+    const renderTable = (spatialScene: boolean) =>
+      renderToStaticMarkup(
+        createElement(PokerTable, {
+          mode: "training",
+          scenario,
+          settings: { ...defaultSettings, spatialScene },
+          progress: defaultProgress,
+          onProgressChange: () => undefined,
+          onSettingsChange: () => undefined,
+          onNextScenario: () => undefined,
+          onExit: () => undefined,
+        }),
+      );
+
+    const twoD = renderTable(false);
+    expect(defaultSettings.spatialScene ?? false).toBe(false);
+    expect(twoD).not.toContain("decision-clock");
+    expect(twoD).not.toContain('role="timer"');
+    expect(twoD).not.toContain(decisionClockAriaLabel(0));
+
+    // 3D keeps it: the clock sits in the table-tools cluster, not the canvas.
+    const threeD = renderTable(true);
+    expect(threeD).toContain("decision-clock");
+    expect(threeD).toContain('role="timer"');
+    expect(threeD).toContain(decisionClockAriaLabel(0));
+
+    /*
+      The timer is not presentation. These are the statements that keep it
+      running and spend it, and none of them is behind the layout switch --
+      asserted on the source because neither grading nor the blind schedule is
+      reachable from a static render.
+    */
+    const source = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "PokerTable.tsx"),
+      "utf8",
+    );
+    const unconditional = [
+      // The elapsed interval, rebased on resume rather than restarted.
+      "elapsedStartedAt.current = performance.now() - elapsedMs",
+      // Training grading spends the elapsed time, net of the math detour.
+      "Math.round(elapsedMs - mathElapsedMs.current),",
+      // The blind schedule has its own clock and is drained once per action.
+      "decisionElapsedMs: blindClock.current.drain(),",
+    ];
+    for (const statement of unconditional) {
+      expect(source, statement).toContain(statement);
+      const line = source
+        .split("\n")
+        .find((candidate) => candidate.includes(statement));
+      expect(line, statement).not.toContain("isTwoDMode");
+    }
+    // Exactly one place decides whether the clock is drawn.
+    expect(source.split('{!isTwoDMode && <span').length - 1).toBe(1);
+  });
+
   it("pairs invalid math-entry audio with a persistent visible alert", () => {
     const source = readFileSync(
       path.join(path.dirname(fileURLToPath(import.meta.url)), "PokerTable.tsx"),
